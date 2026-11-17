@@ -11,7 +11,11 @@ export type WorkspaceCommand =
   | { type: "cyclePane"; step: 1 | -1 }
   | { type: "moveTab"; step: 1 | -1 }
   /** 0-based; -1 is the last tab. */
-  | { type: "goToTab"; index: number };
+  | { type: "goToTab"; index: number }
+  | { type: "openPalette" };
+
+/** Where keyboard focus is: a Terminal owns every key but the reserved ones; the rest of the app owns a few more. */
+export type KeyFocus = "terminal" | "app";
 
 /** The parts of a `KeyboardEvent` a shortcut looks at. */
 export interface KeyChord {
@@ -27,13 +31,22 @@ export interface KeyChord {
 type Modifier = "meta" | "ctrl" | "alt" | "shift";
 
 /** Shortcuts shown in tooltips, by name. */
-export type ShortcutName = "newTab" | "closePane" | "splitRight" | "splitDown" | "nextTab" | "previousTab";
+export type ShortcutName =
+  | "newTab"
+  | "closePane"
+  | "splitRight"
+  | "splitDown"
+  | "nextTab"
+  | "previousTab"
+  | "commandPalette";
 
 interface Binding {
   name?: ShortcutName;
   code: string;
   mods: Modifier[];
   command: WorkspaceCommand;
+  /** Only when focus is outside a Terminal: the chord means something to the shell. */
+  appOnly?: true;
 }
 
 const split = (orientation: SplitOrientation): WorkspaceCommand => ({ type: "split", orientation });
@@ -62,6 +75,7 @@ const bindings: Record<Platform, Binding[]> = {
     { name: "previousTab", code: "BracketLeft", mods: ["meta", "shift"], command: { type: "cycleTab", step: -1 } },
     { code: "BracketRight", mods: ["meta"], command: { type: "cyclePane", step: 1 } },
     { code: "BracketLeft", mods: ["meta"], command: { type: "cyclePane", step: -1 } },
+    { name: "commandPalette", code: "KeyK", mods: ["meta"], command: { type: "openPalette" } },
     ...goToTab("meta"),
     ...shared,
   ],
@@ -74,6 +88,9 @@ const bindings: Record<Platform, Binding[]> = {
     { name: "previousTab", code: "PageUp", mods: ["ctrl"], command: { type: "cycleTab", step: -1 } },
     { code: "KeyN", mods: ["ctrl", "shift"], command: { type: "cyclePane", step: 1 } },
     { code: "KeyP", mods: ["ctrl", "shift"], command: { type: "cyclePane", step: -1 } },
+    { name: "commandPalette", code: "KeyK", mods: ["ctrl", "shift"], command: { type: "openPalette" } },
+    // Ctrl+K is kill-line in readline and emacs, so a Terminal keeps it.
+    { code: "KeyK", mods: ["ctrl"], command: { type: "openPalette" }, appOnly: true },
     ...goToTab("alt"),
     ...shared,
   ],
@@ -83,11 +100,17 @@ function pressed(chord: KeyChord, mod: Modifier): boolean {
   return { meta: chord.metaKey, ctrl: chord.ctrlKey, alt: chord.altKey, shift: chord.shiftKey }[mod];
 }
 
-/** The workspace command a key press triggers, or `null` to let it reach the Terminal. */
-export function matchShortcut(chord: KeyChord, platform: Platform): WorkspaceCommand | null {
+/**
+ * The workspace command a key press triggers, or `null` to let it reach the Terminal (or whatever has focus).
+ * While a Terminal has focus only the reserved chords match; everything else goes to the remote program.
+ */
+export function matchShortcut(chord: KeyChord, platform: Platform, focus: KeyFocus = "terminal"): WorkspaceCommand | null {
   const all: Modifier[] = ["meta", "ctrl", "alt", "shift"];
   const binding = bindings[platform].find(
-    (b) => b.code === chord.code && all.every((mod) => pressed(chord, mod) === b.mods.includes(mod)),
+    (b) =>
+      b.code === chord.code &&
+      (focus === "app" || !b.appOnly) &&
+      all.every((mod) => pressed(chord, mod) === b.mods.includes(mod)),
   );
   return binding?.command ?? null;
 }

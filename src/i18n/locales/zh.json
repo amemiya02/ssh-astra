@@ -80,6 +80,24 @@
     "emptyTitle": "没有打开的终端",
     "emptyBody": "从列表中打开一个 Host，或在这台电脑上启动本地终端。"
   },
+  "palette": {
+    "title": "命令面板",
+    "description": "打开 Host、切换标签页或执行操作。",
+    "placeholder": "搜索 Host、标签页和操作",
+    "empty": "没有匹配的结果",
+    "groups": {
+      "recent": "最近使用的 Host",
+      "hosts": "Host",
+      "tabs": "标签页",
+      "actions": "操作"
+    },
+    "actions": {
+      "openSettings": "打开设置"
+    },
+    "keywords": {
+      "preferences": "偏好设置 preferences"
+    }
+  },
   "files": {
     "title": "文件",
     "empty": "在某个 Host 上打开终端后，可以在这里浏览它的文件。",

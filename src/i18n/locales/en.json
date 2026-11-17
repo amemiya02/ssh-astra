@@ -80,6 +80,24 @@
     "emptyTitle": "No open Terminals",
     "emptyBody": "Open a Host from the list, or start a Local terminal on this computer."
   },
+  "palette": {
+    "title": "Command palette",
+    "description": "Open a Host, switch tabs or run an action.",
+    "placeholder": "Search Hosts, tabs and actions",
+    "empty": "Nothing matches",
+    "groups": {
+      "recent": "Recent Hosts",
+      "hosts": "Hosts",
+      "tabs": "Tabs",
+      "actions": "Actions"
+    },
+    "actions": {
+      "openSettings": "Open Settings"
+    },
+    "keywords": {
+      "preferences": "preferences"
+    }
+  },
   "files": {
     "title": "Files",
     "empty": "Open a Terminal on a Host to browse its files here.",
