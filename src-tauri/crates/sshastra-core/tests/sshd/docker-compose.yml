@@ -1,0 +1,35 @@
+# OpenSSH servers for sshastra's integration tests. Started on demand by
+# `tests/support/mod.rs`; see CLAUDE.md ("Integration tests").
+#
+#   ssh       reachable from the test process (published on a random
+#             loopback port): the plain target.
+#   jump      reachable from the test process and from the private network:
+#             a Jump host.
+#   internal  on the private network only: reachable only through `jump`
+#             (as `internal:22`).
+#
+# Add services here (e.g. a TCP echo server for Port forward tests) rather
+# than starting containers from individual tests.
+name: sshastra-it
+
+x-sshd: &sshd
+  build: .
+  image: sshastra-it-sshd
+
+services:
+  ssh:
+    <<: *sshd
+    ports: ["127.0.0.1::22"]
+    networks: [public]
+  jump:
+    <<: *sshd
+    ports: ["127.0.0.1::22"]
+    networks: [public, private]
+  internal:
+    <<: *sshd
+    networks: [private]
+
+networks:
+  public: {}
+  private:
+    internal: true

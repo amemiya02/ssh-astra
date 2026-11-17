@@ -4,4 +4,5 @@
 
 pub mod hosts;
 pub mod known_hosts;
+pub mod ssh;
 pub mod terminal;

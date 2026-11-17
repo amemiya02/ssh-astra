@@ -1,0 +1,118 @@
+//! Shared harness for integration tests against real OpenSSH servers in
+//! Docker (`tests/sshd/docker-compose.yml`).
+//!
+//! ```ignore
+//! mod support;
+//! let Some(sshd) = support::sshd(support::Service::Ssh) else { return };
+//! ```
+//!
+//! `SSHASTRA_DOCKER_TESTS` controls what happens:
+//! - unset / `auto`: start the containers if Docker works, else skip (the test
+//!   returns early and prints why).
+//! - `require`: fail instead of skipping (CI on Linux).
+//! - `skip`: never touch Docker.
+//!
+//! Containers are started once per test binary and left running so reruns are
+//! fast. Stop them with `docker compose -p sshastra-it down`.
+#![allow(dead_code)]
+
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::OnceLock;
+
+use sshastra_core::known_hosts::HostKey;
+
+pub const USER: &str = "tester";
+pub const PASSWORD: &str = "testpass";
+
+/// A service in `tests/sshd/docker-compose.yml` reachable from the tests.
+#[derive(Debug, Clone, Copy)]
+pub enum Service {
+    /// The plain target.
+    Ssh,
+    /// A Jump host that can also reach `internal:22`.
+    Jump,
+}
+
+impl Service {
+    fn name(self) -> &'static str {
+        match self {
+            Service::Ssh => "ssh",
+            Service::Jump => "jump",
+        }
+    }
+}
+
+/// How to reach one running OpenSSH server.
+#[derive(Debug, Clone)]
+pub struct Sshd {
+    pub host: String,
+    pub port: u16,
+    pub user: &'static str,
+    pub password: &'static str,
+    /// The key the server presents (fixture in `tests/sshd/`).
+    pub host_key: HostKey,
+}
+
+pub fn sshd_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("sshd")
+}
+
+/// The server for `service`, starting the containers if needed. `None` means
+/// Docker is unavailable and the calling test should return early.
+pub fn sshd(service: Service) -> Option<Sshd> {
+    let mode = std::env::var("SSHASTRA_DOCKER_TESTS").unwrap_or_default();
+    if mode == "skip" {
+        return None;
+    }
+    static STARTED: OnceLock<Result<(), String>> = OnceLock::new();
+    if let Err(why) = STARTED.get_or_init(compose_up) {
+        if mode == "require" {
+            panic!("SSHASTRA_DOCKER_TESTS=require but the test sshd is unavailable: {why}");
+        }
+        eprintln!("skipping Docker integration test: {why}");
+        return None;
+    }
+
+    let published = compose(&["port", service.name(), "22"])
+        .unwrap_or_else(|e| panic!("no published port for {}: {e}", service.name()));
+    let (host, port) = published
+        .trim()
+        .rsplit_once(':')
+        .unwrap_or_else(|| panic!("unexpected `docker compose port` output: {published}"));
+    let host_key = std::fs::read_to_string(sshd_dir().join("ssh_host_ed25519_key.pub")).unwrap();
+
+    Some(Sshd {
+        host: host.to_owned(),
+        port: port.parse().unwrap(),
+        user: USER,
+        password: PASSWORD,
+        host_key: HostKey::from_openssh(&host_key).unwrap(),
+    })
+}
+
+fn compose_up() -> Result<(), String> {
+    compose(&["up", "--detach", "--build", "--wait", "--quiet-pull"]).map(drop)
+}
+
+fn compose(args: &[&str]) -> Result<String, String> {
+    let file = sshd_dir().join("docker-compose.yml");
+    let output = Command::new("docker")
+        .arg("compose")
+        .arg("--file")
+        .arg(&file)
+        .args(args)
+        .output()
+        .map_err(|e| format!("cannot run docker: {e}"))?;
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    } else {
+        Err(format!(
+            "`docker compose {}` failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
+    }
+}

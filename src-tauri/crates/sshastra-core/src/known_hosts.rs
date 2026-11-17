@@ -42,7 +42,10 @@ impl HostKey {
     /// `"<algorithm> <base64>"`, without a comment.
     pub fn to_openssh(&self) -> String {
         let full = self.0.to_openssh().unwrap_or_default();
-        full.split_whitespace().take(2).collect::<Vec<_>>().join(" ")
+        full.split_whitespace()
+            .take(2)
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 
     fn same_key(&self, other: &HostKey) -> bool {
@@ -65,15 +68,15 @@ pub enum Verdict {
     Unknown,
     /// A different key of the same type is recorded: possibly an attack.
     /// The connection must be refused.
-    Mismatch(KnownKey),
+    Mismatch(KnownHost),
     /// The key is listed as `@revoked`. The connection must be refused.
     Revoked,
 }
 
 /// Where the previously recorded key lives, so the user can fix it by hand.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct KnownKey {
-    pub known_fingerprint: String,
+pub struct KnownHost {
+    pub fingerprint: String,
     pub path: PathBuf,
     /// 1-based line number in `path`.
     pub line: usize,
@@ -151,8 +154,8 @@ impl KnownHosts {
                     Marker::Revoked => {}
                     Marker::None if entry.key.same_key(key) => matched = true,
                     Marker::None if entry.key.algorithm() == key.algorithm() => {
-                        mismatch.get_or_insert_with(|| KnownKey {
-                            known_fingerprint: entry.key.fingerprint(),
+                        mismatch.get_or_insert_with(|| KnownHost {
+                            fingerprint: entry.key.fingerprint(),
                             path: path.clone(),
                             line: index + 1,
                         });
@@ -199,7 +202,11 @@ impl KnownHosts {
         if needs_newline {
             line.push('\n');
         }
-        line.push_str(&format!("{} {}\n", lookup_name(host, port), key.to_openssh()));
+        line.push_str(&format!(
+            "{} {}\n",
+            lookup_name(host, port),
+            key.to_openssh()
+        ));
         file.write_all(line.as_bytes()).map_err(io_err)
     }
 }

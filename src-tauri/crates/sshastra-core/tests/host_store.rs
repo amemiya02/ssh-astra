@@ -46,7 +46,10 @@ fn saved_hosts_are_there_after_a_restart() {
     assert_eq!(reopened.list(), [web.clone(), db.clone()]);
     assert_eq!(reopened.get(&db.id), Some(&db));
     assert_eq!(web.name, "web");
-    assert_eq!((web.address.as_str(), web.port, web.user.as_str()), ("10.0.0.5", 2222, "deploy"));
+    assert_eq!(
+        (web.address.as_str(), web.port, web.user.as_str()),
+        ("10.0.0.5", 2222, "deploy")
+    );
     assert_ne!(web.id, db.id);
 }
 
@@ -58,11 +61,22 @@ fn upsert_with_an_id_edits_that_host_in_place() {
     let b = store.upsert(None, draft("b")).unwrap();
 
     let renamed = store
-        .upsert(Some(a.id.clone()), HostDraft { name: "a2".into(), ..draft("a") })
+        .upsert(
+            Some(a.id.clone()),
+            HostDraft {
+                name: "a2".into(),
+                ..draft("a")
+            },
+        )
         .unwrap();
 
     assert_eq!(renamed.id, a.id);
-    let names: Vec<_> = HostStore::open(&path).unwrap().list().iter().map(|h| h.name.clone()).collect();
+    let names: Vec<_> = HostStore::open(&path)
+        .unwrap()
+        .list()
+        .iter()
+        .map(|h| h.name.clone())
+        .collect();
     assert_eq!(names, ["a2", "b"]);
     assert!(store.get(&b.id).is_some());
 }
@@ -89,7 +103,10 @@ fn delete_removes_the_host_for_good() {
     store.delete(&a.id).unwrap();
 
     assert_eq!(HostStore::open(&path).unwrap().list(), [b]);
-    assert!(matches!(store.delete(&a.id), Err(HostStoreError::NotFound(_))));
+    assert!(matches!(
+        store.delete(&a.id),
+        Err(HostStoreError::NotFound(_))
+    ));
 }
 
 #[test]
@@ -97,12 +114,27 @@ fn incomplete_hosts_are_rejected_and_not_saved() {
     let (_dir, path) = store_path();
     let mut store = HostStore::open(&path).unwrap();
     for bad in [
-        HostDraft { name: "  ".into(), ..draft("x") },
-        HostDraft { address: "".into(), ..draft("x") },
-        HostDraft { user: "".into(), ..draft("x") },
-        HostDraft { port: 0, ..draft("x") },
+        HostDraft {
+            name: "  ".into(),
+            ..draft("x")
+        },
+        HostDraft {
+            address: "".into(),
+            ..draft("x")
+        },
+        HostDraft {
+            user: "".into(),
+            ..draft("x")
+        },
+        HostDraft {
+            port: 0,
+            ..draft("x")
+        },
     ] {
-        assert!(matches!(store.upsert(None, bad), Err(HostStoreError::Invalid(_))));
+        assert!(matches!(
+            store.upsert(None, bad),
+            Err(HostStoreError::Invalid(_))
+        ));
     }
     assert!(HostStore::open(&path).unwrap().list().is_empty());
 }
@@ -113,7 +145,8 @@ fn the_file_is_versioned_json() {
     let mut store = HostStore::open(&path).unwrap();
     store.upsert(None, draft("web")).unwrap();
 
-    let json: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    let json: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(json["version"], 1);
     assert_eq!(json["hosts"][0]["name"], "web");
     assert_eq!(json["hosts"][0]["auth"]["type"], "password");
@@ -125,7 +158,10 @@ fn a_corrupt_file_is_reported_and_left_untouched() {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, "{ not json").unwrap();
 
-    assert!(matches!(HostStore::open(&path), Err(HostStoreError::Corrupt(_))));
+    assert!(matches!(
+        HostStore::open(&path),
+        Err(HostStoreError::Corrupt(_))
+    ));
     assert_eq!(fs::read_to_string(&path).unwrap(), "{ not json");
 }
 
@@ -163,7 +199,9 @@ fn readers_never_see_a_half_written_file() {
         })
     };
     for i in 0..30 {
-        store.upsert(None, draft(&format!("{long_name}{i}"))).unwrap();
+        store
+            .upsert(None, draft(&format!("{long_name}{i}")))
+            .unwrap();
     }
     done.store(true, Ordering::Relaxed);
     reader.join().unwrap();
