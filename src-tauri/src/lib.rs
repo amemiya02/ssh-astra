@@ -77,6 +77,7 @@ pub fn run() {
             commands::hosts::group_rename,
             commands::hosts::group_delete,
             commands::hosts::group_move,
+            commands::hosts::hosts_import_ssh_config,
             commands::forwards::forwards_watch,
             commands::forwards::forward_save,
             commands::forwards::forward_delete,
