@@ -268,7 +268,13 @@ pub struct ConnectionManager {
     /// Read when a Connection opens; changing it leaves open ones as they are.
     keepalive_interval: Mutex<Option<Duration>>,
     slots: Mutex<HashMap<HostId, Arc<Slot>>>,
+    /// Each Host's shared SFTP session ([`Self::live_sftp`]), kept only while
+    /// something holds it and tied to the Connection it was opened on.
+    sftp: tokio::sync::Mutex<HashMap<HostId, SharedSftp>>,
 }
+
+/// A Host's shared SFTP session and the Connection it runs on.
+type SharedSftp = (Weak<Connection>, Weak<SftpFs>);
 
 /// A Host's Connection, if any. Its lock is held while connecting, so a
 /// second connect to the Host waits for the first instead of racing it.
@@ -283,6 +289,7 @@ impl ConnectionManager {
             vault: Arc::new(NoVault),
             keepalive_interval: Mutex::new(ConnectionSettings::default().keepalive_interval()),
             slots: Mutex::default(),
+            sftp: tokio::sync::Mutex::default(),
         }
     }
 
@@ -388,6 +395,37 @@ impl ConnectionManager {
         let slot = self.slot(id);
         let current = slot.lock().await;
         current.upgrade().filter(|c| !c.is_closed())
+    }
+
+    /// A new SFTP session of its own on the Host's live Connection (a File
+    /// panel's, so browsing never waits behind a transfer). Never connects:
+    /// [`FsError::NotConnected`] if the Host has no Connection.
+    pub async fn open_sftp(&self, id: &HostId) -> Result<SftpFs, FsError> {
+        let connection = self.live(id).await.ok_or(FsError::NotConnected)?;
+        connection.open_sftp().await
+    }
+
+    /// The Host's shared SFTP session on its live Connection, for transfers
+    /// and remote edits: opened on first use and handed out again while
+    /// anything holds it and its Connection is the live one, so a reconnect
+    /// gets a new session. Never connects ([`FsError::NotConnected`]).
+    pub async fn live_sftp(&self, id: &HostId) -> Result<Arc<SftpFs>, FsError> {
+        let connection = self.live(id).await.ok_or(FsError::NotConnected)?;
+        let mut sessions = self.sftp.lock().await;
+        sessions.retain(|_, (on, session)| on.strong_count() > 0 && session.strong_count() > 0);
+        if let Some((on, session)) = sessions.get(id) {
+            if let (Some(on), Some(session)) = (on.upgrade(), session.upgrade()) {
+                if Arc::ptr_eq(&on, &connection) {
+                    return Ok(session);
+                }
+            }
+        }
+        let session = Arc::new(connection.open_sftp().await?);
+        sessions.insert(
+            id.clone(),
+            (Arc::downgrade(&connection), Arc::downgrade(&session)),
+        );
+        Ok(session)
     }
 
     /// The live Connection in `id`'s slot, or the one `establish` opens,

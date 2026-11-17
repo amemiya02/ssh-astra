@@ -3,10 +3,10 @@
 
 use std::sync::Arc;
 
-use sshastra_core::files::{self, FsError, FsId, FsRegistry, Listing};
+use sshastra_core::files::{self, FsId, FsRegistry, Listing, OpenRemote, RemoteFs};
 use sshastra_core::hosts::HostId;
 use sshastra_core::ssh::ConnectionManager;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 use crate::error::{CommandError, CommandResult};
 
@@ -18,12 +18,22 @@ pub async fn files_open(
     registry: State<'_, FsRegistry>,
     host_id: HostId,
 ) -> CommandResult<FsId> {
-    let connection = connections
-        .live(&host_id)
-        .await
-        .ok_or(FsError::NotConnected)?;
-    let fs = connection.open_sftp().await?;
+    let fs = connections.open_sftp(&host_id).await?;
     Ok(registry.insert(Arc::new(fs)))
+}
+
+/// The Host's shared SFTP session on its live Connection
+/// (`ConnectionManager::live_sftp`), looked up anew on every call: what
+/// transfers and remote edits run on.
+pub fn live_sftp(app: AppHandle, host_id: HostId) -> OpenRemote {
+    Arc::new(move || {
+        let app = app.clone();
+        let host_id = host_id.clone();
+        Box::pin(async move {
+            let session = app.state::<ConnectionManager>().live_sftp(&host_id).await?;
+            Ok(session as Arc<dyn RemoteFs>)
+        })
+    })
 }
 
 /// Lists a directory: `""`/`~` is home, `~/x` under it; the server resolves

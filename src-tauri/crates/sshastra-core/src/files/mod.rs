@@ -5,11 +5,13 @@
 //! Connection (`Connection::open_sftp`), and tests may swap in an in-memory
 //! fake. Paths are POSIX strings as the server sees them.
 
+mod live;
 mod local;
 mod registry;
 mod sftp;
 mod transfer;
 
+pub use live::LiveHostFs;
 pub use local::{DiskFs, LocalFs};
 pub use registry::{FsId, FsRegistry};
 pub use sftp::SftpFs;

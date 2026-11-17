@@ -1,22 +1,16 @@
 //! Remote editing commands: a remote file opened in the user's default
 //! application, uploaded again on every save (`sshastra_core::edit`).
 
-use std::io;
 use std::path::Path;
-use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
 
 use sshastra_core::edit::{EditEvent, EditId, Opener, RemoteEditor};
-use sshastra_core::files::{
-    FileEntry, FileReader, FileStat, FileWriter, FsError, FsResult, RemoteFs, SftpFs,
-};
+use sshastra_core::files::LiveHostFs;
 use sshastra_core::hosts::HostId;
-use sshastra_core::ssh::{BoxFuture, ConnectionManager};
 use tauri::ipc::Channel;
-use tauri::{AppHandle, Manager, State};
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tauri::{AppHandle, State};
 
+use super::files::live_sftp;
 use crate::error::CommandResult;
 
 /// The system's default application for a file.
@@ -25,120 +19,6 @@ pub struct SystemOpener;
 impl Opener for SystemOpener {
     fn open(&self, path: &Path) -> Result<(), String> {
         tauri_plugin_opener::open_path(path, None::<&str>).map_err(|e| e.to_string())
-    }
-}
-
-/// A Host's files over its live Connection, with a new SFTP session for
-/// every request. An edit outlives File panel sessions and Connections (the
-/// panel closes its session while the Connection is down): after a
-/// reconnect, the next save or retry uploads over the new Connection.
-/// Saves are rare, so the extra channel per request is cheap.
-struct LiveHostFs {
-    app: AppHandle,
-    host_id: HostId,
-}
-
-impl LiveHostFs {
-    async fn sftp(&self) -> FsResult<SftpFs> {
-        let connections = self.app.state::<ConnectionManager>();
-        let connection = connections
-            .live(&self.host_id)
-            .await
-            .ok_or(FsError::NotConnected)?;
-        connection.open_sftp().await
-    }
-}
-
-impl RemoteFs for LiveHostFs {
-    fn home(&self) -> BoxFuture<'_, FsResult<String>> {
-        Box::pin(async move { self.sftp().await?.home().await })
-    }
-
-    fn canonicalize<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<String>> {
-        Box::pin(async move { self.sftp().await?.canonicalize(path).await })
-    }
-
-    fn list_dir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<Vec<FileEntry>>> {
-        Box::pin(async move { self.sftp().await?.list_dir(path).await })
-    }
-
-    fn stat<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileStat>> {
-        Box::pin(async move { self.sftp().await?.stat(path).await })
-    }
-
-    fn open_read<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileReader>> {
-        Box::pin(async move {
-            let fs = self.sftp().await?;
-            let file = fs.open_read(path).await?;
-            Ok(Box::new(WithSession { file, _fs: fs }) as FileReader)
-        })
-    }
-
-    fn create_write<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileWriter>> {
-        Box::pin(async move {
-            let fs = self.sftp().await?;
-            let file = fs.create_write(path).await?;
-            Ok(Box::new(WithSession { file, _fs: fs }) as FileWriter)
-        })
-    }
-
-    fn lstat<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileStat>> {
-        Box::pin(async move { self.sftp().await?.lstat(path).await })
-    }
-
-    fn create_dir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>> {
-        Box::pin(async move { self.sftp().await?.create_dir(path).await })
-    }
-
-    fn rename<'a>(&'a self, from: &'a str, to: &'a str) -> BoxFuture<'a, FsResult<()>> {
-        Box::pin(async move { self.sftp().await?.rename(from, to).await })
-    }
-
-    fn remove_file<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>> {
-        Box::pin(async move { self.sftp().await?.remove_file(path).await })
-    }
-
-    fn remove_dir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>> {
-        Box::pin(async move { self.sftp().await?.remove_dir(path).await })
-    }
-
-    fn set_permissions<'a>(&'a self, path: &'a str, mode: u32) -> BoxFuture<'a, FsResult<()>> {
-        Box::pin(async move { self.sftp().await?.set_permissions(path, mode).await })
-    }
-}
-
-/// An open remote file plus the SFTP session it was opened on, which closes
-/// its channel when dropped.
-struct WithSession<F> {
-    file: F,
-    _fs: SftpFs,
-}
-
-impl AsyncRead for WithSession<FileReader> {
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.file).poll_read(cx, buf)
-    }
-}
-
-impl AsyncWrite for WithSession<FileWriter> {
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.file).poll_write(cx, buf)
-    }
-
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.file).poll_flush(cx)
-    }
-
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.file).poll_shutdown(cx)
     }
 }
 
@@ -154,10 +34,9 @@ pub async fn edit_open(
     path: String,
     on_event: Channel<EditEvent>,
 ) -> CommandResult<EditId> {
-    let fs = Arc::new(LiveHostFs {
-        app: app.clone(),
-        host_id: host_id.clone(),
-    });
+    // An edit outlives File panel sessions and Connections: each save goes
+    // over whatever Connection the Host has then.
+    let fs = Arc::new(LiveHostFs::new(live_sftp(app, host_id.clone())));
     let id = editor
         .open(fs, &host_id, &path, move |event| {
             let _ = on_event.send(event);
