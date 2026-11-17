@@ -4,7 +4,7 @@ import { readCommandError } from "@/lib/ipc/connect";
 import * as forwardsIpc from "@/lib/ipc/forwards";
 import type { ForwardDraft, ForwardId, PortForward } from "@/lib/ipc/forwards";
 import * as hostsIpc from "@/lib/ipc/hosts";
-import type { Group, GroupId, Host, HostDraft, HostId, HostTree, ImportReport } from "@/lib/ipc/hosts";
+import type { Group, GroupId, Host, HostDraft, HostId, HostTree, ImportReport, ImportSummary } from "@/lib/ipc/hosts";
 import type { MoveOp } from "./hostTree";
 
 const ipc = { ...hostsIpc, ...forwardsIpc };
@@ -24,6 +24,8 @@ export type HostsApi = Pick<
   | "saveForward"
   | "deleteForward"
   | "importSshConfig"
+  | "exportHosts"
+  | "importHosts"
 >;
 
 export interface HostsState {
@@ -49,6 +51,10 @@ export interface HostsState {
   deleteForward(hostId: HostId, id: ForwardId): Promise<void>;
   /** Imports `~/.ssh/config` once (names already taken are skipped) and says what happened. */
   importSshConfig(): Promise<ImportReport>;
+  /** Writes the Host list to an export file (never credentials). */
+  exportHosts(path: string): Promise<void>;
+  /** Adds the Groups and Hosts of an export file; Hosts whose name is taken are skipped. */
+  importHosts(path: string): Promise<ImportSummary>;
 }
 
 /**
@@ -143,6 +149,16 @@ export function createHostsStore(api: HostsApi): StoreApi<HostsState> {
         const { tree, report } = await api.importSshConfig();
         set({ tree });
         return report;
+      },
+
+      exportHosts(path) {
+        return api.exportHosts(path);
+      },
+
+      async importHosts(path) {
+        const { summary, tree } = await api.importHosts(path);
+        set({ tree });
+        return summary;
       },
     };
   });

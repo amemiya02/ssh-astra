@@ -129,3 +129,21 @@ export interface ImportReport {
 export function importSshConfig(): Promise<{ tree: HostTree; report: ImportReport }> {
   return invoke("hosts_import_ssh_config");
 }
+
+/** What an import added and left out (`sshastra_core::hosts::ImportSummary`). */
+export interface ImportSummary {
+  hostsAdded: number;
+  groupsAdded: number;
+  /** Names of Hosts not added because a Host with that name already exists. */
+  skippedHosts: string[];
+}
+
+/** Writes the whole Host list (Groups, Hosts, Port forwards; never credentials) to an export file at `path`. */
+export function exportHosts(path: string): Promise<void> {
+  return invoke("hosts_export", { path });
+}
+
+/** Adds the Groups and Hosts of the export file at `path`; returns what changed and the new tree. */
+export function importHosts(path: string): Promise<{ summary: ImportSummary; tree: HostTree }> {
+  return invoke("hosts_import", { path });
+}
