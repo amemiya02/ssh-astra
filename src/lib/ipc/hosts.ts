@@ -95,3 +95,37 @@ export function deleteGroup(id: GroupId): Promise<HostTree> {
 export function moveGroup(id: GroupId, parentId: GroupId | null, index: number): Promise<HostTree> {
   return invoke<HostTree>("group_move", { id, parentId, index });
 }
+
+/** Why part of `~/.ssh/config` was not imported (`sshastra_core::ssh_config::ImportProblem`). */
+export type ImportProblem =
+  | { kind: "invalidValue"; directive: string; value: string }
+  | { kind: "unsupported"; directive: string }
+  | { kind: "includeFailed"; reason: string }
+  | { kind: "jumpChainConflict"; hop: string }
+  | { kind: "jumpHostLoop" }
+  | { kind: "jumpHostUnavailable"; hop: string };
+
+/** One thing an import left out (`sshastra_core::ssh_config::ImportIssue`). */
+export interface ImportIssue {
+  /** The Host alias, or the `Include` / `Match` line. */
+  entry: string;
+  /** The whole Host was left out, not just part of it. */
+  dropped: boolean;
+  problem: ImportProblem;
+}
+
+/** What an import did, by Host name (`sshastra_core::hosts::ImportReport`). */
+export interface ImportReport {
+  imported: string[];
+  /** Already saved under that name, so left alone. */
+  skipped: string[];
+  issues: ImportIssue[];
+}
+
+/**
+ * Imports the Hosts in `~/.ssh/config` (and its `Include`s) at the top level, skipping names
+ * already taken. Returns the whole Host list and the report.
+ */
+export function importSshConfig(): Promise<{ tree: HostTree; report: ImportReport }> {
+  return invoke("hosts_import_ssh_config");
+}
