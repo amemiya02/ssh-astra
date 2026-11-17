@@ -1,29 +1,43 @@
-import { SquareTerminal } from "lucide-react";
+import { useCallback, useReducer } from "react";
 import { useTranslation } from "react-i18next";
-import { LocalTerminalView } from "@/features/terminal/LocalTerminalView";
+import { FilePanel } from "@/features/files/FilePanel";
+import { HostsSidebar } from "@/features/hosts/HostsSidebar";
+import { AppShell } from "@/features/shell/AppShell";
+import { TabPanels } from "@/features/workspace/TabPanels";
+import { TabStrip } from "@/features/workspace/TabStrip";
+import { emptyTabs, tabsReducer, type TabsState } from "@/features/workspace/tabs";
+
+const newLocalTerminal = () => ({ id: crypto.randomUUID(), kind: "local-terminal" as const });
+
+function initialTabs(): TabsState {
+  return tabsReducer(emptyTabs, { type: "open", tab: newLocalTerminal() });
+}
 
 /**
- * Walking skeleton: a tab strip with a single Local terminal. Host list,
- * splits and the File panel arrive in later tickets.
+ * Composes the main window. Each slot of `AppShell` is owned by a feature:
+ * Host list (features/hosts), tabs (features/workspace), File panel (features/files).
  */
 export function App() {
   const { t } = useTranslation();
+  const [{ tabs, activeId }, dispatch] = useReducer(tabsReducer, undefined, initialTabs);
+
+  const openLocalTerminal = useCallback(() => dispatch({ type: "open", tab: newLocalTerminal() }), []);
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="flex h-10 shrink-0 items-end gap-1 border-b px-2">
-        <div
-          role="tab"
-          aria-selected="true"
-          className="bg-terminal-background text-foreground flex h-8 items-center gap-2 rounded-t-md border border-b-0 px-3 text-sm"
-        >
-          <SquareTerminal className="text-muted-foreground size-4" aria-hidden />
-          {t("tabs.localTerminal")}
-        </div>
-      </header>
-      <main className="bg-terminal-background min-h-0 flex-1">
-        <LocalTerminalView />
-      </main>
-    </div>
+    <AppShell
+      sidebar={<HostsSidebar onOpenLocalTerminal={openLocalTerminal} />}
+      tabs={
+        <TabStrip
+          tabs={tabs}
+          activeId={activeId}
+          onActivate={(id) => dispatch({ type: "activate", id })}
+          onClose={(id) => dispatch({ type: "close", id })}
+          onNewLocalTerminal={openLocalTerminal}
+        />
+      }
+      workspace={<TabPanels tabs={tabs} activeId={activeId} onNewLocalTerminal={openLocalTerminal} />}
+      filePanel={<FilePanel />}
+      status={<span>{t("status.noConnections")}</span>}
+    />
   );
 }

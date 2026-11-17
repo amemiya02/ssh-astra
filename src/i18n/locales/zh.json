@@ -2,8 +2,44 @@
   "app": {
     "name": "sshastra"
   },
+  "shell": {
+    "workspace": "终端",
+    "showSidebar": "显示 Host 列表",
+    "hideSidebar": "隐藏 Host 列表"
+  },
+  "hosts": {
+    "title": "Hosts",
+    "emptyTitle": "还没有 Host",
+    "emptyBody": "添加的 Host 会显示在这里，双击即可打开终端。"
+  },
   "tabs": {
-    "localTerminal": "本地终端"
+    "listLabel": "已打开的标签页",
+    "localTerminal": "本地终端",
+    "newLocalTerminal": "新建本地终端",
+    "close": "关闭 {{title}}"
+  },
+  "workspace": {
+    "emptyTitle": "没有打开的终端",
+    "emptyBody": "从列表中打开一个 Host，或在这台电脑上启动本地终端。"
+  },
+  "files": {
+    "title": "文件",
+    "empty": "在某个 Host 上打开终端后，可以在这里浏览它的文件。",
+    "show": "显示文件面板",
+    "hide": "隐藏文件面板",
+    "dockRight": "将文件面板停靠在右侧",
+    "dockBottom": "将文件面板停靠在下方",
+    "dockGroup": "文件面板位置"
+  },
+  "status": {
+    "noConnections": "没有连接"
+  },
+  "theme": {
+    "title": "外观",
+    "menuLabel": "外观：{{current}}",
+    "system": "跟随系统",
+    "light": "浅色",
+    "dark": "深色"
   },
   "terminal": {
     "starting": "正在启动 shell…",

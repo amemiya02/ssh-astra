@@ -2,8 +2,44 @@
   "app": {
     "name": "sshastra"
   },
+  "shell": {
+    "workspace": "Terminals",
+    "showSidebar": "Show Host list",
+    "hideSidebar": "Hide Host list"
+  },
+  "hosts": {
+    "title": "Hosts",
+    "emptyTitle": "No Hosts yet",
+    "emptyBody": "Hosts you add appear here. Double-click one to open a Terminal."
+  },
   "tabs": {
-    "localTerminal": "Local terminal"
+    "listLabel": "Open tabs",
+    "localTerminal": "Local terminal",
+    "newLocalTerminal": "New Local terminal",
+    "close": "Close {{title}}"
+  },
+  "workspace": {
+    "emptyTitle": "No open Terminals",
+    "emptyBody": "Open a Host from the list, or start a Local terminal on this computer."
+  },
+  "files": {
+    "title": "Files",
+    "empty": "Open a Terminal on a Host to browse its files here.",
+    "show": "Show File panel",
+    "hide": "Hide File panel",
+    "dockRight": "Dock File panel on the right",
+    "dockBottom": "Dock File panel at the bottom",
+    "dockGroup": "File panel position"
+  },
+  "status": {
+    "noConnections": "No Connections"
+  },
+  "theme": {
+    "title": "Appearance",
+    "menuLabel": "Appearance: {{current}}",
+    "system": "System",
+    "light": "Light",
+    "dark": "Dark"
   },
   "terminal": {
     "starting": "Starting shell…",
