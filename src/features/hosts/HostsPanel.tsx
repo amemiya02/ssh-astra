@@ -124,7 +124,35 @@ function HostForm({ onSaved, onCancel }: { onSaved: (host: Host) => void; onCanc
           {errors[field] && <span className="text-destructive">{t(`hosts.errors.${errors[field]}`)}</span>}
         </label>
       ))}
-      <p className="text-muted-foreground text-xs">{t("hosts.passwordNote")}</p>
+      <label className="block text-xs">
+        <span className="text-muted-foreground">{t("hosts.fields.auth")}</span>
+        <select
+          className="bg-background focus-visible:outline-ring mt-0.5 w-full rounded-md border px-2 py-1 text-sm focus-visible:outline-2"
+          value={values.authType}
+          onChange={(event) =>
+            setValues((v) => ({ ...v, authType: event.target.value === "key" ? "key" : "password" }))
+          }
+        >
+          <option value="password">{t("hosts.auth.password")}</option>
+          <option value="key">{t("hosts.auth.key")}</option>
+        </select>
+      </label>
+      {values.authType === "key" && (
+        <label className="block text-xs">
+          <span className="text-muted-foreground">{t("hosts.fields.identityFile")}</span>
+          <input
+            className="bg-background focus-visible:outline-ring mt-0.5 w-full rounded-md border px-2 py-1 font-mono text-sm focus-visible:outline-2"
+            value={values.identityFile}
+            placeholder="~/.ssh/id_ed25519"
+            autoCapitalize="off"
+            spellCheck={false}
+            aria-invalid={errors.identityFile ? true : undefined}
+            onChange={(event) => setValues((v) => ({ ...v, identityFile: event.target.value }))}
+          />
+          {errors.identityFile && <span className="text-destructive">{t(`hosts.errors.${errors.identityFile}`)}</span>}
+        </label>
+      )}
+      <p className="text-muted-foreground text-xs">{t("hosts.authNote")}</p>
       {saveError && (
         <p role="alert" className="text-destructive text-xs">
           {saveError}

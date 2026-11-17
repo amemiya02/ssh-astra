@@ -2,16 +2,23 @@
 //! [`Connection`] per Host; every remote Terminal (and, later, File panel and
 //! Port forward) on that Host runs over it.
 //!
-//! Decisions that need the user (trusting a new host key, typing a password)
-//! are delegated to a [`Prompter`], which the app implements with UI dialogs.
-//! A changed host key is never put to the user: the connection is refused.
+//! Decisions that need the user (trusting a new host key, typing a password
+//! or key passphrase, answering keyboard-interactive questions) are delegated
+//! to a [`Prompter`], which the app implements with UI dialogs. A changed host
+//! key is never put to the user: the connection is refused.
+//!
+//! Authentication tries, as far as the server allows: ssh-agent, the Host's
+//! private key file, password, keyboard-interactive (see `auth`).
 
+mod auth;
 mod shell;
 
+pub use auth::Agent;
 pub use shell::RemoteShell;
 
 use std::collections::HashMap;
 use std::future::Future;
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
@@ -26,7 +33,6 @@ use crate::terminal::{TerminalEvent, TerminalSize};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
-const PASSWORD_ATTEMPTS: usize = 3;
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -49,12 +55,56 @@ pub struct PasswordPrompt {
     pub retry: bool,
 }
 
+/// A request for the passphrase of an encrypted private key file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PassphrasePrompt {
+    pub key_path: PathBuf,
+    /// The previous passphrase was wrong.
+    pub retry: bool,
+}
+
+/// One round of keyboard-interactive authentication (e.g. an OTP code): the
+/// server's questions, to be answered in order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyboardInteractivePrompt {
+    pub host: String,
+    pub user: String,
+    /// May be empty.
+    pub name: String,
+    /// May be empty.
+    pub instructions: String,
+    /// Never empty: rounds without questions are answered without asking.
+    pub prompts: Vec<KeyboardInteractiveQuestion>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyboardInteractiveQuestion {
+    pub text: String,
+    /// Whether the answer may be shown while typed (false for secrets).
+    pub echo: bool,
+}
+
 /// Asks the user to decide during a connect. Implemented by the UI layer.
+/// Every `None` answer means the user cancelled, which cancels the connect.
 pub trait Prompter: Send + Sync {
     /// Should this new host key be trusted (and written to known_hosts)?
     fn confirm_host_key(&self, prompt: HostKeyPrompt) -> BoxFuture<'_, bool>;
-    /// The password, or `None` if the user cancelled.
+    /// The password.
     fn password(&self, prompt: PasswordPrompt) -> BoxFuture<'_, Option<String>>;
+    /// The passphrase of an encrypted private key.
+    fn passphrase(&self, prompt: PassphrasePrompt) -> BoxFuture<'_, Option<String>> {
+        let _ = prompt;
+        Box::pin(async { None })
+    }
+    /// Answers to the server's keyboard-interactive questions, one per
+    /// question.
+    fn keyboard_interactive(
+        &self,
+        prompt: KeyboardInteractivePrompt,
+    ) -> BoxFuture<'_, Option<Vec<String>>> {
+        let _ = prompt;
+        Box::pin(async { None })
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -85,8 +135,21 @@ pub enum ConnectError {
     HostCertificateUnsupported,
     #[error(transparent)]
     KnownHosts(#[from] KnownHostsError),
+    /// Password or keyboard-interactive answers were rejected.
     #[error("authentication failed")]
     AuthenticationFailed,
+    #[error("cannot use the private key {}: {reason}", path.display())]
+    KeyUnreadable { path: PathBuf, reason: String },
+    #[error("wrong passphrase for the private key {}", path.display())]
+    KeyPassphraseIncorrect { path: PathBuf },
+    #[error("the server rejected the private key {}", path.display())]
+    KeyRejected { path: PathBuf },
+    #[error("the server rejected every key in ssh-agent")]
+    AgentKeysRejected,
+    /// The server allows no method this Host can use (e.g. it wants a key
+    /// and none is configured or in the agent).
+    #[error("no usable authentication method (the server accepts: {})", methods.join(", "))]
+    NoSupportedMethod { methods: Vec<String> },
     #[error("cancelled")]
     Cancelled,
     #[error("SSH error: {0}")]
@@ -104,11 +167,13 @@ impl From<russh::Error> for ConnectError {
 /// drops it.
 pub struct ConnectionManager {
     known_hosts: KnownHosts,
+    agent: Agent,
     config: Arc<client::Config>,
     connections: Mutex<HashMap<HostId, Weak<Connection>>>,
 }
 
 impl ConnectionManager {
+    /// A manager that does not use any ssh-agent; see [`Self::with_agent`].
     pub fn new(known_hosts: KnownHosts) -> Self {
         let config = client::Config {
             keepalive_interval: Some(KEEPALIVE_INTERVAL),
@@ -119,9 +184,17 @@ impl ConnectionManager {
         };
         Self {
             known_hosts,
+            agent: Agent::None,
             config: Arc::new(config),
             connections: Mutex::default(),
         }
+    }
+
+    /// Offers the keys of `agent` before any other method. The app passes
+    /// [`Agent::System`].
+    pub fn with_agent(mut self, agent: Agent) -> Self {
+        self.agent = agent;
+        self
     }
 
     /// The live Connection to `host`, or a new one: verifies the host key
@@ -178,7 +251,7 @@ impl ConnectionManager {
             }
         };
 
-        authenticate_with_password(&mut handle, host, prompter.as_ref()).await?;
+        auth::authenticate(&mut handle, host, &self.agent, prompter.as_ref()).await?;
         Ok(Connection { handle })
     }
 
@@ -187,32 +260,6 @@ impl ConnectionManager {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
-}
-
-async fn authenticate_with_password(
-    handle: &mut Handle<ClientHandler>,
-    host: &Host,
-    prompter: &dyn Prompter,
-) -> Result<(), ConnectError> {
-    for attempt in 0..PASSWORD_ATTEMPTS {
-        let prompt = PasswordPrompt {
-            host: host.address.clone(),
-            user: host.user.clone(),
-            retry: attempt > 0,
-        };
-        let password = prompter
-            .password(prompt)
-            .await
-            .ok_or(ConnectError::Cancelled)?;
-        if handle
-            .authenticate_password(&host.user, password)
-            .await?
-            .success()
-        {
-            return Ok(());
-        }
-    }
-    Err(ConnectError::AuthenticationFailed)
 }
 
 /// One live, authenticated SSH transport to a Host.

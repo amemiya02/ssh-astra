@@ -7,6 +7,11 @@
 #             a Jump host.
 #   internal  on the private network only: reachable only through `jump`
 #             (as `internal:22`).
+#   keyonly   published: accepts public keys only (no password, no
+#             keyboard-interactive).
+#   kbdint    published: keyboard-interactive (PAM asks for the password)
+#             instead of the password method, either alone or as the second
+#             step after a public key ("partial success").
 #
 # Add services here (e.g. a TCP echo server for Port forward tests) rather
 # than starting containers from individual tests.
@@ -28,6 +33,25 @@ services:
   internal:
     <<: *sshd
     networks: [private]
+  keyonly:
+    <<: *sshd
+    ports: ["127.0.0.1::22"]
+    networks: [public]
+    command: [/usr/sbin/sshd, -D, -e, -o, PasswordAuthentication=no, -o, KbdInteractiveAuthentication=no]
+  kbdint:
+    <<: *sshd
+    ports: ["127.0.0.1::22"]
+    networks: [public]
+    command:
+      - /usr/sbin/sshd
+      - -D
+      - -e
+      - -o
+      - PasswordAuthentication=no
+      - -o
+      - KbdInteractiveAuthentication=yes
+      - -o
+      - AuthenticationMethods=publickey,keyboard-interactive keyboard-interactive
 
 networks:
   public: {}

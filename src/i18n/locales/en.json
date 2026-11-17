@@ -21,15 +21,21 @@
       "name": "Name",
       "address": "Address",
       "port": "Port",
-      "user": "User"
+      "user": "User",
+      "auth": "Authentication",
+      "identityFile": "Private key file"
     },
     "errors": {
       "required": "Required",
       "port": "Enter a port from 1 to 65535"
     },
-    "passwordNote": "Password login. You will be asked for the password each time you connect.",
     "save": "Save",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "auth": {
+      "password": "Password",
+      "key": "Private key"
+    },
+    "authNote": "Keys in ssh-agent are tried first, then the private key file, then the password or the server's own questions (such as a one-time code). Passwords and passphrases are asked for each time."
   },
   "connect": {
     "cancel": "Cancel",
@@ -59,7 +65,20 @@
       "hostKeyRevoked": "The host key is revoked. Connection blocked.",
       "authenticationFailed": "Authentication failed.",
       "cancelled": "Connection cancelled.",
-      "generic": "Could not connect."
+      "generic": "Could not connect.",
+      "keyUnreadable": "Could not use the private key {{keyPath}}: {{reason}}",
+      "keyPassphraseIncorrect": "Wrong passphrase for the private key {{keyPath}}.",
+      "keyRejected": "The server rejected the private key {{keyPath}}.",
+      "agentKeysRejected": "The server rejected every key in ssh-agent.",
+      "noSupportedMethod": "No usable sign-in method. The server accepts: {{methods}}."
+    },
+    "passphrase": {
+      "title": "Passphrase for the private key",
+      "label": "Passphrase",
+      "retry": "Wrong passphrase. Try again."
+    },
+    "keyboardInteractive": {
+      "title": "{{user}}@{{host}} asks"
     }
   }
 }

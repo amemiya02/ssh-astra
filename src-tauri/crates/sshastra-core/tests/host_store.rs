@@ -153,6 +153,45 @@ fn the_file_is_versioned_json() {
 }
 
 #[test]
+fn a_key_host_keeps_its_key_file_path_but_never_the_key() {
+    let (_dir, path) = store_path();
+    let mut store = HostStore::open(&path).unwrap();
+    let mut with_key = draft("web");
+    with_key.auth = HostAuth::Key {
+        identity_file: " ~/.ssh/id_ed25519 ".into(),
+    };
+    let saved = store.upsert(None, with_key).unwrap();
+
+    assert_eq!(
+        saved.auth,
+        HostAuth::Key {
+            identity_file: "~/.ssh/id_ed25519".into()
+        }
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(
+        json["hosts"][0]["auth"],
+        serde_json::json!({ "type": "key", "identityFile": "~/.ssh/id_ed25519" })
+    );
+    assert_eq!(HostStore::open(&path).unwrap().list(), [saved]);
+}
+
+#[test]
+fn a_key_host_needs_a_key_file() {
+    let (_dir, path) = store_path();
+    let mut store = HostStore::open(&path).unwrap();
+    let mut without = draft("web");
+    without.auth = HostAuth::Key {
+        identity_file: "  ".into(),
+    };
+    assert!(matches!(
+        store.upsert(None, without),
+        Err(HostStoreError::Invalid("identityFile"))
+    ));
+}
+
+#[test]
 fn a_corrupt_file_is_reported_and_left_untouched() {
     let (_dir, path) = store_path();
     fs::create_dir_all(path.parent().unwrap()).unwrap();

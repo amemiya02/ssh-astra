@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { emptyHostForm, hostFormFrom, parseHostForm } from "./hostForm";
 
-const valid = { name: " web ", address: " 10.0.0.5 ", port: "2222", user: " deploy " };
+const valid = {
+  name: " web ",
+  address: " 10.0.0.5 ",
+  port: "2222",
+  user: " deploy ",
+  authType: "password" as const,
+  identityFile: "",
+};
 
 describe("parseHostForm", () => {
   it("turns the form into a trimmed HostDraft with password auth", () => {
@@ -17,10 +24,24 @@ describe("parseHostForm", () => {
   });
 
   it("reports every missing or invalid field", () => {
-    const result = parseHostForm({ name: "", address: " ", port: "70000", user: "" });
+    const result = parseHostForm({ ...valid, name: "", address: " ", port: "70000", user: "" });
     expect(result).toEqual({ ok: false, errors: { name: "required", address: "required", user: "required", port: "port" } });
     expect(parseHostForm({ ...valid, port: "22a" })).toEqual({ ok: false, errors: { port: "port" } });
     expect(parseHostForm({ ...valid, port: "0" })).toEqual({ ok: false, errors: { port: "port" } });
+  });
+
+  it("keeps a trimmed private key path for key auth", () => {
+    const result = parseHostForm({ ...valid, authType: "key", identityFile: " ~/.ssh/id_ed25519 " });
+    expect(result.ok && result.draft.auth).toEqual({ type: "key", identityFile: "~/.ssh/id_ed25519" });
+  });
+
+  it("requires the key path only for key auth", () => {
+    expect(parseHostForm({ ...valid, authType: "key", identityFile: " " })).toEqual({
+      ok: false,
+      errors: { identityFile: "required" },
+    });
+    const password = parseHostForm({ ...valid, identityFile: "~/.ssh/ignored" });
+    expect(password.ok && password.draft.auth).toEqual({ type: "password" });
   });
 });
 
@@ -28,7 +49,22 @@ describe("hostFormFrom", () => {
   it("round-trips a saved Host through the form", () => {
     const host = { id: "1", name: "db", address: "db.local", port: 22, user: "root", auth: { type: "password" as const } };
     const form = hostFormFrom(host);
-    expect(form).toEqual({ name: "db", address: "db.local", port: "22", user: "root" });
+    expect(form).toEqual({
+      name: "db",
+      address: "db.local",
+      port: "22",
+      user: "root",
+      authType: "password",
+      identityFile: "",
+    });
+    expect(parseHostForm(form)).toEqual({ ok: true, draft: { ...host, id: undefined } });
+  });
+
+  it("round-trips a key Host through the form", () => {
+    const auth = { type: "key" as const, identityFile: "/keys/id_rsa" };
+    const host = { id: "2", name: "db", address: "db.local", port: 22, user: "root", auth };
+    const form = hostFormFrom(host);
+    expect(form).toMatchObject({ authType: "key", identityFile: "/keys/id_rsa" });
     expect(parseHostForm(form)).toEqual({ ok: true, draft: { ...host, id: undefined } });
   });
 

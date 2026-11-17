@@ -3,8 +3,12 @@ import { invoke } from "@tauri-apps/api/core";
 /** Mirrors `sshastra_core::hosts::HostId`. */
 export type HostId = string;
 
-/** Mirrors `sshastra_core::hosts::HostAuth`. */
-export type HostAuth = { type: "password" };
+/**
+ * Mirrors `sshastra_core::hosts::HostAuth`. Either way a connect tries
+ * ssh-agent, then the key file (if any), then password, then
+ * keyboard-interactive, as far as the server allows.
+ */
+export type HostAuth = { type: "password" } | { type: "key"; identityFile: string };
 
 /** A Host's editable fields (`sshastra_core::hosts::HostDraft`). */
 export interface HostDraft {
