@@ -32,6 +32,9 @@ pub enum Service {
     Ssh,
     /// A Jump host that can also reach `internal:22`.
     Jump,
+    /// A target nothing else connects to, so a test can count the TCP
+    /// connections it sees. Tests using it must not run concurrently.
+    Counted,
 }
 
 impl Service {
@@ -39,6 +42,7 @@ impl Service {
         match self {
             Service::Ssh => "ssh",
             Service::Jump => "jump",
+            Service::Counted => "counted",
         }
     }
 }
@@ -46,6 +50,7 @@ impl Service {
 /// How to reach one running OpenSSH server.
 #[derive(Debug, Clone)]
 pub struct Sshd {
+    pub service: Service,
     pub host: String,
     pub port: u16,
     pub user: &'static str,
@@ -85,12 +90,40 @@ pub fn sshd(service: Service) -> Option<Sshd> {
     let host_key = std::fs::read_to_string(sshd_dir().join("ssh_host_ed25519_key.pub")).unwrap();
 
     Some(Sshd {
+        service,
         host: host.to_owned(),
         port: port.parse().unwrap(),
         user: USER,
         password: PASSWORD,
         host_key: HostKey::from_openssh(&host_key).unwrap(),
     })
+}
+
+impl Sshd {
+    /// How many established TCP connections the server has on port 22, as
+    /// its kernel sees them (`/proc/net/tcp{,6}` inside the container).
+    pub fn established_connections(&self) -> usize {
+        let tables = compose(&[
+            "exec",
+            "-T",
+            self.service.name(),
+            "cat",
+            "/proc/net/tcp",
+            "/proc/net/tcp6",
+        ])
+        .unwrap_or_else(|e| panic!("cannot read {}'s sockets: {e}", self.service.name()));
+        tables
+            .lines()
+            .filter_map(|line| {
+                let mut fields = line.split_whitespace();
+                let local = fields.nth(1)?;
+                let state = fields.nth(1)?;
+                Some((local, state))
+            })
+            // Local port 22 (hex 0016), state 01 = ESTABLISHED.
+            .filter(|(local, state)| local.ends_with(":0016") && *state == "01")
+            .count()
+    }
 }
 
 fn compose_up() -> Result<(), String> {

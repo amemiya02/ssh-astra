@@ -7,6 +7,9 @@
 #             a Jump host.
 #   internal  on the private network only: reachable only through `jump`
 #             (as `internal:22`).
+#   counted   reachable from the test process like `ssh`, but only the
+#             Connection lifecycle tests use it, so they can count the TCP
+#             connections it sees (`Sshd::established_connections`).
 #
 # Add services here (e.g. a TCP echo server for Port forward tests) rather
 # than starting containers from individual tests.
@@ -28,6 +31,10 @@ services:
   internal:
     <<: *sshd
     networks: [private]
+  counted:
+    <<: *sshd
+    ports: ["127.0.0.1::22"]
+    networks: [public]
 
 networks:
   public: {}

@@ -101,12 +101,17 @@ impl From<russh::Error> for ConnectError {
 
 /// Hands out one shared [`Connection`] per Host. A Connection lives while
 /// anything (a Terminal, …) holds it, and disconnects when the last holder
-/// drops it.
+/// drops it. Concurrent connects to the same Host coalesce: the first one
+/// connects, the others wait for it and share its Connection.
 pub struct ConnectionManager {
     known_hosts: KnownHosts,
     config: Arc<client::Config>,
-    connections: Mutex<HashMap<HostId, Weak<Connection>>>,
+    slots: Mutex<HashMap<HostId, Arc<Slot>>>,
 }
+
+/// A Host's Connection, if any. Its lock is held while connecting, so a
+/// second connect to the Host waits for the first instead of racing it.
+type Slot = tokio::sync::Mutex<Weak<Connection>>;
 
 impl ConnectionManager {
     pub fn new(known_hosts: KnownHosts) -> Self {
@@ -120,32 +125,53 @@ impl ConnectionManager {
         Self {
             known_hosts,
             config: Arc::new(config),
-            connections: Mutex::default(),
+            slots: Mutex::default(),
         }
     }
 
     /// The live Connection to `host`, or a new one: verifies the host key
     /// against known_hosts and authenticates, asking `prompter` as needed.
+    /// While another connect to `host` is in flight this waits for it and
+    /// shares its Connection; if that one fails, this one tries itself.
     pub async fn connect(
         &self,
         host: &Host,
         prompter: Arc<dyn Prompter>,
     ) -> Result<Arc<Connection>, ConnectError> {
-        if let Some(live) = self.live(&host.id) {
+        self.shared(&host.id, || self.establish(host, prompter))
+            .await
+    }
+
+    /// The live Connection in `id`'s slot, or the one `establish` opens,
+    /// which is then kept there for later connects.
+    async fn shared<F, Fut>(
+        &self,
+        id: &HostId,
+        establish: F,
+    ) -> Result<Arc<Connection>, ConnectError>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<Connection, ConnectError>>,
+    {
+        let slot = self.slot(id);
+        let mut current = slot.lock().await;
+        if let Some(live) = current.upgrade().filter(|c| !c.handle.is_closed()) {
             return Ok(live);
         }
-        let connection = Arc::new(self.establish(host, prompter).await?);
-        let mut connections = self.lock();
-        connections.retain(|_, weak| weak.strong_count() > 0);
-        connections.insert(host.id.clone(), Arc::downgrade(&connection));
+        let connection = Arc::new(establish().await?);
+        *current = Arc::downgrade(&connection);
         Ok(connection)
     }
 
-    fn live(&self, id: &HostId) -> Option<Arc<Connection>> {
-        self.lock()
-            .get(id)
-            .and_then(Weak::upgrade)
-            .filter(|c| !c.handle.is_closed())
+    /// `id`'s slot, created on first use. Slots of Hosts with no Connection
+    /// and no connect in flight are dropped on the way.
+    fn slot(&self, id: &HostId) -> Arc<Slot> {
+        let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
+        slots.retain(|_, slot| {
+            Arc::strong_count(slot) > 1
+                || slot.try_lock().map_or(true, |weak| weak.strong_count() > 0)
+        });
+        Arc::clone(slots.entry(id.clone()).or_default())
     }
 
     async fn establish(
@@ -180,12 +206,6 @@ impl ConnectionManager {
 
         authenticate_with_password(&mut handle, host, prompter.as_ref()).await?;
         Ok(Connection { handle })
-    }
-
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<HostId, Weak<Connection>>> {
-        self.connections
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
 
