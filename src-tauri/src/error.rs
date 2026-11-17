@@ -55,6 +55,13 @@ impl From<HostStoreError> for CommandError {
                 Self::new("invalid", &err).with_details(json!({ "field": field }))
             }
             NotFound(_) => Self::new("notFound", &err),
+            JumpHostCycle(names) => {
+                let details = json!({ "hosts": names });
+                Self::new("jumpHostCycle", &err).with_details(details)
+            }
+            InUseAsJumpHost { by } => {
+                Self::new("inUseAsJumpHost", &err).with_details(json!({ "by": by }))
+            }
         }
     }
 }
@@ -75,6 +82,19 @@ impl From<SettingsError> for CommandError {
 impl From<ConnectError> for CommandError {
     fn from(err: ConnectError) -> Self {
         use ConnectError::*;
+        // A failing Jump host keeps the kind (and details) of what went wrong
+        // there, plus `details.jumpHost` naming the hop.
+        let err = match err {
+            JumpHost { name, source } => {
+                let message = format!("jump host {name}: {source}");
+                let mut inner = Self::from(*source);
+                let mut details = inner.details.take().unwrap_or_else(|| json!({}));
+                details["jumpHost"] = json!(name);
+                inner.message = message;
+                return inner.with_details(details);
+            }
+            other => other,
+        };
         match &err {
             Unreachable(_) => Self::new("unreachable", &err),
             TimedOut => Self::new("timedOut", &err),
@@ -100,10 +120,42 @@ impl From<ConnectError> for CommandError {
             HostCertificateUnsupported => Self::new("unsupported", &err),
             KnownHosts(_) => Self::new("knownHosts", &err),
             AuthenticationFailed => Self::new("authenticationFailed", &err),
+            KeyUnreadable { path, reason } => Self::new("keyUnreadable", &err)
+                .with_details(json!({ "keyPath": path.display().to_string(), "reason": reason })),
+            KeyPassphraseIncorrect { path } => Self::new("keyPassphraseIncorrect", &err)
+                .with_details(json!({ "keyPath": path.display().to_string() })),
+            KeyRejected { path } => Self::new("keyRejected", &err)
+                .with_details(json!({ "keyPath": path.display().to_string() })),
+            AgentKeysRejected => Self::new("agentKeysRejected", &err),
+            NoSupportedMethod { methods } => Self::new("noSupportedMethod", &err)
+                .with_details(json!({ "methods": methods.join(", ") })),
             Cancelled => Self::new("cancelled", &err),
             Protocol(_) => Self::new("protocol", &err),
+            JumpHost { .. } => unreachable!("unwrapped above"),
         }
     }
 }
 
 pub type CommandResult<T> = Result<T, CommandError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_failing_jump_host_keeps_the_kind_and_names_the_hop() {
+        let err = ConnectError::JumpHost {
+            name: "bastion".into(),
+            source: Box::new(ConnectError::HostKeyRevoked {
+                fingerprint: "SHA256:x".into(),
+            }),
+        };
+
+        let json = serde_json::to_value(CommandError::from(err)).unwrap();
+
+        assert_eq!(json["kind"], "hostKeyRevoked");
+        assert_eq!(json["details"]["jumpHost"], "bastion");
+        assert_eq!(json["details"]["fingerprint"], "SHA256:x");
+        assert!(json["message"].as_str().unwrap().contains("bastion"));
+    }
+}

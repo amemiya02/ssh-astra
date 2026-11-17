@@ -7,7 +7,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
-use sshastra_core::ssh::{BoxFuture, HostKeyPrompt, PasswordPrompt, Prompter};
+use sshastra_core::ssh::{
+    BoxFuture, HostKeyPrompt, KeyboardInteractivePrompt, PassphrasePrompt, PasswordPrompt, Prompter,
+};
 use tauri::ipc::Channel;
 use tokio::sync::oneshot;
 
@@ -32,6 +34,27 @@ pub enum PromptRequest {
         user: String,
         retry: bool,
     },
+    Passphrase {
+        id: u64,
+        key_path: String,
+        retry: bool,
+    },
+    KeyboardInteractive {
+        id: u64,
+        host: String,
+        user: String,
+        name: String,
+        instructions: String,
+        prompts: Vec<KeyboardInteractiveField>,
+    },
+}
+
+/// One question of a keyboard-interactive round.
+#[derive(Clone, Serialize)]
+pub struct KeyboardInteractiveField {
+    pub text: String,
+    /// Show the answer while typing (false for secrets).
+    pub echo: bool,
 }
 
 /// The user's reply, sent back with `prompt_answer`.
@@ -40,6 +63,8 @@ pub enum PromptRequest {
 pub enum PromptAnswer {
     HostKey { trust: bool },
     Password { password: Option<String> },
+    Passphrase { passphrase: Option<String> },
+    KeyboardInteractive { answers: Option<Vec<String>> },
 }
 
 /// Prompts waiting for an answer, shared by every connect in progress.
@@ -118,6 +143,55 @@ impl Prompter for ChannelPrompter {
                 .await;
             match answer {
                 Some(PromptAnswer::Password { password }) => password,
+                _ => None,
+            }
+        })
+    }
+
+    fn passphrase(&self, prompt: PassphrasePrompt) -> BoxFuture<'_, Option<String>> {
+        Box::pin(async move {
+            let answer = self
+                .ask(|id| PromptRequest::Passphrase {
+                    id,
+                    key_path: prompt.key_path.display().to_string(),
+                    retry: prompt.retry,
+                })
+                .await;
+            match answer {
+                Some(PromptAnswer::Passphrase { passphrase }) => passphrase,
+                _ => None,
+            }
+        })
+    }
+
+    fn keyboard_interactive(
+        &self,
+        prompt: KeyboardInteractivePrompt,
+    ) -> BoxFuture<'_, Option<Vec<String>>> {
+        Box::pin(async move {
+            let count = prompt.prompts.len();
+            let answer = self
+                .ask(|id| PromptRequest::KeyboardInteractive {
+                    id,
+                    host: prompt.host,
+                    user: prompt.user,
+                    name: prompt.name,
+                    instructions: prompt.instructions,
+                    prompts: prompt
+                        .prompts
+                        .into_iter()
+                        .map(|q| KeyboardInteractiveField {
+                            text: q.text,
+                            echo: q.echo,
+                        })
+                        .collect(),
+                })
+                .await;
+            match answer {
+                // One answer per question, or the server would reject the round.
+                Some(PromptAnswer::KeyboardInteractive {
+                    answers: Some(answers),
+                }) if answers.len() == count => Some(answers),
                 _ => None,
             }
         })

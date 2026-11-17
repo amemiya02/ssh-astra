@@ -11,6 +11,9 @@ const alertClass =
  */
 export function ConnectErrorPanel({ error }: { error: CommandError }) {
   const { t } = useTranslation();
+  // Set when a Jump host on the way failed rather than the Host itself.
+  const jumpHost = error.details?.jumpHost;
+  const hop = jumpHost === undefined ? null : <p className="mt-1.5 font-medium">{t("connect.atJumpHost", { name: jumpHost })}</p>;
 
   if (error.kind === "hostKeyMismatch" && error.details) {
     const d = error.details;
@@ -20,6 +23,7 @@ export function ConnectErrorPanel({ error }: { error: CommandError }) {
           <TriangleAlert className="size-4 shrink-0" aria-hidden />
           {t("connect.mismatch.title")}
         </h2>
+        {hop}
         <p className="mt-1.5">{t("connect.mismatch.body", { host: d.host })}</p>
         <dl className="mt-3 grid gap-2">
           <div className="bg-muted rounded-lg border px-3.5 py-3">
@@ -38,15 +42,30 @@ export function ConnectErrorPanel({ error }: { error: CommandError }) {
     );
   }
 
-  const known = ["unreachable", "timedOut", "hostKeyDeclined", "hostKeyRevoked", "authenticationFailed", "cancelled"] as const;
+  const known = [
+    "unreachable",
+    "timedOut",
+    "hostKeyDeclined",
+    "hostKeyRevoked",
+    "authenticationFailed",
+    "cancelled",
+    "keyUnreadable",
+    "keyPassphraseIncorrect",
+    "keyRejected",
+    "agentKeysRejected",
+    "noSupportedMethod",
+  ] as const;
   const kind = known.find((k) => k === error.kind);
+  // Authentication errors carry `keyPath`, `reason` or `methods` for their copy.
+  const details = error.details ?? {};
   return (
     <div role="alert" className={alertClass}>
       <p className="text-destructive flex items-center gap-2 font-semibold">
         <CircleAlert className="size-4 shrink-0" aria-hidden />
-        {kind ? t(`connect.errors.${kind}`) : t("connect.errors.generic")}
+        <span className="break-all">{kind ? t(`connect.errors.${kind}`, details) : t("connect.errors.generic")}</span>
       </p>
-      <p className="text-muted-foreground mt-1">{error.message}</p>
+      {hop}
+      <p className="text-muted-foreground mt-1 break-all">{error.message}</p>
     </div>
   );
 }

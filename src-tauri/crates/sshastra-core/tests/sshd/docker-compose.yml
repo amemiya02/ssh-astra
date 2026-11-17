@@ -7,29 +7,79 @@
 #             a Jump host.
 #   internal  on the private network only: reachable only through `jump`
 #             (as `internal:22`).
+#   jump2     on the private and the deep network: a second Jump host,
+#             reached through `jump` (as `jump2:22`).
+#   deep      on the deep network only: reachable only through `jump` then
+#             `jump2` (as `deep:22`).
+#   keyonly   published: accepts public keys only (no password, no
+#             keyboard-interactive).
+#   kbdint    published: keyboard-interactive (PAM asks for the password)
+#             instead of the password method, either alone or as the second
+#             step after a public key ("partial success").
+#
+# Each server's hostname is its service name, so a test can tell where a
+# shell landed.
 #
 # Add services here (e.g. a TCP echo server for Port forward tests) rather
 # than starting containers from individual tests.
-name: sshastra-it
+#
+# Project and image tag come from SSHASTRA_IT_PROJECT, which the test harness
+# sets per checkout (`sshastra-it-<path hash>`) so parallel worktrees don't
+# share services.
+name: ${SSHASTRA_IT_PROJECT:-sshastra-it}
 
 x-sshd: &sshd
   build: .
-  image: sshastra-it-sshd
+  image: ${SSHASTRA_IT_PROJECT:-sshastra-it}-sshd
 
 services:
   ssh:
     <<: *sshd
+    hostname: ssh
     ports: ["127.0.0.1::22"]
     networks: [public]
   jump:
     <<: *sshd
+    hostname: jump
     ports: ["127.0.0.1::22"]
     networks: [public, private]
   internal:
     <<: *sshd
+    hostname: internal
     networks: [private]
+  jump2:
+    <<: *sshd
+    hostname: jump2
+    networks: [private, deep]
+  deep:
+    <<: *sshd
+    hostname: deep
+    networks: [deep]
+  keyonly:
+    <<: *sshd
+    hostname: keyonly
+    ports: ["127.0.0.1::22"]
+    networks: [public]
+    command: [/usr/sbin/sshd, -D, -e, -o, PasswordAuthentication=no, -o, KbdInteractiveAuthentication=no]
+  kbdint:
+    <<: *sshd
+    hostname: kbdint
+    ports: ["127.0.0.1::22"]
+    networks: [public]
+    command:
+      - /usr/sbin/sshd
+      - -D
+      - -e
+      - -o
+      - PasswordAuthentication=no
+      - -o
+      - KbdInteractiveAuthentication=yes
+      - -o
+      - AuthenticationMethods=publickey,keyboard-interactive keyboard-interactive
 
 networks:
   public: {}
   private:
+    internal: true
+  deep:
     internal: true

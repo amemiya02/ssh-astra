@@ -11,7 +11,7 @@ use std::sync::Arc;
 use sshastra_core::hosts::HostStore;
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::settings::SettingsStore;
-use sshastra_core::ssh::ConnectionManager;
+use sshastra_core::ssh::{Agent, ConnectionManager};
 use sshastra_core::terminal::TerminalRegistry;
 use tauri::Manager;
 use tauri_plugin_window_state::StateFlags;
@@ -46,7 +46,7 @@ pub fn run() {
                 SettingsStore::open(config_dir.join("settings.json")).map_err(Into::into);
             app.manage(HostsState::new(hosts));
             app.manage(SettingsState::new(settings));
-            app.manage(ConnectionManager::new(known_hosts));
+            app.manage(ConnectionManager::new(known_hosts).with_agent(Agent::System));
             Ok(())
         })
         .manage(TerminalRegistry::default())

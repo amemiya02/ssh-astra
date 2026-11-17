@@ -12,20 +12,28 @@
     "emptyTitle": "还没有 Host",
     "emptyBody": "添加的 Host 会显示在这里，双击即可打开终端。",
     "new": "新建 Host",
-    "newDescription": "使用密码登录，每次连接时输入密码。",
+    "newDescription": "依次尝试 ssh-agent 中的密钥、私钥文件、密码或服务器的问题（例如一次性验证码）。密码和私钥口令在每次连接时输入。",
     "openHint": "双击连接",
     "fields": {
       "name": "名称",
       "address": "地址",
       "port": "端口",
-      "user": "用户名"
+      "user": "用户名",
+      "jumpHost": "跳板机",
+      "auth": "认证方式",
+      "identityFile": "私钥文件"
     },
+    "noJumpHost": "无（直接连接）",
     "errors": {
       "required": "必填",
       "port": "请输入 1 到 65535 之间的端口"
     },
     "save": "保存",
-    "cancel": "取消"
+    "cancel": "取消",
+    "auth": {
+      "password": "密码",
+      "key": "私钥"
+    }
   },
   "tabs": {
     "listLabel": "已打开的标签页",
@@ -95,7 +103,22 @@
       "hostKeyRevoked": "主机密钥已被吊销，连接已阻断。",
       "authenticationFailed": "认证失败。",
       "cancelled": "已取消连接。",
-      "generic": "连接失败。"
+      "generic": "连接失败。",
+      "keyUnreadable": "无法使用私钥 {{keyPath}}：{{reason}}",
+      "keyPassphraseIncorrect": "私钥口令错误（{{keyPath}}）。",
+      "keyRejected": "服务器拒绝了该私钥（{{keyPath}}）。",
+      "agentKeysRejected": "服务器拒绝了 ssh-agent 中的所有密钥。",
+      "noSupportedMethod": "没有可用的认证方式。服务器只接受：{{methods}}。"
+    },
+    "atJumpHost": "跳板机 {{name}}：",
+    "passphrase": {
+      "title": "私钥口令",
+      "label": "口令",
+      "retry": "私钥口令错误，请重试。"
+    },
+    "keyboardInteractive": {
+      "title": "{{user}}@{{host}} 需要验证",
+      "description": "服务器需要更多信息才能登录。"
     }
   },
   "settings": {
