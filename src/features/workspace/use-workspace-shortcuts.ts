@@ -1,9 +1,15 @@
 import { useEffect, useRef } from "react";
-import { matchShortcut, type Platform, type WorkspaceCommand } from "./shortcuts";
+import { matchShortcut, type KeyFocus, type Platform, type WorkspaceCommand } from "./shortcuts";
+
+/** Whether a key press is headed for a Terminal (xterm's hidden textarea lives inside `.xterm`). */
+function keyFocus(target: EventTarget | null): KeyFocus {
+  return target instanceof Element && target.closest(".xterm") ? "terminal" : "app";
+}
 
 /**
  * Runs workspace shortcuts from anywhere in the window, including a focused Terminal:
- * listens in the capture phase so a matched chord never reaches xterm.
+ * listens in the capture phase so a matched chord never reaches xterm. A focused Terminal
+ * gets every chord but the reserved ones.
  */
 export function useWorkspaceShortcuts(platform: Platform, run: (command: WorkspaceCommand) => void) {
   const runRef = useRef(run);
@@ -14,7 +20,7 @@ export function useWorkspaceShortcuts(platform: Platform, run: (command: Workspa
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.isComposing) return;
-      const command = matchShortcut(event, platform);
+      const command = matchShortcut(event, platform, keyFocus(event.target));
       if (!command) return;
       event.preventDefault();
       event.stopPropagation();

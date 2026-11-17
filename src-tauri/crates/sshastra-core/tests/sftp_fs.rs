@@ -10,7 +10,9 @@ use std::time::Instant;
 use sshastra_core::files::{self, FileKind, FsError, RemoteFs, SftpFs};
 use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
-use sshastra_core::ssh::{BoxFuture, ConnectionManager, HostKeyPrompt, PasswordPrompt, Prompter};
+use sshastra_core::ssh::{
+    BoxFuture, ConnectionManager, HostKeyPrompt, PasswordPrompt, Prompter, Secret,
+};
 use support::{Service, Sshd};
 
 struct Trusting(&'static str);
@@ -20,8 +22,8 @@ impl Prompter for Trusting {
         Box::pin(async { true })
     }
 
-    fn password(&self, _: PasswordPrompt) -> BoxFuture<'_, Option<String>> {
-        Box::pin(async move { Some(self.0.to_owned()) })
+    fn password(&self, _: PasswordPrompt) -> BoxFuture<'_, Option<Secret>> {
+        Box::pin(async move { Some(Secret::new(self.0)) })
     }
 }
 

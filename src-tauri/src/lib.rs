@@ -8,6 +8,7 @@ mod prompts;
 
 use std::sync::Arc;
 
+use sshastra_core::credentials;
 use sshastra_core::files::FsRegistry;
 use sshastra_core::hosts::HostStore;
 use sshastra_core::known_hosts::KnownHosts;
@@ -17,6 +18,7 @@ use sshastra_core::terminal::TerminalRegistry;
 use tauri::Manager;
 use tauri_plugin_window_state::StateFlags;
 
+use commands::credentials::Vault;
 use commands::hosts::HostsState;
 use commands::settings::SettingsState;
 use prompts::PendingPrompts;
@@ -48,9 +50,17 @@ pub fn run() {
                 .unwrap_or_else(|| KnownHosts::new(config_dir.join("known_hosts")));
             let settings =
                 SettingsStore::open(config_dir.join("settings.json")).map_err(Into::into);
+            // The system keychain; where there is none (Linux without a
+            // Secret Service) nothing is saved and every connect asks.
+            let vault = credentials::system_vault();
             app.manage(HostsState::new(hosts));
             app.manage(SettingsState::new(settings));
-            app.manage(ConnectionManager::new(known_hosts).with_agent(Agent::System));
+            app.manage(
+                ConnectionManager::new(known_hosts)
+                    .with_agent(Agent::System)
+                    .with_vault(vault.clone()),
+            );
+            app.manage(Vault(vault));
             Ok(())
         })
         .manage(TerminalRegistry::default())
@@ -69,6 +79,7 @@ pub fn run() {
             commands::hosts::group_move,
             commands::settings::settings_load,
             commands::settings::settings_set,
+            commands::credentials::host_credentials_clear,
             commands::terminal::local_terminal_open,
             commands::terminal::remote_terminal_open,
             commands::terminal::prompt_answer,
