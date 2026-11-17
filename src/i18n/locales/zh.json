@@ -362,6 +362,7 @@
     "noConnections": "没有连接",
     "connectedTo": "已连接：{{hosts}}",
     "forwards": "端口转发：{{list}}",
+    "forwardsLocal": "{{from}} → {{to}}",
     "forwardsRemote": "Host 上 {{from}} → {{to}}",
     "forwardsDynamic": "SOCKS {{from}}",
     "transfers": "传输：{{count}}",

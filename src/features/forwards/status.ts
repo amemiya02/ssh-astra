@@ -1,5 +1,14 @@
+import type { TFunction } from "i18next";
 import type { ForwardEvent, PortForward } from "@/lib/ipc/forwards";
 import type { Host, HostId } from "@/lib/ipc/hosts";
+import { describeForward } from "./forwardForm";
+import { forwardKind } from "./kinds";
+
+/** A running rule as the status bar lists it: `localhost:15432 → db:5432`, `SOCKS localhost:1080`. */
+export function forwardStatusText(rule: PortForward, t: TFunction): string {
+  const { from, to } = describeForward(rule);
+  return t(forwardKind(rule.type).status, { from, to: to ?? "" });
+}
 
 /** A running Port forward with the Host and saved rule it belongs to. */
 export interface RunningRule {

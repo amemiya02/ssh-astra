@@ -5,8 +5,7 @@ import { connectionsStore, useConnections } from "@/features/connect/connections
 import { FilePanelContent, type FilePanelPane } from "@/features/files/FilePanelContent";
 import { formatSize } from "@/features/files/fileList";
 import { forwardsStore, runningForwards, useForwards } from "@/features/forwards/forwardsStore";
-import { describeForward } from "@/features/forwards/forwardForm";
-import { activeConnections, runningRules } from "@/features/forwards/status";
+import { activeConnections, forwardStatusText, runningRules } from "@/features/forwards/status";
 import { useHosts } from "@/features/hosts/hostsStore";
 import { HostsPanel } from "@/features/hosts/HostsPanel";
 import { CommandPalette, type PaletteTab } from "@/features/palette/CommandPalette";
@@ -170,12 +169,7 @@ export function App() {
   const held = useConnections((s) => s.held);
   const running = runningForwards({ states: forwardStates });
   const connected = activeConnections(connectedHosts(state), running, hosts, held);
-  const forwards = runningRules(running, hosts).map(({ rule }) => {
-    const { from, to } = describeForward(rule);
-    if (rule.type === "remote") return t("status.forwardsRemote", { from, to });
-    if (rule.type === "dynamic") return t("status.forwardsDynamic", { from });
-    return `${from} → ${to}`;
-  });
+  const forwards = runningRules(running, hosts).map(({ rule }) => forwardStatusText(rule, t));
   // "Connect only" Hosts can be disconnected from the palette.
   const heldHosts = useMemo(() => hosts.filter((host) => held.includes(host.id)), [hosts, held]);
   usePaletteActions(

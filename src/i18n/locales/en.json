@@ -362,6 +362,7 @@
     "noConnections": "No Connections",
     "connectedTo": "Connected to {{hosts}}",
     "forwards": "Port forwards: {{list}}",
+    "forwardsLocal": "{{from}} → {{to}}",
     "forwardsRemote": "on the Host {{from}} → {{to}}",
     "forwardsDynamic": "SOCKS {{from}}",
     "transfers": "Transfers: {{count}}",

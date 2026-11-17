@@ -1,4 +1,5 @@
 import type { ForwardDraft, ForwardType, PortForward } from "@/lib/ipc/forwards";
+import { forwardKind } from "./kinds";
 
 /**
  * The Port forward form's raw input values. `targetHost`/`targetPort` are where a connection
@@ -24,13 +25,9 @@ export type ForwardFormResult =
   | { ok: true; draft: ForwardDraft }
   | { ok: false; errors: Partial<Record<ForwardFormField, ForwardFormError>> };
 
-const loopback = "127.0.0.1";
-/** Where the server listens for a remote forward by default (`sshastra_core::forward::REMOTE_LOOPBACK`). */
-const remoteLoopback = "localhost";
-
 /** The address a blank bind address stands for. */
 export function defaultBindAddress(type: ForwardType): string {
-  return type === "remote" ? remoteLoopback : loopback;
+  return forwardKind(type).defaultBindAddress;
 }
 
 export function emptyForwardForm(type: ForwardType): ForwardFormValues {
@@ -38,18 +35,14 @@ export function emptyForwardForm(type: ForwardType): ForwardFormValues {
 }
 
 export function forwardFormFrom(rule: PortForward): ForwardFormValues {
-  const target =
-    rule.type === "local"
-      ? { targetHost: rule.remoteHost, targetPort: String(rule.remotePort) }
-      : rule.type === "remote"
-        ? { targetHost: rule.localHost, targetPort: String(rule.localPort) }
-        : { targetHost: "", targetPort: "" };
+  const target = forwardKind(rule.type).target(rule);
   return {
     type: rule.type,
     label: rule.label,
     bindAddress: rule.bindAddress === defaultBindAddress(rule.type) ? "" : rule.bindAddress,
     bindPort: String(rule.bindPort),
-    ...target,
+    targetHost: target?.host ?? "",
+    targetPort: target ? String(target.port) : "",
     autoStart: rule.autoStart,
   };
 }
@@ -64,24 +57,20 @@ export function parseForwardForm(values: ForwardFormValues): ForwardFormResult {
   const errors: Partial<Record<ForwardFormField, ForwardFormError>> = {};
   const bindPort = parsePort(values.bindPort);
   if (bindPort === null) errors.bindPort = "port";
-  const common = {
+  const kind = forwardKind(values.type);
+  const target = { host: values.targetHost.trim(), port: parsePort(values.targetPort) ?? 0 };
+  if (kind.hasTarget) {
+    if (!target.host) errors.targetHost = "required";
+    if (target.port === 0) errors.targetPort = "port";
+  }
+  if (bindPort === null || Object.keys(errors).length > 0) return { ok: false, errors };
+  const draft: ForwardDraft = {
     label: values.label.trim(),
     autoStart: values.autoStart,
-    bindAddress: values.bindAddress.trim() || defaultBindAddress(values.type),
+    bindAddress: values.bindAddress.trim() || kind.defaultBindAddress,
+    bindPort,
+    ...kind.fields(target),
   };
-  if (values.type === "dynamic") {
-    if (bindPort === null) return { ok: false, errors };
-    return { ok: true, draft: { ...common, type: "dynamic", bindPort } };
-  }
-  const targetHost = values.targetHost.trim();
-  const targetPort = parsePort(values.targetPort);
-  if (!targetHost) errors.targetHost = "required";
-  if (targetPort === null) errors.targetPort = "port";
-  if (bindPort === null || targetPort === null || !targetHost) return { ok: false, errors };
-  const draft: ForwardDraft =
-    values.type === "local"
-      ? { ...common, type: "local", bindPort, remoteHost: targetHost, remotePort: targetPort }
-      : { ...common, type: "remote", bindPort, localHost: targetHost, localPort: targetPort };
   return { ok: true, draft };
 }
 
@@ -92,14 +81,7 @@ const hostPort = (host: string, port: number) => (host.includes(":") ? `[${host}
  * forward) and where connections go (`null` for a dynamic forward, whose clients choose).
  */
 export function describeForward(rule: ForwardDraft): { from: string; to: string | null } {
-  const bind = rule.bindAddress === loopback ? "localhost" : rule.bindAddress;
-  const from = hostPort(bind, rule.bindPort);
-  switch (rule.type) {
-    case "local":
-      return { from, to: hostPort(rule.remoteHost, rule.remotePort) };
-    case "remote":
-      return { from, to: hostPort(rule.localHost, rule.localPort) };
-    case "dynamic":
-      return { from, to: null };
-  }
+  const bind = rule.bindAddress === "127.0.0.1" ? "localhost" : rule.bindAddress;
+  const target = forwardKind(rule.type).target(rule);
+  return { from: hostPort(bind, rule.bindPort), to: target && hostPort(target.host, target.port) };
 }

@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
+import i18n from "i18next";
+import { beforeAll, describe, expect, it } from "vitest";
+import { startI18n } from "@/i18n";
 import type { ForwardEvent, PortForward } from "@/lib/ipc/forwards";
 import type { Host } from "@/lib/ipc/hosts";
-import { activeConnections, runningRules } from "./status";
+import { activeConnections, forwardStatusText, runningRules } from "./status";
 
 const rule = (id: string, bindPort: number): PortForward => ({
   id,
@@ -50,6 +52,36 @@ describe("activeConnections", () => {
     const active = activeConnections([web], [running("db", "d1")], [web, db, cache], ["cache", "web", "gone"]);
 
     expect(active.map((h) => h.id)).toEqual(["web", "cache", "db"]);
+  });
+});
+
+describe("forwardStatusText", () => {
+  beforeAll(() => startI18n());
+  const en = () => i18n.getFixedT("en");
+  const zh = () => i18n.getFixedT("zh");
+
+  it("shows a local forward as where it listens and where it goes", () => {
+    expect(forwardStatusText(rule("l", 15432), en())).toBe("localhost:15432 → db:5432");
+  });
+
+  it("says a remote forward listens on the Host, in the UI language", () => {
+    const remote: PortForward = {
+      id: "r",
+      label: "",
+      autoStart: false,
+      type: "remote",
+      bindAddress: "localhost",
+      bindPort: 9000,
+      localHost: "127.0.0.1",
+      localPort: 3000,
+    };
+    expect(forwardStatusText(remote, en())).toBe("on the Host localhost:9000 → 127.0.0.1:3000");
+    expect(forwardStatusText(remote, zh())).toBe("Host 上 localhost:9000 → 127.0.0.1:3000");
+  });
+
+  it("shows a dynamic forward as a SOCKS proxy", () => {
+    const socks: PortForward = { id: "s", label: "", autoStart: false, type: "dynamic", bindAddress: "127.0.0.1", bindPort: 1080 };
+    expect(forwardStatusText(socks, en())).toBe("SOCKS localhost:1080");
   });
 });
 
