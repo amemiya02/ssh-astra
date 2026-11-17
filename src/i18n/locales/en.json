@@ -523,7 +523,7 @@
       },
       "shellIntegration": {
         "label": "Shell integration",
-        "description": "New remote bash and zsh Terminals tell the File panel when you cd, so it follows. Turn off to type nothing into the shell; Sync to Terminal folder still works."
+        "description": "Remote bash and zsh Terminals opened from now on tell the File panel when you cd, so it follows. Turning it off stops every File panel following at once and types nothing into new shells; Sync to Terminal folder still works."
       }
     },
     "connection": {

@@ -523,7 +523,7 @@
       },
       "shellIntegration": {
         "label": "Shell 集成",
-        "description": "新开的远程 bash、zsh 终端在你 cd 时通知文件面板，让它跟着切换目录。关闭后不会向 shell 输入任何内容，「同步到终端目录」仍然可用。"
+        "description": "此后新开的远程 bash、zsh 终端在你 cd 时通知文件面板，让它跟着切换目录。关闭后所有文件面板立即停止跟随，也不会向新的 shell 输入任何内容；「同步到终端目录」仍然可用。"
       }
     },
     "connection": {

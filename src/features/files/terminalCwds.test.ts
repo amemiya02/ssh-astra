@@ -25,12 +25,12 @@ const api: FilesApi = {
   chmodFile: () => Promise.resolve(),
 };
 
-async function setup() {
+async function setup(following: () => boolean = () => true) {
   const browsers = createFileBrowsers(api);
   const panel = browsers.get("pane-1", "host-1");
   await panel.getState().connect();
   const askShell = vi.fn(() => Promise.resolve());
-  const cwds = createTerminalCwds(browsers, askShell);
+  const cwds = createTerminalCwds(browsers, askShell, following);
   const shown = () => panel.getState().path;
   // Listing is async; let it land.
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -61,6 +61,23 @@ describe("a File panel following its Terminal's directory", () => {
     cwds.report("pane-1", "/srv/www");
     await settle();
     expect(shown()).toBe("/srv");
+  });
+
+  it("stops following open Terminals as soon as Shell integration is turned off", async () => {
+    let on = true;
+    const { cwds, shown, settle } = await setup(() => on);
+    cwds.report("pane-1", "/srv");
+    await settle();
+
+    on = false;
+    cwds.report("pane-1", "/srv/www");
+    await settle();
+    expect(shown()).toBe("/srv");
+
+    // Sync still goes where the shell last said.
+    cwds.sync("pane-1");
+    await settle();
+    expect(shown()).toBe("/srv/www");
   });
 
   it("ignores reports for panes without a File panel", async () => {

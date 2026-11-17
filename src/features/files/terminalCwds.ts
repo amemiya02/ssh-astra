@@ -1,4 +1,6 @@
+import { terminalSetting } from "@/features/terminal/terminal-prefs";
 import { reportTerminalCwd, type TerminalId } from "@/lib/ipc/terminal";
+import { getSetting } from "@/lib/storage";
 import { fileBrowsers, type FileBrowsers } from "./fileBrowsers";
 
 /**
@@ -27,9 +29,14 @@ interface PaneCwd {
   asked: boolean;
 }
 
+/**
+ * `following` says whether panels follow `cd` on their own (Shell integration is on); checked on
+ * every report, so turning it off stops open Terminals' panels at once. `sync` works either way.
+ */
 export function createTerminalCwds(
   browsers: Pick<FileBrowsers, "find">,
   askShell: (terminal: TerminalId) => Promise<void>,
+  following: () => boolean = () => true,
 ): TerminalCwds {
   const panes = new Map<string, PaneCwd>();
   const pane = (paneId: string) => {
@@ -53,7 +60,7 @@ export function createTerminalCwds(
       const asked = state.asked;
       state.asked = false;
       if (!asked) state.reporting = true;
-      if (changed || asked) show(paneId, path);
+      if (asked || (changed && following())) show(paneId, path);
     },
     sync(paneId) {
       const state = pane(paneId);
@@ -71,4 +78,8 @@ export function createTerminalCwds(
 }
 
 /** The app's Terminal directories, driving `fileBrowsers`. */
-export const terminalCwds = createTerminalCwds(fileBrowsers, reportTerminalCwd);
+export const terminalCwds = createTerminalCwds(
+  fileBrowsers,
+  reportTerminalCwd,
+  () => getSetting(terminalSetting).shellIntegration,
+);
