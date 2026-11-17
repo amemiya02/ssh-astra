@@ -423,6 +423,9 @@ impl Output {
                 Ok(TerminalEvent::Output(bytes)) => {
                     self.text.push_str(&String::from_utf8_lossy(&bytes))
                 }
+                Ok(TerminalEvent::Connection(state)) => {
+                    panic!("Connection {state:?} before {needle:?}: {}", self.text)
+                }
                 Ok(TerminalEvent::Exit { code }) => {
                     panic!("exited ({code:?}) before {needle:?}: {}", self.text)
                 }
@@ -436,7 +439,7 @@ impl Output {
     fn wait_for_exit(&mut self) -> Option<u32> {
         loop {
             match self.events.recv_timeout(Duration::from_secs(10)) {
-                Ok(TerminalEvent::Output(_)) => {}
+                Ok(TerminalEvent::Output(_) | TerminalEvent::Connection(_)) => {}
                 Ok(TerminalEvent::Exit { code }) => break code,
                 Err(_) => panic!("timed out waiting for exit"),
             }

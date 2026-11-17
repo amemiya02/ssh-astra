@@ -1,5 +1,5 @@
-//! Terminals: one interactive shell, local (a [`LocalPty`]) or, later, a
-//! remote shell channel over a Connection. Both implement [`Terminal`], so the
+//! Terminals: one interactive shell, local (a [`LocalPty`]) or remote (an
+//! `ssh::RemoteTerminal`, a shell channel over a Connection). Both implement [`Terminal`], so the
 //! IPC layer and the UI treat them the same way.
 
 mod local_pty;
@@ -23,8 +23,24 @@ pub struct TerminalSize {
 pub enum TerminalEvent {
     /// Raw bytes from the shell. May split UTF-8 sequences and escape codes.
     Output(Vec<u8>),
+    /// A remote Terminal's Connection dropped, is being reopened, or is back
+    /// (with a new shell). Local terminals never send it.
+    Connection(ConnectionState),
     /// The shell ended. `code` is `None` when it was not available.
     Exit { code: Option<u32> },
+}
+
+/// Where a remote Terminal stands after its Connection dropped.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "state", rename_all = "camelCase")]
+pub enum ConnectionState {
+    /// Back, running a new shell (the old one's processes are gone).
+    Connected,
+    /// Disconnected; try `attempt` of `attempts` is waiting or under way.
+    Reconnecting { attempt: u32, attempts: u32 },
+    /// Disconnected, and no more automatic tries: only
+    /// [`Terminal::reconnect`] tries again. `reason` is the last failure.
+    Disconnected { reason: String },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -48,4 +64,9 @@ pub trait Terminal: Send {
     fn resize(&mut self, size: TerminalSize) -> Result<()>;
     /// Ends the shell. An `Exit` event still follows.
     fn close(&mut self) -> Result<()>;
+    /// Tries the Connection again now, if it is down. Nothing to do for
+    /// Terminals without one.
+    fn reconnect(&mut self) -> Result<()> {
+        Ok(())
+    }
 }

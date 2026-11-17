@@ -73,6 +73,7 @@ pub fn run() {
             commands::terminal::terminal_write,
             commands::terminal::terminal_resize,
             commands::terminal::terminal_close,
+            commands::terminal::terminal_reconnect,
         ])
         .run(tauri::generate_context!())
         .expect("error while running sshastra");

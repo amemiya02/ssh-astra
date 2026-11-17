@@ -1,6 +1,9 @@
 //! Terminal commands. Output streams over a single `Channel` per Terminal so
 //! ordering is preserved:
 //! - output chunks are sent as raw bytes (an `ArrayBuffer` in JS, no JSON),
+//! - a remote Terminal's Connection changes are JSON
+//!   `{ "connection": { "state": "reconnecting", "attempt": 1, "attempts": 3 } }`
+//!   (also `"connected"`, `"disconnected"` with a `reason`),
 //! - the final message is JSON `{ "exitCode": number | null }`.
 //!
 //! Local terminals and remote Terminals share every command after `open`.
@@ -9,14 +12,16 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use sshastra_core::hosts::HostId;
-use sshastra_core::ssh::ConnectionManager;
+use sshastra_core::ssh::{ConnectionManager, ConnectionSettings, ReconnectPolicy, RemoteTerminal};
 use sshastra_core::terminal::{
-    LocalPty, ShellCommand, TerminalEvent, TerminalId, TerminalRegistry, TerminalSize,
+    ConnectionState, LocalPty, ShellCommand, TerminalEvent, TerminalId, TerminalRegistry,
+    TerminalSize,
 };
 use tauri::ipc::{Channel, InvokeResponseBody};
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 use super::hosts::HostsState;
+use super::settings::SettingsState;
 use crate::error::CommandResult;
 use crate::prompts::{ChannelPrompter, PendingPrompts, PromptAnswer, PromptRequest};
 
@@ -26,19 +31,30 @@ struct ExitMessage {
     exit_code: Option<u32>,
 }
 
+#[derive(Serialize)]
+struct ConnectionMessage {
+    connection: ConnectionState,
+}
+
+fn send_json(channel: &Channel<InvokeResponseBody>, message: &impl Serialize) {
+    if let Ok(json) = serde_json::to_string(message) {
+        let _ = channel.send(InvokeResponseBody::Json(json));
+    }
+}
+
 /// Forwards a Terminal's events to its channel in the wire format above.
 fn channel_sink(on_event: Channel<InvokeResponseBody>) -> impl FnMut(TerminalEvent) + Send {
     move |event| {
         // A send only fails once the webview is gone; nothing left to tell.
-        let _ = match event {
-            TerminalEvent::Output(bytes) => on_event.send(InvokeResponseBody::Raw(bytes)),
-            TerminalEvent::Exit { code } => {
-                match serde_json::to_string(&ExitMessage { exit_code: code }) {
-                    Ok(json) => on_event.send(InvokeResponseBody::Json(json)),
-                    Err(_) => Ok(()),
-                }
+        match event {
+            TerminalEvent::Output(bytes) => {
+                let _ = on_event.send(InvokeResponseBody::Raw(bytes));
             }
-        };
+            TerminalEvent::Connection(connection) => {
+                send_json(&on_event, &ConnectionMessage { connection })
+            }
+            TerminalEvent::Exit { code } => send_json(&on_event, &ExitMessage { exit_code: code }),
+        }
     }
 }
 
@@ -56,13 +72,15 @@ pub async fn local_terminal_open(
 /// Opens a Terminal on a saved Host, connecting first (through its Jump
 /// hosts, if any) if needed. Questions
 /// for the user (trust this host key? password?) arrive on `on_prompt`; answer
-/// them with `prompt_answer`.
+/// them with `prompt_answer`. If the Connection drops later, the Terminal
+/// reconnects on its own (asking on `on_prompt` again if needed); see
+/// `terminal_reconnect`.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // Tauri injects each managed state as an argument.
 pub async fn remote_terminal_open(
+    app: AppHandle,
     registry: State<'_, TerminalRegistry>,
     hosts: State<'_, HostsState>,
-    connections: State<'_, ConnectionManager>,
     pending: State<'_, Arc<PendingPrompts>>,
     host_id: HostId,
     size: TerminalSize,
@@ -76,9 +94,38 @@ pub async fn remote_terminal_open(
         pending: Arc::clone(&pending),
         channel: on_prompt,
     });
-    let connection = connections.connect_through(&hops, &host, prompter).await?;
-    let shell = connection.open_shell(size, channel_sink(on_event)).await?;
-    Ok(registry.insert(Box::new(shell)))
+    let connect = move || {
+        let (app, hops, host, prompter) =
+            (app.clone(), hops.clone(), host.clone(), prompter.clone());
+        async move {
+            let connections = app.state::<ConnectionManager>();
+            // Applies to the Connections this opens; open ones keep theirs.
+            let settings = app
+                .state::<SettingsState>()
+                .with(|store| Ok(store.section::<ConnectionSettings>(ConnectionSettings::SECTION)))
+                .unwrap_or_default();
+            connections.set_keepalive_interval(settings.keepalive_interval());
+            connections.connect_through(&hops, &host, prompter).await
+        }
+    };
+    let terminal = RemoteTerminal::open(
+        connect,
+        ReconnectPolicy::default(),
+        size,
+        channel_sink(on_event),
+    )
+    .await?;
+    Ok(registry.insert(Box::new(terminal)))
+}
+
+/// Tries a remote Terminal's dropped Connection again now (the overlay's
+/// "Reconnect" button).
+#[tauri::command]
+pub async fn terminal_reconnect(
+    registry: State<'_, TerminalRegistry>,
+    id: TerminalId,
+) -> CommandResult<()> {
+    Ok(registry.reconnect(id)?)
 }
 
 /// Answers a question sent on a `remote_terminal_open` prompt channel.

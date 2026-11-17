@@ -7,7 +7,7 @@ use russh::{Channel, ChannelMsg};
 use tokio::sync::{mpsc, oneshot};
 
 use super::{ConnectError, Connection};
-use crate::terminal::{Result, Terminal, TerminalError, TerminalEvent, TerminalSize};
+use crate::terminal::{Result, Terminal, TerminalError, TerminalSize};
 
 const TERM: &str = "xterm-256color";
 
@@ -15,6 +15,18 @@ enum Command {
     Data(Vec<u8>),
     Resize(TerminalSize),
     Close,
+}
+
+/// What a [`RemoteShell`] reports. `Exit` or `Lost` comes last.
+#[derive(Debug)]
+pub(super) enum ShellEvent {
+    Output(Vec<u8>),
+    /// The shell ended (or was closed).
+    Exit {
+        code: Option<u32>,
+    },
+    /// The Connection under it dropped: the shell is gone without a word.
+    Lost,
 }
 
 /// A shell on a remote Host over a Connection. Implements [`Terminal`], so it
@@ -30,7 +42,7 @@ pub(super) async fn start<F>(
     mut sink: F,
 ) -> Result<RemoteShell, ConnectError>
 where
-    F: FnMut(TerminalEvent) + Send + 'static,
+    F: FnMut(ShellEvent) + Send + 'static,
 {
     channel
         .request_pty(false, TERM, size.cols.into(), size.rows.into(), 0, 0, &[])
@@ -44,22 +56,29 @@ where
 
     tokio::spawn(async move {
         let mut code = None;
-        loop {
+        let lost = loop {
             let msg = tokio::select! {
                 msg = reader.wait() => msg,
-                _ = &mut closed_rx => None,
+                _ = &mut closed_rx => break false,
             };
-            let Some(msg) = msg else { break };
+            // The channel's messages stop without a Close only when the
+            // whole Connection is gone.
+            let Some(msg) = msg else { break true };
             match msg {
                 ChannelMsg::Data { data } | ChannelMsg::ExtendedData { data, .. } => {
-                    sink(TerminalEvent::Output(data.to_vec()))
+                    sink(ShellEvent::Output(data.to_vec()))
                 }
                 ChannelMsg::ExitStatus { exit_status } => code = Some(exit_status),
-                ChannelMsg::Close => break,
+                ChannelMsg::Close => break false,
                 _ => {}
             }
-        }
-        sink(TerminalEvent::Exit { code });
+        };
+        // An exit status that made it through is the shell's own ending.
+        sink(if lost && code.is_none() {
+            ShellEvent::Lost
+        } else {
+            ShellEvent::Exit { code }
+        });
         drop(ended_tx);
     });
 

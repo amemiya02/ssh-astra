@@ -178,6 +178,13 @@
     "keyboardInteractive": {
       "title": "{{user}}@{{host}} 需要验证",
       "description": "服务器需要更多信息才能登录。"
+    },
+    "lost": {
+      "title": "已断开",
+      "reconnecting": "正在重新连接…第 {{attempt}} 次，共 {{attempts}} 次",
+      "failed": "无法重新连接。",
+      "reconnect": "重新连接",
+      "newShell": "重新连接会启动新的 shell，之前运行的程序已无法恢复。"
     }
   },
   "settings": {
@@ -187,6 +194,7 @@
     "sections": {
       "appearance": "外观",
       "terminal": "终端",
+      "connection": "连接",
       "language": "语言"
     },
     "theme": {
@@ -228,6 +236,14 @@
       "rightClickPaste": {
         "label": "右键粘贴",
         "description": "在终端中右键单击时粘贴剪贴板内容。"
+      }
+    },
+    "connection": {
+      "keepalive": {
+        "label": "Keepalive 间隔",
+        "description": "空闲的 Connection 多久确认一次服务器仍在。连续三次没有回应即视为掉线。对新的 Connection 生效。",
+        "off": "关",
+        "seconds": "{{count}} 秒"
       }
     }
   }

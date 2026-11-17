@@ -14,11 +14,18 @@
 //! [`ConnectionManager::connect_through`]: each hop is its own Connection
 //! (verified and authenticated like any other), and the next hop's SSH
 //! transport runs inside a `direct-tcpip` channel of the previous one.
+//!
+//! Connections send keepalives (every 30 s by default, see
+//! [`ConnectionManager::set_keepalive_interval`]) so a silently dead network
+//! is noticed. A [`RemoteTerminal`] outlives its Connection dropping: it
+//! reconnects and starts a new shell.
 
 mod auth;
+mod remote_terminal;
 mod shell;
 
 pub use auth::Agent;
+pub use remote_terminal::{ReconnectPolicy, RemoteTerminal};
 pub use shell::RemoteShell;
 
 use std::collections::HashMap;
@@ -36,9 +43,36 @@ use tokio::net::TcpStream;
 use crate::hosts::{Host, HostId};
 use crate::known_hosts::{HostKey, KnownHost, KnownHosts, KnownHostsError, Verdict};
 use crate::terminal::{TerminalEvent, TerminalSize};
+use shell::ShellEvent;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
-const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
+const DEFAULT_KEEPALIVE_SECONDS: u32 = 30;
+
+/// The `connection` section of the settings file, as the core reads it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ConnectionSettings {
+    /// Seconds between keepalives on an idle Connection; 0 sends none. Three
+    /// unanswered ones in a row drop the Connection.
+    pub keepalive_seconds: u32,
+}
+
+impl Default for ConnectionSettings {
+    fn default() -> Self {
+        Self {
+            keepalive_seconds: DEFAULT_KEEPALIVE_SECONDS,
+        }
+    }
+}
+
+impl ConnectionSettings {
+    /// The settings file section this is read from.
+    pub const SECTION: &'static str = "connection";
+
+    pub fn keepalive_interval(&self) -> Option<Duration> {
+        (self.keepalive_seconds > 0).then(|| Duration::from_secs(self.keepalive_seconds.into()))
+    }
+}
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -182,7 +216,8 @@ impl From<russh::Error> for ConnectError {
 pub struct ConnectionManager {
     known_hosts: KnownHosts,
     agent: Agent,
-    config: Arc<client::Config>,
+    /// Read when a Connection opens; changing it leaves open ones as they are.
+    keepalive_interval: Mutex<Option<Duration>>,
     slots: Mutex<HashMap<HostId, Arc<Slot>>>,
 }
 
@@ -193,17 +228,10 @@ type Slot = tokio::sync::Mutex<Weak<Connection>>;
 impl ConnectionManager {
     /// A manager that does not use any ssh-agent; see [`Self::with_agent`].
     pub fn new(known_hosts: KnownHosts) -> Self {
-        let config = client::Config {
-            keepalive_interval: Some(KEEPALIVE_INTERVAL),
-            keepalive_max: 3,
-            inactivity_timeout: None,
-            nodelay: true,
-            ..Default::default()
-        };
         Self {
             known_hosts,
             agent: Agent::None,
-            config: Arc::new(config),
+            keepalive_interval: Mutex::new(ConnectionSettings::default().keepalive_interval()),
             slots: Mutex::default(),
         }
     }
@@ -213,6 +241,30 @@ impl ConnectionManager {
     pub fn with_agent(mut self, agent: Agent) -> Self {
         self.agent = agent;
         self
+    }
+
+    /// How often Connections opened from now on send a keepalive when
+    /// nothing else arrives (`None`: never). Three unanswered keepalives in a
+    /// row drop the Connection.
+    pub fn set_keepalive_interval(&self, interval: Option<Duration>) {
+        *self
+            .keepalive_interval
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = interval;
+    }
+
+    fn client_config(&self) -> Arc<client::Config> {
+        let keepalive_interval = *self
+            .keepalive_interval
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        Arc::new(client::Config {
+            keepalive_interval,
+            keepalive_max: 3,
+            inactivity_timeout: None,
+            nodelay: true,
+            ..Default::default()
+        })
     }
 
     /// The live Connection to `host`, or a new one: verifies the host key
@@ -323,7 +375,7 @@ impl ConnectionManager {
             prompter: prompter.clone(),
             failure: failure.clone(),
         };
-        let mut handle = match client::connect_stream(self.config.clone(), stream, handler).await {
+        let mut handle = match client::connect_stream(self.client_config(), stream, handler).await {
             Ok(handle) => handle,
             Err(e) => {
                 let recorded = failure.lock().ok().and_then(|mut f| f.take());
@@ -395,6 +447,27 @@ impl Connection {
     ) -> Result<RemoteShell, ConnectError>
     where
         F: FnMut(TerminalEvent) + Send + 'static,
+    {
+        let mut sink = sink;
+        self.start_shell(size, move |event| {
+            sink(match event {
+                ShellEvent::Output(bytes) => TerminalEvent::Output(bytes),
+                ShellEvent::Exit { code } => TerminalEvent::Exit { code },
+                ShellEvent::Lost => TerminalEvent::Exit { code: None },
+            })
+        })
+        .await
+    }
+
+    /// Like [`open_shell`](Self::open_shell), telling a dropped Connection
+    /// apart from the shell ending.
+    async fn start_shell<F>(
+        self: &Arc<Self>,
+        size: TerminalSize,
+        sink: F,
+    ) -> Result<RemoteShell, ConnectError>
+    where
+        F: FnMut(ShellEvent) + Send + 'static,
     {
         let channel = self.handle.channel_open_session().await?;
         shell::start(Arc::clone(self), channel, size, sink).await

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConnectErrorPanel } from "@/features/connect/ConnectErrorPanel";
 import { ConnectPromptDialog } from "@/features/connect/ConnectPromptDialog";
+import { DisconnectedOverlay } from "@/features/connect/DisconnectedOverlay";
 import {
   openRemoteTerminal,
   readCommandError,
@@ -10,9 +11,17 @@ import {
   type PromptAnswer,
 } from "@/lib/ipc/connect";
 import type { Host } from "@/lib/ipc/hosts";
+import { reconnectTerminal, type ConnectionState, type TerminalId } from "@/lib/ipc/terminal";
 import type { ConnectionStatus } from "@/features/workspace/tabs";
 import { isTerminalColorScheme } from "@/theme/terminal-themes";
 import { TerminalSurface, type OpenTerminal } from "./TerminalSurface";
+
+/** The tab dot while a dropped Connection is retried. */
+const statusAfterDrop: Record<ConnectionState["state"], ConnectionStatus> = {
+  connected: "connected",
+  reconnecting: "connecting",
+  disconnected: "disconnected",
+};
 
 interface PendingPrompt {
   prompt: ConnectPrompt;
@@ -24,7 +33,10 @@ interface RemoteTerminalViewProps {
   /** Whether its tab is shown. A question asked while hidden waits until the tab is shown. */
   active?: boolean;
   onTitleChange?(title: string): void;
-  /** Connecting until the shell runs, then connected; disconnected once it ends or the connect fails. */
+  /**
+   * Connecting until the shell runs, then connected; disconnected once it ends or the connect fails.
+   * After the Connection drops: connecting while it reconnects, disconnected once the tries give up.
+   */
   onStatusChange?(status: ConnectionStatus): void;
 }
 
@@ -50,11 +62,35 @@ export function RemoteTerminalView({ host, active = true, onTitleChange, onStatu
     [],
   );
 
+  // Set while the Connection is down; the Terminal stays mounted under the overlay.
+  const [lost, setLost] = useState<Exclude<ConnectionState, { state: "connected" }> | null>(null);
+  const terminalId = useRef<TerminalId | null>(null);
+  const onStatusChangeRef = useRef(onStatusChange);
+  useEffect(() => {
+    onStatusChangeRef.current = onStatusChange;
+  });
+
   const open = useCallback<OpenTerminal>(
-    (size, onEvent) =>
-      openRemoteTerminal(host.id, size, onEvent, (prompt) => new Promise((resolve) => show({ prompt, resolve }))),
+    async (size, onEvent) => {
+      const id = await openRemoteTerminal(
+        host.id,
+        size,
+        (event) => {
+          if (event.type !== "connection") return onEvent(event);
+          const state = event.state;
+          setLost(state.state === "connected" ? null : state);
+          onStatusChangeRef.current?.(statusAfterDrop[state.state]);
+        },
+        (prompt) => new Promise((resolve) => show({ prompt, resolve })),
+      );
+      terminalId.current = id;
+      return id;
+    },
     [host.id, show],
   );
+  const reconnect = useCallback(() => {
+    if (terminalId.current !== null) void reconnectTerminal(terminalId.current);
+  }, []);
   const onOpenError = useCallback(
     (e: unknown) => {
       setError(readCommandError(e));
@@ -72,13 +108,17 @@ export function RemoteTerminalView({ host, active = true, onTitleChange, onStatu
           open={open}
           onOpenError={onOpenError}
           onOpened={() => onStatusChange?.("connected")}
-          onExit={() => onStatusChange?.("disconnected")}
+          onExit={() => {
+            setLost(null);
+            onStatusChange?.("disconnected");
+          }}
           label={host.name}
           active={active}
           colorScheme={isTerminalColorScheme(host.terminalScheme) ? host.terminalScheme : undefined}
           onTitleChange={onTitleChange}
         />
       )}
+      {lost && !error && <DisconnectedOverlay state={lost} onReconnect={reconnect} />}
       {pending && (
         <ConnectPromptDialog
           prompt={pending.prompt}

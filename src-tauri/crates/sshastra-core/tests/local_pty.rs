@@ -32,6 +32,7 @@ fn read_until(rx: &Receiver<TerminalEvent>, needle: &str) -> String {
                     return text;
                 }
             }
+            Ok(event @ TerminalEvent::Connection(_)) => panic!("a Local terminal sent {event:?}"),
             Ok(TerminalEvent::Exit { code }) => panic!(
                 "exited ({code:?}) before {needle:?}; output: {:?}",
                 String::from_utf8_lossy(&seen)
@@ -50,6 +51,7 @@ fn read_to_exit(rx: &Receiver<TerminalEvent>) -> (String, Option<u32>) {
     loop {
         match rx.recv_timeout(TIMEOUT).expect("exit event before timeout") {
             TerminalEvent::Output(bytes) => seen.extend_from_slice(&bytes),
+            event @ TerminalEvent::Connection(_) => panic!("a Local terminal sent {event:?}"),
             TerminalEvent::Exit { code } => {
                 return (String::from_utf8_lossy(&seen).into_owned(), code)
             }

@@ -43,6 +43,9 @@ pub enum Service {
     /// A target nothing else connects to, so a test can count the TCP
     /// connections it sees. Tests using it must not run concurrently.
     Counted,
+    /// A target only `tests/reconnect.rs` uses: it kills and freezes the
+    /// server to drop Connections. Tests using it must not run concurrently.
+    Flaky,
 }
 
 impl Service {
@@ -53,6 +56,7 @@ impl Service {
             Service::KeyOnly => "keyonly",
             Service::KbdInt => "kbdint",
             Service::Counted => "counted",
+            Service::Flaky => "flaky",
         }
     }
 }
@@ -160,6 +164,32 @@ impl Sshd {
             // Local port 22 (hex 0016), state 01 = ESTABLISHED.
             .filter(|(local, state)| local.ends_with(":0016") && *state == "01")
             .count()
+    }
+}
+
+impl Sshd {
+    /// Kills the server's per-connection processes, so every Connection to
+    /// it drops at once (as when the server restarts or the network resets).
+    pub fn drop_connections(&self) {
+        let script = r#"for p in /proc/[0-9]*; do
+            if tr '\0' ' ' < "$p/cmdline" 2>/dev/null | grep -q '^sshd: tester'; then
+                kill -9 "${p#/proc/}" 2>/dev/null
+            fi
+        done; true"#;
+        compose(&["exec", "-T", self.service.name(), "bash", "-c", script])
+            .unwrap_or_else(|e| panic!("cannot drop {}'s connections: {e}", self.service.name()));
+    }
+
+    /// Freezes the server: its connections stay open but nothing answers,
+    /// as when the network silently goes away. Undo with [`Self::unpause`].
+    pub fn pause(&self) {
+        compose(&["pause", self.service.name()])
+            .unwrap_or_else(|e| panic!("cannot pause {}: {e}", self.service.name()));
+    }
+
+    pub fn unpause(&self) {
+        compose(&["unpause", self.service.name()])
+            .unwrap_or_else(|e| panic!("cannot unpause {}: {e}", self.service.name()));
     }
 }
 

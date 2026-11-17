@@ -1,4 +1,5 @@
 import type { ComponentType } from "react";
+import { ConnectionSection } from "./connection-section";
 import { AppearanceSection, LanguageSection } from "./general-sections";
 import { TerminalSection } from "./terminal-section";
 
@@ -6,7 +7,7 @@ import { TerminalSection } from "./terminal-section";
 export interface SettingsPageSection {
   id: string;
   /** i18n key of the section heading, under `settings.sections`. */
-  title: "appearance" | "language" | "terminal";
+  title: "appearance" | "language" | "terminal" | "connection";
   /** Renders the section's `SettingRow`s; reads and writes its settings with `useSetting`. */
   Component: ComponentType;
 }
@@ -20,5 +21,6 @@ export interface SettingsPageSection {
 export const settingsPageSections: readonly SettingsPageSection[] = [
   { id: "appearance", title: "appearance", Component: AppearanceSection },
   { id: "terminal", title: "terminal", Component: TerminalSection },
+  { id: "connection", title: "connection", Component: ConnectionSection },
   { id: "language", title: "language", Component: LanguageSection },
 ];

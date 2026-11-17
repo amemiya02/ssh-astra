@@ -19,6 +19,9 @@
 #   counted   reachable from the test process like `ssh`, but only the
 #             Connection lifecycle tests use it, so they can count the TCP
 #             connections it sees (`Sshd::established_connections`).
+#   flaky     published: only the reconnect tests use it; they kill its
+#             connections (`Sshd::drop_connections`) and freeze it
+#             (`Sshd::pause`) to make Connections drop.
 #
 # Each server's hostname is its service name, so a test can tell where a
 # shell landed.
@@ -82,6 +85,12 @@ services:
   counted:
     <<: *sshd
     hostname: counted
+    ports: ["127.0.0.1::22"]
+    networks: [public]
+
+  flaky:
+    <<: *sshd
+    hostname: flaky
     ports: ["127.0.0.1::22"]
     networks: [public]
 

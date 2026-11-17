@@ -19,3 +19,23 @@ describe("decodeTerminalMessage", () => {
     expect(decodeTerminalMessage({ exitCode: null })).toEqual({ type: "exit", code: null });
   });
 });
+
+describe("decodeTerminalMessage for a remote Terminal's Connection", () => {
+  it("reads reconnect progress", () => {
+    expect(decodeTerminalMessage({ connection: { state: "reconnecting", attempt: 2, attempts: 3 } })).toEqual({
+      type: "connection",
+      state: { state: "reconnecting", attempt: 2, attempts: 3 },
+    });
+  });
+
+  it("reads giving up and coming back", () => {
+    expect(decodeTerminalMessage({ connection: { state: "disconnected", reason: "cannot reach the host" } })).toEqual({
+      type: "connection",
+      state: { state: "disconnected", reason: "cannot reach the host" },
+    });
+    expect(decodeTerminalMessage({ connection: { state: "connected" } })).toEqual({
+      type: "connection",
+      state: { state: "connected" },
+    });
+  });
+});

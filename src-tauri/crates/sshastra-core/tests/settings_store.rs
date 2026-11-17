@@ -178,3 +178,26 @@ fn core_code_reads_a_section_typed_with_defaults_for_what_is_missing_or_bad() {
         Connection::default()
     );
 }
+
+#[test]
+fn the_keepalive_interval_comes_from_the_connection_section() {
+    use sshastra_core::ssh::ConnectionSettings;
+    use std::time::Duration;
+    let (_dir, path) = store_path();
+    let mut store = SettingsStore::open(&path).unwrap();
+    let read = |store: &SettingsStore| {
+        store
+            .section::<ConnectionSettings>(ConnectionSettings::SECTION)
+            .keepalive_interval()
+    };
+
+    assert_eq!(read(&store), Some(Duration::from_secs(30)));
+    store
+        .set("connection", json!({ "keepaliveSeconds": 60 }))
+        .unwrap();
+    assert_eq!(read(&store), Some(Duration::from_secs(60)));
+    store
+        .set("connection", json!({ "keepaliveSeconds": 0 }))
+        .unwrap();
+    assert_eq!(read(&store), None);
+}

@@ -47,6 +47,11 @@ impl TerminalRegistry {
         self.with(id, |t| t.resize(size))
     }
 
+    /// Retries a remote Terminal's dropped Connection now.
+    pub fn reconnect(&self, id: TerminalId) -> Result<()> {
+        self.with(id, |t| t.reconnect())
+    }
+
     /// Closes the Terminal and forgets it.
     pub fn close(&self, id: TerminalId) -> Result<()> {
         let mut terminal = self.lock().remove(&id).ok_or(TerminalError::NotFound(id))?;

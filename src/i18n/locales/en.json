@@ -178,6 +178,13 @@
     "keyboardInteractive": {
       "title": "{{user}}@{{host}} asks",
       "description": "The server asks for more information to sign in."
+    },
+    "lost": {
+      "title": "Disconnected",
+      "reconnecting": "Reconnecting… try {{attempt}} of {{attempts}}",
+      "failed": "Could not reconnect.",
+      "reconnect": "Reconnect",
+      "newShell": "Reconnecting starts a new shell; programs running before are gone."
     }
   },
   "settings": {
@@ -187,6 +194,7 @@
     "sections": {
       "appearance": "Appearance",
       "terminal": "Terminal",
+      "connection": "Connection",
       "language": "Language"
     },
     "theme": {
@@ -228,6 +236,14 @@
       "rightClickPaste": {
         "label": "Right-click paste",
         "description": "Right-clicking in a Terminal pastes the clipboard."
+      }
+    },
+    "connection": {
+      "keepalive": {
+        "label": "Keepalive interval",
+        "description": "How often an idle Connection checks the server is still there. A dropped Connection is noticed after three missed checks. Applies to new Connections.",
+        "off": "Off",
+        "seconds": "{{count}} s"
       }
     }
   }
