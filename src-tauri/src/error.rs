@@ -91,15 +91,20 @@ impl From<HostStoreError> for CommandError {
 impl From<ForwardError> for CommandError {
     fn from(err: ForwardError) -> Self {
         use ForwardError::*;
-        let (kind, address, port) = match &err {
-            PortInUse { address, port } => ("portInUse", address, port),
-            PermissionDenied { address, port } => ("permissionDenied", address, port),
-            Listen { address, port, .. } => ("listenFailed", address, port),
-            RemoteRefused { address, port } => ("remoteRefused", address, port),
-            ConnectionLost => return Self::new("connectionLost", &err),
+        let kind = match &err {
+            PortInUse(_) => "portInUse",
+            PermissionDenied(_) => "permissionDenied",
+            Listen { .. } => "listenFailed",
+            RemoteRefused(_) => "remoteRefused",
+            ConnectionLost => "connectionLost",
         };
-        let details = json!({ "address": address, "port": port });
-        Self::new(kind, &err).with_details(details)
+        match err.endpoint() {
+            Some(at) => {
+                let details = json!(at);
+                Self::new(kind, &err).with_details(details)
+            }
+            None => Self::new(kind, &err),
+        }
     }
 }
 
@@ -206,13 +211,11 @@ pub type CommandResult<T> = Result<T, CommandError>;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sshastra_core::forward::Endpoint;
 
     #[test]
     fn a_taken_port_names_the_address_and_port() {
-        let err = ForwardError::PortInUse {
-            address: "127.0.0.1".into(),
-            port: 5432,
-        };
+        let err = ForwardError::PortInUse(Endpoint::new("127.0.0.1", 5432));
 
         let json = serde_json::to_value(CommandError::from(err)).unwrap();
 
@@ -224,10 +227,7 @@ mod tests {
 
     #[test]
     fn a_refused_remote_port_names_the_address_and_port() {
-        let err = ForwardError::RemoteRefused {
-            address: "localhost".into(),
-            port: 9000,
-        };
+        let err = ForwardError::RemoteRefused(Endpoint::new("localhost", 9000));
 
         let json = serde_json::to_value(CommandError::from(err)).unwrap();
 

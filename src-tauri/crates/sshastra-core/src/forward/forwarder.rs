@@ -44,25 +44,49 @@ pub struct ForwardEvent {
     pub status: ForwardStatus,
 }
 
+/// Where a rule listens: an address and port (on this machine, or on the
+/// server for a remote forward). Serializes as `{ address, port }`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Endpoint {
+    pub address: String,
+    pub port: u16,
+}
+
+impl Endpoint {
+    pub fn new(address: impl Into<String>, port: u16) -> Self {
+        Self {
+            address: address.into(),
+            port,
+        }
+    }
+}
+
 /// Why a rule could not start.
 #[derive(Debug, thiserror::Error)]
 pub enum ForwardError {
-    #[error("port {port} on {address} is already in use")]
-    PortInUse { address: String, port: u16 },
-    #[error("not allowed to listen on port {port} on {address}")]
-    PermissionDenied { address: String, port: u16 },
-    #[error("cannot listen on {address}:{port}: {reason}")]
-    Listen {
-        address: String,
-        port: u16,
-        reason: String,
-    },
+    #[error("port {} on {} is already in use", .0.port, .0.address)]
+    PortInUse(Endpoint),
+    #[error("not allowed to listen on port {} on {}", .0.port, .0.address)]
+    PermissionDenied(Endpoint),
+    #[error("cannot listen on {}:{}: {reason}", .at.address, .at.port)]
+    Listen { at: Endpoint, reason: String },
     /// The server would not listen on a remote forward's port (taken there,
     /// or not allowed by its configuration).
-    #[error("the server refused to listen on port {port} on {address}")]
-    RemoteRefused { address: String, port: u16 },
+    #[error("the server refused to listen on port {} on {}", .0.port, .0.address)]
+    RemoteRefused(Endpoint),
     #[error("the Connection was lost")]
     ConnectionLost,
+}
+
+impl ForwardError {
+    /// The listening end it is about, if any.
+    pub fn endpoint(&self) -> Option<&Endpoint> {
+        match self {
+            Self::PortInUse(at) | Self::PermissionDenied(at) | Self::RemoteRefused(at) => Some(at),
+            Self::Listen { at, .. } => Some(at),
+            Self::ConnectionLost => None,
+        }
+    }
 }
 
 type Listener = Box<dyn Fn(ForwardEvent) + Send + Sync>;
@@ -340,10 +364,9 @@ async fn open(connection: Arc<Connection>, kind: &ForwardKind) -> Result<Opened,
                 .listen_remote(bind_address, *bind_port)
                 .await
                 .map_err(|e| match e {
-                    russh::Error::RequestDenied => ForwardError::RemoteRefused {
-                        address: bind_address.clone(),
-                        port: *bind_port,
-                    },
+                    russh::Error::RequestDenied => {
+                        ForwardError::RemoteRefused(Endpoint::new(bind_address, *bind_port))
+                    }
                     _ => ForwardError::ConnectionLost,
                 })?;
             Ok(Opened::Remote {
@@ -390,20 +413,16 @@ impl Opened {
 
 /// Binds the listening socket now, so a taken port fails `start` at once.
 fn listen(address: &str, port: u16) -> Result<TcpListener, ForwardError> {
-    let error = |e: io::Error| match e.kind() {
-        io::ErrorKind::AddrInUse => ForwardError::PortInUse {
-            address: address.to_owned(),
-            port,
-        },
-        io::ErrorKind::PermissionDenied => ForwardError::PermissionDenied {
-            address: address.to_owned(),
-            port,
-        },
-        _ => ForwardError::Listen {
-            address: address.to_owned(),
-            port,
-            reason: e.to_string(),
-        },
+    let error = |e: io::Error| {
+        let at = Endpoint::new(address, port);
+        match e.kind() {
+            io::ErrorKind::AddrInUse => ForwardError::PortInUse(at),
+            io::ErrorKind::PermissionDenied => ForwardError::PermissionDenied(at),
+            _ => ForwardError::Listen {
+                at,
+                reason: e.to_string(),
+            },
+        }
     };
     let listener = StdListener::bind((address, port)).map_err(error)?;
     listener.set_nonblocking(true).map_err(error)?;

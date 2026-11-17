@@ -7,7 +7,7 @@
 mod forwarder;
 mod socks;
 
-pub use forwarder::{ForwardError, ForwardEvent, ForwardStatus, PortForwarder};
+pub use forwarder::{Endpoint, ForwardError, ForwardEvent, ForwardStatus, PortForwarder};
 
 use std::fmt;
 
