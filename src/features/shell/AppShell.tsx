@@ -67,8 +67,8 @@ export function AppShell({ sidebar, tabs, workspace, filePanel, status, onOpenSe
   }, [dock]);
 
   const filePanelDock = useMemo(
-    () => ({ dock, collapse: () => filesRef.current?.collapse() }),
-    [dock, filesRef],
+    () => ({ dock, collapsed: filesCollapsed, collapse: () => filesRef.current?.collapse() }),
+    [dock, filesCollapsed, filesRef],
   );
 
   /**

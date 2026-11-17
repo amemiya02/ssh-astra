@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useReducer } from "react";
 import { useTranslation } from "react-i18next";
-import { FilePanel } from "@/features/files/FilePanel";
+import { FilePanelContent, type FilePanelPane } from "@/features/files/FilePanelContent";
 import { HostsPanel } from "@/features/hosts/HostsPanel";
 import { AppShell } from "@/features/shell/AppShell";
 import { isSettingsShortcut } from "@/features/shell/shortcuts";
@@ -99,6 +99,15 @@ export function App() {
   });
 
   const connected = connectedHosts(state);
+  const focused = activeTab(state);
+  const focusedPane = focused && activePane(focused);
+  const filePanelPane: FilePanelPane | undefined =
+    focusedPane?.kind === "remote-terminal"
+      ? { id: focusedPane.id, host: focusedPane.host, status: focusedPane.status ?? "connecting" }
+      : undefined;
+  const remotePaneIds = tabs.flatMap((tab) =>
+    tab.panes.filter((pane) => pane.kind === "remote-terminal").map((pane) => pane.id),
+  );
 
   return (
     <AppShell
@@ -125,7 +134,7 @@ export function App() {
           onStatusChange={setStatus}
         />
       }
-      filePanel={<FilePanel />}
+      filePanel={<FilePanelContent pane={filePanelPane} remotePaneIds={remotePaneIds} />}
       onOpenSettings={openSettings}
       status={
         <span role="status" className="truncate">
