@@ -1,0 +1,14 @@
+{
+  "app": {
+    "name": "sshastra"
+  },
+  "tabs": {
+    "localTerminal": "Local terminal"
+  },
+  "terminal": {
+    "starting": "Starting shell…",
+    "exited": "Process exited with code {{code}}",
+    "exitedUnknown": "Process exited",
+    "failedToStart": "Could not start the shell: {{message}}"
+  }
+}
