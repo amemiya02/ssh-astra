@@ -13,7 +13,7 @@ use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::ssh::{
     BoxFuture, ConnectError, ConnectionManager, HostKeyPrompt, PasswordPrompt, Prompter,
-    ReconnectPolicy, RemoteTerminal,
+    ReconnectPolicy, RemoteTerminal, Secret,
 };
 use sshastra_core::terminal::{ConnectionState, Terminal, TerminalEvent, TerminalSize};
 use support::{Service, Sshd};
@@ -36,8 +36,8 @@ impl Prompter for TrustingPrompter {
         Box::pin(async { true })
     }
 
-    fn password(&self, _: PasswordPrompt) -> BoxFuture<'_, Option<String>> {
-        Box::pin(async { Some(support::PASSWORD.to_owned()) })
+    fn password(&self, _: PasswordPrompt) -> BoxFuture<'_, Option<Secret>> {
+        Box::pin(async { Some(Secret::new(support::PASSWORD)) })
     }
 }
 

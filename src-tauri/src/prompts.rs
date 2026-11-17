@@ -8,7 +8,8 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use sshastra_core::ssh::{
-    BoxFuture, HostKeyPrompt, KeyboardInteractivePrompt, PassphrasePrompt, PasswordPrompt, Prompter,
+    BoxFuture, HostKeyPrompt, KeyboardInteractivePrompt, PassphrasePrompt, PasswordPrompt,
+    Prompter, Secret,
 };
 use tauri::ipc::Channel;
 use tokio::sync::oneshot;
@@ -33,11 +34,14 @@ pub enum PromptRequest {
         host: String,
         user: String,
         retry: bool,
+        /// Offer a "save" checkbox (the CredentialVault works).
+        can_save: bool,
     },
     Passphrase {
         id: u64,
         key_path: String,
         retry: bool,
+        can_save: bool,
     },
     KeyboardInteractive {
         id: u64,
@@ -61,10 +65,23 @@ pub struct KeyboardInteractiveField {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum PromptAnswer {
-    HostKey { trust: bool },
-    Password { password: Option<String> },
-    Passphrase { passphrase: Option<String> },
-    KeyboardInteractive { answers: Option<Vec<String>> },
+    HostKey {
+        trust: bool,
+    },
+    Password {
+        password: Option<String>,
+        /// Keep it in the CredentialVault once it works.
+        #[serde(default)]
+        save: bool,
+    },
+    Passphrase {
+        passphrase: Option<String>,
+        #[serde(default)]
+        save: bool,
+    },
+    KeyboardInteractive {
+        answers: Option<Vec<String>>,
+    },
 }
 
 /// Prompts waiting for an answer, shared by every connect in progress.
@@ -131,7 +148,7 @@ impl Prompter for ChannelPrompter {
         })
     }
 
-    fn password(&self, prompt: PasswordPrompt) -> BoxFuture<'_, Option<String>> {
+    fn password(&self, prompt: PasswordPrompt) -> BoxFuture<'_, Option<Secret>> {
         Box::pin(async move {
             let answer = self
                 .ask(|id| PromptRequest::Password {
@@ -139,26 +156,32 @@ impl Prompter for ChannelPrompter {
                     host: prompt.host,
                     user: prompt.user,
                     retry: prompt.retry,
+                    can_save: prompt.can_save,
                 })
                 .await;
             match answer {
-                Some(PromptAnswer::Password { password }) => password,
+                Some(PromptAnswer::Password { password, save }) => {
+                    password.map(|value| Secret { value, save })
+                }
                 _ => None,
             }
         })
     }
 
-    fn passphrase(&self, prompt: PassphrasePrompt) -> BoxFuture<'_, Option<String>> {
+    fn passphrase(&self, prompt: PassphrasePrompt) -> BoxFuture<'_, Option<Secret>> {
         Box::pin(async move {
             let answer = self
                 .ask(|id| PromptRequest::Passphrase {
                     id,
                     key_path: prompt.key_path.display().to_string(),
                     retry: prompt.retry,
+                    can_save: prompt.can_save,
                 })
                 .await;
             match answer {
-                Some(PromptAnswer::Passphrase { passphrase }) => passphrase,
+                Some(PromptAnswer::Passphrase { passphrase, save }) => {
+                    passphrase.map(|value| Secret { value, save })
+                }
                 _ => None,
             }
         })

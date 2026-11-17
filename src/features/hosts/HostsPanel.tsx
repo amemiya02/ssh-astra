@@ -18,6 +18,7 @@ import { readCommandError } from "@/lib/ipc/connect";
 import type { Group, Host, HostDraft, HostId } from "@/lib/ipc/hosts";
 import { cn } from "@/lib/utils";
 import { TerminalSchemeSelect } from "@/features/terminal/TerminalSchemeSelect";
+import { ClearCredentialsButton } from "./ClearCredentialsButton";
 import { HostList, type HostListActions } from "./HostList";
 import { HostsSidebar } from "./HostsSidebar";
 import { emptyHostForm, hostFormFrom, parseHostForm, type HostFormField, type HostFormResult, type HostFormValues } from "./hostForm";
@@ -420,6 +421,7 @@ function HostFormDialogContent({
             {t("hosts.terminalSchemeHint")}
           </p>
         </div>
+        {host && <ClearCredentialsButton hostId={host.id} />}
         {saveError && (
           <p role="alert" className="text-destructive text-xs">
             {saveError}

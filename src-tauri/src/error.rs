@@ -1,5 +1,6 @@
 use serde::Serialize;
 use serde_json::{json, Value};
+use sshastra_core::credentials::VaultError;
 use sshastra_core::hosts::HostStoreError;
 use sshastra_core::settings::SettingsError;
 use sshastra_core::ssh::ConnectError;
@@ -40,6 +41,12 @@ impl From<TerminalError> for CommandError {
             NotFound(_) => "notFound",
         };
         Self::new(kind, err)
+    }
+}
+
+impl From<VaultError> for CommandError {
+    fn from(err: VaultError) -> Self {
+        Self::new("credentialStore", err)
     }
 }
 

@@ -3,6 +3,10 @@
 //! private key file, password, keyboard-interactive. A method the server
 //! accepts with "partial success" (e.g. key, then OTP) moves on to the next.
 //!
+//! A password or key passphrase saved in the CredentialVault is tried before
+//! asking; one that no longer works is forgotten, and a typed one the user
+//! asked to save is saved once it proves right.
+//!
 //! When nothing succeeds, the error describes the last method that failed
 //! (e.g. a rejected key) so the UI can say why.
 
@@ -19,7 +23,8 @@ use super::{
     ConnectError, KeyboardInteractivePrompt, KeyboardInteractiveQuestion, PassphrasePrompt,
     PasswordPrompt, Prompter,
 };
-use crate::hosts::{Host, HostAuth};
+use crate::credentials::{CredentialKind, CredentialVault};
+use crate::hosts::{Host, HostAuth, HostId};
 
 /// Password, passphrase and keyboard-interactive rounds before giving up.
 const ATTEMPTS: usize = 3;
@@ -81,10 +86,52 @@ enum Step {
     Skipped,
 }
 
+/// One Host's entries in the CredentialVault. Vault calls run on blocking
+/// threads (a keychain may show a dialog). A failing vault reads as empty and
+/// saves nothing: it never breaks a connect.
+struct Saved {
+    vault: Arc<dyn CredentialVault>,
+    host: HostId,
+}
+
+impl Saved {
+    fn can_save(&self) -> bool {
+        self.vault.can_save()
+    }
+
+    async fn run<T: Send + 'static>(
+        &self,
+        f: impl FnOnce(&dyn CredentialVault, &HostId) -> T + Send + 'static,
+    ) -> Option<T> {
+        let vault = Arc::clone(&self.vault);
+        let host = self.host.clone();
+        tokio::task::spawn_blocking(move || f(vault.as_ref(), &host))
+            .await
+            .ok()
+    }
+
+    async fn get(&self, kind: CredentialKind) -> Option<String> {
+        self.run(move |vault, host| vault.get(host, kind))
+            .await
+            .and_then(Result::ok)
+            .flatten()
+    }
+
+    async fn set(&self, kind: CredentialKind, secret: String) {
+        self.run(move |vault, host| vault.set(host, kind, &secret))
+            .await;
+    }
+
+    async fn delete(&self, kind: CredentialKind) {
+        self.run(move |vault, host| vault.delete(host, kind)).await;
+    }
+}
+
 struct Session<'a, H: client::Handler> {
     handle: &'a mut Handle<H>,
     host: &'a Host,
     prompter: &'a dyn Prompter,
+    saved: Saved,
     /// Methods the server still accepts.
     allowed: MethodSet,
 }
@@ -93,6 +140,7 @@ pub(super) async fn authenticate<H: client::Handler>(
     handle: &mut Handle<H>,
     host: &Host,
     agent: &Agent,
+    vault: &Arc<dyn CredentialVault>,
     prompter: &dyn Prompter,
 ) -> Result<(), ConnectError> {
     let allowed = match handle.authenticate_none(&host.user).await? {
@@ -105,6 +153,10 @@ pub(super) async fn authenticate<H: client::Handler>(
         handle,
         host,
         prompter,
+        saved: Saved {
+            vault: Arc::clone(vault),
+            host: host.id.clone(),
+        },
         allowed,
     };
 
@@ -219,7 +271,7 @@ impl<H: client::Handler> Session<'_, H> {
             return Ok(Step::Skipped);
         }
         let path = expand_home(identity_file);
-        let key = match load_key(&path, self.prompter).await? {
+        let key = match load_key(&path, self.prompter, &self.saved).await? {
             Ok(key) => key,
             Err(e) => return Ok(Step::Failed(e)),
         };
@@ -237,11 +289,28 @@ impl<H: client::Handler> Session<'_, H> {
         if !self.allows(MethodKind::Password) {
             return Ok(Step::Skipped);
         }
+        let mut retry = false;
+        if let Some(password) = self.saved.get(CredentialKind::Password).await {
+            let result = self
+                .handle
+                .authenticate_password(&self.host.user, password)
+                .await?;
+            if let Some(step) = self.settle(result) {
+                return Ok(step);
+            }
+            // Changed on the server: forget it and ask.
+            self.saved.delete(CredentialKind::Password).await;
+            if !self.allows(MethodKind::Password) {
+                return Err(ConnectError::AuthenticationFailed);
+            }
+            retry = true;
+        }
         for attempt in 0..ATTEMPTS {
             let prompt = PasswordPrompt {
                 host: self.host.address.clone(),
                 user: self.host.user.clone(),
-                retry: attempt > 0,
+                retry: retry || attempt > 0,
+                can_save: self.saved.can_save(),
             };
             let password = self
                 .prompter
@@ -250,9 +319,14 @@ impl<H: client::Handler> Session<'_, H> {
                 .ok_or(ConnectError::Cancelled)?;
             let result = self
                 .handle
-                .authenticate_password(&self.host.user, password)
+                .authenticate_password(&self.host.user, password.value.clone())
                 .await?;
             if let Some(step) = self.settle(result) {
+                if password.save {
+                    self.saved
+                        .set(CredentialKind::Password, password.value)
+                        .await;
+                }
                 return Ok(step);
             }
             if !self.allows(MethodKind::Password) {
@@ -331,12 +405,13 @@ impl<H: client::Handler> Session<'_, H> {
     }
 }
 
-/// Reads and, if needed, decrypts a private key, asking for the passphrase.
-/// The outer error ends the connect (cancelled); the inner one only this
-/// method.
+/// Reads and, if needed, decrypts a private key with the saved passphrase or
+/// else by asking for it. The outer error ends the connect (cancelled); the
+/// inner one only this method.
 async fn load_key(
     path: &Path,
     prompter: &dyn Prompter,
+    saved: &Saved,
 ) -> Result<Result<PrivateKey, ConnectError>, ConnectError> {
     let unreadable = |reason: String| ConnectError::KeyUnreadable {
         path: path.to_path_buf(),
@@ -348,7 +423,12 @@ async fn load_key(
         Err(e) => return Ok(Err(unreadable(e.to_string()))),
     };
     let mut passphrase: Option<String> = None;
-    for attempt in 0..=ATTEMPTS {
+    // The vault is read only once the key turns out to be encrypted.
+    let mut vault_tried = false;
+    let mut from_vault = false;
+    let mut save = false;
+    let mut asked = 0;
+    loop {
         let decode = {
             let text = Arc::clone(&text);
             let passphrase = passphrase.clone();
@@ -359,7 +439,12 @@ async fn load_key(
             })
         };
         let error = match decode.await {
-            Ok(Ok(key)) => return Ok(Ok(key)),
+            Ok(Ok(key)) => {
+                if let (true, Some(passphrase)) = (save, passphrase) {
+                    saved.set(CredentialKind::KeyPassphrase, passphrase).await;
+                }
+                return Ok(Ok(key));
+            }
             Ok(Err(e)) => e,
             Err(e) => return Ok(Err(unreadable(e.to_string()))),
         };
@@ -368,19 +453,34 @@ async fn load_key(
             (_, Some(_)) if is_wrong_passphrase(&error) => true,
             _ => return Ok(Err(unreadable(error.to_string()))),
         };
-        if attempt == ATTEMPTS {
+        if from_vault {
+            // The key's passphrase changed: forget the saved one.
+            saved.delete(CredentialKind::KeyPassphrase).await;
+            from_vault = false;
+        }
+        if !vault_tried {
+            vault_tried = true;
+            if let Some(stored) = saved.get(CredentialKind::KeyPassphrase).await {
+                passphrase = Some(stored);
+                from_vault = true;
+                continue;
+            }
+        }
+        if asked == ATTEMPTS {
             break;
         }
+        asked += 1;
         let prompt = PassphrasePrompt {
             key_path: path.to_path_buf(),
             retry: wrong,
+            can_save: saved.can_save(),
         };
-        passphrase = Some(
-            prompter
-                .passphrase(prompt)
-                .await
-                .ok_or(ConnectError::Cancelled)?,
-        );
+        let answer = prompter
+            .passphrase(prompt)
+            .await
+            .ok_or(ConnectError::Cancelled)?;
+        save = answer.save;
+        passphrase = Some(answer.value);
     }
     Ok(Err(ConnectError::KeyPassphraseIncorrect {
         path: path.to_path_buf(),

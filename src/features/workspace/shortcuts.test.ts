@@ -89,3 +89,44 @@ describe("shortcutLabel", () => {
     expect(shortcutLabel("splitRight", "other")).toBe("Ctrl+Shift+E");
   });
 });
+
+describe("the command palette chord", () => {
+  const palette = { type: "openPalette" };
+
+  it("is ⌘K on macOS, even while a Terminal has focus", () => {
+    expect(matchShortcut(chord("k", { metaKey: true }), "mac", "terminal")).toEqual(palette);
+    expect(matchShortcut(chord("k", { metaKey: true }), "mac", "app")).toEqual(palette);
+    expect(shortcutLabel("commandPalette", "mac")).toBe("⌘K");
+  });
+
+  it("is Ctrl+Shift+K elsewhere; plain Ctrl+K opens it only outside a Terminal, where readline's kill-line wins", () => {
+    expect(matchShortcut(chord("K", { ctrlKey: true, shiftKey: true }), "other", "terminal")).toEqual(palette);
+    expect(matchShortcut(chord("k", { ctrlKey: true }), "other", "app")).toEqual(palette);
+    expect(matchShortcut(chord("k", { ctrlKey: true }), "other", "terminal")).toBeNull();
+    expect(shortcutLabel("commandPalette", "other")).toBe("Ctrl+Shift+K");
+  });
+});
+
+describe("keys a focused Terminal keeps (vim, tmux, emacs)", () => {
+  const letters = "abcdefghijklmnopqrstuvwxyz".split("");
+  const terminalChords: [string, KeyChord][] = [
+    ...letters.map((l): [string, KeyChord] => [`Ctrl+${l}`, chord(l, { ctrlKey: true })]),
+    ...letters.map((l): [string, KeyChord] => [`Alt+${l}`, chord(l, { altKey: true })]),
+    ...letters.map((l): [string, KeyChord] => [`Ctrl+Alt+${l}`, chord(l, { ctrlKey: true, altKey: true })]),
+    ["Ctrl+[", chord("[", { ctrlKey: true }, "BracketLeft")],
+    ["Ctrl+]", chord("]", { ctrlKey: true }, "BracketRight")],
+    ["Ctrl+Space", chord(" ", { ctrlKey: true }, "Space")],
+    ["Ctrl+\\", chord("\\", { ctrlKey: true }, "Backslash")],
+    ["Ctrl+/", chord("/", { ctrlKey: true }, "Slash")],
+    ["Escape", chord("Escape")],
+    ["Tab", chord("Tab")],
+    ["Shift+Tab", chord("Tab", { shiftKey: true })],
+  ];
+
+  for (const platform of ["mac", "other"] as const) {
+    it(`all reach the remote on ${platform}`, () => {
+      const taken = terminalChords.filter(([, c]) => matchShortcut(c, platform, "terminal") !== null).map(([n]) => n);
+      expect(taken).toEqual([]);
+    });
+  }
+});
