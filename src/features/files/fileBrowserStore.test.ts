@@ -230,7 +230,9 @@ describe("remote editing", () => {
 
     await store.getState().open(entry("notes.txt"));
 
-    expect(api.openRemoteEdit).toHaveBeenCalledWith("host-1", "/home/me/notes.txt", expect.any(Function));
+    expect(api.openRemoteEdit).toHaveBeenCalledWith("host-1", "/home/me/notes.txt", expect.any(Function), {
+      allowBinary: false,
+    });
     expect(shown(store).path).toBe("/home/me");
     expect(edits(store)).toEqual([{ name: "notes.txt", status: "editing" }]);
     editEvents({ state: "uploading" });
@@ -306,6 +308,49 @@ describe("remote editing", () => {
     expect(api.closeRemoteEdit).toHaveBeenCalledWith(2);
     expect(api.closeFiles).toHaveBeenCalled();
     expect(edits(store)).toEqual([]);
+  });
+
+  it("asks instead of opening a file over the size limit, so it can be downloaded", async () => {
+    const { api, store } = await connected();
+
+    await store.getState().open({ ...entry("dump.sql"), size: 10 * 1024 * 1024 + 1 });
+
+    expect(api.openRemoteEdit).not.toHaveBeenCalled();
+    expect(edits(store)).toEqual([]);
+    expect(store.getState().editQuestion).toEqual({ path: "/home/me/dump.sql", name: "dump.sql", reason: "tooLarge" });
+
+    store.getState().answerEditQuestion("cancel");
+    expect(store.getState().editQuestion).toBeNull();
+  });
+
+  it("asks when the file turns out larger than the limit on the server", async () => {
+    const { store } = await connected({
+      openRemoteEdit: vi.fn(() => Promise.reject({ kind: "tooLarge", message: "big", details: { path: "x" } })),
+    });
+
+    await store.getState().open(entry("notes.txt"));
+
+    expect(edits(store)).toEqual([]);
+    expect(store.getState().editQuestion).toMatchObject({ reason: "tooLarge" });
+  });
+
+  it("asks before opening a file that looks binary, and opens it when told to", async () => {
+    const openRemoteEdit = vi
+      .fn<FilesApi["openRemoteEdit"]>()
+      .mockRejectedValueOnce({ kind: "binary", message: "binary" })
+      .mockResolvedValue(9);
+    const { store } = await connected({ openRemoteEdit });
+
+    await store.getState().open(entry("tool"));
+    expect(edits(store)).toEqual([]);
+    expect(store.getState().editQuestion).toEqual({ path: "/home/me/tool", name: "tool", reason: "binary" });
+
+    await store.getState().answerEditQuestion("open");
+    expect(openRemoteEdit).toHaveBeenLastCalledWith("host-1", "/home/me/tool", expect.any(Function), {
+      allowBinary: true,
+    });
+    expect(store.getState().editQuestion).toBeNull();
+    expect(edits(store)).toEqual([{ name: "tool", status: "editing" }]);
   });
 
   it("keeps editing while the Connection is down", async () => {

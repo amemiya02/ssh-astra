@@ -174,6 +174,20 @@
       "openFailed": "Could not open the file: {{message}}",
       "noApplication": "No application on this computer opens this file.",
       "notFound": "The file no longer exists.",
+      "notAFile": "Only regular files open in the editor.",
+      "question": {
+        "tooLarge": {
+          "title": "Too large to edit",
+          "body": "{{name}} is larger than 10 MB, the most that opens in the editor. Download it instead?"
+        },
+        "binary": {
+          "title": "Not a text file",
+          "body": "{{name}} does not look like text. Editing it may damage it. Download it, or open it anyway?"
+        },
+        "download": "Download",
+        "openAnyway": "Open anyway",
+        "cancel": "Cancel"
+      },
       "retry": "Retry",
       "close": "Stop editing {{name}}"
     },

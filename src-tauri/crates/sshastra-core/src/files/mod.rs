@@ -88,6 +88,9 @@ pub enum FsError {
     /// Creating or renaming onto a name that is already taken.
     #[error("already exists: {0}")]
     AlreadyExists(String),
+    /// A file bigger than a whole-file read allows ([`READ_FILE_LIMIT`]).
+    #[error("{path} is larger than {limit} bytes")]
+    TooLarge { path: String, limit: u64 },
     #[error("the server did not answer in time")]
     TimedOut,
     /// The SFTP session or its Connection failed, or the server refused
@@ -100,6 +103,9 @@ pub enum FsError {
 }
 
 pub type FsResult<T> = Result<T, FsError>;
+
+/// The most [`RemoteFs::read_file`] reads into memory: 10 MB.
+pub const READ_FILE_LIMIT: u64 = 10 * 1024 * 1024;
 
 /// A file opened for streaming reads ([`RemoteFs::open_read`],
 /// [`LocalFs::open_read`]).
@@ -146,15 +152,22 @@ pub trait RemoteFs: Send + Sync {
     fn create_write<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileWriter>>;
 
     /// The whole contents of the file `path`, in memory (small files, e.g.
-    /// remote editing).
+    /// remote editing): [`FsError::TooLarge`] past [`READ_FILE_LIMIT`].
     fn read_file<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<Vec<u8>>> {
         Box::pin(async move {
-            let mut reader = self.open_read(path).await?;
+            let reader = self.open_read(path).await?;
             let mut data = Vec::new();
             reader
+                .take(READ_FILE_LIMIT + 1)
                 .read_to_end(&mut data)
                 .await
                 .map_err(|e| FsError::Protocol(format!("{path}: {e}")))?;
+            if data.len() as u64 > READ_FILE_LIMIT {
+                return Err(FsError::TooLarge {
+                    path: path.to_owned(),
+                    limit: READ_FILE_LIMIT,
+                });
+            }
             Ok(data)
         })
     }

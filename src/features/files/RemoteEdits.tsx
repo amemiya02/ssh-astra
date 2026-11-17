@@ -85,6 +85,8 @@ function statusText(t: ReturnType<typeof useTranslation>["t"], edit: RemoteEditI
           return t("files.edit.noApplication");
         case "notFound":
           return t("files.edit.notFound");
+        case "notAFile":
+          return t("files.edit.notAFile");
         case "notConnected":
         case "permissionDenied":
         case "timedOut":

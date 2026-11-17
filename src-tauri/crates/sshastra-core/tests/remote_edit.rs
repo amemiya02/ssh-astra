@@ -13,9 +13,10 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use sshastra_core::edit::{EditError, EditEvent, Opener, RemoteEditor};
+use sshastra_core::edit::{EditError, EditEvent, Opener, RemoteEditor, MAX_EDIT_SIZE};
 use sshastra_core::files::{
-    FileEntry, FileReader, FileStat, FileWriter, FsError, FsResult, RemoteFs,
+    FileEntry, FileKind, FileReader, FileStat, FileWriter, FsError, FsResult, RemoteFs,
+    READ_FILE_LIMIT,
 };
 use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
@@ -73,7 +74,20 @@ impl RemoteFs for FakeFs {
     }
 
     fn stat<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileStat>> {
-        Box::pin(async move { Err(FsError::NotFound(path.into())) })
+        Box::pin(async move {
+            let stat = |kind, size| FileStat {
+                kind,
+                size,
+                modified: None,
+                permissions: Some(0o644),
+            };
+            if path == "/etc" {
+                return Ok(stat(FileKind::Dir, 4096));
+            }
+            let size = self.files.lock().unwrap().get(path).map(|d| d.len() as u64);
+            size.map(|size| stat(FileKind::File, size))
+                .ok_or_else(|| FsError::NotFound(path.into()))
+        })
     }
 
     fn open_read<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileReader>> {
@@ -413,6 +427,68 @@ async fn a_missing_remote_file_is_not_opened() {
 
     assert!(matches!(opened, Err(EditError::Fs(FsError::NotFound(_)))));
     assert!(s.opener.opened.lock().unwrap().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_file_over_the_size_limit_is_not_opened() {
+    let s = setup();
+    let fs = FakeFs::with("/var/log/big.log", "");
+    fs.files.lock().unwrap().insert(
+        "/var/log/big.log".into(),
+        vec![b'x'; MAX_EDIT_SIZE as usize + 1],
+    );
+
+    let opened = s.editor.open(fs, &host(), "/var/log/big.log", |_| {}).await;
+
+    assert!(
+        matches!(opened, Err(EditError::Fs(FsError::TooLarge { .. }))),
+        "{opened:?}"
+    );
+    assert!(s.opener.opened.lock().unwrap().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn read_file_refuses_more_than_its_limit() {
+    let fs = FakeFs::with("/big", "");
+    fs.files
+        .lock()
+        .unwrap()
+        .insert("/big".into(), vec![b'x'; READ_FILE_LIMIT as usize + 1]);
+
+    assert!(matches!(
+        fs.read_file("/big").await,
+        Err(FsError::TooLarge { .. })
+    ));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_file_with_nul_bytes_is_opened_only_when_asked_to() {
+    let s = setup();
+    let fs = FakeFs::with("/bin/tool", "\x7fELF\0\0\0");
+
+    let refused = s
+        .editor
+        .open(fs.clone(), &host(), "/bin/tool", |_| {})
+        .await;
+    assert!(matches!(refused, Err(EditError::Binary)), "{refused:?}");
+    assert!(s.opener.opened.lock().unwrap().is_empty());
+
+    let id = s
+        .editor
+        .open_binary(fs, &host(), "/bin/tool", |_| {})
+        .await
+        .unwrap();
+    assert!(s.editor.local_path(id).unwrap().exists());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn only_regular_files_are_opened() {
+    let s = setup();
+    let fs = FakeFs::with("/etc/app.conf", "a\n");
+
+    let opened = s.editor.open(fs, &host(), "/etc", |_| {}).await;
+
+    assert!(matches!(opened, Err(EditError::NotAFile)), "{opened:?}");
 }
 
 struct Trusting(&'static str);

@@ -14,6 +14,7 @@ import { useSetting } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import { FileBrowser } from "./FileBrowser";
 import { childPath } from "./fileList";
+import { EditQuestionDialog } from "./EditQuestionDialog";
 import { errorText } from "./fileErrors";
 import { followConnection } from "./fileBrowserStore";
 import { fileBrowsers } from "./fileBrowsers";
@@ -75,10 +76,12 @@ function RemoteFilePanel({ pane }: { pane: FilePanelPane }) {
     const { path: dir, selection } = store.getState();
     const chosen = names ?? [...selection];
     if (dir === null || chosen.length === 0) return;
+    downloadPaths(chosen.map((name) => childPath(dir, name)));
+  };
+  /** Downloads remote `paths` (absolute) to a folder the user picks. */
+  const downloadPaths = async (paths: string[]) => {
     const target = await pickDownloadFolder(t("files.downloadTitle"));
-    if (target === null) return;
-    const paths = chosen.map((name) => childPath(dir, name));
-    void transfersStore.getState().download(pane.host.id, paths, target);
+    if (target !== null) void transfersStore.getState().download(pane.host.id, paths, target);
   };
   const dropZone = useRef<HTMLDivElement>(null);
   const { over } = useOsFileDrop(dropZone, ready && !collapsed, upload);
@@ -143,6 +146,7 @@ function RemoteFilePanel({ pane }: { pane: FilePanelPane }) {
   return (
     <FilePanel actions={actions} footer={<RemoteEdits store={store} hostName={pane.host.name} />}>
       {body}
+      <EditQuestionDialog store={store} onDownload={(path) => void downloadPaths([path])} />
     </FilePanel>
   );
 }

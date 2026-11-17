@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
-use crate::files::{FsError, RemoteFs};
+use crate::files::{FileKind, FsError, RemoteFs, READ_FILE_LIMIT};
 use crate::hosts::HostId;
 
 /// Opens a local file in the user's default application for it. The app
@@ -58,7 +58,21 @@ pub enum EditError {
     Open(String),
     #[error("no such edit")]
     NotOpen,
+    /// Only regular files (or links to them) are edited.
+    #[error("not a regular file")]
+    NotAFile,
+    /// The file looks binary (a NUL byte near the start); open it with
+    /// [`RemoteEditor::open_binary`] if the user says so.
+    #[error("the file looks binary")]
+    Binary,
 }
+
+/// The largest file opened for editing; bigger ones fail with
+/// [`FsError::TooLarge`] (download them instead).
+pub const MAX_EDIT_SIZE: u64 = READ_FILE_LIMIT;
+
+/// How much of the file is checked for NUL bytes.
+const BINARY_SNIFF: usize = 8 * 1024;
 
 /// How long the file must stay unchanged after a save before it is
 /// uploaded: editors often write a file in several steps.
@@ -103,12 +117,39 @@ impl RemoteEditor {
     }
 
     /// Downloads `remote_path` from `fs` and opens it in the editor; each
-    /// later save is uploaded through `fs`, reported to `on_event`.
+    /// later save is uploaded through `fs`, reported to `on_event`. Only a
+    /// regular text file up to [`MAX_EDIT_SIZE`] opens: otherwise
+    /// [`EditError::NotAFile`], [`FsError::TooLarge`] or [`EditError::Binary`].
     pub async fn open(
         &self,
         fs: Arc<dyn RemoteFs>,
         host_id: &HostId,
         remote_path: &str,
+        on_event: impl Fn(EditEvent) + Send + Sync + 'static,
+    ) -> Result<EditId, EditError> {
+        self.open_with(fs, host_id, remote_path, false, on_event)
+            .await
+    }
+
+    /// Like [`open`](Self::open), for a file the user chose to edit although
+    /// it looks binary.
+    pub async fn open_binary(
+        &self,
+        fs: Arc<dyn RemoteFs>,
+        host_id: &HostId,
+        remote_path: &str,
+        on_event: impl Fn(EditEvent) + Send + Sync + 'static,
+    ) -> Result<EditId, EditError> {
+        self.open_with(fs, host_id, remote_path, true, on_event)
+            .await
+    }
+
+    async fn open_with(
+        &self,
+        fs: Arc<dyn RemoteFs>,
+        host_id: &HostId,
+        remote_path: &str,
+        allow_binary: bool,
         on_event: impl Fn(EditEvent) + Send + Sync + 'static,
     ) -> Result<EditId, EditError> {
         // Already open: show it again rather than download over unsaved or
@@ -123,7 +164,22 @@ impl RemoteEditor {
             return Ok(id);
         }
 
+        let stat = fs.stat(remote_path).await?;
+        if stat.kind != FileKind::File {
+            return Err(EditError::NotAFile);
+        }
+        if stat.size > MAX_EDIT_SIZE {
+            return Err(FsError::TooLarge {
+                path: remote_path.to_owned(),
+                limit: MAX_EDIT_SIZE,
+            }
+            .into());
+        }
+        // `read_file` enforces the limit too, should the file have grown.
         let contents = fs.read_file(remote_path).await?;
+        if !allow_binary && contents.iter().take(BINARY_SNIFF).any(|&b| b == 0) {
+            return Err(EditError::Binary);
+        }
         let id = EditId(self.next_id.fetch_add(1, Ordering::Relaxed) + 1);
         let dir = self
             .root

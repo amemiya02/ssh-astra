@@ -2,7 +2,7 @@ import { createStore, type StoreApi } from "zustand/vanilla";
 import type { ConnectionStatus } from "@/features/workspace/tabs";
 import { readCommandError, type CommandError } from "@/lib/ipc/connect";
 import * as editIpc from "@/lib/ipc/edit";
-import type { EditEvent, EditId } from "@/lib/ipc/edit";
+import { maxEditSize, type EditEvent, type EditId } from "@/lib/ipc/edit";
 import * as ipc from "@/lib/ipc/files";
 import type { FileEntry, FsId } from "@/lib/ipc/files";
 import type { HostId } from "@/lib/ipc/hosts";
@@ -29,6 +29,16 @@ export interface RemoteEditItem {
   status: "opening" | "editing" | "uploading" | "uploaded" | "uploadFailed" | "openFailed";
   /** Why it could not be opened or uploaded (`kind: "uploadFailed"` for uploads). */
   error: CommandError | null;
+}
+
+/**
+ * A file `open` did not open in the editor without asking: over the size limit (offer a download)
+ * or binary-looking (offer to open anyway, or download).
+ */
+export interface EditQuestion {
+  path: string;
+  name: string;
+  reason: "tooLarge" | "binary";
 }
 
 /** How a click changes the selection: plain, Cmd/Ctrl, Shift. */
@@ -58,6 +68,10 @@ export interface FileBrowserState {
   open(entry: FileEntry): Promise<void>;
   /** Files opened in the user's editor, uploaded on every save; oldest first. */
   edits: RemoteEditItem[];
+  /** A file `open` asks about before editing it; the dialog may download it instead. */
+  editQuestion: EditQuestion | null;
+  /** `open` edits the asked-about file even though it looks binary; `cancel` drops the question. */
+  answerEditQuestion(answer: "open" | "cancel"): Promise<void>;
   /** Uploads a failed edit again, or opens again one that could not be opened. */
   retryEdit(path: string): Promise<void>;
   /** Stops uploading the file and deletes its temp copy. */
@@ -128,16 +142,17 @@ export function createFileBrowserStore(api: FilesApi, hostId: HostId): StoreApi<
       }
     };
 
-    const startEdit = async (path: string) => {
+    const nameOf = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+
+    const startEdit = async (path: string, allowBinary = false) => {
       const existing = get().edits.find((e) => e.path === path);
       if (existing) {
         if (existing.status === "openFailed") updateEdit(path, { status: "opening", error: null });
       } else {
-        const name = path.slice(path.lastIndexOf("/") + 1);
-        set({ edits: [...get().edits, { path, name, id: null, status: "opening", error: null }] });
+        set({ edits: [...get().edits, { path, name: nameOf(path), id: null, status: "opening", error: null }] });
       }
       try {
-        const id = await api.openRemoteEdit(hostId, path, onEditEvent(path));
+        const id = await api.openRemoteEdit(hostId, path, onEditEvent(path), { allowBinary });
         const current = get().edits.find((e) => e.path === path);
         if (!current) {
           // Closed while it was opening.
@@ -147,8 +162,17 @@ export function createFileBrowserStore(api: FilesApi, hostId: HostId): StoreApi<
         updateEdit(path, current.status === "opening" ? { id, status: "editing" } : { id });
       } catch (e) {
         const current = get().edits.find((x) => x.path === path);
+        const error = readCommandError(e);
         // Opening again an edit that is already open only failed to show it.
-        if (current && current.id === null) updateEdit(path, { status: "openFailed", error: readCommandError(e) });
+        if (!current || current.id !== null) return;
+        if (error.kind === "tooLarge" || error.kind === "binary") {
+          set({
+            edits: get().edits.filter((x) => x.path !== path),
+            editQuestion: { path, name: nameOf(path), reason: error.kind },
+          });
+        } else {
+          updateEdit(path, { status: "openFailed", error });
+        }
       }
     };
 
@@ -177,6 +201,7 @@ export function createFileBrowserStore(api: FilesApi, hostId: HostId): StoreApi<
     return {
       phase: "closed",
       edits: [],
+      editQuestion: null,
       path: null,
       entries: [],
       loading: false,
@@ -212,8 +237,17 @@ export function createFileBrowserStore(api: FilesApi, hostId: HostId): StoreApi<
       async open(entry) {
         const dir = get().path;
         if (dir === null) return;
-        if (isDirLike(entry)) await list(childPath(dir, entry.name), false);
-        else if (isFileLike(entry)) await startEdit(childPath(dir, entry.name));
+        const path = childPath(dir, entry.name);
+        if (isDirLike(entry)) await list(path, false);
+        else if (entry.kind === "file" && entry.size > maxEditSize && !get().edits.some((e) => e.path === path)) {
+          set({ editQuestion: { path, name: entry.name, reason: "tooLarge" } });
+        } else if (isFileLike(entry)) await startEdit(path);
+      },
+
+      async answerEditQuestion(answer) {
+        const question = get().editQuestion;
+        set({ editQuestion: null });
+        if (answer === "open" && question?.reason === "binary") await startEdit(question.path, true);
       },
 
       async retryEdit(path) {

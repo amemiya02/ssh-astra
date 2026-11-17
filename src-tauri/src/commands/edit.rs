@@ -25,23 +25,29 @@ impl Opener for SystemOpener {
 /// Downloads `path` from `host_id` over its live Connection and opens it in
 /// the default application. Upload progress (`{ state: "uploading" |
 /// "uploaded" | "uploadFailed", reason? }`) goes to `on_event`. Opening a
-/// file that is already open shows it again and returns the same id.
+/// file that is already open shows it again and returns the same id. Only
+/// regular files up to 10 MB (`tooLarge`, `notAFile`); one that looks binary
+/// fails with `binary` unless `allow_binary`.
 #[tauri::command]
 pub async fn edit_open(
     app: AppHandle,
     editor: State<'_, RemoteEditor>,
     host_id: HostId,
     path: String,
+    allow_binary: bool,
     on_event: Channel<EditEvent>,
 ) -> CommandResult<EditId> {
     // An edit outlives File panel sessions and Connections: each save goes
     // over whatever Connection the Host has then.
     let fs = Arc::new(LiveHostFs::new(live_sftp(app, host_id.clone())));
-    let id = editor
-        .open(fs, &host_id, &path, move |event| {
-            let _ = on_event.send(event);
-        })
-        .await?;
+    let on_event = move |event| {
+        let _ = on_event.send(event);
+    };
+    let id = if allow_binary {
+        editor.open_binary(fs, &host_id, &path, on_event).await?
+    } else {
+        editor.open(fs, &host_id, &path, on_event).await?
+    };
     Ok(id)
 }
 

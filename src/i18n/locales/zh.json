@@ -174,6 +174,20 @@
       "openFailed": "无法打开文件：{{message}}",
       "noApplication": "这台电脑上没有能打开此文件的应用。",
       "notFound": "文件已不存在。",
+      "notAFile": "只有普通文件可以在编辑器中打开。",
+      "question": {
+        "tooLarge": {
+          "title": "文件太大，无法编辑",
+          "body": "{{name}} 超过 10 MB，超出编辑器可打开的上限。改为下载吗？"
+        },
+        "binary": {
+          "title": "不是文本文件",
+          "body": "{{name}} 看起来不是文本，编辑可能会损坏它。下载它，还是仍然打开？"
+        },
+        "download": "下载",
+        "openAnyway": "仍然打开",
+        "cancel": "取消"
+      },
       "retry": "重试",
       "close": "停止编辑 {{name}}"
     },
