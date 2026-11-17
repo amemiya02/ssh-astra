@@ -8,12 +8,14 @@ mod prompts;
 
 use std::sync::Arc;
 
+use sshastra_core::credentials;
 use sshastra_core::hosts::HostStore;
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::ssh::{Agent, ConnectionManager};
 use sshastra_core::terminal::TerminalRegistry;
 use tauri::Manager;
 
+use commands::credentials::Vault;
 use commands::hosts::HostsState;
 use prompts::PendingPrompts;
 
@@ -27,8 +29,16 @@ pub fn run() {
             // fall back to a file of our own.
             let known_hosts = KnownHosts::system_default()
                 .unwrap_or_else(|| KnownHosts::new(config_dir.join("known_hosts")));
+            // The system keychain; where there is none (Linux without a
+            // Secret Service) nothing is saved and every connect asks.
+            let vault = credentials::system_vault();
             app.manage(HostsState::new(hosts));
-            app.manage(ConnectionManager::new(known_hosts).with_agent(Agent::System));
+            app.manage(
+                ConnectionManager::new(known_hosts)
+                    .with_agent(Agent::System)
+                    .with_vault(vault.clone()),
+            );
+            app.manage(Vault(vault));
             Ok(())
         })
         .manage(TerminalRegistry::default())
@@ -37,6 +47,7 @@ pub fn run() {
             commands::hosts::hosts_list,
             commands::hosts::host_save,
             commands::hosts::host_delete,
+            commands::credentials::host_credentials_clear,
             commands::terminal::local_terminal_open,
             commands::terminal::remote_terminal_open,
             commands::terminal::prompt_answer,

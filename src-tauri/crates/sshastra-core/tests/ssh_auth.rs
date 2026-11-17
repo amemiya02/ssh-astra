@@ -12,7 +12,7 @@ use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::ssh::{
     Agent, BoxFuture, ConnectError, ConnectionManager, HostKeyPrompt, KeyboardInteractivePrompt,
-    PassphrasePrompt, PasswordPrompt, Prompter,
+    PassphrasePrompt, PasswordPrompt, Prompter, Secret,
 };
 use support::{Service, Sshd};
 
@@ -55,15 +55,15 @@ impl Prompter for ScriptedPrompter {
         Box::pin(async { true })
     }
 
-    fn password(&self, prompt: PasswordPrompt) -> BoxFuture<'_, Option<String>> {
+    fn password(&self, prompt: PasswordPrompt) -> BoxFuture<'_, Option<Secret>> {
         let answer = self.record(format!("password retry={}", prompt.retry));
-        Box::pin(async move { answer.map(|mut a| a.remove(0)) })
+        Box::pin(async move { answer.map(|mut a| Secret::new(a.remove(0))) })
     }
 
-    fn passphrase(&self, prompt: PassphrasePrompt) -> BoxFuture<'_, Option<String>> {
+    fn passphrase(&self, prompt: PassphrasePrompt) -> BoxFuture<'_, Option<Secret>> {
         let file = prompt.key_path.file_name().unwrap().to_string_lossy();
         let answer = self.record(format!("passphrase {file} retry={}", prompt.retry));
-        Box::pin(async move { answer.map(|mut a| a.remove(0)) })
+        Box::pin(async move { answer.map(|mut a| Secret::new(a.remove(0))) })
     }
 
     fn keyboard_interactive(

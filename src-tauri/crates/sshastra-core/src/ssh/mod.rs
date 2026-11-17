@@ -8,7 +8,8 @@
 //! key is never put to the user: the connection is refused.
 //!
 //! Authentication tries, as far as the server allows: ssh-agent, the Host's
-//! private key file, password, keyboard-interactive (see `auth`).
+//! private key file, password, keyboard-interactive (see `auth`). A password
+//! or key passphrase saved in the CredentialVault is tried before asking.
 //!
 //! A Host behind Jump hosts is reached with
 //! [`ConnectionManager::connect_through`]: each hop is its own Connection
@@ -33,6 +34,7 @@ use russh::keys::PublicKeyOrCertificate;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 
+use crate::credentials::{CredentialVault, NoVault};
 use crate::hosts::{Host, HostId};
 use crate::known_hosts::{HostKey, KnownHost, KnownHosts, KnownHostsError, Verdict};
 use crate::terminal::{TerminalEvent, TerminalSize};
@@ -59,6 +61,8 @@ pub struct PasswordPrompt {
     pub user: String,
     /// The previous password was rejected.
     pub retry: bool,
+    /// The CredentialVault can keep the answer: offer "save".
+    pub can_save: bool,
 }
 
 /// A request for the passphrase of an encrypted private key file.
@@ -67,6 +71,43 @@ pub struct PassphrasePrompt {
     pub key_path: PathBuf,
     /// The previous passphrase was wrong.
     pub retry: bool,
+    /// The CredentialVault can keep the answer: offer "save".
+    pub can_save: bool,
+}
+
+/// A typed password or passphrase, and whether the user asked to save it in
+/// the CredentialVault. It is saved only once it proves right.
+#[derive(Clone, PartialEq, Eq)]
+pub struct Secret {
+    pub value: String,
+    pub save: bool,
+}
+
+impl Secret {
+    /// Use once, do not save.
+    pub fn new(value: impl Into<String>) -> Self {
+        Self {
+            value: value.into(),
+            save: false,
+        }
+    }
+
+    /// Use, and save it if it works.
+    pub fn saved(value: impl Into<String>) -> Self {
+        Self {
+            value: value.into(),
+            save: true,
+        }
+    }
+}
+
+impl std::fmt::Debug for Secret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Secret")
+            .field("value", &"<redacted>")
+            .field("save", &self.save)
+            .finish()
+    }
 }
 
 /// One round of keyboard-interactive authentication (e.g. an OTP code): the
@@ -96,9 +137,9 @@ pub trait Prompter: Send + Sync {
     /// Should this new host key be trusted (and written to known_hosts)?
     fn confirm_host_key(&self, prompt: HostKeyPrompt) -> BoxFuture<'_, bool>;
     /// The password.
-    fn password(&self, prompt: PasswordPrompt) -> BoxFuture<'_, Option<String>>;
+    fn password(&self, prompt: PasswordPrompt) -> BoxFuture<'_, Option<Secret>>;
     /// The passphrase of an encrypted private key.
-    fn passphrase(&self, prompt: PassphrasePrompt) -> BoxFuture<'_, Option<String>> {
+    fn passphrase(&self, prompt: PassphrasePrompt) -> BoxFuture<'_, Option<Secret>> {
         let _ = prompt;
         Box::pin(async { None })
     }
@@ -181,6 +222,7 @@ impl From<russh::Error> for ConnectError {
 pub struct ConnectionManager {
     known_hosts: KnownHosts,
     agent: Agent,
+    vault: Arc<dyn CredentialVault>,
     config: Arc<client::Config>,
     connections: Mutex<HashMap<HostId, Weak<Connection>>>,
 }
@@ -198,6 +240,7 @@ impl ConnectionManager {
         Self {
             known_hosts,
             agent: Agent::None,
+            vault: Arc::new(NoVault),
             config: Arc::new(config),
             connections: Mutex::default(),
         }
@@ -207,6 +250,14 @@ impl ConnectionManager {
     /// [`Agent::System`].
     pub fn with_agent(mut self, agent: Agent) -> Self {
         self.agent = agent;
+        self
+    }
+
+    /// Uses the passwords and key passphrases saved in `vault`, and saves
+    /// there what the user asks to. The app passes `credentials::system_vault()`;
+    /// without this nothing is saved.
+    pub fn with_vault(mut self, vault: Arc<dyn CredentialVault>) -> Self {
+        self.vault = vault;
         self
     }
 
@@ -304,7 +355,14 @@ impl ConnectionManager {
             }
         };
 
-        auth::authenticate(&mut handle, host, &self.agent, prompter.as_ref()).await?;
+        auth::authenticate(
+            &mut handle,
+            host,
+            &self.agent,
+            &self.vault,
+            prompter.as_ref(),
+        )
+        .await?;
         Ok(Connection { handle, _via: via })
     }
 

@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use sshastra_core::hosts::{Host, HostDraft, HostId, HostStore};
 use tauri::State;
 
+use crate::commands::credentials::Vault;
 use crate::error::{CommandError, CommandResult};
 
 /// The HostStore, or why it could not be loaded at startup (e.g. a damaged
@@ -40,7 +41,16 @@ pub fn host_save(
     hosts.with(|store| Ok(store.upsert(id, draft)?))
 }
 
+/// Deletes a Host and, in the background, its saved credentials.
 #[tauri::command]
-pub fn host_delete(hosts: State<'_, HostsState>, id: HostId) -> CommandResult<()> {
-    hosts.with(|store| Ok(store.delete(&id)?))
+pub fn host_delete(
+    hosts: State<'_, HostsState>,
+    vault: State<'_, Vault>,
+    id: HostId,
+) -> CommandResult<()> {
+    hosts.with(|store| Ok(store.delete(&id)?))?;
+    let vault = Vault::clone(&vault);
+    // Best effort: an entry left behind is unreachable, never shown again.
+    tauri::async_runtime::spawn(async move { vault.clear(id).await });
+    Ok(())
 }

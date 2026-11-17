@@ -15,8 +15,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { readCommandError } from "@/lib/ipc/connect";
-import { listHosts, saveHost, type Host } from "@/lib/ipc/hosts";
+import { listHosts, saveHost, type Host, type HostId } from "@/lib/ipc/hosts";
 import { cn } from "@/lib/utils";
+import { ClearCredentialsButton } from "./ClearCredentialsButton";
 import { HostsSidebar } from "./HostsSidebar";
 import { emptyHostForm, parseHostForm, type HostFormField, type HostFormResult, type HostFormValues } from "./hostForm";
 
@@ -161,11 +162,14 @@ const NO_JUMP_HOST = "none";
 
 function HostFormDialogContent({
   hosts,
+  hostId,
   onSaved,
   onCancel,
 }: {
   /** Hosts that can be picked as the Jump host. */
   hosts: Host[];
+  /** The saved Host being edited (offers clearing its saved credentials); absent for a new one. */
+  hostId?: HostId;
   onSaved: (host: Host) => void;
   onCancel: () => void;
 }) {
@@ -289,6 +293,7 @@ function HostFormDialogContent({
             </SelectContent>
           </Select>
         </div>
+        {hostId && <ClearCredentialsButton hostId={hostId} />}
         {saveError && (
           <p role="alert" className="text-destructive text-xs">
             {saveError}

@@ -14,7 +14,8 @@ use std::time::{Duration, Instant};
 use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::ssh::{
-    BoxFuture, ConnectError, Connection, ConnectionManager, HostKeyPrompt, PasswordPrompt, Prompter,
+    BoxFuture, ConnectError, Connection, ConnectionManager, HostKeyPrompt, PasswordPrompt,
+    Prompter, Secret,
 };
 use sshastra_core::terminal::{Terminal, TerminalEvent, TerminalSize};
 use support::{Service, Sshd};
@@ -56,12 +57,18 @@ impl Prompter for ScriptedPrompter {
         Box::pin(async move { self.trust_new_host })
     }
 
-    fn password(&self, prompt: PasswordPrompt) -> BoxFuture<'_, Option<String>> {
+    fn password(&self, prompt: PasswordPrompt) -> BoxFuture<'_, Option<Secret>> {
         self.asked.lock().unwrap().push(format!(
             "password {}@{} retry={}",
             prompt.user, prompt.host, prompt.retry
         ));
-        let answer = self.passwords.lock().unwrap().pop_front().flatten();
+        let answer = self
+            .passwords
+            .lock()
+            .unwrap()
+            .pop_front()
+            .flatten()
+            .map(Secret::new);
         Box::pin(async move { answer })
     }
 }
