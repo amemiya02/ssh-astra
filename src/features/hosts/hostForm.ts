@@ -6,9 +6,12 @@ export interface HostFormValues {
   address: string;
   port: string;
   user: string;
+  /** The Jump host's id, or "" to connect directly. */
+  jumpHost: string;
 }
 
-export type HostFormField = keyof HostFormValues;
+/** The free-text fields, validated here. */
+export type HostFormField = Exclude<keyof HostFormValues, "jumpHost">;
 /** Error codes; the UI maps them to copy under `hosts.errors.*`. */
 export type HostFormError = "required" | "port";
 
@@ -16,12 +19,19 @@ export type HostFormResult =
   | { ok: true; draft: HostDraft }
   | { ok: false; errors: Partial<Record<HostFormField, HostFormError>> };
 
-export const emptyHostForm: HostFormValues = { name: "", address: "", port: "22", user: "" };
+export const emptyHostForm: HostFormValues = { name: "", address: "", port: "22", user: "", jumpHost: "" };
 
 export function hostFormFrom(host: Host): HostFormValues {
-  return { name: host.name, address: host.address, port: String(host.port), user: host.user };
+  return {
+    name: host.name,
+    address: host.address,
+    port: String(host.port),
+    user: host.user,
+    jumpHost: host.jumpHost ?? "",
+  };
 }
 
+/** Validates the form. Jump host loops are checked by the backend on save. */
 export function parseHostForm(values: HostFormValues): HostFormResult {
   const errors: Partial<Record<HostFormField, HostFormError>> = {};
   const name = values.name.trim();
@@ -36,5 +46,6 @@ export function parseHostForm(values: HostFormValues): HostFormResult {
   if (!(port >= 1 && port <= 65535)) errors.port = "port";
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
-  return { ok: true, draft: { name, address, port, user, auth: { type: "password" } } };
+  const jumpHost = values.jumpHost || null;
+  return { ok: true, draft: { name, address, port, user, auth: { type: "password" }, jumpHost } };
 }

@@ -32,6 +32,7 @@ export function HostsPanel({ onOpen }: { onOpen: (host: Host) => void }) {
       </div>
       {creating && (
         <HostForm
+          hosts={hosts}
           onCancel={() => setCreating(false)}
           onSaved={(host) => {
             setHosts((all) => [...all, host]);
@@ -82,7 +83,15 @@ const fields: { field: HostFormField; inputMode?: "numeric" }[] = [
   { field: "user" },
 ];
 
-function HostForm({ onSaved, onCancel }: { onSaved: (host: Host) => void; onCancel: () => void }) {
+function HostForm({
+  hosts,
+  onSaved,
+  onCancel,
+}: {
+  hosts: Host[];
+  onSaved: (host: Host) => void;
+  onCancel: () => void;
+}) {
   const { t } = useTranslation();
   const [values, setValues] = useState<HostFormValues>(emptyHostForm);
   const [errors, setErrors] = useState<Extract<HostFormResult, { ok: false }>["errors"]>({});
@@ -124,6 +133,21 @@ function HostForm({ onSaved, onCancel }: { onSaved: (host: Host) => void; onCanc
           {errors[field] && <span className="text-destructive">{t(`hosts.errors.${errors[field]}`)}</span>}
         </label>
       ))}
+      <label className="block text-xs">
+        <span className="text-muted-foreground">{t("hosts.fields.jumpHost")}</span>
+        <select
+          className="bg-background focus-visible:outline-ring mt-0.5 w-full rounded-md border px-2 py-1 text-sm focus-visible:outline-2"
+          value={values.jumpHost}
+          onChange={(event) => setValues((v) => ({ ...v, jumpHost: event.target.value }))}
+        >
+          <option value="">{t("hosts.noJumpHost")}</option>
+          {hosts.map((host) => (
+            <option key={host.id} value={host.id}>
+              {host.name}
+            </option>
+          ))}
+        </select>
+      </label>
       <p className="text-muted-foreground text-xs">{t("hosts.passwordNote")}</p>
       {saveError && (
         <p role="alert" className="text-destructive text-xs">

@@ -8,6 +8,9 @@ import type { CommandError } from "@/lib/ipc/connect";
  */
 export function ConnectErrorPanel({ error }: { error: CommandError }) {
   const { t } = useTranslation();
+  // Set when a Jump host on the way failed rather than the Host itself.
+  const jumpHost = error.details?.jumpHost;
+  const hop = jumpHost === undefined ? null : <p className="font-medium">{t("connect.atJumpHost", { name: jumpHost })}</p>;
 
   if (error.kind === "hostKeyMismatch" && error.details) {
     const d = error.details;
@@ -17,6 +20,7 @@ export function ConnectErrorPanel({ error }: { error: CommandError }) {
           <TriangleAlert className="size-5" aria-hidden />
           {t("connect.mismatch.title")}
         </h2>
+        {hop}
         <p className="mt-2">{t("connect.mismatch.body", { host: d.host })}</p>
         <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
           <dt className="text-muted-foreground">{t("connect.mismatch.presented")}</dt>
@@ -35,6 +39,7 @@ export function ConnectErrorPanel({ error }: { error: CommandError }) {
   const kind = known.find((k) => k === error.kind);
   return (
     <div role="alert" className="text-destructive m-4 rounded-lg border p-4 text-sm">
+      {hop}
       <p className="font-medium">{kind ? t(`connect.errors.${kind}`) : t("connect.errors.generic")}</p>
       <p className="text-muted-foreground mt-1">{error.message}</p>
     </div>

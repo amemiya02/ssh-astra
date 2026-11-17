@@ -21,8 +21,10 @@
       "name": "名称",
       "address": "地址",
       "port": "端口",
-      "user": "用户名"
+      "user": "用户名",
+      "jumpHost": "跳板机"
     },
+    "noJumpHost": "无（直接连接）",
     "errors": {
       "required": "必填",
       "port": "请输入 1 到 65535 之间的端口"
@@ -60,6 +62,7 @@
       "authenticationFailed": "认证失败。",
       "cancelled": "已取消连接。",
       "generic": "连接失败。"
-    }
+    },
+    "atJumpHost": "跳板机 {{name}}："
   }
 }
