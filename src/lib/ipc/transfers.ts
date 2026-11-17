@@ -1,6 +1,7 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
+import { e2eHooks } from "@/lib/e2e";
 import type { HostId } from "./hosts";
 
 /** Mirrors `sshastra_core::files::TransferId`. */
@@ -73,6 +74,8 @@ export function removeTransfers(ids: TransferId[]): Promise<void> {
 
 /** The native picker for files to upload; `null` if cancelled. */
 export async function pickFilesToUpload(title: string): Promise<string[] | null> {
+  const queued = e2eHooks?.pickedFiles.shift();
+  if (queued) return queued;
   const picked = await open({ multiple: true, directory: false, title });
   return picked && picked.length > 0 ? picked : null;
 }

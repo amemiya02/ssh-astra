@@ -81,3 +81,55 @@ jobs:
 
       - name: Build app
         run: pnpm tauri build --debug --no-bundle
+
+  e2e:
+    name: E2E smoke (ubuntu-22.04)
+    runs-on: ubuntu-22.04
+    env:
+      # Its own Compose project, so it never shares containers with `check`.
+      SSHASTRA_IT_PROJECT: sshastra-it-e2e
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: e2e
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build the E2E app (debug, `e2e` feature)
+        run: pnpm e2e:build
+
+      - name: E2E smoke test
+        # Runs the smoke test three times in a row: it must pass every time.
+        run: |
+          for attempt in 1 2 3; do
+            echo "::group::E2E run $attempt"
+            xvfb-run --auto-servernum --server-args="-screen 0 1440x900x24" pnpm e2e
+            echo "::endgroup::"
+          done
+
+      - name: Upload E2E screenshots and logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          path: e2e/artifacts/
+          if-no-files-found: ignore
+
+      - name: Stop test containers
+        if: always()
+        run: docker compose -p sshastra-it-e2e -f src-tauri/crates/sshastra-core/tests/sshd/docker-compose.yml down --volumes

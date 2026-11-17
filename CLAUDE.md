@@ -51,9 +51,17 @@ Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/ag
 - In a test: `mod support;` then `let Some(sshd) = support::sshd(Service::Ssh) else { return };` (see `tests/ssh_connection.rs`). The harness runs `docker compose up --build --wait` once per test binary and leaves containers running. Each checkout/worktree gets its own Compose project and image tag, `$SSHASTRA_IT_PROJECT` or else `sshastra-it-<hash of the checkout path>` (`support::project()`), so parallel worktrees don't clobber each other; find them with `docker compose ls` and stop one with `docker compose -p <project> down`. CI sets `SSHASTRA_IT_PROJECT=sshastra-it-ci`.
 - `SSHASTRA_DOCKER_TESTS`: unset/`auto` runs them when Docker works and skips otherwise; `require` fails instead of skipping (CI Linux); `skip` never touches Docker (CI macOS/Windows).
 
+## E2E smoke test
+
+- `e2e/` (WebdriverIO + `@wdio/tauri-service`, `driverProvider: "embedded"`): `specs/smoke.e2e.ts` adds a Host for the Docker `ssh` service (same Compose project as the Rust tests, `e2e/support/sshd.ts`), connects, trusts the host key, runs a command, `cd`s (File panel follows) and uploads a file, checked on the server with `docker compose exec`. Runs on macOS and Linux (CI job `e2e`, under `xvfb-run`, three times in a row; `e2e/artifacts/` (screenshots, page source, logs) is uploaded on failure).
+- The app is built with the `e2e` Cargo feature (`pnpm e2e:build`): it embeds the WebDriver server (`tauri-plugin-wdio-webdriver`) and uses `NoVault` instead of the keychain; `lib.rs` refuses the feature in a release build. `VITE_E2E=1` adds the front-end hooks in `src/lib/e2e.ts` (`window.__sshastraE2E`: answers for the upload file picker, Terminal text); otherwise they compile away. Add a hook only for what WebDriver cannot reach (native dialogs, canvas).
+- The app runs with a throwaway `$HOME` (and XDG dirs) holding a settings file that pins English, and no ssh-agent (`e2e/support/sandbox.ts`), so it never touches the developer's `~/.ssh` or settings.
+- Driving the UI: the embedded driver's typed lower-case letters reach xterm as function keys, so the spec pastes commands (a `paste` event) and presses Enter; focus a Terminal through its `.xterm-helper-textarea`; open a Host with click + Enter (no double-click). Enter/exit animations are switched off by the spec.
+
 ## Commands
 
 - `pnpm dev` / `pnpm tauri dev` — front end only / full app
 - `pnpm lint`, `pnpm typecheck`, `pnpm test` (Vitest)
 - `cd src-tauri && cargo test --workspace` (runs the Docker integration tests if Docker is available; also `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`)
 - `pnpm tauri build --debug --no-bundle` — build the app
+- `pnpm e2e:build && pnpm e2e` — build the E2E app and run the smoke test (needs Docker; Linux without a display: `xvfb-run pnpm e2e`)

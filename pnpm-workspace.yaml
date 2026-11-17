@@ -1,0 +1,7 @@
+# Install scripts not needed: the E2E test uses the WebDriver server embedded
+# in the app (no Edge/Gecko drivers), and esbuild ships its binary as a
+# platform package.
+allowBuilds:
+  edgedriver: false
+  esbuild: false
+  geckodriver: false

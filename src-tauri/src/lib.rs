@@ -27,9 +27,17 @@ use commands::settings::SettingsState;
 use commands::transfers::TransfersState;
 use prompts::PendingPrompts;
 
+// The E2E WebDriver server must never ship.
+#[cfg(all(feature = "e2e", not(debug_assertions)))]
+compile_error!("the `e2e` feature is for debug builds only");
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // Lets the E2E smoke test (`e2e/`) drive the webview over WebDriver.
+    #[cfg(feature = "e2e")]
+    let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
+    builder
         // Restores the main window's size, position and maximized state, and
         // saves them on exit (`.window-state.json` in the app config dir).
         .plugin(
@@ -62,7 +70,11 @@ pub fn run() {
             }
             // The system keychain; where there is none (Linux without a
             // Secret Service) nothing is saved and every connect asks.
+            // The E2E build never touches the developer's keychain.
+            #[cfg(not(feature = "e2e"))]
             let vault = credentials::system_vault();
+            #[cfg(feature = "e2e")]
+            let vault: Arc<dyn credentials::CredentialVault> = Arc::new(credentials::NoVault);
             app.manage(HostsState::new(hosts));
             app.manage(SettingsState::new(settings));
             app.manage(
