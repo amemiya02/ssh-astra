@@ -1,9 +1,9 @@
-import { readItem, writeItem, type KeyValueStore } from "@/lib/storage";
+import { defineSection } from "@/lib/storage";
 import { isTerminalColorScheme, type TerminalColorScheme } from "@/theme/terminal-themes";
 
 /**
- * How every Terminal looks and behaves. The Settings page renders and edits
- * these through `useTerminalPrefs()`; a Host may override `colorScheme`
+ * How every Terminal looks and behaves. The Settings tab edits these
+ * (`features/settings/terminal-section.tsx`); terminals read them with `useTerminalPrefs()`; a Host may override `colorScheme`
  * (`Host.terminalScheme`).
  */
 export interface TerminalPrefs {
@@ -32,22 +32,10 @@ export const defaultTerminalPrefs: TerminalPrefs = {
   rightClickPaste: true,
 };
 
-const prefsKey = "sshastra.terminal";
-
-/** The saved preferences; anything missing or invalid falls back to its default. */
-export function loadTerminalPrefs(store: KeyValueStore | undefined): TerminalPrefs {
-  let saved: unknown;
-  try {
-    saved = JSON.parse(readItem(store, prefsKey) ?? "null");
-  } catch {
-    saved = null;
-  }
-  return normalizeTerminalPrefs(typeof saved === "object" && saved ? saved : {});
-}
-
-export function saveTerminalPrefs(store: KeyValueStore | undefined, prefs: TerminalPrefs): void {
-  writeItem(store, prefsKey, JSON.stringify(prefs));
-}
+/** The `terminal` section of the settings file. */
+export const terminalSetting = defineSection<TerminalPrefs>("terminal", defaultTerminalPrefs, (raw) =>
+  normalizeTerminalPrefs(typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {}),
+);
 
 /** Coerces untrusted input (a saved value, a settings field) into valid preferences. */
 export function normalizeTerminalPrefs(raw: Partial<Record<keyof TerminalPrefs, unknown>>): TerminalPrefs {

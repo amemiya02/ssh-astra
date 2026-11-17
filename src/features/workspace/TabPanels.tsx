@@ -1,6 +1,7 @@
 import { SquareTerminal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import { SettingsPage } from "@/features/settings/SettingsPage";
 import { LocalTerminalView } from "@/features/terminal/LocalTerminalView";
 import { RemoteTerminalView } from "@/features/terminal/RemoteTerminalView";
 import { tabId, tabPanelId, type Tab } from "./tabs";
@@ -66,5 +67,7 @@ function TabContent({
       return <LocalTerminalView active={active} onTitleChange={onTitleChange} />;
     case "remote-terminal":
       return <RemoteTerminalView host={tab.host} active={active} onTitleChange={onTitleChange} />;
+    case "settings":
+      return <SettingsPage />;
   }
 }

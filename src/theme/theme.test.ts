@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyTheme, loadThemePreference, resolveTheme, saveThemePreference } from "./theme";
+import { appearanceSetting, applyTheme, resolveTheme } from "./theme";
 
 describe("resolveTheme", () => {
   it("follows the system when the preference is system", () => {
@@ -26,26 +26,16 @@ describe("applyTheme", () => {
   });
 });
 
-describe("theme preference storage", () => {
-  it("round-trips a saved preference", () => {
-    const storage = new Map<string, string>();
-    const store = { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => void storage.set(k, v) };
-    saveThemePreference(store, "dark");
-    expect(loadThemePreference(store)).toBe("dark");
+describe("appearance settings", () => {
+  it("reads a saved theme preference", () => {
+    expect(appearanceSetting.parse({ theme: "dark" })).toEqual({ theme: "dark" });
+    expect(appearanceSetting.parse({ theme: "light" })).toEqual({ theme: "light" });
   });
 
-  it("defaults to system when nothing or garbage is stored", () => {
-    expect(loadThemePreference({ getItem: () => null })).toBe("system");
-    expect(loadThemePreference({ getItem: () => "purple" })).toBe("system");
-  });
-
-  it("defaults to system when storage throws", () => {
-    expect(
-      loadThemePreference({
-        getItem: () => {
-          throw new Error("denied");
-        },
-      }),
-    ).toBe("system");
+  it("follows the system when nothing or garbage is saved", () => {
+    expect(appearanceSetting.parse(undefined)).toEqual({ theme: "system" });
+    expect(appearanceSetting.parse({ theme: "purple" })).toEqual({ theme: "system" });
+    expect(appearanceSetting.parse("dark")).toEqual({ theme: "system" });
+    expect(appearanceSetting.parse(null)).toEqual({ theme: "system" });
   });
 });

@@ -8,7 +8,10 @@ export type Tab = {
   id: string;
   /** Title set by the program running in the tab (OSC 0/2), if any. */
   title?: string;
-} & ({ kind: "local-terminal" } | { kind: "remote-terminal"; host: Host });
+} & ({ kind: "local-terminal" } | { kind: "remote-terminal"; host: Host } | { kind: "settings" });
+
+/** Kinds with at most one tab: opening another focuses the open one. */
+const singletonKinds: ReadonlySet<Tab["kind"]> = new Set(["settings"]);
 
 export interface TabsState {
   tabs: Tab[];
@@ -33,7 +36,11 @@ export const tabPanelId = (id: string) => `tabpanel-${id}`;
  * tab of that kind (`ordinal` is 1-based among tabs of the same kind). A remote Terminal
  * uses its Host's name.
  */
-export function tabTitle(tab: Tab, t: (key: "tabs.localTerminal") => string, ordinal: number): string {
+export function tabTitle(
+  tab: Tab,
+  t: (key: "tabs.localTerminal" | "tabs.settings") => string,
+  ordinal: number,
+): string {
   if (tab.title) return tab.title;
   switch (tab.kind) {
     case "local-terminal": {
@@ -42,13 +49,18 @@ export function tabTitle(tab: Tab, t: (key: "tabs.localTerminal") => string, ord
     }
     case "remote-terminal":
       return tab.host.name;
+    case "settings":
+      return t("tabs.settings");
   }
 }
 
 export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
   switch (action.type) {
-    case "open":
+    case "open": {
+      const open = singletonKinds.has(action.tab.kind) && state.tabs.find((t) => t.kind === action.tab.kind);
+      if (open) return { ...state, activeId: open.id };
       return { tabs: [...state.tabs, action.tab], activeId: action.tab.id };
+    }
     case "close": {
       const index = state.tabs.findIndex((t) => t.id === action.id);
       if (index === -1) return state;

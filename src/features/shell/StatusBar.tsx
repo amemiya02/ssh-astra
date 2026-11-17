@@ -1,6 +1,7 @@
-import { Monitor, Moon, Sun } from "lucide-react";
+import { Monitor, Moon, Settings, Sun } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { IconButton } from "@/components/IconButton";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -12,13 +13,20 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { ThemePreference } from "@/theme/theme";
 import { useTheme } from "@/theme/theme-context";
+import { settingsShortcut } from "./shortcuts";
 
-/** The bottom bar: app-wide state on the left (`children`), appearance on the right. */
-export function StatusBar({ children }: { children?: ReactNode }) {
+/** The bottom bar: app-wide state on the left (`children`), appearance and Settings on the right. */
+export function StatusBar({ children, onOpenSettings }: { children?: ReactNode; onOpenSettings(): void }) {
+  const { t } = useTranslation();
   return (
     <footer className="text-muted-foreground flex h-6.5 shrink-0 items-center gap-3.5 border-t px-3 text-xs">
       <div className="flex min-w-0 flex-1 items-center gap-3.5">{children}</div>
-      <ThemeMenu />
+      <div className="-mr-1.5 flex items-center gap-0.5">
+        <ThemeMenu />
+        <IconButton label={t("settings.open")} shortcut={settingsShortcut} className="size-5" onClick={onOpenSettings}>
+          <Settings className="size-3.5" />
+        </IconButton>
+      </div>
     </footer>
   );
 }
@@ -37,7 +45,7 @@ function ThemeMenu() {
         <Button
           variant="ghost"
           size="xs"
-          className="text-muted-foreground hover:text-foreground -mr-1.5 h-5 font-normal"
+          className="text-muted-foreground hover:text-foreground h-5 font-normal"
           aria-label={t("theme.menuLabel", { current: label })}
         >
           <Icon aria-hidden />

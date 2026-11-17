@@ -7,6 +7,7 @@ const INHERIT = "inherit";
 
 interface TerminalSchemeSelectProps {
   id?: string;
+  "aria-label"?: string;
   "aria-describedby"?: string;
   /** `undefined` is "same as the global setting", offered only when `inheritLabel` is set. */
   value: TerminalColorScheme | undefined;
@@ -18,6 +19,7 @@ interface TerminalSchemeSelectProps {
 /** Picks a Terminal colour scheme; used by the Host editor and the Settings page. */
 export function TerminalSchemeSelect({
   id,
+  "aria-label": ariaLabel,
   "aria-describedby": describedBy,
   value,
   onValueChange,
@@ -29,7 +31,7 @@ export function TerminalSchemeSelect({
       value={value ?? (inheritLabel ? INHERIT : "app")}
       onValueChange={(next) => onValueChange(terminalColorSchemes.find((scheme) => scheme === next))}
     >
-      <SelectTrigger id={id} aria-describedby={describedBy} size="sm" className="w-full">
+      <SelectTrigger id={id} aria-label={ariaLabel} aria-describedby={describedBy} size="sm" className="w-full">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

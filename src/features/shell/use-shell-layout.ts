@@ -1,26 +1,20 @@
-import { useCallback, useEffect, useState } from "react";
-import { browserStore } from "@/lib/storage";
-import {
-  loadShellLayout,
-  saveShellLayout,
-  type FilePanelDock,
-  type GroupLayout,
-  type ShellLayout,
-} from "./shell-layout";
+import { useCallback } from "react";
+import { getSetting, setSetting, useSetting } from "@/lib/storage";
+import { layoutSetting, type FilePanelDock, type GroupLayout } from "./shell-layout";
 
 /** The persisted main window layout, saved whenever it changes. */
 export function useShellLayout() {
-  const [store] = useState(browserStore);
-  const [layout, setLayout] = useState<ShellLayout>(() => loadShellLayout(store));
+  const [layout] = useSetting(layoutSetting);
 
-  useEffect(() => saveShellLayout(store, layout), [store, layout]);
-
+  // Read the latest value at call time: resize events can arrive in bursts between renders.
   const saveGroup = useCallback((groupId: string, groupLayout: GroupLayout) => {
-    setLayout((prev) => ({ ...prev, groups: { ...prev.groups, [groupId]: groupLayout } }));
+    const prev = getSetting(layoutSetting);
+    setSetting(layoutSetting, { ...prev, groups: { ...prev.groups, [groupId]: groupLayout } });
   }, []);
 
   const setDock = useCallback((dock: FilePanelDock) => {
-    setLayout((prev) => (prev.dock === dock ? prev : { ...prev, dock }));
+    const prev = getSetting(layoutSetting);
+    if (prev.dock !== dock) setSetting(layoutSetting, { ...prev, dock });
   }, []);
 
   return { layout, saveGroup, setDock };
