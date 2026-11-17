@@ -10,6 +10,7 @@ import {
   type PromptAnswer,
 } from "@/lib/ipc/connect";
 import type { Host } from "@/lib/ipc/hosts";
+import type { ConnectionStatus } from "@/features/workspace/tabs";
 import { TerminalSurface, type OpenTerminal } from "./TerminalSurface";
 
 interface PendingPrompt {
@@ -22,13 +23,15 @@ interface RemoteTerminalViewProps {
   /** Whether its tab is shown. A question asked while hidden waits until the tab is shown. */
   active?: boolean;
   onTitleChange?(title: string): void;
+  /** Connecting until the shell runs, then connected; disconnected once it ends or the connect fails. */
+  onStatusChange?(status: ConnectionStatus): void;
 }
 
 /**
  * A Terminal on a saved Host: connects (asking about host keys and the
  * password in a dialog) and then shows the remote shell.
  */
-export function RemoteTerminalView({ host, active = true, onTitleChange }: RemoteTerminalViewProps) {
+export function RemoteTerminalView({ host, active = true, onTitleChange, onStatusChange }: RemoteTerminalViewProps) {
   const [pending, setPending] = useState<PendingPrompt | null>(null);
   const [error, setError] = useState<CommandError | null>(null);
   const pendingRef = useRef<PendingPrompt | null>(null);
@@ -51,7 +54,13 @@ export function RemoteTerminalView({ host, active = true, onTitleChange }: Remot
       openRemoteTerminal(host.id, size, onEvent, (prompt) => new Promise((resolve) => show({ prompt, resolve }))),
     [host.id, show],
   );
-  const onOpenError = useCallback((e: unknown) => setError(readCommandError(e)), []);
+  const onOpenError = useCallback(
+    (e: unknown) => {
+      setError(readCommandError(e));
+      onStatusChange?.("disconnected");
+    },
+    [onStatusChange],
+  );
 
   return (
     <div className="relative h-full">
@@ -61,6 +70,8 @@ export function RemoteTerminalView({ host, active = true, onTitleChange }: Remot
         <TerminalSurface
           open={open}
           onOpenError={onOpenError}
+          onOpened={() => onStatusChange?.("connected")}
+          onExit={() => onStatusChange?.("disconnected")}
           label={host.name}
           active={active}
           onTitleChange={onTitleChange}
