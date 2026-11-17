@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::forward::{ForwardDraft, ForwardId, PortForward};
 use crate::fs_util::write_atomically;
+use crate::ssh_config::{ImportIssue, ParsedConfig};
 
 /// The file format version this build writes. Bump it together with a
 /// migration step in [`migrate`].
@@ -318,6 +319,17 @@ pub struct HostTree {
     pub hosts: Vec<Host>,
 }
 
+/// What [`HostStore::import_ssh_config`] did, by Host name.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportReport {
+    pub imported: Vec<String>,
+    /// Already saved under that name: left as they are.
+    pub skipped: Vec<String>,
+    /// What could not be imported (or only in part), and why.
+    pub issues: Vec<ImportIssue>,
+}
+
 /// Saved Hosts and Groups, in the order the user arranged them.
 pub struct HostStore {
     path: PathBuf,
@@ -452,6 +464,69 @@ impl HostStore {
             return Err(HostStoreError::ForwardNotFound(id.clone()));
         }
         self.save(library)
+    }
+
+    /// Adds the Hosts of a parsed `~/.ssh/config` at the top level, in one
+    /// save. A Host whose name is already taken is skipped, and a Jump host
+    /// named after a saved Host is that Host.
+    pub fn import_ssh_config(
+        &mut self,
+        parsed: ParsedConfig,
+    ) -> Result<ImportReport, HostStoreError> {
+        let mut library = self.library.clone();
+        let mut report = ImportReport {
+            issues: parsed.issues,
+            ..ImportReport::default()
+        };
+        let mut ids: std::collections::HashMap<String, HostId> = library
+            .hosts
+            .iter()
+            .map(|h| (h.name.clone(), h.id.clone()))
+            .collect();
+        let mut added = Vec::new();
+        for entry in parsed.hosts {
+            if ids.contains_key(&entry.name) {
+                report.skipped.push(entry.name);
+                continue;
+            }
+            let id = HostId::generate();
+            ids.insert(entry.name.clone(), id.clone());
+            added.push((id, entry));
+        }
+        for (id, entry) in added {
+            let jump_host = entry
+                .jump_host
+                .as_ref()
+                .and_then(|name| ids.get(name).cloned());
+            let auth = match entry.identity_file {
+                Some(identity_file) => HostAuth::Key { identity_file },
+                None => HostAuth::Password,
+            };
+            let mut host = HostDraft {
+                name: entry.name.clone(),
+                address: entry.address,
+                port: entry.port,
+                user: entry.user,
+                auth,
+                jump_host,
+                terminal_scheme: None,
+            }
+            .into_host(id)?;
+            for draft in entry.forwards {
+                host.forwards.push(
+                    draft
+                        .into_forward(ForwardId::generate())
+                        .map_err(HostStoreError::Invalid)?,
+                );
+            }
+            library.hosts.push(host);
+            report.imported.push(entry.name);
+        }
+        for name in &report.imported {
+            chain(&library.hosts, &ids[name])?;
+        }
+        self.save(library)?;
+        Ok(report)
     }
 
     /// Adds a Group at the end of `parent` (`None`: the top level).

@@ -65,7 +65,28 @@
     "portForwards": "Port forwards",
     "connectOnly": "Connect only",
     "disconnect": "Disconnect",
-    "connectFailed": "Could not connect to {{name}}: {{message}}"
+    "connectFailed": "Could not connect to {{name}}: {{message}}",
+    "import": {
+      "action": "Import ~/.ssh/config",
+      "keywords": "ssh config openssh import",
+      "title": "Imported ~/.ssh/config",
+      "summary": "Imported {{imported}}, skipped {{skipped}}, could not import {{failed}}.",
+      "nothing": "~/.ssh/config has no Hosts to import.",
+      "imported": "Imported",
+      "skipped": "Skipped: a Host with this name already exists",
+      "failed": "Not imported",
+      "partial": "Imported without some settings",
+      "error": "Could not import ~/.ssh/config: {{message}}",
+      "close": "Close",
+      "problems": {
+        "invalidValue": "{{directive}} {{value}} is not understood",
+        "unsupported": "{{directive}} is not supported",
+        "includeFailed": "Could not read it: {{reason}}",
+        "jumpChainConflict": "Its ProxyJump chain reaches {{hop}} differently from {{hop}}'s own settings",
+        "jumpHostLoop": "Its Jump hosts lead back to itself",
+        "jumpHostUnavailable": "Its Jump host {{hop}} was not imported"
+      }
+    }
   },
   "tabs": {
     "listLabel": "Open tabs",

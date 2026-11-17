@@ -31,6 +31,7 @@ function fakeApi(initial: HostTree, overrides: Partial<HostsApi> = {}): HostsApi
     deleteGroup: vi.fn(() => Promise.resolve(initial)),
     saveForward: vi.fn((_host: string, d: ForwardDraft, id?: string) => Promise.resolve({ ...d, id: id ?? `f${++forwards}` })),
     deleteForward: vi.fn(() => Promise.resolve()),
+    importSshConfig: vi.fn(() => Promise.resolve({ tree: initial, report: { imported: [], skipped: [], issues: [] } })),
     ...overrides,
   };
 }
@@ -153,5 +154,21 @@ describe("hosts store", () => {
     await store.getState().deleteForward("a", added.id);
     expect(api.deleteForward).toHaveBeenCalledWith("a", "f1");
     expect(forwardsOf("a").map((f) => f.bindPort)).toEqual([8443]);
+  });
+
+  it("shows the Hosts an ~/.ssh/config import saved and returns its report", async () => {
+    const imported = { groups: [], hosts: [host("a"), host("web"), host("db")] };
+    const report = {
+      imported: ["web", "db"],
+      skipped: ["a"],
+      issues: [{ entry: "legacy", dropped: true, problem: { kind: "unsupported" as const, directive: "ProxyCommand" } }],
+    };
+    const { store } = await loaded(
+      { groups: [], hosts: [host("a")] },
+      { importSshConfig: () => Promise.resolve({ tree: imported, report }) },
+    );
+
+    expect(await store.getState().importSshConfig()).toEqual(report);
+    expect(ids(store.getState().tree).hosts).toEqual(["a", "web", "db"]);
   });
 });

@@ -65,7 +65,28 @@
     "portForwards": "端口转发",
     "connectOnly": "仅连接",
     "disconnect": "断开连接",
-    "connectFailed": "无法连接到 {{name}}：{{message}}"
+    "connectFailed": "无法连接到 {{name}}：{{message}}",
+    "import": {
+      "action": "导入 ~/.ssh/config",
+      "keywords": "ssh config openssh 导入",
+      "title": "已导入 ~/.ssh/config",
+      "summary": "导入 {{imported}} 个，跳过 {{skipped}} 个，无法导入 {{failed}} 个。",
+      "nothing": "~/.ssh/config 中没有可导入的 Host。",
+      "imported": "已导入",
+      "skipped": "已跳过：已有同名 Host",
+      "failed": "未导入",
+      "partial": "已导入，但缺少部分设置",
+      "error": "无法导入 ~/.ssh/config：{{message}}",
+      "close": "关闭",
+      "problems": {
+        "invalidValue": "无法识别 {{directive}} {{value}}",
+        "unsupported": "不支持 {{directive}}",
+        "includeFailed": "无法读取：{{reason}}",
+        "jumpChainConflict": "它的 ProxyJump 链经过 {{hop}} 的方式与 {{hop}} 自己的设置不同",
+        "jumpHostLoop": "它的跳板机最终又指回自己",
+        "jumpHostUnavailable": "它的跳板机 {{hop}} 没有导入"
+      }
+    }
   },
   "tabs": {
     "listLabel": "已打开的标签页",

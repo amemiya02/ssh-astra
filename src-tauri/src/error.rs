@@ -51,6 +51,12 @@ impl From<TerminalError> for CommandError {
     }
 }
 
+impl From<std::io::Error> for CommandError {
+    fn from(err: std::io::Error) -> Self {
+        Self::new("io", err)
+    }
+}
+
 impl From<VaultError> for CommandError {
     fn from(err: VaultError) -> Self {
         Self::new("credentialStore", err)

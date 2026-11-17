@@ -1,4 +1,4 @@
-import { FolderPlus, Plus, Search, X } from "lucide-react";
+import { FileInput, FolderPlus, Plus, Search, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
@@ -17,13 +17,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ConnectPromptDialog } from "@/features/connect/ConnectPromptDialog";
 import { connectionsStore, useConnections } from "@/features/connect/connectionsStore";
 import { readCommandError, refusal, type ConnectPrompt, type PromptAnswer } from "@/lib/ipc/connect";
-import type { Group, Host, HostDraft, HostId } from "@/lib/ipc/hosts";
+import type { Group, Host, HostDraft, HostId, ImportReport } from "@/lib/ipc/hosts";
 import { cn } from "@/lib/utils";
+import { usePaletteActions } from "@/features/palette/palette-actions";
 import { TerminalSchemeSelect } from "@/features/terminal/TerminalSchemeSelect";
 import { ClearCredentialsButton } from "./ClearCredentialsButton";
 import { HostList, type HostListActions } from "./HostList";
 import { HostsSidebar } from "./HostsSidebar";
+import { ImportReportDialogContent } from "./ImportReportDialog";
 import { emptyHostForm, hostFormFrom, parseHostForm, type HostFormField, type HostFormResult, type HostFormValues } from "./hostForm";
+import { RowMoreMenu } from "./RowMenu";
 import { searchTree, type DragItem } from "./hostTree";
 import { hostsStore, useHosts } from "./hostsStore";
 
@@ -67,6 +70,7 @@ export function HostsPanel({ onOpen, onOpenForwards, onOpenLocalTerminal }: Host
       }),
     [],
   );
+  const [importReport, setImportReport] = useState<ImportReport | null>(null);
 
   useEffect(() => {
     void hostsStore.getState().load();
@@ -94,6 +98,30 @@ export function HostsPanel({ onOpen, onOpenForwards, onOpenLocalTerminal }: Host
   };
 
   const selectedGroupId = selected?.kind === "group" ? selected.id : null;
+
+  /** Imports ~/.ssh/config, then shows the report (or why it failed). */
+  const importSshConfig = useCallback(() => {
+    setActionError(null);
+    hostsStore
+      .getState()
+      .importSshConfig()
+      .then(setImportReport, (e: unknown) =>
+        setActionError(t("hosts.import.error", { message: readCommandError(e).message })),
+      );
+  }, [t]);
+  usePaletteActions(
+    useMemo(
+      () => [
+        {
+          id: "hosts.importSshConfig",
+          title: t("hosts.import.action"),
+          keywords: t("hosts.import.keywords").split(" "),
+          run: importSshConfig,
+        },
+      ],
+      [t, importSshConfig],
+    ),
+  );
 
   const createGroup = async (parentId: string | null) => {
     const group = await attempt(() => store().createGroup(t("hosts.newGroupName"), parentId));
@@ -192,8 +220,27 @@ export function HostsPanel({ onOpen, onOpenForwards, onOpenLocalTerminal }: Host
     <>
       <HostsSidebar
         onOpenLocalTerminal={onOpenLocalTerminal}
+        emptyAction={
+          <>
+            <Button variant="outline" size="sm" onClick={importSshConfig}>
+              <FileInput aria-hidden />
+              {t("hosts.import.action")}
+            </Button>
+            {actionError && (
+              <p role="alert" className="text-destructive text-xs">
+                {actionError}
+              </p>
+            )}
+          </>
+        }
         actions={
           <>
+            <RowMoreMenu
+              label={t("hosts.moreActions")}
+              entries={[
+                { type: "item", label: t("hosts.import.action"), icon: <FileInput />, onSelect: importSshConfig },
+              ]}
+            />
             <IconButton label={t("hosts.newGroup")} onClick={() => void createGroup(selectedGroupId)}>
               <FolderPlus />
             </IconButton>
@@ -230,6 +277,9 @@ export function HostsPanel({ onOpen, onOpenForwards, onOpenLocalTerminal }: Host
           }}
         />
       )}
+      <Dialog open={importReport !== null} onOpenChange={(open) => !open && setImportReport(null)}>
+        {importReport && <ImportReportDialogContent report={importReport} onClose={() => setImportReport(null)} />}
+      </Dialog>
       <Dialog open={removing !== null} onOpenChange={(open) => !open && setRemoving(null)}>
         {removing && (
           <ConfirmRemoveDialogContent

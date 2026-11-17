@@ -84,6 +84,7 @@ pub fn run() {
             commands::connections::connections_watch,
             commands::connections::host_connect,
             commands::connections::host_disconnect,
+            commands::hosts::hosts_import_ssh_config,
             commands::forwards::forwards_watch,
             commands::forwards::forward_save,
             commands::forwards::forward_delete,
