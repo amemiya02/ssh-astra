@@ -14,6 +14,7 @@ use sshastra_core::credentials::{
 };
 use sshastra_core::hosts::{Host, HostAuth, HostDraft, HostId, HostStore};
 use sshastra_core::known_hosts::KnownHosts;
+use sshastra_core::settings::SettingsStore;
 use sshastra_core::ssh::{
     BoxFuture, ConnectError, ConnectionManager, HostKeyPrompt, PassphrasePrompt, PasswordPrompt,
     Prompter, Secret,
@@ -105,6 +106,7 @@ fn host(sshd: &Sshd, auth: HostAuth) -> Host {
         auth,
         jump_host: None,
         terminal_scheme: None,
+        group_id: None,
     }
 }
 
@@ -336,8 +338,15 @@ async fn saved_credentials_never_reach_sshastras_own_files() {
         vault.get(&key_host.id, CredentialKind::KeyPassphrase),
         Ok(Some(support::KEY_PASSPHRASE.to_owned()))
     );
+    let mut settings = SettingsStore::open(fx.path().join("settings.json")).unwrap();
+    settings
+        .set("appearance", serde_json::json!({ "theme": "dark" }))
+        .unwrap();
+
     let files = files_under(&fx.path());
-    assert!(files.iter().any(|f| f.ends_with("hosts.json")), "{files:?}");
+    for name in ["hosts.json", "settings.json"] {
+        assert!(files.iter().any(|f| f.ends_with(name)), "{files:?}");
+    }
     for file in files {
         let text = String::from_utf8_lossy(&std::fs::read(&file).unwrap()).into_owned();
         for secret in [sshd.password, support::KEY_PASSPHRASE] {

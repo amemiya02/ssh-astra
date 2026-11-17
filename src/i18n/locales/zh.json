@@ -35,6 +35,29 @@
     },
     "save": "保存",
     "cancel": "取消",
+    "edit": "编辑 Host",
+    "editDescription": "修改 sshastra 连接这个 Host 的方式。",
+    "open": "打开终端",
+    "duplicate": "复制",
+    "copyName": "{{name}} 副本",
+    "delete": "删除",
+    "deleteHostTitle": "删除 {{name}}？",
+    "deleteHostBody": "这个 Host 会从列表中移除。已经打开的终端不受影响。",
+    "newGroup": "新建分组",
+    "newGroupName": "新分组",
+    "groupName": "分组名称",
+    "rename": "重命名",
+    "deleteGroupTitle": "删除分组 {{name}}？",
+    "deleteGroupBody": "其中的 Host 和分组会上移一级，不会被删除。",
+    "moveTo": "移动到",
+    "topLevel": "顶层",
+    "moreActions": "更多操作",
+    "search": "搜索 Host",
+    "clearSearch": "清除搜索",
+    "noResultsTitle": "没有匹配的 Host",
+    "noResultsBody": "按名称、地址和用户名搜索。",
+    "emptyGroup": "把 Host 拖到这里",
+    "actionFailed": "无法保存更改：{{message}}",
     "auth": {
       "password": "密码",
       "key": "私钥"
@@ -44,7 +67,8 @@
     "listLabel": "已打开的标签页",
     "localTerminal": "本地终端",
     "newLocalTerminal": "新建本地终端",
-    "close": "关闭 {{title}}"
+    "close": "关闭 {{title}}",
+    "settings": "设置"
   },
   "workspace": {
     "emptyTitle": "没有打开的终端",
@@ -151,6 +175,57 @@
     "keyboardInteractive": {
       "title": "{{user}}@{{host}} 需要验证",
       "description": "服务器需要更多信息才能登录。"
+    }
+  },
+  "settings": {
+    "title": "设置",
+    "lead": "修改立即生效，重启后保持不变。",
+    "open": "设置",
+    "sections": {
+      "appearance": "外观",
+      "terminal": "终端",
+      "language": "语言"
+    },
+    "theme": {
+      "label": "主题",
+      "description": "跟随系统会随电脑的浅色或深色设置切换。"
+    },
+    "language": {
+      "label": "界面语言",
+      "description": "跟随系统时使用电脑的语言；sshastra 不支持该语言时使用英文。",
+      "options": {
+        "system": "跟随系统",
+        "en": "English",
+        "zh": "中文"
+      }
+    },
+    "on": "开",
+    "off": "关",
+    "terminal": {
+      "font": {
+        "label": "字体",
+        "description": "CSS 字体列表，使用其中第一个已安装在这台电脑上的字体。"
+      },
+      "fontSize": {
+        "label": "字号",
+        "description": "单位为像素，范围 {{min}} 到 {{max}}。"
+      },
+      "ligatures": {
+        "label": "连字",
+        "description": "字体支持时，将 -> 和 != 等字符组合显示为连字。"
+      },
+      "colorScheme": {
+        "label": "配色",
+        "description": "所有终端都使用此配色，除非其 Host 单独设置了配色。"
+      },
+      "copyOnSelect": {
+        "label": "选中即复制",
+        "description": "在终端中选中文本时自动复制到剪贴板。"
+      },
+      "rightClickPaste": {
+        "label": "右键粘贴",
+        "description": "在终端中右键单击时粘贴剪贴板内容。"
+      }
     }
   }
 }

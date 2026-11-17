@@ -35,6 +35,29 @@
     },
     "save": "Save",
     "cancel": "Cancel",
+    "edit": "Edit Host",
+    "editDescription": "Change how sshastra connects to this Host.",
+    "open": "Open Terminal",
+    "duplicate": "Duplicate",
+    "copyName": "{{name}} copy",
+    "delete": "Delete",
+    "deleteHostTitle": "Delete {{name}}?",
+    "deleteHostBody": "The Host is removed from the list. Terminals already open on it keep running.",
+    "newGroup": "New Group",
+    "newGroupName": "New Group",
+    "groupName": "Group name",
+    "rename": "Rename",
+    "deleteGroupTitle": "Delete the Group {{name}}?",
+    "deleteGroupBody": "Its Hosts and Groups move up one level. Nothing inside is deleted.",
+    "moveTo": "Move to",
+    "topLevel": "Top level",
+    "moreActions": "More actions",
+    "search": "Search Hosts",
+    "clearSearch": "Clear search",
+    "noResultsTitle": "No matching Hosts",
+    "noResultsBody": "Search looks at names, addresses and users.",
+    "emptyGroup": "Drag Hosts here",
+    "actionFailed": "Could not save the change: {{message}}",
     "auth": {
       "password": "Password",
       "key": "Private key"
@@ -44,7 +67,8 @@
     "listLabel": "Open tabs",
     "localTerminal": "Local terminal",
     "newLocalTerminal": "New Local terminal",
-    "close": "Close {{title}}"
+    "close": "Close {{title}}",
+    "settings": "Settings"
   },
   "workspace": {
     "emptyTitle": "No open Terminals",
@@ -151,6 +175,57 @@
     "keyboardInteractive": {
       "title": "{{user}}@{{host}} asks",
       "description": "The server asks for more information to sign in."
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "lead": "Changes apply right away and are kept after a restart.",
+    "open": "Settings",
+    "sections": {
+      "appearance": "Appearance",
+      "terminal": "Terminal",
+      "language": "Language"
+    },
+    "theme": {
+      "label": "Theme",
+      "description": "System follows your computer's light or dark setting."
+    },
+    "language": {
+      "label": "Interface language",
+      "description": "System uses your computer's language when sshastra has it, otherwise English.",
+      "options": {
+        "system": "System",
+        "en": "English",
+        "zh": "中文"
+      }
+    },
+    "on": "On",
+    "off": "Off",
+    "terminal": {
+      "font": {
+        "label": "Font",
+        "description": "A CSS font list; the first font installed on this computer is used."
+      },
+      "fontSize": {
+        "label": "Font size",
+        "description": "In pixels, from {{min}} to {{max}}."
+      },
+      "ligatures": {
+        "label": "Ligatures",
+        "description": "Joins character pairs such as -> and != when the font supports it."
+      },
+      "colorScheme": {
+        "label": "Colour scheme",
+        "description": "Used by every Terminal unless its Host sets its own."
+      },
+      "copyOnSelect": {
+        "label": "Copy on select",
+        "description": "Selecting text in a Terminal copies it to the clipboard."
+      },
+      "rightClickPaste": {
+        "label": "Right-click paste",
+        "description": "Right-clicking in a Terminal pastes the clipboard."
+      }
     }
   }
 }

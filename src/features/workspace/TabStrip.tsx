@@ -1,4 +1,4 @@
-import { Plus, Server, SquareTerminal, X } from "lucide-react";
+import { Plus, Server, Settings, SquareTerminal, X } from "lucide-react";
 import { useRef, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
@@ -77,11 +77,7 @@ export function TabStrip({ tabs, activeId, onActivate, onClose, onNewLocalTermin
                 className="focus-visible:ring-ring/50 flex h-full min-w-0 flex-1 items-center gap-2 rounded-t-lg pr-1 pl-3 outline-none focus-visible:ring-[3px]"
                 onClick={() => onActivate(tab.id)}
               >
-                {tab.kind === "remote-terminal" ? (
-                  <Server className="size-3.5 shrink-0 opacity-70" aria-hidden />
-                ) : (
-                  <SquareTerminal className="size-3.5 shrink-0 opacity-70" aria-hidden />
-                )}
+                <TabIcon kind={tab.kind} />
                 <span className="truncate">{title}</span>
               </button>
               <button
@@ -105,4 +101,11 @@ export function TabStrip({ tabs, activeId, onActivate, onClose, onNewLocalTermin
       </IconButton>
     </div>
   );
+}
+
+const tabIcons = { "local-terminal": SquareTerminal, "remote-terminal": Server, settings: Settings } as const;
+
+function TabIcon({ kind }: { kind: Tab["kind"] }) {
+  const Icon = tabIcons[kind];
+  return <Icon className="size-3.5 shrink-0 opacity-70" aria-hidden />;
 }

@@ -2,6 +2,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use sshastra_core::credentials::VaultError;
 use sshastra_core::hosts::HostStoreError;
+use sshastra_core::settings::SettingsError;
 use sshastra_core::ssh::ConnectError;
 use sshastra_core::terminal::TerminalError;
 
@@ -60,7 +61,8 @@ impl From<HostStoreError> for CommandError {
                 let field = *field;
                 Self::new("invalid", &err).with_details(json!({ "field": field }))
             }
-            NotFound(_) => Self::new("notFound", &err),
+            NotFound(_) | GroupNotFound(_) => Self::new("notFound", &err),
+            InvalidMove => Self::new("invalidMove", &err),
             JumpHostCycle(names) => {
                 let details = json!({ "hosts": names });
                 Self::new("jumpHostCycle", &err).with_details(details)
@@ -69,6 +71,19 @@ impl From<HostStoreError> for CommandError {
                 Self::new("inUseAsJumpHost", &err).with_details(json!({ "by": by }))
             }
         }
+    }
+}
+
+impl From<SettingsError> for CommandError {
+    fn from(err: SettingsError) -> Self {
+        use SettingsError::*;
+        let kind = match &err {
+            Io { .. } => "io",
+            Corrupt(_) => "settingsCorrupt",
+            UnsupportedVersion(_) => "settingsUnsupportedVersion",
+            ReservedSection => "invalid",
+        };
+        Self::new(kind, err)
     }
 }
 

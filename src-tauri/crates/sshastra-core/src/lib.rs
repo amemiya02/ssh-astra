@@ -3,7 +3,9 @@
 //! with plain `cargo test`.
 
 pub mod credentials;
+mod fs_util;
 pub mod hosts;
 pub mod known_hosts;
+pub mod settings;
 pub mod ssh;
 pub mod terminal;

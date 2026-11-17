@@ -24,6 +24,8 @@ export interface AppShellProps {
   filePanel: ReactNode;
   /** Items on the left of the status bar (Connections, Port forwards, transfers). */
   status?: ReactNode;
+  /** Opens the Settings tab (status bar button). */
+  onOpenSettings(): void;
 }
 
 const shellGroup = "shell";
@@ -35,7 +37,7 @@ const defaultFilesSize: Record<FilePanelDock, string> = { right: "340px", bottom
  * The main window: Host list | (tab strip / Terminal workspace + File panel dock) | status bar.
  * Panel sizes, collapsed panels and the dock position persist across restarts.
  */
-export function AppShell({ sidebar, tabs, workspace, filePanel, status }: AppShellProps) {
+export function AppShell({ sidebar, tabs, workspace, filePanel, status, onOpenSettings }: AppShellProps) {
   const { t } = useTranslation();
   const { layout, saveGroup, setDock } = useShellLayout();
   const { dock } = layout;
@@ -162,7 +164,7 @@ export function AppShell({ sidebar, tabs, workspace, filePanel, status }: AppShe
           </div>
         </ResizablePanel>
       </ResizablePanelGroup>
-      <StatusBar>{status}</StatusBar>
+      <StatusBar onOpenSettings={onOpenSettings}>{status}</StatusBar>
     </div>
   );
 

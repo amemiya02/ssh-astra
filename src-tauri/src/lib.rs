@@ -11,17 +11,32 @@ use std::sync::Arc;
 use sshastra_core::credentials;
 use sshastra_core::hosts::HostStore;
 use sshastra_core::known_hosts::KnownHosts;
+use sshastra_core::settings::SettingsStore;
 use sshastra_core::ssh::{Agent, ConnectionManager};
 use sshastra_core::terminal::TerminalRegistry;
 use tauri::Manager;
+use tauri_plugin_window_state::StateFlags;
 
 use commands::credentials::Vault;
 use commands::hosts::HostsState;
+use commands::settings::SettingsState;
 use prompts::PendingPrompts;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Restores the main window's size, position and maximized state, and
+        // saves them on exit (`.window-state.json` in the app config dir).
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    StateFlags::SIZE
+                        | StateFlags::POSITION
+                        | StateFlags::MAXIMIZED
+                        | StateFlags::FULLSCREEN,
+                )
+                .build(),
+        )
         // Terminal links open in the browser; copy on select / paste use the system clipboard.
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -32,10 +47,13 @@ pub fn run() {
             // fall back to a file of our own.
             let known_hosts = KnownHosts::system_default()
                 .unwrap_or_else(|| KnownHosts::new(config_dir.join("known_hosts")));
+            let settings =
+                SettingsStore::open(config_dir.join("settings.json")).map_err(Into::into);
             // The system keychain; where there is none (Linux without a
             // Secret Service) nothing is saved and every connect asks.
             let vault = credentials::system_vault();
             app.manage(HostsState::new(hosts));
+            app.manage(SettingsState::new(settings));
             app.manage(
                 ConnectionManager::new(known_hosts)
                     .with_agent(Agent::System)
@@ -50,6 +68,15 @@ pub fn run() {
             commands::hosts::hosts_list,
             commands::hosts::host_save,
             commands::hosts::host_delete,
+            commands::hosts::host_tree,
+            commands::hosts::host_duplicate,
+            commands::hosts::host_move,
+            commands::hosts::group_create,
+            commands::hosts::group_rename,
+            commands::hosts::group_delete,
+            commands::hosts::group_move,
+            commands::settings::settings_load,
+            commands::settings::settings_set,
             commands::credentials::host_credentials_clear,
             commands::terminal::local_terminal_open,
             commands::terminal::remote_terminal_open,
