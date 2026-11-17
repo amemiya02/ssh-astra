@@ -1,6 +1,6 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { Terminal as XTerm, type ITheme } from "@xterm/xterm";
+import { Terminal as XTerm } from "@xterm/xterm";
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -11,11 +11,10 @@ import {
   type TerminalId,
   type TerminalSize,
 } from "@/lib/ipc/terminal";
+import { useTheme } from "@/theme/theme-context";
+import { terminalThemes } from "@/theme/terminal-themes";
 
-// Placeholder palettes until DESIGN.md defines terminal colour schemes.
-const lightTheme: ITheme = { background: "#fafafa", foreground: "#27272a", cursor: "#27272a", selectionBackground: "#d4d4d8" };
-const darkTheme: ITheme = { background: "#1c1c1f", foreground: "#e4e4e7", cursor: "#e4e4e7", selectionBackground: "#3f3f46" };
-const darkQuery = "(prefers-color-scheme: dark)";
+const fontFamily = 'ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace';
 
 export type OpenTerminal = (size: TerminalSize, onEvent: (event: TerminalEvent) => void) => Promise<TerminalId>;
 
@@ -25,31 +24,47 @@ interface Props {
   /** Called if `open` rejects; the view stays mounted. */
   onOpenError?: (error: unknown) => void;
   label: string;
+  /** Whether its tab is shown; becoming active refits and focuses the Terminal. */
+  active?: boolean;
+  /** The program set a window title (OSC 0/2); an empty string clears it. */
+  onTitleChange?(title: string): void;
 }
 
 /**
- * xterm.js (WebGL) wired to any backend Terminal, local or remote: input,
- * resize (sent to the backend so vim/tmux reflow) and close on unmount.
+ * xterm.js (WebGL) wired to any backend Terminal: input, resize (sent to the
+ * backend so vim/tmux reflow), the app theme, and close on unmount.
  */
-export function TerminalSurface({ open, onOpenError, label }: Props) {
+export function TerminalSurface({ open, onOpenError, label, active = true, onTitleChange }: Props) {
   const { t } = useTranslation();
+  const { theme } = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
-  // The Terminal is opened once per mount; later prop changes don't reopen it.
+  const xtermRef = useRef<XTerm | null>(null);
+  const fitRef = useRef<FitAddon | null>(null);
+  const themeRef = useRef(theme);
+  // Read through refs: the Terminal is opened once per mount; later prop changes don't reopen it.
   const openRef = useRef(open);
   const onOpenErrorRef = useRef(onOpenError);
+  const onTitleChangeRef = useRef(onTitleChange);
+  const tRef = useRef(t);
+
+  useEffect(() => {
+    tRef.current = t;
+    onOpenErrorRef.current = onOpenError;
+    onTitleChangeRef.current = onTitleChange;
+  });
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const media = window.matchMedia(darkQuery);
     const xterm = new XTerm({
       allowProposedApi: true,
       cursorBlink: true,
-      fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
+      fontFamily,
       fontSize: 13,
+      lineHeight: 1.2,
       scrollback: 10_000,
-      theme: media.matches ? darkTheme : lightTheme,
+      theme: terminalThemes[themeRef.current],
     });
     const fit = new FitAddon();
     xterm.loadAddon(fit);
@@ -61,7 +76,13 @@ export function TerminalSurface({ open, onOpenError, label }: Props) {
     } catch {
       // WebGL unavailable: the DOM renderer is slower but correct.
     }
-    fit.fit();
+    // A hidden tab has no size; fitting it would shrink the shell to a sliver.
+    const fitIfVisible = () => {
+      if (container.clientWidth > 0 && container.clientHeight > 0) fit.fit();
+    };
+    fitIfVisible();
+    xtermRef.current = xterm;
+    fitRef.current = fit;
 
     let id: TerminalId | undefined;
     let disposed = false;
@@ -71,11 +92,15 @@ export function TerminalSurface({ open, onOpenError, label }: Props) {
       .current(size(), (event) => {
         if (event.type === "output") {
           xterm.write(event.data);
-        } else {
-          const message =
-            event.code === null ? t("terminal.exitedUnknown") : t("terminal.exited", { code: event.code });
-          xterm.write(`\r\n\x1b[2m${message}\x1b[0m\r\n`);
+          return;
         }
+        const message =
+          event.code === null
+            ? tRef.current("terminal.exitedUnknown")
+            : tRef.current("terminal.exited", { code: event.code });
+        xterm.write(`\r\n\x1b[2m${message}\x1b[0m\r\n`);
+        xterm.options.cursorBlink = false;
+        onTitleChangeRef.current?.("");
       })
       .then(
         (opened) => {
@@ -96,28 +121,34 @@ export function TerminalSurface({ open, onOpenError, label }: Props) {
     const onResize = xterm.onResize((next) => {
       if (id !== undefined) void resizeTerminal(id, next);
     });
+    const onTitle = xterm.onTitleChange((title) => onTitleChangeRef.current?.(title));
 
-    const observer = new ResizeObserver(() => {
-      // Hidden tabs measure 0×0; keep their last size instead.
-      if (container.clientWidth > 0 && container.clientHeight > 0) fit.fit();
-    });
+    const observer = new ResizeObserver(fitIfVisible);
     observer.observe(container);
-    const onThemeChange = () => {
-      xterm.options.theme = media.matches ? darkTheme : lightTheme;
-    };
-    media.addEventListener("change", onThemeChange);
-    xterm.focus();
 
     return () => {
       disposed = true;
-      media.removeEventListener("change", onThemeChange);
       observer.disconnect();
       onData.dispose();
       onResize.dispose();
+      onTitle.dispose();
       if (id !== undefined) void closeTerminal(id);
       xterm.dispose();
+      xtermRef.current = null;
+      fitRef.current = null;
     };
-  }, [t]);
+  }, []);
 
-  return <div ref={containerRef} className="h-full w-full p-2" aria-label={label} />;
+  useEffect(() => {
+    themeRef.current = theme;
+    if (xtermRef.current) xtermRef.current.options.theme = terminalThemes[theme];
+  }, [theme]);
+
+  useEffect(() => {
+    if (!active) return;
+    fitRef.current?.fit();
+    xtermRef.current?.focus();
+  }, [active]);
+
+  return <div ref={containerRef} className="h-full w-full py-2 pr-1 pl-3" aria-label={label} />;
 }

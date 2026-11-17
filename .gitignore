@@ -12,3 +12,7 @@ src-tauri/gen/schemas/
 .vscode/*
 !.vscode/extensions.json
 .idea/
+
+# impeccable local caches
+.impeccable/hook.cache.json
+.impeccable/config.local.json

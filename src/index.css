@@ -2,66 +2,110 @@
 @import "tw-animate-css";
 @import "@xterm/xterm/css/xterm.css";
 
-/* Dark mode follows the system until a theme setting exists (see DESIGN.md, later ticket). */
-@custom-variant dark (@media (prefers-color-scheme: dark));
+/*
+ * Design tokens. DESIGN.md is the spec; this file is the implementation.
+ * Components use only these semantic tokens (bg-surface, text-muted-foreground, ...),
+ * never raw colours. Dark mode is the `.dark` class on <html>, set by src/theme.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
 
-/* shadcn/ui semantic tokens. Placeholder neutral palette until DESIGN.md lands. */
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+
+  /* Chrome: the tinted ground behind the Host list, tab strip and status bar. */
+  --background: oklch(0.972 0.003 255);
+  --foreground: oklch(0.22 0.012 255);
+  /* Raised work panels (File panel, cards). */
+  --surface: oklch(0.995 0.001 255);
+  --card: var(--surface);
+  --card-foreground: var(--foreground);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --terminal-background: oklch(0.985 0 0);
-  --terminal-foreground: oklch(0.205 0 0);
+  --popover-foreground: var(--foreground);
+
+  --primary: oklch(0.55 0.17 258);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.945 0.004 255);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.945 0.004 255);
+  --muted-foreground: oklch(0.5 0.012 255);
+  --accent: oklch(0.93 0.006 255);
+  --accent-foreground: var(--foreground);
+  --selected: oklch(0.55 0.17 258 / 0.1);
+
+  --border: oklch(0.905 0.005 255);
+  --input: oklch(0.875 0.006 255);
+  --ring: oklch(0.55 0.17 258);
+
+  --destructive: oklch(0.55 0.2 25);
+  --destructive-foreground: oklch(0.99 0 0);
+  --success: oklch(0.6 0.14 155);
+  --warning: oklch(0.7 0.15 70);
+
+  /* Must equal the xterm theme in src/theme/terminal-themes.ts (checked by a test). */
+  --terminal-background: #ffffff;
+  --terminal-foreground: #2b2f37;
+
+  --elevation-panel: 0 1px 2px oklch(0.2 0.02 255 / 0.05), 0 2px 8px oklch(0.2 0.02 255 / 0.04);
+  --elevation-overlay: 0 12px 32px oklch(0.2 0.02 255 / 0.16), 0 2px 6px oklch(0.2 0.02 255 / 0.06);
+  --overlay: oklch(0.2 0.01 255 / 0.28);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-    --terminal-background: oklch(0.17 0 0);
-    --terminal-foreground: oklch(0.92 0 0);
-  }
+.dark {
+  --background: oklch(0.15 0.006 255);
+  --foreground: oklch(0.93 0.005 255);
+  --surface: oklch(0.205 0.007 255);
+  --popover: oklch(0.225 0.008 255);
+
+  --primary: oklch(0.7 0.14 258);
+  --primary-foreground: oklch(0.17 0.02 258);
+  --secondary: oklch(0.245 0.008 255);
+  --muted: oklch(0.245 0.008 255);
+  --muted-foreground: oklch(0.7 0.01 255);
+  --accent: oklch(0.255 0.008 255);
+  --selected: oklch(0.7 0.14 258 / 0.14);
+
+  --border: oklch(1 0 0 / 0.08);
+  --input: oklch(1 0 0 / 0.13);
+  --ring: oklch(0.7 0.14 258);
+
+  --destructive: oklch(0.68 0.18 25);
+  --success: oklch(0.72 0.14 155);
+  --warning: oklch(0.8 0.14 75);
+
+  --terminal-background: #131519;
+  --terminal-foreground: #d9dce3;
+
+  --elevation-panel: 0 1px 2px oklch(0 0 0 / 0.3);
+  --elevation-overlay: 0 16px 40px oklch(0 0 0 / 0.5), 0 0 0 1px oklch(1 0 0 / 0.06);
+  --overlay: oklch(0 0 0 / 0.5);
 }
 
 @theme inline {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Noto Sans", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  /* Desktop density: 13px body. Overrides Tailwind's defaults so shadcn components follow. */
+  --text-xs: 0.71875rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.375rem;
+  --text-lg: 0.9375rem;
+  --text-lg--line-height: 1.375rem;
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+
+  --shadow-panel: var(--elevation-panel);
+  --shadow-overlay: var(--elevation-overlay);
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
@@ -74,10 +118,15 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-selected: var(--selected);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-overlay: var(--overlay);
   --color-terminal-background: var(--terminal-background);
   --color-terminal-foreground: var(--terminal-foreground);
 }
@@ -92,6 +141,29 @@
     @apply h-full;
   }
   body {
-    @apply bg-background text-foreground overflow-hidden antialiased select-none;
+    @apply bg-background text-foreground font-sans text-sm overflow-hidden antialiased select-none;
+  }
+  ::selection {
+    background: color-mix(in oklch, var(--primary) 25%, transparent);
+  }
+  /* A desktop window does not rubber-band. */
+  @media (pointer: fine) {
+    html {
+      overscroll-behavior: none;
+    }
+  }
+  /* Menus and tooltips appear instantly for users who ask for less motion. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--foreground) 20%, transparent) transparent;
   }
 }
