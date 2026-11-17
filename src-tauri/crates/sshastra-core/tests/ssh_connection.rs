@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::ssh::{
-    BoxFuture, ConnectError, ConnectionManager, HostKeyPrompt, PasswordPrompt, Prompter,
+    BoxFuture, ConnectError, Connection, ConnectionManager, HostKeyPrompt, PasswordPrompt, Prompter,
 };
 use sshastra_core::terminal::{Terminal, TerminalEvent, TerminalSize};
 use support::{Service, Sshd};
@@ -74,6 +74,7 @@ fn host(sshd: &Sshd) -> Host {
         port: sshd.port,
         user: sshd.user.into(),
         auth: HostAuth::Password,
+        jump_host: None,
         terminal_scheme: None,
     }
 }
@@ -264,6 +265,7 @@ async fn an_unreachable_address_is_reported() {
         port,
         user: "x".into(),
         auth: HostAuth::Password,
+        jump_host: None,
         terminal_scheme: None,
     };
     let prompter = ScriptedPrompter::new(true, &[]);
@@ -503,4 +505,173 @@ async fn closing_a_remote_terminal_ends_its_shell() {
     shell.close().unwrap();
 
     out.wait_for_exit();
+}
+
+/// A Host on the test's private networks, as its Jump host sees it.
+fn behind(name: &str, jump: &Host) -> Host {
+    Host {
+        id: HostId::from(format!("it-{name}")),
+        name: name.into(),
+        address: name.into(),
+        port: 22,
+        user: support::USER.into(),
+        auth: HostAuth::Password,
+        jump_host: Some(jump.id.clone()),
+        terminal_scheme: None,
+    }
+}
+
+/// Asserts a shell on `connection` runs on the server named `hostname`.
+async fn assert_lands_on(connection: &Arc<Connection>, hostname: &str) {
+    let (sink, mut out) = Output::sink();
+    let mut shell = connection
+        .open_shell(TerminalSize { cols: 80, rows: 24 }, sink)
+        .await
+        .unwrap();
+    shell.write(b"echo \"on-$(hostname)-$((1+1))\"\n").unwrap();
+    out.wait_for(&format!("on-{hostname}-2"));
+    shell.close().unwrap();
+}
+
+fn hop_questions(address: &str, port: u16, fingerprint: &str) -> [String; 2] {
+    [
+        format!("host key {address}:{port} ssh-ed25519 {fingerprint}"),
+        format!("password {}@{address} retry=false", support::USER),
+    ]
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_host_behind_one_jump_host_is_reached_through_it() {
+    let Some(sshd) = support::sshd(Service::Jump) else {
+        return;
+    };
+    let kh = KnownHostsFile::empty();
+    let jump = host(&sshd);
+    let internal = behind("internal", &jump);
+    let prompter = ScriptedPrompter::new(true, &[Some(sshd.password); 2]);
+
+    let connection = kh
+        .manager()
+        .connect_through(&[jump], &internal, prompter.clone())
+        .await
+        .unwrap();
+
+    let fingerprint = sshd.host_key.fingerprint();
+    assert_eq!(
+        prompter.asked(),
+        [
+            hop_questions(&sshd.host, sshd.port, &fingerprint),
+            hop_questions("internal", 22, &fingerprint),
+        ]
+        .concat()
+    );
+    assert_lands_on(&connection, "internal").await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_host_behind_two_jump_hosts_is_reached_through_both() {
+    let Some(sshd) = support::sshd(Service::Jump) else {
+        return;
+    };
+    let kh = KnownHostsFile::empty();
+    let jump = host(&sshd);
+    let jump2 = behind("jump2", &jump);
+    let deep = behind("deep", &jump2);
+    let prompter = ScriptedPrompter::new(true, &[Some(sshd.password); 3]);
+
+    let connection = kh
+        .manager()
+        .connect_through(&[jump, jump2], &deep, prompter.clone())
+        .await
+        .unwrap();
+
+    let fingerprint = sshd.host_key.fingerprint();
+    assert_eq!(
+        prompter.asked(),
+        [
+            hop_questions(&sshd.host, sshd.port, &fingerprint),
+            hop_questions("jump2", 22, &fingerprint),
+            hop_questions("deep", 22, &fingerprint),
+        ]
+        .concat()
+    );
+    assert_lands_on(&connection, "deep").await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_jump_host_connection_is_shared_with_the_jump_host_itself() {
+    let Some(sshd) = support::sshd(Service::Jump) else {
+        return;
+    };
+    let kh = KnownHostsFile::empty();
+    let manager = kh.manager();
+    let jump = host(&sshd);
+    let internal = behind("internal", &jump);
+    let prompter = ScriptedPrompter::new(true, &[Some(sshd.password); 2]);
+
+    let _internal = manager
+        .connect_through(std::slice::from_ref(&jump), &internal, prompter.clone())
+        .await
+        .unwrap();
+    let direct = manager.connect(&jump, prompter.clone()).await.unwrap();
+
+    assert_eq!(prompter.asked().len(), 4, "{:?}", prompter.asked());
+    assert_lands_on(&direct, "jump").await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failing_jump_host_is_named_in_the_error() {
+    let Some(sshd) = support::sshd(Service::Jump) else {
+        return;
+    };
+    let kh = KnownHostsFile::empty();
+    let mut jump = host(&sshd);
+    jump.name = "bastion".into();
+    let internal = behind("internal", &jump);
+    let prompter = ScriptedPrompter::new(true, &[Some("a"), Some("b"), Some("c")]);
+
+    let result = kh
+        .manager()
+        .connect_through(std::slice::from_ref(&jump), &internal, prompter)
+        .await;
+
+    match result {
+        Err(ConnectError::JumpHost { name, source }) => {
+            assert_eq!(name, "bastion");
+            assert!(
+                matches!(*source, ConnectError::AuthenticationFailed),
+                "{source:?}"
+            );
+        }
+        other => panic!("expected a jump host error, got {other:?}"),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unreachable_second_jump_host_is_named_in_the_error() {
+    let Some(sshd) = support::sshd(Service::Jump) else {
+        return;
+    };
+    let kh = KnownHostsFile::empty();
+    let jump = host(&sshd);
+    let mut missing = behind("missing", &jump);
+    missing.address = "no-such-host.invalid".into();
+    let internal = behind("internal", &missing);
+    let prompter = ScriptedPrompter::new(true, &[Some(sshd.password)]);
+
+    let result = kh
+        .manager()
+        .connect_through(&[jump, missing], &internal, prompter)
+        .await;
+
+    match result {
+        Err(ConnectError::JumpHost { name, source }) => {
+            assert_eq!(name, "missing");
+            assert!(
+                matches!(*source, ConnectError::Unreachable(_)),
+                "{source:?}"
+            );
+        }
+        other => panic!("expected a jump host error, got {other:?}"),
+    }
 }

@@ -53,7 +53,8 @@ pub async fn local_terminal_open(
     Ok(registry.insert(Box::new(pty)))
 }
 
-/// Opens a Terminal on a saved Host, connecting first if needed. Questions
+/// Opens a Terminal on a saved Host, connecting first (through its Jump
+/// hosts, if any) if needed. Questions
 /// for the user (trust this host key? password?) arrive on `on_prompt`; answer
 /// them with `prompt_answer`.
 #[tauri::command]
@@ -68,17 +69,14 @@ pub async fn remote_terminal_open(
     on_event: Channel<InvokeResponseBody>,
     on_prompt: Channel<PromptRequest>,
 ) -> CommandResult<TerminalId> {
-    let host = hosts.with(|store| {
-        store
-            .get(&host_id)
-            .cloned()
-            .ok_or_else(|| sshastra_core::hosts::HostStoreError::NotFound(host_id.clone()).into())
-    })?;
+    // The Host last, after its Jump hosts (outermost first).
+    let mut hops = hosts.with(|store| Ok(store.jump_chain(&host_id)?))?;
+    let host = hops.pop().expect("a jump chain ends with the Host itself");
     let prompter = Arc::new(ChannelPrompter {
         pending: Arc::clone(&pending),
         channel: on_prompt,
     });
-    let connection = connections.connect(&host, prompter).await?;
+    let connection = connections.connect_through(&hops, &host, prompter).await?;
     let shell = connection.open_shell(size, channel_sink(on_event)).await?;
     Ok(registry.insert(Box::new(shell)))
 }

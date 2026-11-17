@@ -5,6 +5,8 @@ PermitRootLogin no
 PubkeyAuthentication yes
 PasswordAuthentication yes
 KbdInteractiveAuthentication no
+# Clients with a full ssh-agent offer many keys before the right one.
+MaxAuthTries 30
 AllowTcpForwarding yes
 AllowAgentForwarding yes
 GatewayPorts clientspecified

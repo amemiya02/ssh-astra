@@ -13,7 +13,10 @@
 //! - `skip`: never touch Docker.
 //!
 //! Containers are started once per test binary and left running so reruns are
-//! fast. Stop them with `docker compose -p sshastra-it down`.
+//! fast. Each checkout gets its own Compose project and image tag
+//! ([`project`]), so parallel worktrees never clobber each other's services.
+//! Stop them with `docker compose -p <project> down` (`docker compose ls`
+//! lists the `sshastra-it-*` projects).
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
@@ -32,6 +35,11 @@ pub enum Service {
     Ssh,
     /// A Jump host that can also reach `internal:22`.
     Jump,
+    /// Accepts public keys only.
+    KeyOnly,
+    /// Keyboard-interactive (PAM asks for the password), alone or after a
+    /// public key; no password method.
+    KbdInt,
 }
 
 impl Service {
@@ -39,6 +47,8 @@ impl Service {
         match self {
             Service::Ssh => "ssh",
             Service::Jump => "jump",
+            Service::KeyOnly => "keyonly",
+            Service::KbdInt => "kbdint",
         }
     }
 }
@@ -93,14 +103,46 @@ pub fn sshd(service: Service) -> Option<Sshd> {
     })
 }
 
+/// A private key fixture in `tests/sshd/keys/` (e.g. `id_ed25519`). Its
+/// public key is authorized for [`USER`] unless named `*_unauthorized`.
+pub fn key(name: &str) -> PathBuf {
+    sshd_dir().join("keys").join(name)
+}
+
+/// The passphrase of `key("id_ed25519_passphrase")`.
+pub const KEY_PASSPHRASE: &str = "testphrase";
+
+/// The Compose project (and image tag prefix) for this checkout:
+/// `$SSHASTRA_IT_PROJECT` if set, else `sshastra-it-<hash of the checkout
+/// path>`.
+pub fn project() -> String {
+    if let Ok(name) = std::env::var("SSHASTRA_IT_PROJECT") {
+        if !name.trim().is_empty() {
+            return name.trim().to_owned();
+        }
+    }
+    // FNV-1a: stable across toolchains, unlike `DefaultHasher`.
+    let hash = env!("CARGO_MANIFEST_DIR")
+        .bytes()
+        .fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+            (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+        });
+    format!("sshastra-it-{:08x}", hash as u32)
+}
+
 fn compose_up() -> Result<(), String> {
     compose(&["up", "--detach", "--build", "--wait", "--quiet-pull"]).map(drop)
 }
 
 fn compose(args: &[&str]) -> Result<String, String> {
     let file = sshd_dir().join("docker-compose.yml");
+    let project = project();
+    // The compose file names its image `${SSHASTRA_IT_PROJECT}-sshd`.
     let output = Command::new("docker")
+        .env("SSHASTRA_IT_PROJECT", &project)
         .arg("compose")
+        .arg("--project-name")
+        .arg(&project)
         .arg("--file")
         .arg(&file)
         .args(args)
