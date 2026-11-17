@@ -5,13 +5,21 @@
 //! Connection (`Connection::open_sftp`), and tests may swap in an in-memory
 //! fake. Paths are POSIX strings as the server sees them.
 
+mod local;
 mod registry;
 mod sftp;
+mod transfer;
 
+pub use local::{DiskFs, LocalFs};
 pub use registry::{FsId, FsRegistry};
 pub use sftp::SftpFs;
+pub use transfer::{
+    ConflictAnswer, OpenRemote, Transfer, TransferDirection, TransferId, TransferQueue,
+    TransferSettings, TransferState,
+};
 
 use serde::Serialize;
+use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::ssh::BoxFuture;
 
@@ -81,9 +89,21 @@ pub enum FsError {
     /// for another reason.
     #[error("SFTP error: {0}")]
     Protocol(String),
+    /// A local file could not be read or written.
+    #[error("{0}")]
+    Io(String),
 }
 
 pub type FsResult<T> = Result<T, FsError>;
+
+/// A file opened for streaming reads ([`RemoteFs::open_read`],
+/// [`LocalFs::open_read`]).
+pub type FileReader = Box<dyn AsyncRead + Send + Unpin>;
+
+/// A file opened for streaming writes ([`RemoteFs::create_write`],
+/// [`LocalFs::create_write`]). Call `shutdown().await` when done: that
+/// flushes and closes it, and reports a failed close.
+pub type FileWriter = Box<dyn AsyncWrite + Send + Unpin>;
 
 /// A Host's file system as the File panel sees it. Object safe, so callers
 /// hold an `Arc<dyn RemoteFs>` and tests can pass a fake.
@@ -97,6 +117,15 @@ pub trait RemoteFs: Send + Sync {
     fn list_dir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<Vec<FileEntry>>>;
     /// The metadata of `path`, following symlinks.
     fn stat<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileStat>>;
+
+    // Streaming, for transfers (and anything else that moves file contents).
+
+    /// Opens the file `path` to read it from the start.
+    fn open_read<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileReader>>;
+    /// Creates the file `path`, or empties it if it exists, to write it.
+    fn create_write<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileWriter>>;
+    /// Creates the directory `path`; its parent must exist.
+    fn mkdir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>>;
 }
 
 /// The directory the user asked for, as the File panel shows it: `""` and

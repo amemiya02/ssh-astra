@@ -118,6 +118,7 @@ impl From<FsError> for CommandError {
             NotADirectory(p) => Self::new("notADirectory", &err).with_details(path(p)),
             TimedOut => Self::new("timedOut", &err),
             Protocol(_) => Self::new("protocol", &err),
+            Io(_) => Self::new("io", &err),
         }
     }
 }

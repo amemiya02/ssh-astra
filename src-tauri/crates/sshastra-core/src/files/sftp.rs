@@ -9,7 +9,9 @@ use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::StatusCode;
 use tokio::task::JoinSet;
 
-use super::{join, FileEntry, FileKind, FileStat, FsError, FsResult, RemoteFs};
+use super::{
+    join, FileEntry, FileKind, FileReader, FileStat, FileWriter, FsError, FsResult, RemoteFs,
+};
 use crate::ssh::{BoxFuture, Connection};
 
 /// Seconds to wait for each SFTP reply; slow links list big directories.
@@ -107,6 +109,33 @@ impl RemoteFs for SftpFs {
                 .await
                 .map_err(|e| error(path, e))?;
             Ok(stat(&meta))
+        })
+    }
+
+    fn open_read<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileReader>> {
+        Box::pin(async move {
+            let file = self.session.open(path).await.map_err(|e| error(path, e))?;
+            Ok(Box::new(file) as FileReader)
+        })
+    }
+
+    fn create_write<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileWriter>> {
+        Box::pin(async move {
+            let file = self
+                .session
+                .create(path)
+                .await
+                .map_err(|e| error(path, e))?;
+            Ok(Box::new(file) as FileWriter)
+        })
+    }
+
+    fn mkdir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move {
+            self.session
+                .create_dir(path)
+                .await
+                .map_err(|e| error(path, e))
         })
     }
 }
