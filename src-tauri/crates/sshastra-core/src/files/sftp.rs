@@ -7,10 +7,11 @@ use russh_sftp::client::error::Error as SftpError;
 use russh_sftp::client::fs::Metadata;
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::StatusCode;
-use tokio::io::AsyncWriteExt;
 use tokio::task::JoinSet;
 
-use super::{join, FileEntry, FileKind, FileStat, FsError, FsResult, RemoteFs};
+use super::{
+    join, FileEntry, FileKind, FileReader, FileStat, FileWriter, FsError, FsResult, RemoteFs,
+};
 use crate::ssh::{BoxFuture, Connection};
 
 /// Seconds to wait for each SFTP reply; slow links list big directories.
@@ -125,24 +126,22 @@ impl RemoteFs for SftpFs {
         })
     }
 
-    fn read_file<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<Vec<u8>>> {
-        Box::pin(async move { self.session.read(path).await.map_err(|e| error(path, e)) })
+    fn open_read<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileReader>> {
+        Box::pin(async move {
+            let file = self.session.open(path).await.map_err(|e| error(path, e))?;
+            Ok(Box::new(file) as FileReader)
+        })
     }
 
-    fn write_file<'a>(&'a self, path: &'a str, data: &'a [u8]) -> BoxFuture<'a, FsResult<()>> {
+    fn create_write<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileWriter>> {
         Box::pin(async move {
-            // Not `SftpSession::write`: it does not truncate a longer file.
-            let mut file = self
+            // Truncates an existing file (and keeps its permissions).
+            let file = self
                 .session
                 .create(path)
                 .await
                 .map_err(|e| error(path, e))?;
-            file.write_all(data)
-                .await
-                .map_err(|e| FsError::Protocol(format!("{path}: {e}")))?;
-            file.close()
-                .await
-                .map_err(|e| FsError::Protocol(format!("{path}: {e}")))
+            Ok(Box::new(file) as FileWriter)
         })
     }
 

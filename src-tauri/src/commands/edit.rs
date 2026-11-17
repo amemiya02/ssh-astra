@@ -1,15 +1,21 @@
 //! Remote editing commands: a remote file opened in the user's default
 //! application, uploaded again on every save (`sshastra_core::edit`).
 
+use std::io;
 use std::path::Path;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 
 use sshastra_core::edit::{EditEvent, EditId, Opener, RemoteEditor};
-use sshastra_core::files::{FileEntry, FileStat, FsError, FsResult, RemoteFs, SftpFs};
+use sshastra_core::files::{
+    FileEntry, FileReader, FileStat, FileWriter, FsError, FsResult, RemoteFs, SftpFs,
+};
 use sshastra_core::hosts::HostId;
 use sshastra_core::ssh::{BoxFuture, ConnectionManager};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 use crate::error::CommandResult;
 
@@ -60,12 +66,20 @@ impl RemoteFs for LiveHostFs {
         Box::pin(async move { self.sftp().await?.stat(path).await })
     }
 
-    fn read_file<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<Vec<u8>>> {
-        Box::pin(async move { self.sftp().await?.read_file(path).await })
+    fn open_read<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileReader>> {
+        Box::pin(async move {
+            let fs = self.sftp().await?;
+            let file = fs.open_read(path).await?;
+            Ok(Box::new(WithSession { file, _fs: fs }) as FileReader)
+        })
     }
 
-    fn write_file<'a>(&'a self, path: &'a str, data: &'a [u8]) -> BoxFuture<'a, FsResult<()>> {
-        Box::pin(async move { self.sftp().await?.write_file(path, data).await })
+    fn create_write<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileWriter>> {
+        Box::pin(async move {
+            let fs = self.sftp().await?;
+            let file = fs.create_write(path).await?;
+            Ok(Box::new(WithSession { file, _fs: fs }) as FileWriter)
+        })
     }
 
     fn lstat<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileStat>> {
@@ -90,6 +104,41 @@ impl RemoteFs for LiveHostFs {
 
     fn set_permissions<'a>(&'a self, path: &'a str, mode: u32) -> BoxFuture<'a, FsResult<()>> {
         Box::pin(async move { self.sftp().await?.set_permissions(path, mode).await })
+    }
+}
+
+/// An open remote file plus the SFTP session it was opened on, which closes
+/// its channel when dropped.
+struct WithSession<F> {
+    file: F,
+    _fs: SftpFs,
+}
+
+impl AsyncRead for WithSession<FileReader> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.file).poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for WithSession<FileWriter> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.file).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.file).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.file).poll_shutdown(cx)
     }
 }
 

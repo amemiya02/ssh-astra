@@ -1,6 +1,8 @@
+import { ArrowDownUp } from "lucide-react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FilePanelContent, type FilePanelPane } from "@/features/files/FilePanelContent";
+import { formatSize } from "@/features/files/fileList";
 import { forwardsStore, runningForwards, useForwards } from "@/features/forwards/forwardsStore";
 import { describeForward } from "@/features/forwards/forwardForm";
 import { activeConnections, runningRules } from "@/features/forwards/status";
@@ -13,6 +15,8 @@ import { AppShell } from "@/features/shell/AppShell";
 import { isSettingsShortcut, settingsShortcut } from "@/features/shell/shortcuts";
 import { currentPlatform, shortcutLabel, type WorkspaceCommand } from "@/features/workspace/shortcuts";
 import { TabPanels } from "@/features/workspace/TabPanels";
+import { ConflictDialog } from "@/features/transfers/ConflictDialog";
+import { transferSummary, transfersStore, useTransfers } from "@/features/transfers/transfersStore";
 import { TabStrip } from "@/features/workspace/TabStrip";
 import {
   activePane,
@@ -60,9 +64,10 @@ export function App() {
   );
   const openSettings = useCallback(() => openTab({ kind: "settings" }), [openTab]);
   const openForwards = useCallback((host: Host) => openTab({ kind: "port-forwards", host }), [openTab]);
-  // Port forward states are pushed by the backend for the app's lifetime.
+  // Port forward states and transfers are pushed by the backend for the app's lifetime.
   useEffect(() => {
     void forwardsStore.getState().watch();
+    void transfersStore.getState().watch();
   }, []);
   // Capture phase, so the shortcut works while a Terminal has focus.
   useEffect(() => {
@@ -176,6 +181,9 @@ export function App() {
     const { from, to } = describeForward(rule);
     return `${from} → ${to}`;
   });
+  const transferList = useTransfers((s) => s.transfers);
+  const transferSpeeds = useTransfers((s) => s.speeds);
+  const transfers = transferSummary(transferList, transferSpeeds);
   const focused = activeTab(state);
   const focusedPane = focused && activePane(focused);
   const filePanelPane: FilePanelPane | undefined =
@@ -230,9 +238,21 @@ export function App() {
             {forwards.length > 0 && (
               <span className="truncate">{t("status.forwards", { list: forwards.join(", ") })}</span>
             )}
+            {transfers.count > 0 && (
+              <span className="flex shrink-0 items-center gap-1 tabular-nums">
+                <ArrowDownUp className="size-3" aria-hidden />
+                {transfers.bytesPerSecond > 0
+                  ? t("status.transfersSpeed", {
+                      count: transfers.count,
+                      speed: formatSize(Math.round(transfers.bytesPerSecond)),
+                    })
+                  : t("status.transfers", { count: transfers.count })}
+              </span>
+            )}
           </span>
         }
       />
+      <ConflictDialog />
       <CommandPalette
         open={paletteOpen}
         onOpenChange={setPaletteOpen}

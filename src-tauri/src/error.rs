@@ -126,6 +126,7 @@ impl From<FsError> for CommandError {
             AlreadyExists(p) => Self::new("alreadyExists", &err).with_details(path(p)),
             TimedOut => Self::new("timedOut", &err),
             Protocol(_) => Self::new("protocol", &err),
+            Io(_) => Self::new("io", &err),
         }
     }
 }

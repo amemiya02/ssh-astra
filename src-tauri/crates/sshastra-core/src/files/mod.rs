@@ -1,17 +1,25 @@
-//! Remote file systems: what the File panel browses (and, later, what file
-//! operations, transfers and remote editing act on).
+//! Remote file systems: what the File panel browses, and what file
+//! operations, transfers and remote editing act on.
 //!
 //! [`RemoteFs`] is the seam: [`SftpFs`] implements it over a Host's
 //! Connection (`Connection::open_sftp`), and tests may swap in an in-memory
 //! fake. Paths are POSIX strings as the server sees them.
 
+mod local;
 mod registry;
 mod sftp;
+mod transfer;
 
+pub use local::{DiskFs, LocalFs};
 pub use registry::{FsId, FsRegistry};
 pub use sftp::SftpFs;
+pub use transfer::{
+    ConflictAnswer, OpenRemote, Transfer, TransferDirection, TransferId, TransferQueue,
+    TransferSettings, TransferState,
+};
 
 use serde::Serialize;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use crate::ssh::BoxFuture;
 
@@ -84,9 +92,21 @@ pub enum FsError {
     /// for another reason.
     #[error("SFTP error: {0}")]
     Protocol(String),
+    /// A local file could not be read or written.
+    #[error("{0}")]
+    Io(String),
 }
 
 pub type FsResult<T> = Result<T, FsError>;
+
+/// A file opened for streaming reads ([`RemoteFs::open_read`],
+/// [`LocalFs::open_read`]).
+pub type FileReader = Box<dyn AsyncRead + Send + Unpin>;
+
+/// A file opened for streaming writes ([`RemoteFs::create_write`],
+/// [`LocalFs::create_write`]). Call `shutdown().await` when done: that
+/// flushes and closes it, and reports a failed close.
+pub type FileWriter = Box<dyn AsyncWrite + Send + Unpin>;
 
 /// A Host's file system as the File panel sees it. Object safe, so callers
 /// hold an `Arc<dyn RemoteFs>` and tests can pass a fake.
@@ -100,12 +120,6 @@ pub trait RemoteFs: Send + Sync {
     fn list_dir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<Vec<FileEntry>>>;
     /// The metadata of `path`, following symlinks.
     fn stat<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileStat>>;
-    /// The whole contents of the file `path` (for small files, e.g. remote
-    /// editing; transfers stream instead).
-    fn read_file<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<Vec<u8>>>;
-    /// Replaces the contents of the file `path` with `data`, creating it if
-    /// needed (an existing file keeps its permissions).
-    fn write_file<'a>(&'a self, path: &'a str, data: &'a [u8]) -> BoxFuture<'a, FsResult<()>>;
     /// The metadata of `path` itself: a symlink is [`FileKind::Symlink`].
     fn lstat<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileStat>>;
 
@@ -120,6 +134,39 @@ pub trait RemoteFs: Send + Sync {
     fn remove_dir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>>;
     /// Sets the permission bits (`0o755`) of `path`, following symlinks.
     fn set_permissions<'a>(&'a self, path: &'a str, mode: u32) -> BoxFuture<'a, FsResult<()>>;
+
+    // Contents, streamed (transfers); `read_file` / `write_file` wrap them.
+
+    /// Opens the file `path` to read it from the start.
+    fn open_read<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileReader>>;
+    /// Creates the file `path`, or empties it if it exists (keeping its
+    /// permissions), to write it. Finish with `shutdown().await`.
+    fn create_write<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileWriter>>;
+
+    /// The whole contents of the file `path`, in memory (small files, e.g.
+    /// remote editing).
+    fn read_file<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<Vec<u8>>> {
+        Box::pin(async move {
+            let mut reader = self.open_read(path).await?;
+            let mut data = Vec::new();
+            reader
+                .read_to_end(&mut data)
+                .await
+                .map_err(|e| FsError::Protocol(format!("{path}: {e}")))?;
+            Ok(data)
+        })
+    }
+
+    /// Replaces the contents of the file `path` with `data`, creating it if
+    /// needed (an existing file keeps its permissions).
+    fn write_file<'a>(&'a self, path: &'a str, data: &'a [u8]) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move {
+            let mut writer = self.create_write(path).await?;
+            let io = |e: std::io::Error| FsError::Protocol(format!("{path}: {e}"));
+            writer.write_all(data).await.map_err(io)?;
+            writer.shutdown().await.map_err(io)
+        })
+    }
 }
 
 /// The directory the user asked for, as the File panel shows it: `""` and

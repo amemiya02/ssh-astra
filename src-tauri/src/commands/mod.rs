@@ -8,3 +8,4 @@ pub mod forwards;
 pub mod hosts;
 pub mod settings;
 pub mod terminal;
+pub mod transfers;

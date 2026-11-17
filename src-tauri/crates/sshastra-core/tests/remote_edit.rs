@@ -6,25 +6,33 @@
 mod support;
 
 use std::collections::HashMap;
+use std::io;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use sshastra_core::edit::{EditError, EditEvent, Opener, RemoteEditor};
-use sshastra_core::files::{FileEntry, FileStat, FsError, FsResult, RemoteFs};
+use sshastra_core::files::{
+    FileEntry, FileReader, FileStat, FileWriter, FsError, FsResult, RemoteFs,
+};
 use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::ssh::{
     BoxFuture, ConnectionManager, HostKeyPrompt, PasswordPrompt, Prompter, Secret,
 };
 use support::Service;
+use tokio::io::AsyncWrite;
 use tokio::sync::mpsc;
 
-/// Files by path, in memory. `failing` makes every write fail.
+/// Files by path, in memory. `failing` makes every write fail. Implements
+/// only the streaming methods: the editor goes through `RemoteFs`'s
+/// provided `read_file` / `write_file`.
 #[derive(Default)]
 struct FakeFs {
-    files: Mutex<HashMap<String, Vec<u8>>>,
-    writes: Mutex<usize>,
+    files: Arc<Mutex<HashMap<String, Vec<u8>>>>,
+    writes: Arc<Mutex<usize>>,
     failing: Mutex<bool>,
 }
 
@@ -68,28 +76,30 @@ impl RemoteFs for FakeFs {
         Box::pin(async move { Err(FsError::NotFound(path.into())) })
     }
 
-    fn read_file<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<Vec<u8>>> {
+    fn open_read<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileReader>> {
         Box::pin(async move {
-            self.files
+            let data = self
+                .files
                 .lock()
                 .unwrap()
                 .get(path)
                 .cloned()
-                .ok_or_else(|| FsError::NotFound(path.into()))
+                .ok_or_else(|| FsError::NotFound(path.into()))?;
+            Ok(Box::new(io::Cursor::new(data)) as FileReader)
         })
     }
 
-    fn write_file<'a>(&'a self, path: &'a str, data: &'a [u8]) -> BoxFuture<'a, FsResult<()>> {
+    fn create_write<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileWriter>> {
         Box::pin(async move {
             if *self.failing.lock().unwrap() {
                 return Err(FsError::Protocol("connection lost".into()));
             }
-            *self.writes.lock().unwrap() += 1;
-            self.files
-                .lock()
-                .unwrap()
-                .insert(path.into(), data.to_vec());
-            Ok(())
+            Ok(Box::new(FakeWriter {
+                files: Arc::clone(&self.files),
+                writes: Arc::clone(&self.writes),
+                path: path.into(),
+                data: Vec::new(),
+            }) as FileWriter)
         })
     }
 
@@ -117,6 +127,36 @@ impl RemoteFs for FakeFs {
 
     fn set_permissions<'a>(&'a self, _: &'a str, _: u32) -> BoxFuture<'a, FsResult<()>> {
         unused()
+    }
+}
+
+/// Stores its file when shut down, as a closed SFTP handle would.
+struct FakeWriter {
+    files: Arc<Mutex<HashMap<String, Vec<u8>>>>,
+    writes: Arc<Mutex<usize>>,
+    path: String,
+    data: Vec<u8>,
+}
+
+impl AsyncWrite for FakeWriter {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        _: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        self.data.extend_from_slice(buf);
+        Poll::Ready(Ok(buf.len()))
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+        *self.writes.lock().unwrap() += 1;
+        let data = self.data.clone();
+        self.files.lock().unwrap().insert(self.path.clone(), data);
+        Poll::Ready(Ok(()))
     }
 }
 
