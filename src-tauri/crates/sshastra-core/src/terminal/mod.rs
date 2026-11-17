@@ -4,11 +4,35 @@
 
 mod local_pty;
 mod registry;
+mod shell_integration;
 
 pub use local_pty::{LocalPty, ShellCommand};
 pub use registry::{TerminalId, TerminalRegistry};
+pub use shell_integration::{CwdParser, ShellOutput, Shown, INJECTION, REPORT_CWD};
 
 use serde::{Deserialize, Serialize};
+
+/// The `terminal` section of the settings file, as the core reads it (the UI
+/// keeps its other terminal preferences there too).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct TerminalSettings {
+    /// Type the ShellIntegration hook into new remote shells.
+    pub shell_integration: bool,
+}
+
+impl Default for TerminalSettings {
+    fn default() -> Self {
+        Self {
+            shell_integration: true,
+        }
+    }
+}
+
+impl TerminalSettings {
+    /// The settings file section this is read from.
+    pub const SECTION: &'static str = "terminal";
+}
 
 /// Terminal grid size in character cells.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -26,6 +50,9 @@ pub enum TerminalEvent {
     /// A remote Terminal's Connection dropped, is being reopened, or is back
     /// (with a new shell). Local terminals never send it.
     Connection(ConnectionState),
+    /// A remote Terminal's shell reported its current directory (ShellIntegration,
+    /// OSC 7). Sent after the output that carried it.
+    Cwd(String),
     /// The shell ended. `code` is `None` when it was not available.
     Exit { code: Option<u32> },
 }

@@ -9,7 +9,9 @@ use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::StatusCode;
 use tokio::task::JoinSet;
 
-use super::{join, FileEntry, FileKind, FileStat, FsError, FsResult, RemoteFs};
+use super::{
+    join, FileEntry, FileKind, FileReader, FileStat, FileWriter, FsError, FsResult, RemoteFs,
+};
 use crate::ssh::{BoxFuture, Connection};
 
 /// Seconds to wait for each SFTP reply; slow links list big directories.
@@ -40,6 +42,20 @@ impl SftpFs {
             session: Arc::new(session),
             _connection: connection,
         })
+    }
+}
+
+impl SftpFs {
+    /// OpenSSH answers a bare "failure" when the target of a mkdir or rename
+    /// exists; tell that case apart so the user sees why.
+    async fn unless_taken(&self, target: &str, err: FsError) -> FsError {
+        if !matches!(err, FsError::Protocol(_)) {
+            return err;
+        }
+        match self.session.symlink_metadata(target).await {
+            Ok(_) => FsError::AlreadyExists(target.to_owned()),
+            Err(_) => err,
+        }
     }
 }
 
@@ -107,6 +123,87 @@ impl RemoteFs for SftpFs {
                 .await
                 .map_err(|e| error(path, e))?;
             Ok(stat(&meta))
+        })
+    }
+
+    fn open_read<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileReader>> {
+        Box::pin(async move {
+            let file = self.session.open(path).await.map_err(|e| error(path, e))?;
+            Ok(Box::new(file) as FileReader)
+        })
+    }
+
+    fn create_write<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileWriter>> {
+        Box::pin(async move {
+            // Truncates an existing file (and keeps its permissions).
+            let file = self
+                .session
+                .create(path)
+                .await
+                .map_err(|e| error(path, e))?;
+            Ok(Box::new(file) as FileWriter)
+        })
+    }
+
+    fn lstat<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileStat>> {
+        Box::pin(async move {
+            let meta = self
+                .session
+                .symlink_metadata(path)
+                .await
+                .map_err(|e| error(path, e))?;
+            Ok(stat(&meta))
+        })
+    }
+
+    fn create_dir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move {
+            match self.session.create_dir(path).await {
+                Ok(()) => Ok(()),
+                Err(e) => Err(self.unless_taken(path, error(path, e)).await),
+            }
+        })
+    }
+
+    fn rename<'a>(&'a self, from: &'a str, to: &'a str) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move {
+            // Plain SSH_FXP_RENAME, which OpenSSH refuses over an existing
+            // target (unlike the posix-rename extension).
+            match self.session.rename(from, to).await {
+                Ok(()) => Ok(()),
+                Err(e) => Err(self.unless_taken(to, error(from, e)).await),
+            }
+        })
+    }
+
+    fn remove_file<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move {
+            self.session
+                .remove_file(path)
+                .await
+                .map_err(|e| error(path, e))
+        })
+    }
+
+    fn remove_dir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move {
+            self.session
+                .remove_dir(path)
+                .await
+                .map_err(|e| error(path, e))
+        })
+    }
+
+    fn set_permissions<'a>(&'a self, path: &'a str, mode: u32) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move {
+            let attrs = Metadata {
+                permissions: Some(mode & 0o7777),
+                ..Metadata::empty()
+            };
+            self.session
+                .set_metadata(path, attrs)
+                .await
+                .map_err(|e| error(path, e))
         })
     }
 }

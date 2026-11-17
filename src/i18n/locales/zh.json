@@ -147,6 +147,7 @@
     "dockGroup": "文件面板位置",
     "up": "上一级文件夹",
     "refresh": "刷新",
+    "syncToTerminal": "同步到终端目录",
     "path": "路径",
     "copyPath": "复制路径",
     "showHidden": "显示隐藏文件",
@@ -162,6 +163,20 @@
     "connecting": "正在连接…",
     "disconnected": "与 {{host}} 的连接已断开。",
     "retry": "重试",
+    "openInEditor": "在编辑器中打开",
+    "edit": {
+      "title": "在编辑器中打开",
+      "opening": "正在下载…",
+      "editing": "已在编辑器中打开，保存后自动上传。",
+      "uploading": "正在上传…",
+      "uploaded": "已保存到 {{host}}",
+      "uploadFailed": "上传失败：{{message}}",
+      "openFailed": "无法打开文件：{{message}}",
+      "noApplication": "这台电脑上没有能打开此文件的应用。",
+      "notFound": "文件已不存在。",
+      "retry": "重试",
+      "close": "停止编辑 {{name}}"
+    },
     "errors": {
       "notConnected": "{{host}} 未连接。",
       "notFound": "文件夹不存在：{{path}}",
@@ -169,6 +184,89 @@
       "notADirectory": "不是文件夹：{{path}}",
       "timedOut": "服务器没有及时响应。",
       "other": "无法列出文件夹：{{message}}"
+    },
+    "newFolder": "新建文件夹",
+    "create": "创建",
+    "cancel": "取消",
+    "name": "名称",
+    "renameAction": "重命名…",
+    "permissionsAction": "权限…",
+    "deleteAction": "删除…",
+    "newFolderAction": "新建文件夹…",
+    "rename": {
+      "title": "重命名“{{name}}”",
+      "confirm": "重命名"
+    },
+    "nameProblem": {
+      "slash": "名称不能包含“/”。",
+      "dots": "不能使用“{{name}}”作为名称。",
+      "taken": "此文件夹中已有“{{name}}”。"
+    },
+    "delete": {
+      "titleOne": "删除“{{name}}”？",
+      "titleMany": "删除 {{count}} 项？",
+      "counting": "正在统计将被删除的条目…",
+      "count_one": "将删除 {{count}} 个条目。此操作无法撤销。",
+      "count_other": "将删除 {{count}} 个条目（包括文件夹中的全部内容）。此操作无法撤销。",
+      "confirm": "删除"
+    },
+    "permissions": {
+      "title": "“{{name}}”的权限",
+      "owner": "所有者",
+      "group": "组",
+      "others": "其他人",
+      "read": "读",
+      "write": "写",
+      "execute": "执行",
+      "octal": "八进制",
+      "apply": "应用"
+    },
+    "operationErrors": {
+      "notFound": "文件或文件夹不存在：{{path}}",
+      "permissionDenied": "权限不足：{{path}}",
+      "alreadyExists": "已存在：{{path}}",
+      "notOpen": "File panel 未连接。",
+      "other": "服务器拒绝了操作：{{message}}"
+    },
+    "upload": "上传文件",
+    "uploadTitle": "上传到 {{path}}",
+    "download": "下载…",
+    "downloadTitle": "下载到…",
+    "dropHere": "松开即可上传到 {{path}}"
+  },
+  "transfers": {
+    "title": "传输",
+    "expand": "显示传输",
+    "collapse": "隐藏传输",
+    "active": "进行中 {{count}}",
+    "done": "已完成 {{count}}",
+    "noneActive": "没有进行中的传输。",
+    "noneDone": "没有已完成的传输。",
+    "clearDone": "清除已完成",
+    "retry": "重试",
+    "cancel": "取消",
+    "dismiss": "移除",
+    "progress": "{{done}} / {{total}}",
+    "files": "{{done}} / {{total}} 个文件",
+    "timeLeft": "剩余 {{time}}",
+    "direction": {
+      "upload": "上传",
+      "download": "下载"
+    },
+    "state": {
+      "queued": "等待中",
+      "conflict": "等待你的选择",
+      "cancelled": "已取消",
+      "done": "已完成"
+    },
+    "failed": "无法开始传输：{{message}}",
+    "conflict": {
+      "title": "文件已存在",
+      "body": "目标位置已有同名文件。要替换它吗？",
+      "overwrite": "替换",
+      "skip": "跳过",
+      "overwriteAll": "全部替换",
+      "skipAll": "全部跳过"
     }
   },
   "forwards": {
@@ -265,7 +363,9 @@
     "connectedTo": "已连接：{{hosts}}",
     "forwards": "端口转发：{{list}}",
     "forwardsRemote": "服务器 {{from}} → {{to}}",
-    "forwardsDynamic": "SOCKS {{from}}"
+    "forwardsDynamic": "SOCKS {{from}}",
+    "transfers": "传输：{{count}}",
+    "transfersSpeed": "传输：{{count}} · {{speed}}/s"
   },
   "theme": {
     "title": "外观",
@@ -373,7 +473,8 @@
       "appearance": "外观",
       "terminal": "终端",
       "connection": "连接",
-      "language": "语言"
+      "language": "语言",
+      "transfers": "传输"
     },
     "theme": {
       "label": "主题",
@@ -414,6 +515,10 @@
       "rightClickPaste": {
         "label": "右键粘贴",
         "description": "在终端中右键单击时粘贴剪贴板内容。"
+      },
+      "shellIntegration": {
+        "label": "Shell 集成",
+        "description": "新开的远程 bash、zsh 终端在你 cd 时通知文件面板，让它跟着切换目录。关闭后不会向 shell 输入任何内容，「同步到终端目录」仍然可用。"
       }
     },
     "connection": {
@@ -422,6 +527,12 @@
         "description": "空闲的 Connection 多久确认一次服务器仍在。连续三次没有回应即视为掉线。对新的 Connection 生效。",
         "off": "关",
         "seconds": "{{count}} 秒"
+      }
+    },
+    "transfers": {
+      "concurrency": {
+        "label": "同时传输数",
+        "description": "同时进行的上传和下载数量，其余的排队等待。文件夹内的文件逐个复制。"
       }
     }
   }

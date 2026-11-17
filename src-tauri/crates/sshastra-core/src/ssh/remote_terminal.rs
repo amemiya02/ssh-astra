@@ -7,17 +7,25 @@
 //! reports [`ConnectionState::Connected`]. The old shell's processes are gone.
 //! When every try fails it reports [`ConnectionState::Disconnected`] and waits
 //! for [`Terminal::reconnect`].
+//!
+//! With ShellIntegration on ([`RemoteTerminalOptions::shell_integration`]),
+//! every shell it starts, the first and each after a reconnect, gets the
+//! prompt hook typed in, and the directories it reports come out as
+//! [`TerminalEvent::Cwd`].
 
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
+
+use tokio::time::Instant;
 
 use tokio::sync::mpsc;
 
 use super::shell::ShellEvent;
 use super::{ConnectError, Connection, RemoteShell};
 use crate::terminal::{
-    ConnectionState, Result, Terminal, TerminalError, TerminalEvent, TerminalSize,
+    ConnectionState, Result, ShellOutput, Terminal, TerminalError, TerminalEvent, TerminalSize,
+    INJECTION,
 };
 
 /// How a [`RemoteTerminal`] retries a dropped Connection.
@@ -39,6 +47,15 @@ impl Default for ReconnectPolicy {
     }
 }
 
+/// How a [`RemoteTerminal`] runs its shells.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RemoteTerminalOptions {
+    pub reconnect: ReconnectPolicy,
+    /// Type the ShellIntegration hook into each new shell and report its
+    /// directory (`terminal::INJECTION`).
+    pub shell_integration: bool,
+}
+
 enum Command {
     Data(Vec<u8>),
     Resize(TerminalSize),
@@ -54,9 +71,10 @@ pub struct RemoteTerminal {
 }
 
 impl RemoteTerminal {
-    /// Connects with `connect` and starts a shell of `size`. `connect` is
-    /// called again for every reconnect; it returns the Host's shared
-    /// Connection (e.g. through `ConnectionManager::connect_through`).
+    /// Connects with `connect` and starts a shell of `size`, without
+    /// ShellIntegration. `connect` is called again for every reconnect; it
+    /// returns the Host's shared Connection (e.g. through
+    /// `ConnectionManager::connect_through`).
     pub async fn open<C, Fut, F>(
         connect: C,
         policy: ReconnectPolicy,
@@ -68,12 +86,33 @@ impl RemoteTerminal {
         Fut: Future<Output = Result<Arc<Connection>, ConnectError>> + Send + 'static,
         F: FnMut(TerminalEvent) + Send + 'static,
     {
+        let options = RemoteTerminalOptions {
+            reconnect: policy,
+            shell_integration: false,
+        };
+        Self::open_with(connect, options, size, sink).await
+    }
+
+    /// Like [`open`](Self::open), with every option.
+    pub async fn open_with<C, Fut, F>(
+        connect: C,
+        options: RemoteTerminalOptions,
+        size: TerminalSize,
+        sink: F,
+    ) -> Result<Self, ConnectError>
+    where
+        C: Fn() -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Arc<Connection>, ConnectError>> + Send + 'static,
+        F: FnMut(TerminalEvent) + Send + 'static,
+    {
+        let integration = options.shell_integration;
         let (shell_tx, shell_events) = mpsc::unbounded_channel();
         let shell = start_shell(&connect().await?, size, &shell_tx).await?;
         let (commands, command_rx) = mpsc::unbounded_channel();
         let runner = Runner {
             connect: Box::new(move || Box::pin(connect())),
-            policy,
+            policy: options.reconnect,
+            integration,
             size,
             sink: Box::new(sink),
             commands: command_rx,
@@ -129,6 +168,63 @@ async fn start_shell(
         .await
 }
 
+/// How long output must pause at what looks like a prompt (not after a
+/// newline) before the ShellIntegration hook is typed in.
+const PROMPT_QUIET: Duration = Duration::from_millis(150);
+/// The longest wait for that prompt; the hook goes in anyway after it.
+const PROMPT_WAIT: Duration = Duration::from_secs(5);
+/// How long output is hidden waiting for the hook's ready marker.
+const READY_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// Typing the ShellIntegration hook into one shell.
+enum Hook {
+    /// Waiting for the shell's first prompt.
+    Waiting(Waiting),
+    /// Typed in; output is hidden until the ready marker or this deadline.
+    Hiding(Instant),
+    /// In, given up, or ShellIntegration is off.
+    Done,
+}
+
+struct Waiting {
+    started: Instant,
+    /// When output last arrived, if its last byte was not a newline.
+    at_prompt: Option<Instant>,
+}
+
+impl Default for Waiting {
+    fn default() -> Self {
+        Self {
+            started: Instant::now(),
+            at_prompt: None,
+        }
+    }
+}
+
+impl Waiting {
+    fn saw(&mut self, output: &[u8]) {
+        if let Some(&last) = output.last() {
+            self.at_prompt = (last != b'\n').then(Instant::now);
+        }
+    }
+}
+
+impl Hook {
+    fn deadline(&self) -> Option<Instant> {
+        match self {
+            Hook::Waiting(w) => {
+                let latest = w.started + PROMPT_WAIT;
+                Some(
+                    w.at_prompt
+                        .map_or(latest, |at| (at + PROMPT_QUIET).min(latest)),
+                )
+            }
+            Hook::Hiding(until) => Some(*until),
+            Hook::Done => None,
+        }
+    }
+}
+
 /// Why waiting ended without a shell.
 enum Stop {
     /// The user closed the Terminal.
@@ -140,6 +236,8 @@ enum Stop {
 struct Runner {
     connect: Connect,
     policy: ReconnectPolicy,
+    /// Type the ShellIntegration hook into every new shell.
+    integration: bool,
     size: TerminalSize,
     sink: Box<dyn FnMut(TerminalEvent) + Send>,
     commands: mpsc::UnboundedReceiver<Command>,
@@ -167,13 +265,34 @@ impl Runner {
     /// Runs `shell` until its Connection drops (`Ok`) or it ends (`Err`,
     /// after sending `Exit`).
     async fn serve(&mut self, shell: &mut RemoteShell) -> std::result::Result<(), ()> {
+        let mut output = ShellOutput::default();
+        let mut hook = if self.integration {
+            Hook::Waiting(Waiting::default())
+        } else {
+            Hook::Done
+        };
+        // Keystrokes typed while the hook goes in, sent after it.
+        let mut typed = Vec::new();
         loop {
+            let deadline = hook.deadline();
             tokio::select! {
                 // Shell events first: output that arrived before a close is shown.
                 biased;
                 event = self.shell_events.recv() => match event {
-                    Some(ShellEvent::Output(bytes)) => (self.sink)(TerminalEvent::Output(bytes)),
+                    Some(ShellEvent::Output(bytes)) => {
+                        if let Hook::Waiting(waiting) = &mut hook {
+                            waiting.saw(&bytes);
+                        }
+                        // Reports also come from `REPORT_CWD` typed in without the hook.
+                        let shown = output.feed(&bytes);
+                        self.show(shown.output, shown.cwds);
+                        if matches!(hook, Hook::Hiding(_)) && !output.is_hiding() {
+                            hook = Hook::Done;
+                            let _ = shell.write(&std::mem::take(&mut typed));
+                        }
+                    }
                     Some(ShellEvent::Exit { code }) => {
+                        self.show(output.reveal(), Vec::new());
                         (self.sink)(TerminalEvent::Exit { code });
                         return Err(());
                     }
@@ -181,9 +300,22 @@ impl Runner {
                     // Unreachable: `shell_tx` keeps the channel open.
                     None => return Err(()),
                 },
+                () = tokio::time::sleep_until(deadline.unwrap_or_else(Instant::now)), if deadline.is_some() => {
+                    if let Hook::Waiting(_) = hook {
+                        let _ = shell.write(INJECTION.as_bytes());
+                        output.hide_until_ready();
+                        hook = Hook::Hiding(Instant::now() + READY_TIMEOUT);
+                    } else {
+                        // The shell never printed the marker: show what it did.
+                        self.show(output.reveal(), Vec::new());
+                        hook = Hook::Done;
+                        let _ = shell.write(&std::mem::take(&mut typed));
+                    }
+                },
                 command = self.commands.recv() => match command.unwrap_or(Command::Close) {
                     // Failures mean the shell is ending; its last event follows.
-                    Command::Data(bytes) => { let _ = shell.write(&bytes); }
+                    Command::Data(bytes) if matches!(hook, Hook::Done) => { let _ = shell.write(&bytes); }
+                    Command::Data(bytes) => typed.extend_from_slice(&bytes),
                     Command::Resize(size) => {
                         self.size = size;
                         let _ = shell.resize(size);
@@ -196,6 +328,15 @@ impl Runner {
                     }
                 },
             }
+        }
+    }
+
+    fn show(&mut self, output: Vec<u8>, cwds: Vec<String>) {
+        if !output.is_empty() {
+            (self.sink)(TerminalEvent::Output(output));
+        }
+        for cwd in cwds {
+            (self.sink)(TerminalEvent::Cwd(cwd));
         }
     }
 

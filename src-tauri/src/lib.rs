@@ -9,7 +9,8 @@ mod prompts;
 use std::sync::Arc;
 
 use sshastra_core::credentials;
-use sshastra_core::files::FsRegistry;
+use sshastra_core::edit::RemoteEditor;
+use sshastra_core::files::{FsRegistry, TransferSettings};
 use sshastra_core::hosts::HostStore;
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::settings::SettingsStore;
@@ -20,14 +21,24 @@ use tauri_plugin_window_state::StateFlags;
 
 use commands::connections::ConnectionsState;
 use commands::credentials::Vault;
+use commands::edit::SystemOpener;
 use commands::forwards::ForwardsState;
 use commands::hosts::HostsState;
 use commands::settings::SettingsState;
+use commands::transfers::TransfersState;
 use prompts::PendingPrompts;
+
+// The E2E WebDriver server must never ship.
+#[cfg(all(feature = "e2e", not(debug_assertions)))]
+compile_error!("the `e2e` feature is for debug builds only");
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // Lets the E2E smoke test (`e2e/`) drive the webview over WebDriver.
+    #[cfg(feature = "e2e")]
+    let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
+    builder
         // Restores the main window's size, position and maximized state, and
         // saves them on exit (`.window-state.json` in the app config dir).
         .plugin(
@@ -43,6 +54,7 @@ pub fn run() {
         // Terminal links open in the browser; copy on select / paste use the system clipboard.
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        // Native pickers: export / import files, upload files, the folder a download goes to.
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
@@ -53,9 +65,17 @@ pub fn run() {
                 .unwrap_or_else(|| KnownHosts::new(config_dir.join("known_hosts")));
             let settings =
                 SettingsStore::open(config_dir.join("settings.json")).map_err(Into::into);
+            if let Ok(store) = &settings {
+                app.state::<TransfersState>()
+                    .apply(&store.section(TransferSettings::SECTION));
+            }
             // The system keychain; where there is none (Linux without a
             // Secret Service) nothing is saved and every connect asks.
+            // The E2E build never touches the developer's keychain.
+            #[cfg(not(feature = "e2e"))]
             let vault = credentials::system_vault();
+            #[cfg(feature = "e2e")]
+            let vault: Arc<dyn credentials::CredentialVault> = Arc::new(credentials::NoVault);
             app.manage(HostsState::new(hosts));
             app.manage(SettingsState::new(settings));
             app.manage(
@@ -70,6 +90,12 @@ pub fn run() {
         .manage(ForwardsState::default())
         .manage(ConnectionsState::default())
         .manage(FsRegistry::default())
+        // Temp files of remote edits, one directory per Host; deleted on exit.
+        .manage(RemoteEditor::new(
+            std::env::temp_dir().join(format!("sshastra-edit-{}", std::process::id())),
+            Arc::new(SystemOpener),
+        ))
+        .manage(TransfersState::default())
         .manage(Arc::new(PendingPrompts::default()))
         .invoke_handler(tauri::generate_handler![
             commands::hosts::hosts_list,
@@ -103,10 +129,32 @@ pub fn run() {
             commands::terminal::terminal_resize,
             commands::terminal::terminal_close,
             commands::terminal::terminal_reconnect,
+            commands::terminal::terminal_report_cwd,
             commands::files::files_open,
             commands::files::files_list,
+            commands::files::files_create_dir,
+            commands::files::files_rename,
+            commands::files::files_count,
+            commands::files::files_delete,
+            commands::files::files_chmod,
             commands::files::files_close,
+            commands::edit::edit_open,
+            commands::edit::edit_retry,
+            commands::edit::edit_close,
+            commands::transfers::transfers_watch,
+            commands::transfers::transfers_upload,
+            commands::transfers::transfers_download,
+            commands::transfers::transfer_cancel,
+            commands::transfers::transfer_retry,
+            commands::transfers::transfer_answer,
+            commands::transfers::transfers_remove,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running sshastra");
+        .build(tauri::generate_context!())
+        .expect("error while building sshastra")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                // Remote edits' temp files go with the app.
+                app.state::<RemoteEditor>().close_all();
+            }
+        });
 }

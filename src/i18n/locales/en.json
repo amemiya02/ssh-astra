@@ -147,6 +147,7 @@
     "dockGroup": "File panel position",
     "up": "Up one folder",
     "refresh": "Refresh",
+    "syncToTerminal": "Sync to Terminal folder",
     "path": "Path",
     "copyPath": "Copy path",
     "showHidden": "Show hidden files",
@@ -162,6 +163,20 @@
     "connecting": "Connecting…",
     "disconnected": "The Connection to {{host}} was lost.",
     "retry": "Try again",
+    "openInEditor": "Open in editor",
+    "edit": {
+      "title": "Open in editor",
+      "opening": "Downloading…",
+      "editing": "Open in your editor. Saves upload automatically.",
+      "uploading": "Uploading…",
+      "uploaded": "Saved to {{host}}",
+      "uploadFailed": "Upload failed: {{message}}",
+      "openFailed": "Could not open the file: {{message}}",
+      "noApplication": "No application on this computer opens this file.",
+      "notFound": "The file no longer exists.",
+      "retry": "Retry",
+      "close": "Stop editing {{name}}"
+    },
     "errors": {
       "notConnected": "{{host}} is not connected.",
       "notFound": "No such folder: {{path}}",
@@ -169,6 +184,89 @@
       "notADirectory": "Not a folder: {{path}}",
       "timedOut": "The server did not answer in time.",
       "other": "Could not list the folder: {{message}}"
+    },
+    "newFolder": "New folder",
+    "create": "Create",
+    "cancel": "Cancel",
+    "name": "Name",
+    "renameAction": "Rename…",
+    "permissionsAction": "Permissions…",
+    "deleteAction": "Delete…",
+    "newFolderAction": "New folder…",
+    "rename": {
+      "title": "Rename “{{name}}”",
+      "confirm": "Rename"
+    },
+    "nameProblem": {
+      "slash": "A name cannot contain “/”.",
+      "dots": "“{{name}}” cannot be used as a name.",
+      "taken": "“{{name}}” already exists in this folder."
+    },
+    "delete": {
+      "titleOne": "Delete “{{name}}”?",
+      "titleMany": "Delete {{count}} items?",
+      "counting": "Counting what will be deleted…",
+      "count_one": "{{count}} item will be deleted. This cannot be undone.",
+      "count_other": "{{count}} items will be deleted, including everything inside folders. This cannot be undone.",
+      "confirm": "Delete"
+    },
+    "permissions": {
+      "title": "Permissions of “{{name}}”",
+      "owner": "Owner",
+      "group": "Group",
+      "others": "Others",
+      "read": "Read",
+      "write": "Write",
+      "execute": "Execute",
+      "octal": "Octal",
+      "apply": "Apply"
+    },
+    "operationErrors": {
+      "notFound": "No such file or folder: {{path}}",
+      "permissionDenied": "Permission denied: {{path}}",
+      "alreadyExists": "Already exists: {{path}}",
+      "notOpen": "The File panel is not connected.",
+      "other": "The server refused: {{message}}"
+    },
+    "upload": "Upload files",
+    "uploadTitle": "Upload to {{path}}",
+    "download": "Download…",
+    "downloadTitle": "Download to…",
+    "dropHere": "Drop to upload to {{path}}"
+  },
+  "transfers": {
+    "title": "Transfers",
+    "expand": "Show transfers",
+    "collapse": "Hide transfers",
+    "active": "Active {{count}}",
+    "done": "Done {{count}}",
+    "noneActive": "Nothing in progress.",
+    "noneDone": "No finished transfers.",
+    "clearDone": "Clear finished",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "dismiss": "Remove",
+    "progress": "{{done}} of {{total}}",
+    "files": "{{done}} of {{total}} files",
+    "timeLeft": "{{time}} left",
+    "direction": {
+      "upload": "Upload",
+      "download": "Download"
+    },
+    "state": {
+      "queued": "Waiting",
+      "conflict": "Waiting for your answer",
+      "cancelled": "Cancelled",
+      "done": "Done"
+    },
+    "failed": "Could not start the transfer: {{message}}",
+    "conflict": {
+      "title": "This file already exists",
+      "body": "A file with the same name is already at the destination. Replace it?",
+      "overwrite": "Replace",
+      "skip": "Skip",
+      "overwriteAll": "Replace all",
+      "skipAll": "Skip all"
     }
   },
   "forwards": {
@@ -265,7 +363,9 @@
     "connectedTo": "Connected to {{hosts}}",
     "forwards": "Port forwards: {{list}}",
     "forwardsRemote": "server {{from}} → {{to}}",
-    "forwardsDynamic": "SOCKS {{from}}"
+    "forwardsDynamic": "SOCKS {{from}}",
+    "transfers": "Transfers: {{count}}",
+    "transfersSpeed": "Transfers: {{count}} · {{speed}}/s"
   },
   "theme": {
     "title": "Appearance",
@@ -373,7 +473,8 @@
       "appearance": "Appearance",
       "terminal": "Terminal",
       "connection": "Connection",
-      "language": "Language"
+      "language": "Language",
+      "transfers": "Transfers"
     },
     "theme": {
       "label": "Theme",
@@ -414,6 +515,10 @@
       "rightClickPaste": {
         "label": "Right-click paste",
         "description": "Right-clicking in a Terminal pastes the clipboard."
+      },
+      "shellIntegration": {
+        "label": "Shell integration",
+        "description": "New remote bash and zsh Terminals tell the File panel when you cd, so it follows. Turn off to type nothing into the shell; Sync to Terminal folder still works."
       }
     },
     "connection": {
@@ -422,6 +527,12 @@
         "description": "How often an idle Connection checks the server is still there. A dropped Connection is noticed after three missed checks. Applies to new Connections.",
         "off": "Off",
         "seconds": "{{count}} s"
+      }
+    },
+    "transfers": {
+      "concurrency": {
+        "label": "Simultaneous transfers",
+        "description": "How many uploads and downloads run at once; the rest wait their turn. A folder's files copy one after another."
       }
     }
   }

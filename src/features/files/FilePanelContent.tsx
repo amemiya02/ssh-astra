@@ -1,20 +1,26 @@
-import { Eye, EyeOff, LoaderCircle, RefreshCw, Unplug } from "lucide-react";
-import { useEffect } from "react";
+import { Download, Eye, EyeOff, FolderSync, LoaderCircle, RefreshCw, Unplug, Upload } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { IconButton } from "@/components/IconButton";
 import { Button } from "@/components/ui/button";
 import { useFilePanelDock } from "@/features/shell/file-panel-dock";
 import type { ConnectionStatus } from "@/features/workspace/tabs";
+import { transfersStore } from "@/features/transfers/transfersStore";
+import { useOsFileDrop } from "@/features/transfers/use-os-file-drop";
 import type { Host } from "@/lib/ipc/hosts";
+import { pickDownloadFolder, pickFilesToUpload } from "@/lib/ipc/transfers";
 import { useSetting } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import { FileBrowser } from "./FileBrowser";
+import { childPath } from "./fileList";
 import { errorText } from "./fileErrors";
 import { followConnection } from "./fileBrowserStore";
 import { fileBrowsers } from "./fileBrowsers";
 import { filesSetting } from "./file-prefs";
 import { FilePanel } from "./FilePanel";
+import { RemoteEdits } from "./RemoteEdits";
+import { terminalCwds } from "./terminalCwds";
 
 /** The focused remote Terminal pane, whose Host the File panel browses. */
 export interface FilePanelPane {
@@ -30,7 +36,11 @@ export interface FilePanelPane {
  */
 export function FilePanelContent({ pane, remotePaneIds }: { pane?: FilePanelPane; remotePaneIds: string[] }) {
   const key = remotePaneIds.join("\n");
-  useEffect(() => fileBrowsers.retain(new Set(key ? key.split("\n") : [])), [key]);
+  useEffect(() => {
+    const ids = new Set(key ? key.split("\n") : []);
+    fileBrowsers.retain(ids);
+    terminalCwds.retain(ids);
+  }, [key]);
   if (!pane) return <FilePanel />;
   return <RemoteFilePanel key={pane.id} pane={pane} />;
 }
@@ -50,8 +60,37 @@ function RemoteFilePanel({ pane }: { pane: FilePanelPane }) {
   useEffect(() => followConnection(store, pane.status, !collapsed), [pane.status, collapsed, store]);
 
   const ready = phase === "open" && path !== null;
+  const hasSelection = useStore(store, (s) => s.selection.size > 0);
+
+  const upload = (paths: string[]) => {
+    if (path !== null) void transfersStore.getState().upload(pane.host.id, paths, path);
+  };
+  const pickAndUpload = async () => {
+    if (path === null) return;
+    const paths = await pickFilesToUpload(t("files.uploadTitle", { path }));
+    if (paths) upload(paths);
+  };
+  /** Downloads `names` in the current folder (default: the selection) to a folder the user picks. */
+  const download = async (names?: string[]) => {
+    const { path: dir, selection } = store.getState();
+    const chosen = names ?? [...selection];
+    if (dir === null || chosen.length === 0) return;
+    const target = await pickDownloadFolder(t("files.downloadTitle"));
+    if (target === null) return;
+    const paths = chosen.map((name) => childPath(dir, name));
+    void transfersStore.getState().download(pane.host.id, paths, target);
+  };
+  const dropZone = useRef<HTMLDivElement>(null);
+  const { over } = useOsFileDrop(dropZone, ready && !collapsed, upload);
+
   const actions = (
     <>
+      <IconButton label={t("files.upload")} disabled={!ready} onClick={() => void pickAndUpload()}>
+        <Upload />
+      </IconButton>
+      <IconButton label={t("files.download")} disabled={!ready || !hasSelection} onClick={() => void download()}>
+        <Download />
+      </IconButton>
       <IconButton
         label={t("files.showHidden")}
         aria-pressed={prefs.showHidden}
@@ -59,6 +98,9 @@ function RemoteFilePanel({ pane }: { pane: FilePanelPane }) {
         onClick={() => setPrefs({ ...prefs, showHidden: !prefs.showHidden })}
       >
         {prefs.showHidden ? <Eye /> : <EyeOff />}
+      </IconButton>
+      <IconButton label={t("files.syncToTerminal")} disabled={!ready} onClick={() => terminalCwds.sync(pane.id)}>
+        <FolderSync />
       </IconButton>
       <IconButton label={t("files.refresh")} disabled={!ready} onClick={() => void store.getState().refresh()}>
         <RefreshCw className={cn(loading && "motion-safe:animate-spin")} />
@@ -74,7 +116,18 @@ function RemoteFilePanel({ pane }: { pane: FilePanelPane }) {
   } else if (pane.status === "connecting") {
     body = <Notice icon={<LoaderCircle className="motion-safe:animate-spin" />} text={t("files.connecting")} />;
   } else if (ready) {
-    body = <FileBrowser store={store} hostName={pane.host.name} />;
+    body = (
+      <div ref={dropZone} className="relative h-full">
+        <FileBrowser store={store} hostName={pane.host.name} onDownload={(names) => void download(names)} />
+        {over && (
+          <div className="bg-selected ring-ring pointer-events-none absolute inset-1 flex items-center justify-center rounded-lg ring-2 ring-inset">
+            <p className="bg-surface shadow-panel rounded-md px-3 py-1.5 text-xs font-medium">
+              {t("files.dropHere", { path })}
+            </p>
+          </div>
+        )}
+      </div>
+    );
   } else if (phase === "closed" && error) {
     body = (
       <Notice icon={<Unplug />} text={errorText(t, error, pane.host.name)}>
@@ -87,7 +140,11 @@ function RemoteFilePanel({ pane }: { pane: FilePanelPane }) {
     body = <Notice icon={<LoaderCircle className="motion-safe:animate-spin" />} text={t("files.connecting")} />;
   }
 
-  return <FilePanel actions={actions}>{body}</FilePanel>;
+  return (
+    <FilePanel actions={actions} footer={<RemoteEdits store={store} hostName={pane.host.name} />}>
+      {body}
+    </FilePanel>
+  );
 }
 
 function Notice({ icon, text, children }: { icon: React.ReactNode; text: string; children?: React.ReactNode }) {

@@ -5,7 +5,10 @@ import {
   formatPermissions,
   formatSize,
   isDirLike,
+  nameProblem,
+  octalMode,
   parentPath,
+  parseOctalMode,
   shownEntries,
   visibleRows,
 } from "./fileList";
@@ -140,5 +143,42 @@ describe("visibleRows", () => {
       start: 9995,
       end: 10_000,
     });
+  });
+});
+
+describe("nameProblem", () => {
+  const existing = ["notes.txt", "src"];
+
+  it("accepts a new plain name, and an entry keeping its own name", () => {
+    expect(nameProblem("build", existing)).toBeNull();
+    expect(nameProblem("notes.txt", existing, "notes.txt")).toBeNull();
+  });
+
+  it("says why a name cannot be used", () => {
+    expect(nameProblem("  ", existing)).toBe("empty");
+    expect(nameProblem("a/b", existing)).toBe("slash");
+    expect(nameProblem("..", existing)).toBe("dots");
+    expect(nameProblem(".", existing)).toBe("dots");
+    expect(nameProblem("src", existing)).toBe("taken");
+    expect(nameProblem("src", existing, "notes.txt")).toBe("taken");
+  });
+});
+
+describe("octal modes", () => {
+  it("reads three or four octal digits", () => {
+    expect(parseOctalMode("755")).toBe(0o755);
+    expect(parseOctalMode("0644")).toBe(0o644);
+    expect(parseOctalMode(" 1777 ")).toBe(0o1777);
+  });
+
+  it("refuses anything else", () => {
+    for (const text of ["", "75", "789", "12345", "rwx", "-1"]) expect(parseOctalMode(text)).toBeNull();
+  });
+
+  it("writes a mode as `chmod` takes it", () => {
+    expect(octalMode(0o755)).toBe("755");
+    expect(octalMode(0o600)).toBe("600");
+    expect(octalMode(0o4755)).toBe("4755");
+    expect(octalMode(0o7)).toBe("007");
   });
 });

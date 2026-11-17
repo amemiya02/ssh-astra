@@ -21,6 +21,11 @@ export function isDirLike(entry: FileEntry): boolean {
   return entry.kind === "dir" || (entry.kind === "symlink" && entry.linkTarget === "dir");
 }
 
+/** Files, and symlinks to them, open in the user's editor on double-click. */
+export function isFileLike(entry: FileEntry): boolean {
+  return entry.kind === "file" || (entry.kind === "symlink" && entry.linkTarget === "file");
+}
+
 /**
  * The rows the File panel shows, in order: directories first, then files, each sorted by
  * `sort` (ties by name); dotfiles only with `showHidden`.
@@ -65,6 +70,29 @@ export function formatPermissions(entry: FileEntry): string {
     triple(3, (mode & 0o2000) !== 0, "s") +
     triple(0, (mode & 0o1000) !== 0, "t")
   );
+}
+
+/** Why `name` cannot be given to a new or renamed entry in a directory holding `existing`. */
+export type NameProblem = "empty" | "slash" | "dots" | "taken";
+
+/** `current` is the entry's own name when renaming (keeping it is fine). */
+export function nameProblem(name: string, existing: readonly string[], current?: string): NameProblem | null {
+  if (name.trim() === "") return "empty";
+  if (name.includes("/")) return "slash";
+  if (name === "." || name === "..") return "dots";
+  if (name !== current && existing.includes(name)) return "taken";
+  return null;
+}
+
+/** `755` or `0644` (special bits: `1777`) as permission bits; `null` unless 3–4 octal digits. */
+export function parseOctalMode(text: string): number | null {
+  const trimmed = text.trim();
+  return /^[0-7]{3,4}$/.test(trimmed) ? parseInt(trimmed, 8) : null;
+}
+
+/** Permission bits as `chmod` takes them: `755`, or `4755` with special bits. */
+export function octalMode(mode: number): string {
+  return (mode & 0o7777).toString(8).padStart(3, "0");
 }
 
 const units = ["B", "KB", "MB", "GB", "TB", "PB"];

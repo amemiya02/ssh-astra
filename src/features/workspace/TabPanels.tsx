@@ -6,6 +6,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/componen
 import { PortForwardsPanel } from "@/features/forwards/PortForwardsPanel";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { LocalTerminalView } from "@/features/terminal/LocalTerminalView";
+import { terminalCwds } from "@/features/files/terminalCwds";
 import { RemoteTerminalView } from "@/features/terminal/RemoteTerminalView";
 import { cn } from "@/lib/utils";
 import { tabId, tabPanelId, type ConnectionStatus, type Pane, type Tab } from "./tabs";
@@ -110,6 +111,8 @@ function PaneContent({
           active={active}
           onTitleChange={(title) => onTitleChange(pane.id, title)}
           onStatusChange={(status) => onStatusChange(pane.id, status)}
+          onCwd={(path) => terminalCwds.report(pane.id, path)}
+          onTerminal={(id) => terminalCwds.attach(pane.id, id)}
         />
       );
     case "settings":

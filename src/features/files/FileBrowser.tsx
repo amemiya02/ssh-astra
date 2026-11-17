@@ -1,4 +1,19 @@
-import { ArrowUp, ChevronDown, ChevronUp, Copy, File, FileSymlink, Folder, FolderSymlink } from "lucide-react";
+import {
+  ArrowUp,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Download,
+  File,
+  FilePen,
+  FileSymlink,
+  Folder,
+  FolderPlus,
+  FolderSymlink,
+  KeyRound,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
@@ -7,6 +22,7 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import type { FileEntry } from "@/lib/ipc/files";
@@ -16,12 +32,14 @@ import { cn } from "@/lib/utils";
 import type { FileBrowserStore } from "./fileBrowsers";
 import type { SelectMode } from "./fileBrowserStore";
 import { errorText } from "./fileErrors";
+import { FileOperationDialog, type FileOperation } from "./FileOperationDialogs";
 import { filesSetting } from "./file-prefs";
 import {
   childPath,
   formatPermissions,
   formatSize,
   isDirLike,
+  isFileLike,
   shownEntries,
   visibleRows,
   type SortKey,
@@ -34,27 +52,40 @@ const overscan = 8;
 const columns =
   "grid grid-cols-[minmax(0,1fr)_4.5rem] @sm:grid-cols-[minmax(0,1fr)_4.5rem_8.5rem] @md:grid-cols-[minmax(0,1fr)_4.5rem_8.5rem_6rem]";
 
-/** The path bar and the file table of one File panel. */
-export function FileBrowser({ store, hostName }: { store: FileBrowserStore; hostName: string }) {
+/**
+ * The path bar and the file table of one File panel. `onDownload` downloads the named
+ * entries of the current folder (the row's context menu offers it for the selection).
+ */
+export function FileBrowser({
+  store,
+  hostName,
+  onDownload,
+}: {
+  store: FileBrowserStore;
+  hostName: string;
+  onDownload?(names: string[]): void;
+}) {
   const { t } = useTranslation();
   const path = useStore(store, (s) => s.path);
   const error = useStore(store, (s) => s.error);
+  const [operation, setOperation] = useState<FileOperation | null>(null);
   return (
     <div className="@container flex h-full flex-col">
-      <PathBar key={path ?? ""} store={store} />
+      <PathBar key={path ?? ""} store={store} onOperation={setOperation} />
       {error && path !== null && (
         <p role="alert" className="text-destructive px-3 pb-1.5 text-xs">
           {errorText(t, error, hostName)}
         </p>
       )}
       {/* Keyed by path: a new directory starts scrolled to the top with nothing focused. */}
-      {path !== null && <FileTable key={path} store={store} path={path} />}
+      {path !== null && <FileTable key={path} store={store} path={path} onOperation={setOperation} onDownload={onDownload} />}
+      {operation && <FileOperationDialog store={store} operation={operation} onClose={() => setOperation(null)} />}
     </div>
   );
 }
 
 /** The directory being shown, editable: type a path and press Enter to go there. */
-function PathBar({ store }: { store: FileBrowserStore }) {
+function PathBar({ store, onOperation }: { store: FileBrowserStore; onOperation(operation: FileOperation): void }) {
   const { t } = useTranslation();
   const path = useStore(store, (s) => s.path);
   // Remounted (keyed by path) when the directory changes, which resets the draft.
@@ -94,6 +125,14 @@ function PathBar({ store }: { store: FileBrowserStore }) {
       </div>
       <IconButton
         type="button"
+        label={t("files.newFolder")}
+        disabled={path === null}
+        onClick={() => onOperation({ kind: "newFolder" })}
+      >
+        <FolderPlus />
+      </IconButton>
+      <IconButton
+        type="button"
         label={t("files.copyPath")}
         disabled={path === null}
         onClick={() => path !== null && void writeClipboardText(path)}
@@ -104,7 +143,17 @@ function PathBar({ store }: { store: FileBrowserStore }) {
   );
 }
 
-function FileTable({ store, path }: { store: FileBrowserStore; path: string }) {
+function FileTable({
+  store,
+  path,
+  onOperation,
+  onDownload,
+}: {
+  store: FileBrowserStore;
+  path: string;
+  onOperation(operation: FileOperation): void;
+  onDownload?(names: string[]): void;
+}) {
   const { t, i18n } = useTranslation();
   const entries = useStore(store, (s) => s.entries);
   const selection = useStore(store, (s) => s.selection);
@@ -151,6 +200,13 @@ function FileTable({ store, path }: { store: FileBrowserStore; path: string }) {
     setPrefs({ ...prefs, sort: { key, direction } });
   };
 
+  /** The selection in display order, for a delete. */
+  const selected = () => order.filter((name) => selection.has(name));
+  const askDelete = () => {
+    const names = selected();
+    if (names.length > 0) onOperation({ kind: "delete", names });
+  };
+
   const onKeyDown = (event: KeyboardEvent) => {
     const move = (to: number) => {
       const index = Math.max(0, Math.min(rows.length - 1, to));
@@ -182,9 +238,23 @@ function FileTable({ store, path }: { store: FileBrowserStore; path: string }) {
         }
         return;
       }
+      case "F2": {
+        const row = rows[focusIndex];
+        if (row) {
+          event.preventDefault();
+          onOperation({ kind: "rename", name: row.name });
+        }
+        return;
+      }
+      case "Delete":
+        event.preventDefault();
+        askDelete();
+        return;
       case "Backspace":
         event.preventDefault();
-        void store.getState().up();
+        // Cmd+Backspace deletes, as in Finder; plain Backspace goes up.
+        if (event.metaKey) askDelete();
+        else void store.getState().up();
         return;
     }
   };
@@ -245,6 +315,16 @@ function FileTable({ store, path }: { store: FileBrowserStore; path: string }) {
                   onContextMenu={() => {
                     if (!selection.has(entry.name)) select(entry.name, "only");
                   }}
+                  onOperation={(kind) => {
+                    if (kind === "rename") onOperation({ kind, name: entry.name });
+                    else if (kind === "permissions") onOperation({ kind, entry });
+                    else if (kind === "newFolder") onOperation({ kind });
+                    else onOperation({ kind, names: selection.has(entry.name) ? selected() : [entry.name] });
+                  }}
+                  onDownload={
+                    onDownload &&
+                    (() => onDownload(selection.has(entry.name) ? order.filter((n) => selection.has(n)) : [entry.name]))
+                  }
                 />
               );
             })}
@@ -310,6 +390,8 @@ function FileRow({
   onClick,
   onOpen,
   onContextMenu,
+  onOperation,
+  onDownload,
 }: {
   id: string;
   index: number;
@@ -321,6 +403,8 @@ function FileRow({
   onClick(event: MouseEvent): void;
   onOpen(): void;
   onContextMenu(): void;
+  onOperation(kind: FileOperation["kind"]): void;
+  onDownload?: () => void;
 }) {
   const { t } = useTranslation();
   const dir = isDirLike(entry);
@@ -364,9 +448,39 @@ function FileRow({
       </ContextMenuTrigger>
       <ContextMenuContent className="min-w-40">
         {dir && <ContextMenuItem onSelect={onOpen}>{t("files.open")}</ContextMenuItem>}
+        {isFileLike(entry) && (
+          <ContextMenuItem onSelect={onOpen}>
+            <FilePen />
+            {t("files.openInEditor")}
+          </ContextMenuItem>
+        )}
+        {onDownload && (
+          <ContextMenuItem onSelect={onDownload}>
+            <Download />
+            {t("files.download")}
+          </ContextMenuItem>
+        )}
         <ContextMenuItem onSelect={() => void writeClipboardText(childPath(path, entry.name))}>
           <Copy />
           {t("files.copyPath")}
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={() => onOperation("rename")}>
+          <Pencil />
+          {t("files.renameAction")}
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => onOperation("permissions")}>
+          <KeyRound />
+          {t("files.permissionsAction")}
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => onOperation("newFolder")}>
+          <FolderPlus />
+          {t("files.newFolderAction")}
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem variant="destructive" onSelect={() => onOperation("delete")}>
+          <Trash2 />
+          {t("files.deleteAction")}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

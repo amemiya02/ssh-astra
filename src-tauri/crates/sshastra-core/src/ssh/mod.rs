@@ -29,7 +29,7 @@ mod shell;
 
 pub use auth::Agent;
 pub use held::{HeldConnections, HeldEvent};
-pub use remote_terminal::{ReconnectPolicy, RemoteTerminal};
+pub use remote_terminal::{ReconnectPolicy, RemoteTerminal, RemoteTerminalOptions};
 pub use shell::RemoteShell;
 
 pub(crate) use remote_listen::RemoteListener;

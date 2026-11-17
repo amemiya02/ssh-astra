@@ -27,6 +27,8 @@ use sshastra_core::known_hosts::HostKey;
 
 pub const USER: &str = "tester";
 pub const PASSWORD: &str = "testpass";
+/// A user whose login shell is zsh (same password), for ShellIntegration tests.
+pub const ZSH_USER: &str = "zester";
 
 /// The TCP echo server (`echo` in `tests/sshd/docker-compose.yml`) as the
 /// sshd servers on the public network see it: every byte sent comes back.
@@ -168,6 +170,24 @@ impl Sshd {
             // Local port 22 (hex 0016), state 01 = ESTABLISHED.
             .filter(|(local, state)| local.ends_with(":0016") && *state == "01")
             .count()
+    }
+}
+
+impl Sshd {
+    /// Runs a `bash` script inside the server's container as `tester` (to
+    /// set up files a test needs) and returns its stdout.
+    pub fn run_as_tester(&self, script: &str) -> String {
+        compose(&[
+            "exec",
+            "-T",
+            "-u",
+            "tester",
+            self.service.name(),
+            "bash",
+            "-c",
+            script,
+        ])
+        .unwrap_or_else(|e| panic!("script failed on {}: {e}", self.service.name()))
     }
 }
 

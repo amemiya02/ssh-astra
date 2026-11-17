@@ -5,6 +5,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { exposeTerminal } from "@/lib/e2e";
 import { openExternalUrl, readClipboardText, writeClipboardText } from "@/lib/ipc/system";
 import { useTheme } from "@/theme/theme-context";
 import { resolveTerminalTheme, terminalSearchDecorations, type TerminalColorScheme } from "@/theme/terminal-themes";
@@ -142,6 +143,7 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
     container.addEventListener("contextmenu", onContextMenu);
 
     const detach = attachRef.current(xterm);
+    const unexpose = exposeTerminal(xterm);
     const observer = new ResizeObserver(fitIfVisible);
     observer.observe(container);
 
@@ -153,6 +155,7 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
       onResults.dispose();
       onSelection.dispose();
       onTitle.dispose();
+      unexpose();
       detach();
       xterm.dispose();
       xtermRef.current = null;

@@ -13,7 +13,7 @@ use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::ssh::{
     BoxFuture, ConnectError, ConnectionManager, HeldConnections, HostKeyPrompt, PasswordPrompt,
-    Prompter, ReconnectPolicy, RemoteTerminal, Secret,
+    Prompter, ReconnectPolicy, RemoteTerminal, RemoteTerminalOptions, Secret,
 };
 use sshastra_core::terminal::{ConnectionState, Terminal, TerminalEvent, TerminalSize};
 use support::{Service, Sshd};
@@ -77,6 +77,10 @@ impl Fixture {
     }
 
     async fn open(&self) -> (RemoteTerminal, Events) {
+        self.open_with(false).await
+    }
+
+    async fn open_with(&self, shell_integration: bool) -> (RemoteTerminal, Events) {
         let (manager, host, down) = (self.manager.clone(), self.host.clone(), self.down.clone());
         let connect = move || {
             let (manager, host, down) = (manager.clone(), host.clone(), down.clone());
@@ -88,7 +92,11 @@ impl Fixture {
             }
         };
         let (tx, rx) = mpsc::unbounded_channel();
-        let terminal = RemoteTerminal::open(connect, POLICY, SIZE, move |e| {
+        let options = RemoteTerminalOptions {
+            reconnect: POLICY,
+            shell_integration,
+        };
+        let terminal = RemoteTerminal::open_with(connect, options, SIZE, move |e| {
             let _ = tx.send(e);
         })
         .await
@@ -113,9 +121,20 @@ impl Events {
     async fn state(&mut self, within: Duration) -> ConnectionState {
         loop {
             match self.next(within).await {
-                TerminalEvent::Output(_) => {}
+                TerminalEvent::Output(_) | TerminalEvent::Cwd(_) => {}
                 TerminalEvent::Connection(state) => return state,
                 exit @ TerminalEvent::Exit { .. } => panic!("the Terminal ended: {exit:?}"),
+            }
+        }
+    }
+
+    /// The next directory the shell reports, skipping output.
+    async fn cwd(&mut self, within: Duration) -> String {
+        loop {
+            match self.next(within).await {
+                TerminalEvent::Output(_) => {}
+                TerminalEvent::Cwd(path) => return path,
+                other => panic!("unexpected {other:?} while waiting for a directory report"),
             }
         }
     }
@@ -136,6 +155,7 @@ impl Events {
             }
             match self.next(deadline - Instant::now()).await {
                 TerminalEvent::Output(bytes) => seen.push_str(&String::from_utf8_lossy(&bytes)),
+                TerminalEvent::Cwd(_) => {}
                 other => panic!("unexpected {other:?} while waiting for the shell; saw {seen:?}"),
             }
         }
@@ -250,6 +270,34 @@ async fn keepalives_at_the_configured_interval_notice_a_silent_server() {
         ConnectionState::Connected
     );
     events.shell_pid(&mut terminal).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn shell_integration_goes_into_the_new_shell_after_a_reconnect() {
+    let Some(sshd) = support::sshd(Service::Flaky) else {
+        return;
+    };
+    let _turn = SERVER.lock().await;
+    let fx = Fixture::new(sshd);
+    let (mut terminal, mut events) = fx.open_with(true).await;
+    assert_eq!(events.cwd(Duration::from_secs(10)).await, "/home/tester");
+    terminal.write(b"cd /srv/files\r").unwrap();
+    assert_eq!(events.cwd(Duration::from_secs(10)).await, "/srv/files");
+
+    fx.sshd.drop_connections();
+    assert!(matches!(
+        events.state(Duration::from_secs(10)).await,
+        ConnectionState::Reconnecting { .. }
+    ));
+    assert_eq!(
+        events.state(Duration::from_secs(10)).await,
+        ConnectionState::Connected
+    );
+
+    // The new shell starts at home and reports it, and follows `cd` again.
+    assert_eq!(events.cwd(Duration::from_secs(10)).await, "/home/tester");
+    terminal.write(b"cd /srv/files/docs\r").unwrap();
+    assert_eq!(events.cwd(Duration::from_secs(10)).await, "/srv/files/docs");
 }
 
 #[tokio::test(flavor = "multi_thread")]
