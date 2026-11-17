@@ -1,6 +1,7 @@
 use serde::Serialize;
 use serde_json::{json, Value};
 use sshastra_core::credentials::VaultError;
+use sshastra_core::edit::EditError;
 use sshastra_core::files::FsError;
 use sshastra_core::forward::ForwardError;
 use sshastra_core::hosts::HostStoreError;
@@ -124,6 +125,17 @@ impl From<FsError> for CommandError {
             NotADirectory(p) => Self::new("notADirectory", &err).with_details(path(p)),
             TimedOut => Self::new("timedOut", &err),
             Protocol(_) => Self::new("protocol", &err),
+        }
+    }
+}
+
+impl From<EditError> for CommandError {
+    fn from(err: EditError) -> Self {
+        match err {
+            EditError::Fs(fs) => fs.into(),
+            EditError::Io(_) => Self::new("io", err),
+            EditError::Open(_) => Self::new("openFailed", err),
+            EditError::NotOpen => Self::new("notOpen", err),
         }
     }
 }

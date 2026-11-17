@@ -158,6 +158,20 @@
     "connecting": "Connecting…",
     "disconnected": "The Connection to {{host}} was lost.",
     "retry": "Try again",
+    "openInEditor": "Open in editor",
+    "edit": {
+      "title": "Open in editor",
+      "opening": "Downloading…",
+      "editing": "Open in your editor. Saves upload automatically.",
+      "uploading": "Uploading…",
+      "uploaded": "Saved to {{host}}",
+      "uploadFailed": "Upload failed: {{message}}",
+      "openFailed": "Could not open the file: {{message}}",
+      "noApplication": "No application on this computer opens this file.",
+      "notFound": "The file no longer exists.",
+      "retry": "Retry",
+      "close": "Stop editing {{name}}"
+    },
     "errors": {
       "notConnected": "{{host}} is not connected.",
       "notFound": "No such folder: {{path}}",

@@ -1,4 +1,4 @@
-import { ArrowUp, ChevronDown, ChevronUp, Copy, File, FileSymlink, Folder, FolderSymlink } from "lucide-react";
+import { ArrowUp, ChevronDown, ChevronUp, Copy, File, FilePen, FileSymlink, Folder, FolderSymlink } from "lucide-react";
 import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
@@ -22,6 +22,7 @@ import {
   formatPermissions,
   formatSize,
   isDirLike,
+  isFileLike,
   shownEntries,
   visibleRows,
   type SortKey,
@@ -364,6 +365,12 @@ function FileRow({
       </ContextMenuTrigger>
       <ContextMenuContent className="min-w-40">
         {dir && <ContextMenuItem onSelect={onOpen}>{t("files.open")}</ContextMenuItem>}
+        {isFileLike(entry) && (
+          <ContextMenuItem onSelect={onOpen}>
+            <FilePen />
+            {t("files.openInEditor")}
+          </ContextMenuItem>
+        )}
         <ContextMenuItem onSelect={() => void writeClipboardText(childPath(path, entry.name))}>
           <Copy />
           {t("files.copyPath")}

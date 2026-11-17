@@ -7,6 +7,9 @@ const api = (): FilesApi => ({
   openFiles: vi.fn(() => Promise.resolve(1)),
   listFiles: vi.fn(() => Promise.resolve({ path: "/home/me", entries: [] })),
   closeFiles: vi.fn(() => Promise.resolve()),
+  openRemoteEdit: vi.fn(() => Promise.resolve(5)),
+  retryRemoteEdit: vi.fn(() => Promise.resolve()),
+  closeRemoteEdit: vi.fn(() => Promise.resolve()),
 });
 
 describe("fileBrowsers", () => {
@@ -32,6 +35,25 @@ describe("fileBrowsers", () => {
     expect(fake.closeFiles).toHaveBeenCalledWith(1);
     expect(browsers.find("pane-1")).toBeUndefined();
     expect(browsers.find("pane-2")).toBeDefined();
+  });
+
+  it("stops the remote edits of a pane that is gone", async () => {
+    const fake = api();
+    const browsers = createFileBrowsers(fake);
+    const gone = browsers.get("pane-1", "host-1");
+    await gone.getState().connect();
+    await gone.getState().open({
+      name: "notes.txt",
+      kind: "file",
+      size: 1,
+      modified: null,
+      permissions: null,
+      linkTarget: null,
+    });
+
+    browsers.retain(new Set());
+
+    expect(fake.closeRemoteEdit).toHaveBeenCalledWith(5);
   });
 });
 

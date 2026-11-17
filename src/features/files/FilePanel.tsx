@@ -9,10 +9,12 @@ interface FilePanelProps {
   actions?: ReactNode;
   /** The file browser for the active Terminal's Host. Omit to show the empty state. */
   children?: ReactNode;
+  /** Pinned under the body (files open in the editor). */
+  footer?: ReactNode;
 }
 
-/** Frame of the File panel dock: header with actions and a body slot. */
-export function FilePanel({ actions, children }: FilePanelProps) {
+/** Frame of the File panel dock: header with actions, a body slot and a footer. */
+export function FilePanel({ actions, children, footer }: FilePanelProps) {
   const { t } = useTranslation();
   const { collapse } = useFilePanelDock();
   return (
@@ -32,6 +34,7 @@ export function FilePanel({ actions, children }: FilePanelProps) {
           </div>
         )}
       </div>
+      {footer}
     </>
   );
 }

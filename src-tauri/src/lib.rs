@@ -9,6 +9,7 @@ mod prompts;
 use std::sync::Arc;
 
 use sshastra_core::credentials;
+use sshastra_core::edit::RemoteEditor;
 use sshastra_core::files::FsRegistry;
 use sshastra_core::hosts::HostStore;
 use sshastra_core::known_hosts::KnownHosts;
@@ -19,6 +20,7 @@ use tauri::Manager;
 use tauri_plugin_window_state::StateFlags;
 
 use commands::credentials::Vault;
+use commands::edit::SystemOpener;
 use commands::forwards::ForwardsState;
 use commands::hosts::HostsState;
 use commands::settings::SettingsState;
@@ -68,6 +70,11 @@ pub fn run() {
         .manage(TerminalRegistry::default())
         .manage(ForwardsState::default())
         .manage(FsRegistry::default())
+        // Temp files of remote edits, one directory per Host; deleted on exit.
+        .manage(RemoteEditor::new(
+            std::env::temp_dir().join(format!("sshastra-edit-{}", std::process::id())),
+            Arc::new(SystemOpener),
+        ))
         .manage(Arc::new(PendingPrompts::default()))
         .invoke_handler(tauri::generate_handler![
             commands::hosts::hosts_list,
@@ -101,7 +108,16 @@ pub fn run() {
             commands::files::files_open,
             commands::files::files_list,
             commands::files::files_close,
+            commands::edit::edit_open,
+            commands::edit::edit_retry,
+            commands::edit::edit_close,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running sshastra");
+        .build(tauri::generate_context!())
+        .expect("error while building sshastra")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                // Remote edits' temp files go with the app.
+                app.state::<RemoteEditor>().close_all();
+            }
+        });
 }

@@ -7,6 +7,7 @@ use russh_sftp::client::error::Error as SftpError;
 use russh_sftp::client::fs::Metadata;
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::StatusCode;
+use tokio::io::AsyncWriteExt;
 use tokio::task::JoinSet;
 
 use super::{join, FileEntry, FileKind, FileStat, FsError, FsResult, RemoteFs};
@@ -107,6 +108,27 @@ impl RemoteFs for SftpFs {
                 .await
                 .map_err(|e| error(path, e))?;
             Ok(stat(&meta))
+        })
+    }
+
+    fn read_file<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<Vec<u8>>> {
+        Box::pin(async move { self.session.read(path).await.map_err(|e| error(path, e)) })
+    }
+
+    fn write_file<'a>(&'a self, path: &'a str, data: &'a [u8]) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move {
+            // Not `SftpSession::write`: it does not truncate a longer file.
+            let mut file = self
+                .session
+                .create(path)
+                .await
+                .map_err(|e| error(path, e))?;
+            file.write_all(data)
+                .await
+                .map_err(|e| FsError::Protocol(format!("{path}: {e}")))?;
+            file.close()
+                .await
+                .map_err(|e| FsError::Protocol(format!("{path}: {e}")))
         })
     }
 }

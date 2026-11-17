@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { EditEvent } from "@/lib/ipc/edit";
 import type { FileEntry, Listing } from "@/lib/ipc/files";
 import { createFileBrowserStore, followConnection, type FilesApi } from "./fileBrowserStore";
 
@@ -31,9 +32,18 @@ function fakeApi(overrides: Partial<FilesApi> = {}): FilesApi {
       });
     }),
     closeFiles: vi.fn(() => Promise.resolve()),
+    openRemoteEdit: vi.fn((_host: string, _path: string, onEvent: (event: EditEvent) => void) => {
+      editEvents = onEvent;
+      return Promise.resolve(42);
+    }),
+    retryRemoteEdit: vi.fn(() => Promise.resolve()),
+    closeRemoteEdit: vi.fn(() => Promise.resolve()),
     ...overrides,
   };
 }
+
+/** The event callback of the last remote edit opened through `fakeApi`. */
+let editEvents: (event: EditEvent) => void = () => {};
 
 async function connected(overrides?: Partial<FilesApi>) {
   const api = fakeApi(overrides);
@@ -170,6 +180,104 @@ describe("fileBrowserStore", () => {
     await Promise.all([store.getState().connect(), store.getState().connect()]);
 
     expect(api.openFiles).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("remote editing", () => {
+  const edits = (store: Awaited<ReturnType<typeof connected>>["store"]) =>
+    store.getState().edits.map(({ name, status }) => ({ name, status }));
+
+  it("opens a file in the editor and follows its uploads", async () => {
+    const { api, store } = await connected();
+
+    await store.getState().open(entry("notes.txt"));
+
+    expect(api.openRemoteEdit).toHaveBeenCalledWith("host-1", "/home/me/notes.txt", expect.any(Function));
+    expect(shown(store).path).toBe("/home/me");
+    expect(edits(store)).toEqual([{ name: "notes.txt", status: "editing" }]);
+    editEvents({ state: "uploading" });
+    expect(edits(store)).toEqual([{ name: "notes.txt", status: "uploading" }]);
+    editEvents({ state: "uploaded" });
+    expect(edits(store)).toEqual([{ name: "notes.txt", status: "uploaded" }]);
+  });
+
+  it("opens a link to a file, but not other kinds", async () => {
+    const { api, store } = await connected();
+
+    await store.getState().open({ ...entry("link"), kind: "symlink", linkTarget: "file" });
+    await store.getState().open({ ...entry("dangling"), kind: "symlink", linkTarget: null });
+    await store.getState().open(entry("socket", "other"));
+
+    expect(api.openRemoteEdit).toHaveBeenCalledTimes(1);
+    expect(edits(store)).toEqual([{ name: "link", status: "editing" }]);
+  });
+
+  it("shows a failed upload and retries it", async () => {
+    const { api, store } = await connected();
+    await store.getState().open(entry("notes.txt"));
+
+    editEvents({ state: "uploadFailed", reason: "connection lost" });
+    expect(store.getState().edits[0]).toMatchObject({
+      status: "uploadFailed",
+      error: { message: "connection lost" },
+    });
+
+    await store.getState().retryEdit("/home/me/notes.txt");
+    expect(api.retryRemoteEdit).toHaveBeenCalledWith(42);
+    expect(store.getState().edits[0]).toMatchObject({ status: "uploading", error: null });
+  });
+
+  it("shows a file that could not be opened and tries again", async () => {
+    const openRemoteEdit = vi
+      .fn<FilesApi["openRemoteEdit"]>()
+      .mockRejectedValueOnce({ kind: "permissionDenied", message: "denied", details: { path: "/home/me/notes.txt" } })
+      .mockResolvedValue(9);
+    const { store } = await connected({ openRemoteEdit });
+
+    await store.getState().open(entry("notes.txt"));
+    expect(store.getState().edits[0]).toMatchObject({ status: "openFailed", error: { kind: "permissionDenied" } });
+
+    await store.getState().retryEdit("/home/me/notes.txt");
+    expect(openRemoteEdit).toHaveBeenCalledTimes(2);
+    expect(store.getState().edits[0]).toMatchObject({ id: 9, status: "editing", error: null });
+  });
+
+  it("lists a file opened twice once", async () => {
+    const { store } = await connected();
+
+    await store.getState().open(entry("notes.txt"));
+    editEvents({ state: "uploaded" });
+    await store.getState().open(entry("notes.txt"));
+
+    expect(edits(store)).toEqual([{ name: "notes.txt", status: "uploaded" }]);
+  });
+
+  it("closes an edit, and all of them when the panel goes away", async () => {
+    const { api, store } = await connected({
+      openRemoteEdit: vi.fn((_h: string, path: string) => Promise.resolve(path.endsWith("notes.txt") ? 1 : 2)),
+    });
+    await store.getState().open(entry("notes.txt"));
+    await store.getState().navigate("/home/me/src");
+    await store.getState().open(entry("main.rs"));
+
+    store.getState().closeEdit("/home/me/notes.txt");
+    expect(api.closeRemoteEdit).toHaveBeenCalledWith(1);
+    expect(edits(store)).toEqual([{ name: "main.rs", status: "editing" }]);
+
+    store.getState().dispose();
+    expect(api.closeRemoteEdit).toHaveBeenCalledWith(2);
+    expect(api.closeFiles).toHaveBeenCalled();
+    expect(edits(store)).toEqual([]);
+  });
+
+  it("keeps editing while the Connection is down", async () => {
+    const { api, store } = await connected();
+    await store.getState().open(entry("notes.txt"));
+
+    followConnection(store, "connecting", true);
+
+    expect(api.closeRemoteEdit).not.toHaveBeenCalled();
+    expect(edits(store)).toEqual([{ name: "notes.txt", status: "editing" }]);
   });
 });
 
