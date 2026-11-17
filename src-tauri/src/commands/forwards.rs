@@ -6,12 +6,11 @@ use std::sync::{Arc, Mutex};
 
 use sshastra_core::forward::{ForwardDraft, ForwardEvent, ForwardId, PortForward, PortForwarder};
 use sshastra_core::hosts::HostId;
-use sshastra_core::ssh::{ConnectionManager, ConnectionSettings};
 use tauri::ipc::Channel;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
+use super::connections::connect_host;
 use super::hosts::HostsState;
-use super::settings::SettingsState;
 use crate::error::{CommandError, CommandResult};
 use crate::prompts::{ChannelPrompter, PendingPrompts, PromptRequest};
 
@@ -72,7 +71,8 @@ pub fn forward_delete(
 }
 
 /// Starts Host `host_id`'s rule `id`, connecting first (through its Jump
-/// hosts) if needed; questions arrive on `on_prompt` as for a Terminal.
+/// hosts, also starting its auto-start rules) if needed; questions arrive on
+/// `on_prompt` as for a Terminal.
 #[tauri::command]
 pub async fn forward_start(
     hosts: State<'_, HostsState>,
@@ -97,18 +97,11 @@ pub async fn forward_start(
         pending: Arc::clone(&pending),
         channel: on_prompt,
     });
-    // Applies to the Connections this opens; open ones keep theirs.
-    let keepalive = app
-        .state::<SettingsState>()
-        .with(|store| Ok(store.section::<ConnectionSettings>(ConnectionSettings::SECTION)))
-        .unwrap_or_default()
-        .keepalive_interval();
-    let connections = app.state::<ConnectionManager>();
-    connections.set_keepalive_interval(keepalive);
-    let connection = connections.connect_through(&hops, &host, prompter).await?;
+    let connection = connect_host(&app, &hops, &host, prompter).await?;
     forwards
         .forwarder
         .start(connection, &host.id, &rule)
+        .await
         .map_err(CommandError::from)
 }
 

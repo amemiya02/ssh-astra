@@ -12,16 +12,16 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use sshastra_core::hosts::HostId;
-use sshastra_core::ssh::{ConnectionManager, ConnectionSettings, ReconnectPolicy, RemoteTerminal};
+use sshastra_core::ssh::{ReconnectPolicy, RemoteTerminal};
 use sshastra_core::terminal::{
     ConnectionState, LocalPty, ShellCommand, TerminalEvent, TerminalId, TerminalRegistry,
     TerminalSize,
 };
 use tauri::ipc::{Channel, InvokeResponseBody};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
+use super::connections::connect_host;
 use super::hosts::HostsState;
-use super::settings::SettingsState;
 use crate::error::CommandResult;
 use crate::prompts::{ChannelPrompter, PendingPrompts, PromptAnswer, PromptRequest};
 
@@ -97,16 +97,7 @@ pub async fn remote_terminal_open(
     let connect = move || {
         let (app, hops, host, prompter) =
             (app.clone(), hops.clone(), host.clone(), prompter.clone());
-        async move {
-            let connections = app.state::<ConnectionManager>();
-            // Applies to the Connections this opens; open ones keep theirs.
-            let settings = app
-                .state::<SettingsState>()
-                .with(|store| Ok(store.section::<ConnectionSettings>(ConnectionSettings::SECTION)))
-                .unwrap_or_default();
-            connections.set_keepalive_interval(settings.keepalive_interval());
-            connections.connect_through(&hops, &host, prompter).await
-        }
+        async move { connect_host(&app, &hops, &host, prompter).await }
     };
     let terminal = RemoteTerminal::open(
         connect,

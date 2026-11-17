@@ -1,5 +1,5 @@
 import { FolderPlus, Plus, Search, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { readCommandError } from "@/lib/ipc/connect";
+import { ConnectPromptDialog } from "@/features/connect/ConnectPromptDialog";
+import { connectionsStore, useConnections } from "@/features/connect/connectionsStore";
+import { readCommandError, refusal, type ConnectPrompt, type PromptAnswer } from "@/lib/ipc/connect";
 import type { Group, Host, HostDraft, HostId } from "@/lib/ipc/hosts";
 import { cn } from "@/lib/utils";
 import { TerminalSchemeSelect } from "@/features/terminal/TerminalSchemeSelect";
@@ -51,9 +53,29 @@ export function HostsPanel({ onOpen, onOpenForwards, onOpenLocalTerminal }: Host
   const [removing, setRemoving] = useState<Removal | null>(null);
   const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const held = useConnections((s) => s.held);
+  const connecting = useConnections((s) => s.connecting);
+  /** A "Connect only" question waiting for the user. */
+  const [pending, setPending] = useState<{ prompt: ConnectPrompt; resolve(answer: PromptAnswer): void } | null>(null);
+  const pendingRef = useRef(pending);
+  const ask = useCallback(
+    (prompt: ConnectPrompt) =>
+      new Promise<PromptAnswer>((resolve) => {
+        const next = { prompt, resolve };
+        pendingRef.current = next;
+        setPending(next);
+      }),
+    [],
+  );
 
   useEffect(() => {
     void hostsStore.getState().load();
+    void connectionsStore.getState().watch();
+    // Unmounting mid-connect refuses the open question so the backend stops waiting.
+    return () => {
+      const open = pendingRef.current;
+      if (open) open.resolve(refusal(open.prompt));
+    };
   }, []);
 
   const searching = query.trim() !== "";
@@ -84,6 +106,20 @@ export function HostsPanel({ onOpen, onOpenForwards, onOpenLocalTerminal }: Host
   const actions: HostListActions = {
     open: onOpen,
     openForwards: onOpenForwards,
+    connectOnly: (host) => {
+      setActionError(null);
+      connectionsStore
+        .getState()
+        .connect(host.id, ask)
+        .catch((e: unknown) => {
+          const error = readCommandError(e);
+          if (error.kind !== "cancelled") {
+            setActionError(t("hosts.connectFailed", { name: host.name, message: error.message }));
+          }
+        });
+    },
+    disconnect: (host) => void attempt(() => connectionsStore.getState().disconnect(host.id)),
+    isHeld: (host) => held.includes(host.id) || connecting.includes(host.id),
     edit: (host) => setEditing(host),
     duplicate: async (host) => {
       const copy = await attempt(() => store().duplicateHost(host.id, t("hosts.copyName", { name: host.name })));
@@ -183,6 +219,17 @@ export function HostsPanel({ onOpen, onOpenForwards, onOpenLocalTerminal }: Host
           />
         )}
       </Dialog>
+      {pending && (
+        <ConnectPromptDialog
+          prompt={pending.prompt}
+          open
+          onAnswer={(answer) => {
+            pendingRef.current = null;
+            setPending(null);
+            pending.resolve(answer);
+          }}
+        />
+      )}
       <Dialog open={removing !== null} onOpenChange={(open) => !open && setRemoving(null)}>
         {removing && (
           <ConfirmRemoveDialogContent

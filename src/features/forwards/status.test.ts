@@ -6,6 +6,7 @@ import { activeConnections, runningRules } from "./status";
 const rule = (id: string, bindPort: number): PortForward => ({
   id,
   label: "",
+  autoStart: false,
   type: "local",
   bindAddress: "127.0.0.1",
   bindPort,
@@ -41,6 +42,14 @@ describe("activeConnections", () => {
 
   it("skips forwards of Hosts no longer in the list", () => {
     expect(activeConnections([], [running("gone", "x")], [host("web")])).toEqual([]);
+  });
+
+  it("lists Hosts held by Connect only after those with a Terminal, before those kept by forwards", () => {
+    const [web, db, cache] = [host("web"), host("db", [rule("d1", 15432)]), host("cache")];
+
+    const active = activeConnections([web], [running("db", "d1")], [web, db, cache], ["cache", "web", "gone"]);
+
+    expect(active.map((h) => h.id)).toEqual(["web", "cache", "db"]);
   });
 });
 

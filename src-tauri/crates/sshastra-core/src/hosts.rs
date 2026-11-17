@@ -14,7 +14,7 @@ use crate::fs_util::write_atomically;
 
 /// The file format version this build writes. Bump it together with a
 /// migration step in [`migrate`].
-const CURRENT_VERSION: u32 = 3;
+const CURRENT_VERSION: u32 = 4;
 
 /// Identifies a Host across restarts and across the IPC boundary.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -227,11 +227,18 @@ struct FileV1 {
     hosts: Vec<Host>,
 }
 
-/// Versions 2 and 3 (which added `Host::forwards`).
+/// Versions 2 and 4 (3 added `Host::forwards`, 4 `PortForward::auto_start`).
 #[derive(Deserialize)]
 struct FileV2 {
     groups: Vec<Group>,
     hosts: Vec<Host>,
+}
+
+/// A version 3 file: its Port forward rules have no `autoStart`.
+#[derive(Deserialize)]
+struct FileV3 {
+    groups: Vec<Group>,
+    hosts: Vec<serde_json::Value>,
 }
 
 /// Everything the HostStore keeps. Siblings are ordered by their position in
@@ -624,9 +631,22 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
             groups: Vec::new(),
             hosts: serde_json::from_str::<FileV1>(text).map_err(corrupt)?.hosts,
         }),
-        // v3 added Port forwards on Hosts; v2 Hosts have none, which
-        // `Host::forwards` defaults to.
-        2 | 3 => {
+        // v3 added Port forwards on Hosts, each with `autoStart` (off) in v4.
+        3 => {
+            let FileV3 { groups, mut hosts } = serde_json::from_str(text).map_err(corrupt)?;
+            for host in &mut hosts {
+                let rules = host.get_mut("forwards").and_then(|f| f.as_array_mut());
+                for rule in rules.into_iter().flatten() {
+                    if let Some(rule) = rule.as_object_mut() {
+                        rule.insert("autoStart".into(), false.into());
+                    }
+                }
+            }
+            let hosts = serde_json::from_value(hosts.into()).map_err(corrupt)?;
+            Ok(Library { groups, hosts })
+        }
+        // v2 Hosts have no Port forwards, which `Host::forwards` defaults to.
+        2 | 4 => {
             let FileV2 { groups, hosts } = serde_json::from_str(text).map_err(corrupt)?;
             Ok(Library { groups, hosts })
         }

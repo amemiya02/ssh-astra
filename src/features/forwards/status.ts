@@ -1,5 +1,5 @@
 import type { ForwardEvent, PortForward } from "@/lib/ipc/forwards";
-import type { Host } from "@/lib/ipc/hosts";
+import type { Host, HostId } from "@/lib/ipc/hosts";
 
 /** A running Port forward with the Host and saved rule it belongs to. */
 export interface RunningRule {
@@ -18,10 +18,20 @@ export function runningRules(running: ForwardEvent[], hosts: Host[]): RunningRul
 
 /**
  * The Hosts with a live Connection, as the status bar lists them: those with a connected
- * Terminal first, then those held open only by running Port forwards; each once.
+ * Terminal first, then those held by "Connect only" (`held`), then those held open only by
+ * running Port forwards; each once.
  */
-export function activeConnections(terminalHosts: Host[], running: ForwardEvent[], hosts: Host[]): Host[] {
+export function activeConnections(
+  terminalHosts: Host[],
+  running: ForwardEvent[],
+  hosts: Host[],
+  held: HostId[] = [],
+): Host[] {
   const active = new Map(terminalHosts.map((h) => [h.id, h]));
+  for (const id of held) {
+    const host = hosts.find((h) => h.id === id);
+    if (host && !active.has(id)) active.set(id, host);
+  }
   for (const { host } of runningRules(running, hosts)) {
     if (!active.has(host.id)) active.set(host.id, host);
   }

@@ -22,12 +22,18 @@
 //! reconnects and starts a new shell.
 
 mod auth;
+mod held;
+mod remote_listen;
 mod remote_terminal;
 mod shell;
 
 pub use auth::Agent;
+pub use held::{HeldConnections, HeldEvent};
 pub use remote_terminal::{ReconnectPolicy, RemoteTerminal};
 pub use shell::RemoteShell;
+
+pub(crate) use remote_listen::RemoteListener;
+use remote_listen::Routes;
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -419,7 +425,9 @@ impl ConnectionManager {
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
         let failure = Arc::new(Mutex::new(None));
+        let routes = Routes::default();
         let handler = ClientHandler {
+            routes: routes.clone(),
             host: host.address.clone(),
             port: host.port,
             known_hosts: self.known_hosts.clone(),
@@ -442,7 +450,11 @@ impl ConnectionManager {
             prompter.as_ref(),
         )
         .await?;
-        Ok(Connection { handle, _via: via })
+        Ok(Connection {
+            handle,
+            routes,
+            _via: via,
+        })
     }
 }
 
@@ -461,6 +473,8 @@ async fn open_tcp(host: &Host) -> Result<TcpStream, ConnectError> {
 /// One live, authenticated SSH transport to a Host.
 pub struct Connection {
     handle: Handle<ClientHandler>,
+    /// Ports the server listens on for us, and who gets their connections.
+    routes: Routes,
     /// The Jump host's Connection this one is tunnelled through, kept open
     /// for as long as this one is.
     _via: Option<Arc<Connection>>,
@@ -552,6 +566,7 @@ impl Connection {
 }
 
 struct ClientHandler {
+    routes: Routes,
     host: String,
     port: u16,
     known_hosts: KnownHosts,
@@ -612,5 +627,31 @@ impl client::Handler for ClientHandler {
                 Ok(false)
             }
         }
+    }
+
+    /// A connection the server accepted on a port it listens on for us goes
+    /// to that port's [`RemoteListener`]; with none, it is refused.
+    async fn server_channel_open_forwarded_tcpip(
+        &mut self,
+        channel: russh::Channel<client::Msg>,
+        _connected_address: &str,
+        connected_port: u32,
+        _originator_address: &str,
+        _originator_port: u32,
+        reply: client::ChannelOpenHandle,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        match self.routes.route(connected_port) {
+            Some(route) => {
+                reply.accept().await;
+                let _ = route.send(channel.into_stream());
+            }
+            None => {
+                reply
+                    .reject(russh::ChannelOpenFailure::AdministrativelyProhibited)
+                    .await
+            }
+        }
+        Ok(())
     }
 }

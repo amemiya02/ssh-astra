@@ -12,8 +12,8 @@ use std::time::{Duration, Instant};
 use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::ssh::{
-    BoxFuture, ConnectError, ConnectionManager, HostKeyPrompt, PasswordPrompt, Prompter,
-    ReconnectPolicy, RemoteTerminal, Secret,
+    BoxFuture, ConnectError, ConnectionManager, HeldConnections, HostKeyPrompt, PasswordPrompt,
+    Prompter, ReconnectPolicy, RemoteTerminal, Secret,
 };
 use sshastra_core::terminal::{ConnectionState, Terminal, TerminalEvent, TerminalSize};
 use support::{Service, Sshd};
@@ -250,4 +250,38 @@ async fn keepalives_at_the_configured_interval_notice_a_silent_server() {
         ConnectionState::Connected
     );
     events.shell_pid(&mut terminal).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_held_connection_that_drops_is_reported_and_let_go() {
+    let Some(sshd) = support::sshd(Service::Flaky) else {
+        return;
+    };
+    let _turn = SERVER.lock().await;
+    let fx = Fixture::new(sshd);
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let held = HeldConnections::with_listener(move |event| {
+        let _ = tx.send(event);
+    });
+    let connection = fx
+        .manager
+        .connect(&fx.host, Arc::new(TrustingPrompter))
+        .await
+        .unwrap();
+    held.hold(&fx.host.id, connection);
+    let first = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(first.held);
+
+    fx.sshd.drop_connections();
+
+    let event = tokio::time::timeout(Duration::from_secs(10), rx.recv())
+        .await
+        .expect("the drop is reported in time")
+        .unwrap();
+    assert_eq!(event.host_id, fx.host.id);
+    assert!(!event.held);
+    assert!(held.list().is_empty());
 }

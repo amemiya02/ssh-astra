@@ -1,10 +1,11 @@
 //! Port forwards: the rules saved on a Host ([`PortForward`]) and the
 //! [`PortForwarder`] that runs them over the Host's Connection.
 //!
-//! Only local forwards (`ssh -L`) exist so far; remote (`-R`) and dynamic
-//! SOCKS (`-D`) forwards become further [`ForwardKind`] variants.
+//! Three kinds ([`ForwardKind`]): local (`ssh -L`), remote (`ssh -R`) and
+//! dynamic, a SOCKS5 proxy (`ssh -D`).
 
 mod forwarder;
+mod socks;
 
 pub use forwarder::{ForwardError, ForwardEvent, ForwardStatus, PortForwarder};
 
@@ -35,8 +36,22 @@ impl fmt::Display for ForwardId {
     }
 }
 
-/// What a Port forward tunnels. Stored flat next to the rule's `id` and
-/// `label`, tagged by `type`.
+/// What a Port forward tunnels. Stored flat next to the rule's `id`,
+/// `label` and `autoStart`, tagged by `type`. This JSON shape is shared by
+/// the hosts file, IPC and Host list import/export, so keep it stable:
+///
+/// ```json
+/// { "id": "…", "label": "", "autoStart": false, "type": "local",
+///   "bindAddress": "127.0.0.1", "bindPort": 15432, "remoteHost": "db", "remotePort": 5432 }
+/// { "id": "…", "label": "", "autoStart": false, "type": "remote",
+///   "bindAddress": "localhost", "bindPort": 9000, "localHost": "127.0.0.1", "localPort": 3000 }
+/// { "id": "…", "label": "", "autoStart": true, "type": "dynamic",
+///   "bindAddress": "127.0.0.1", "bindPort": 1080 }
+/// ```
+///
+/// `ssh -L [bind:]port:host:hostport`, `-R [bind:]port:host:hostport` and
+/// `-D [bind:]port` map one-to-one onto `local`, `remote` and `dynamic`
+/// (`bindAddress` blank for the defaults, which [`ForwardDraft`] fills in).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
     tag = "type",
@@ -53,6 +68,21 @@ pub enum ForwardKind {
         remote_host: String,
         remote_port: u16,
     },
+    /// Has the server listen on `bind_address:bind_port` (its side); every
+    /// connection it accepts there is carried to `local_host:local_port` as
+    /// this machine sees that address (`ssh -R`).
+    Remote {
+        bind_address: String,
+        bind_port: u16,
+        local_host: String,
+        local_port: u16,
+    },
+    /// A SOCKS5 proxy on `bind_address:bind_port` on this machine: each
+    /// client's destination is opened by the server (`ssh -D`).
+    Dynamic {
+        bind_address: String,
+        bind_port: u16,
+    },
 }
 
 /// A saved Port forward rule on a Host.
@@ -63,6 +93,9 @@ pub struct PortForward {
     /// The user's name for the rule; may be empty.
     #[serde(default)]
     pub label: String,
+    /// Start the rule whenever its Host connects (see
+    /// [`PortForwarder::start_auto`]).
+    pub auto_start: bool,
     #[serde(flatten)]
     pub kind: ForwardKind,
 }
@@ -73,12 +106,18 @@ pub struct PortForward {
 pub struct ForwardDraft {
     #[serde(default)]
     pub label: String,
+    #[serde(default)]
+    pub auto_start: bool,
     #[serde(flatten)]
     pub kind: ForwardKind,
 }
 
 /// Where a local forward listens when the bind address is left blank.
 pub const LOOPBACK: &str = "127.0.0.1";
+
+/// Where the server listens for a remote forward when the bind address is
+/// left blank: its loopback interfaces only, as `ssh -R` asks.
+pub const REMOTE_LOOPBACK: &str = "localhost";
 
 impl ForwardDraft {
     /// The rule, trimmed and checked; `Err` names the first invalid field.
@@ -111,10 +150,53 @@ impl ForwardDraft {
                     remote_port,
                 }
             }
+            ForwardKind::Remote {
+                bind_address,
+                bind_port,
+                local_host,
+                local_port,
+            } => {
+                let bind_address = match bind_address.trim() {
+                    "" => REMOTE_LOOPBACK.to_owned(),
+                    other => other.to_owned(),
+                };
+                let local_host = local_host.trim().to_owned();
+                if bind_port == 0 {
+                    return Err("bindPort");
+                }
+                if local_host.is_empty() {
+                    return Err("localHost");
+                }
+                if local_port == 0 {
+                    return Err("localPort");
+                }
+                ForwardKind::Remote {
+                    bind_address,
+                    bind_port,
+                    local_host,
+                    local_port,
+                }
+            }
+            ForwardKind::Dynamic {
+                bind_address,
+                bind_port,
+            } => {
+                if bind_port == 0 {
+                    return Err("bindPort");
+                }
+                ForwardKind::Dynamic {
+                    bind_address: match bind_address.trim() {
+                        "" => LOOPBACK.to_owned(),
+                        other => other.to_owned(),
+                    },
+                    bind_port,
+                }
+            }
         };
         Ok(PortForward {
             id,
             label: self.label.trim().to_owned(),
+            auto_start: self.auto_start,
             kind,
         })
     }

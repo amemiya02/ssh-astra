@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { connectionsStore, useConnections } from "@/features/connect/connectionsStore";
 import { FilePanel } from "@/features/files/FilePanel";
 import { forwardsStore, runningForwards, useForwards } from "@/features/forwards/forwardsStore";
 import { describeForward } from "@/features/forwards/forwardForm";
@@ -170,12 +171,28 @@ export function App() {
 
   const hosts = useHosts((s) => s.tree.hosts);
   const forwardStates = useForwards((s) => s.states);
+  const held = useConnections((s) => s.held);
   const running = runningForwards({ states: forwardStates });
-  const connected = activeConnections(connectedHosts(state), running, hosts);
+  const connected = activeConnections(connectedHosts(state), running, hosts, held);
   const forwards = runningRules(running, hosts).map(({ rule }) => {
     const { from, to } = describeForward(rule);
+    if (rule.type === "remote") return t("status.forwardsRemote", { from, to });
+    if (rule.type === "dynamic") return t("status.forwardsDynamic", { from });
     return `${from} → ${to}`;
   });
+  // "Connect only" Hosts can be disconnected from the palette.
+  const heldHosts = useMemo(() => hosts.filter((host) => held.includes(host.id)), [hosts, held]);
+  usePaletteActions(
+    useMemo(
+      (): PaletteAction[] =>
+        heldHosts.map((host) => ({
+          id: `connections.disconnect.${host.id}`,
+          title: t("palette.actions.disconnectHost", { name: host.name }),
+          run: () => void connectionsStore.getState().disconnect(host.id),
+        })),
+      [heldHosts, t],
+    ),
+  );
 
   return (
     <>

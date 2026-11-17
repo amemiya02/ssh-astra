@@ -14,7 +14,8 @@ use sshastra_core::forward::{ForwardId, ForwardKind, PortForward, PortForwarder}
 use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::ssh::{
-    BoxFuture, Connection, ConnectionManager, HostKeyPrompt, PasswordPrompt, Prompter, Secret,
+    BoxFuture, Connection, ConnectionManager, HeldConnections, HostKeyPrompt, PasswordPrompt,
+    Prompter, Secret,
 };
 use sshastra_core::terminal::{Terminal, TerminalEvent, TerminalSize};
 use support::{Service, Sshd};
@@ -248,6 +249,7 @@ fn to_echo(id: &str) -> PortForward {
     PortForward {
         id: ForwardId::from(id.to_owned()),
         label: String::new(),
+        auto_start: false,
         kind: ForwardKind::Local {
             bind_address: "127.0.0.1".into(),
             bind_port: port,
@@ -259,7 +261,9 @@ fn to_echo(id: &str) -> PortForward {
 
 /// Whether bytes sent into `rule`'s local port come back from the echo server.
 async fn echoes(rule: &PortForward) -> bool {
-    let ForwardKind::Local { bind_port, .. } = rule.kind;
+    let ForwardKind::Local { bind_port, .. } = rule.kind else {
+        unreachable!("only local rules here")
+    };
     let Ok(mut socket) = tokio::net::TcpStream::connect(("127.0.0.1", bind_port)).await else {
         return false;
     };
@@ -286,9 +290,11 @@ async fn running_port_forwards_keep_the_connection_until_the_last_one_stops() {
     let mut terminal = open_terminal(&connection).await;
     forwarder
         .start(Arc::clone(&connection), &fx.host.id, &first)
+        .await
         .unwrap();
     forwarder
         .start(Arc::clone(&connection), &fx.host.id, &second)
+        .await
         .unwrap();
     // Only the Terminal and the forwards hold the Connection now.
     drop(connection);
@@ -307,4 +313,31 @@ async fn running_port_forwards_keep_the_connection_until_the_last_one_stops() {
     forwarder.stop(&second.id);
     fx.server_sees(0).await;
     assert_eq!(prompter.passwords_asked(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_held_connection_stays_up_with_nothing_on_it_until_released() {
+    let Some(sshd) = support::sshd(Service::Counted) else {
+        return;
+    };
+    let _turn = SERVER.lock().await;
+    let fx = Fixture::new(sshd);
+    fx.server_sees(0).await;
+    let prompter = CountingPrompter::new(&fx.sshd);
+    let held = HeldConnections::new();
+
+    held.hold(&fx.host.id, fx.connect(&prompter).await);
+
+    // No Terminal or Port forward holds it, yet it stays up.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    fx.server_sees(1).await;
+    assert_eq!(held.list(), std::slice::from_ref(&fx.host.id));
+    // A Terminal opened afterwards shares it.
+    let mut terminal = open_terminal(&fx.connect(&prompter).await).await;
+    terminal.close().unwrap();
+    assert_eq!(prompter.passwords_asked(), 1);
+
+    held.release(&fx.host.id);
+    fx.server_sees(0).await;
+    assert!(held.list().is_empty());
 }

@@ -1,17 +1,20 @@
 import { ArrowRight, ArrowRightLeft, Pencil, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { SegmentedControl } from "@/components/SegmentedControl";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ConnectPromptDialog } from "@/features/connect/ConnectPromptDialog";
 import { RowContextMenu, RowMoreMenu, type MenuEntry } from "@/features/hosts/RowMenu";
 import { useHosts, hostsStore } from "@/features/hosts/hostsStore";
 import { readCommandError, refusal, type CommandError, type ConnectPrompt, type PromptAnswer } from "@/lib/ipc/connect";
-import type { ForwardId, ForwardStatus, PortForward } from "@/lib/ipc/forwards";
+import type { ForwardId, ForwardStatus, ForwardType, PortForward } from "@/lib/ipc/forwards";
 import type { Host } from "@/lib/ipc/hosts";
 import { cn } from "@/lib/utils";
 import {
+  defaultBindAddress,
   describeForward,
   emptyForwardForm,
   forwardFormFrom,
@@ -174,7 +177,12 @@ export function PortForwardsPanel({ host: opened, active = true }: PortForwardsP
             )}
             {editing?.kind === "new" && (
               <li className="py-3">
-                <ForwardForm initial={emptyForwardForm} onSave={(values) => save(values)} onCancel={() => setEditing(null)} />
+                <ForwardForm
+                  initial={emptyForwardForm("local")}
+                  isNew
+                  onSave={(values) => save(values)}
+                  onCancel={() => setEditing(null)}
+                />
               </li>
             )}
           </ul>
@@ -208,7 +216,7 @@ interface ForwardRowProps {
 function ForwardRow({ rule, status, starting, startError, onStart, onStop, onEdit, onDelete }: ForwardRowProps) {
   const { t } = useTranslation();
   const { from, to } = describeForward(rule);
-  const name = rule.label || `${from} → ${to}`;
+  const name = rule.label || (to === null ? from : `${from} → ${to}`);
   const state = starting ? "starting" : status.state;
   const entries: MenuEntry[] = [
     { type: "item", label: t("forwards.edit"), icon: <Pencil />, onSelect: onEdit },
@@ -224,13 +232,19 @@ function ForwardRow({ rule, status, starting, startError, onStart, onStop, onEdi
           <StateDot state={state} />
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline gap-2">
-              <span className="truncate font-medium">{rule.label || t("forwards.local")}</span>
+              <span className="truncate font-medium">{rule.label || t(`forwards.kinds.${rule.type}`)}</span>
               <span className="text-muted-foreground shrink-0 text-xs">{t(`forwards.status.${state}`)}</span>
+              {rule.autoStart && <span className="text-muted-foreground shrink-0 text-xs">{t("forwards.autoStartBadge")}</span>}
             </div>
             <div className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
+              <span className="shrink-0">{t(`forwards.ends.${rule.type}`)}</span>
               <span className="truncate font-mono">{from}</span>
-              <ArrowRight className="size-3 shrink-0" aria-label="→" />
-              <span className="truncate font-mono">{to}</span>
+              {to !== null && (
+                <>
+                  <ArrowRight className="size-3 shrink-0" aria-label="→" />
+                  <span className="truncate font-mono">{to}</span>
+                </>
+              )}
             </div>
           </div>
           {status.state === "running" ? (
@@ -261,7 +275,7 @@ type T = ReturnType<typeof useTranslation>["t"];
 
 /** Readable copy for a failure: specific advice where the cause is known, else the backend's reason. */
 function failureText(t: T, reason: string, error?: CommandError): string {
-  if (error?.kind === "portInUse" || error?.kind === "permissionDenied") {
+  if (error?.kind === "portInUse" || error?.kind === "permissionDenied" || error?.kind === "remoteRefused") {
     return t(`forwards.startErrors.${error.kind}`, error.details ?? {});
   }
   return reason;
@@ -290,31 +304,53 @@ function without<V>(record: Record<string, V>, key: string): Record<string, V> {
   return rest;
 }
 
-type FieldHint = "forwards.remoteHostHint" | "forwards.bindAddressHint";
+const typeOptions: readonly ForwardType[] = ["local", "remote", "dynamic"];
 
-const fields: { field: keyof ForwardFormValues; mono?: boolean; numeric?: boolean; hint?: FieldHint }[] = [
-  { field: "label" },
-  { field: "bindPort", mono: true, numeric: true },
-  { field: "remoteHost", mono: true, hint: "forwards.remoteHostHint" },
-  { field: "remotePort", mono: true, numeric: true },
-  { field: "bindAddress", mono: true, hint: "forwards.bindAddressHint" },
-];
+type TextField = "label" | "bindPort" | "targetHost" | "targetPort" | "bindAddress";
+
+/** The form's text fields for each kind, in order, with their copy; a dynamic forward has no target. */
+const layouts = {
+  local: [
+    { field: "label", label: "forwards.fields.label" },
+    { field: "bindPort", label: "forwards.fieldsByType.local.bindPort" },
+    { field: "targetHost", label: "forwards.fieldsByType.local.targetHost", hint: "forwards.hints.local.targetHost" },
+    { field: "targetPort", label: "forwards.fieldsByType.local.targetPort" },
+    { field: "bindAddress", label: "forwards.fieldsByType.local.bindAddress", hint: "forwards.hints.local.bindAddress" },
+  ],
+  remote: [
+    { field: "label", label: "forwards.fields.label" },
+    { field: "bindPort", label: "forwards.fieldsByType.remote.bindPort" },
+    { field: "targetHost", label: "forwards.fieldsByType.remote.targetHost", hint: "forwards.hints.remote.targetHost" },
+    { field: "targetPort", label: "forwards.fieldsByType.remote.targetPort" },
+    { field: "bindAddress", label: "forwards.fieldsByType.remote.bindAddress", hint: "forwards.hints.remote.bindAddress" },
+  ],
+  dynamic: [
+    { field: "label", label: "forwards.fields.label" },
+    { field: "bindPort", label: "forwards.fieldsByType.dynamic.bindPort" },
+    { field: "bindAddress", label: "forwards.fieldsByType.dynamic.bindAddress", hint: "forwards.hints.dynamic.bindAddress" },
+  ],
+} as const satisfies Record<ForwardType, readonly { field: TextField; label: string; hint?: string }[]>;
+
+const numeric = new Set<TextField>(["bindPort", "targetPort"]);
 
 interface ForwardFormProps {
   initial: ForwardFormValues;
+  /** A new rule: the kind can be chosen. */
+  isNew?: boolean;
   /** Editing a running rule: say that changes apply on the next start. */
   running?: boolean;
   onSave(values: ForwardFormValues): Promise<ForwardFormResult>;
   onCancel(): void;
 }
 
-/** The inline editor for one local Port forward. */
-function ForwardForm({ initial, running = false, onSave, onCancel }: ForwardFormProps) {
+/** The inline editor for one Port forward of any kind. */
+function ForwardForm({ initial, isNew = false, running = false, onSave, onCancel }: ForwardFormProps) {
   const { t } = useTranslation();
   const [values, setValues] = useState(initial);
   const [errors, setErrors] = useState<Partial<Record<ForwardFormField, ForwardFormError>>>({});
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const { type } = values;
 
   return (
     <form
@@ -338,22 +374,45 @@ function ForwardForm({ initial, running = false, onSave, onCancel }: ForwardForm
         );
       }}
     >
-      <p className="text-sm font-semibold">{initial === emptyForwardForm ? t("forwards.newTitle") : t("forwards.editTitle")}</p>
+      <p className="text-sm font-semibold">{isNew ? t("forwards.newTitle") : t("forwards.editTitle")}</p>
+      {isNew && (
+        <div className="grid gap-1.5">
+          <SegmentedControl
+            label={t("forwards.fields.type")}
+            value={type}
+            options={typeOptions.map((value) => ({ value, label: t(`forwards.kinds.${value}`) }))}
+            onChange={(next) => {
+              setErrors({});
+              setValues((v) => ({ ...v, type: next }));
+            }}
+          />
+          <p className="text-muted-foreground text-xs">{t(`forwards.kindHints.${type}`)}</p>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3">
-        {fields.map(({ field, mono, numeric, hint }) => {
+        {layouts[type].map((layout) => {
+          const field: TextField = layout.field;
           const id = `forward-form-${field}`;
           const error = field === "label" || field === "bindAddress" ? undefined : errors[field];
+          const hint = "hint" in layout ? t(layout.hint) : null;
+          const label = t(layout.label);
           return (
             <div key={field} className={cn("grid content-start gap-1.5", (field === "label" || hint) && "col-span-2")}>
               <Label htmlFor={id} className="text-xs">
-                {t(`forwards.fields.${field}`)}
+                {label}
               </Label>
               <Input
                 id={id}
-                className={cn("h-8", mono && "font-mono")}
+                className={cn("h-8", field !== "label" && "font-mono")}
                 value={values[field]}
-                inputMode={numeric ? "numeric" : undefined}
-                placeholder={field === "label" ? t("forwards.labelPlaceholder") : field === "bindAddress" ? "127.0.0.1" : undefined}
+                inputMode={numeric.has(field) ? "numeric" : undefined}
+                placeholder={
+                  field === "label"
+                    ? t("forwards.labelPlaceholder")
+                    : field === "bindAddress"
+                      ? defaultBindAddress(type)
+                      : undefined
+                }
                 autoFocus={field === "label"}
                 autoCapitalize="off"
                 autoCorrect="off"
@@ -369,13 +428,27 @@ function ForwardForm({ initial, running = false, onSave, onCancel }: ForwardForm
               ) : (
                 hint && (
                   <p id={`${id}-hint`} className="text-muted-foreground text-xs">
-                    {t(hint)}
+                    {hint}
                   </p>
                 )
               )}
             </div>
           );
         })}
+      </div>
+      <div className="flex items-start gap-2">
+        <Checkbox
+          id="forward-form-autoStart"
+          checked={values.autoStart}
+          onCheckedChange={(checked) => setValues((v) => ({ ...v, autoStart: checked === true }))}
+          className="mt-0.5"
+        />
+        <div className="grid gap-0.5">
+          <Label htmlFor="forward-form-autoStart" className="text-xs">
+            {t("forwards.fields.autoStart")}
+          </Label>
+          <p className="text-muted-foreground text-xs">{t("forwards.autoStartHint")}</p>
+        </div>
       </div>
       {running && <p className="text-muted-foreground text-xs">{t("forwards.restartHint")}</p>}
       {saveError && (

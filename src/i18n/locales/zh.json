@@ -62,7 +62,10 @@
       "password": "密码",
       "key": "私钥"
     },
-    "portForwards": "端口转发"
+    "portForwards": "端口转发",
+    "connectOnly": "仅连接",
+    "disconnect": "断开连接",
+    "connectFailed": "无法连接到 {{name}}：{{message}}"
   },
   "tabs": {
     "listLabel": "已打开的标签页",
@@ -96,7 +99,8 @@
       "actions": "操作"
     },
     "actions": {
-      "openSettings": "打开设置"
+      "openSettings": "打开设置",
+      "disconnectHost": "断开 {{name}}"
     },
     "keywords": {
       "preferences": "偏好设置 preferences"
@@ -113,22 +117,18 @@
   },
   "forwards": {
     "title": "端口转发",
-    "lead": "从本机访问 {{host}} 所在网络里的服务。运行中的端口转发会让连接保持，即使没有打开终端。",
+    "lead": "通过 {{host}} 的连接转发流量：从这里访问它所在的网络、把本机端口暴露到它上面，或把它当作 SOCKS 代理。运行中的端口转发会让连接保持，即使没有打开终端。",
     "emptyTitle": "还没有端口转发",
-    "emptyBody": "添加一条本地端口转发，访问这个 Host 后面的服务，例如数据库。",
+    "emptyBody": "添加端口转发，访问这个 Host 后面的服务（例如数据库）、把本机端口暴露到它上面，或通过它以 SOCKS 代理上网。",
     "add": "添加端口转发",
-    "newTitle": "新建本地端口转发",
+    "newTitle": "新建端口转发",
     "editTitle": "编辑端口转发",
     "fields": {
       "label": "名称",
-      "bindAddress": "监听地址",
-      "bindPort": "本地端口",
-      "remoteHost": "远端主机",
-      "remotePort": "远端端口"
+      "type": "类型",
+      "autoStart": "连接时自动启动"
     },
     "labelPlaceholder": "可选",
-    "bindAddressHint": "留空则只接受本机的连接（127.0.0.1）。",
-    "remoteHostHint": "按 Host 看到的地址填写，例如 localhost 或 db.internal。",
     "errors": {
       "required": "必填",
       "port": "请输入 1 到 65535 之间的端口"
@@ -141,7 +141,6 @@
     "stop": "停止",
     "dismiss": "清除错误",
     "moreActions": "{{name}} 的更多操作",
-    "local": "本地",
     "listLabel": "{{host}} 上的端口转发",
     "status": {
       "stopped": "已停止",
@@ -153,13 +152,64 @@
     "actionFailed": "无法保存端口转发：{{message}}",
     "startErrors": {
       "portInUse": "{{address}} 上的端口 {{port}} 已被占用。请换一个本地端口，或关闭占用它的程序。",
-      "permissionDenied": "没有权限监听端口 {{port}}。1024 以下的端口通常需要管理员权限，请换一个更大的端口。"
-    }
+      "permissionDenied": "没有权限监听端口 {{port}}。1024 以下的端口通常需要管理员权限，请换一个更大的端口。",
+      "remoteRefused": "服务器拒绝监听端口 {{port}}（{{address}}）。端口可能已被占用，或服务器的 AllowTcpForwarding / GatewayPorts 设置不允许。"
+    },
+    "fieldsByType": {
+      "local": {
+        "bindPort": "本地端口",
+        "targetHost": "远端主机",
+        "targetPort": "远端端口",
+        "bindAddress": "监听地址"
+      },
+      "remote": {
+        "bindPort": "服务器端口",
+        "targetHost": "本地主机",
+        "targetPort": "本地端口",
+        "bindAddress": "服务器监听地址"
+      },
+      "dynamic": {
+        "bindPort": "本地端口",
+        "bindAddress": "监听地址"
+      }
+    },
+    "hints": {
+      "local": {
+        "targetHost": "按 Host 看到的地址填写，例如 localhost 或 db.internal。",
+        "bindAddress": "留空则只接受本机的连接（127.0.0.1）。"
+      },
+      "remote": {
+        "targetHost": "按本机看到的地址填写，例如 127.0.0.1。",
+        "bindAddress": "留空则只接受服务器本机的连接（localhost）。"
+      },
+      "dynamic": {
+        "bindAddress": "留空则只接受本机的连接（127.0.0.1）。"
+      }
+    },
+    "kinds": {
+      "local": "本地",
+      "remote": "远程",
+      "dynamic": "SOCKS"
+    },
+    "kindHints": {
+      "local": "本机的端口，连到 Host 一侧的地址（ssh -L）。",
+      "remote": "服务器上的端口，连到本机一侧的地址（ssh -R）。",
+      "dynamic": "本机上的 SOCKS5 代理，每个连接由 Host 发起（ssh -D）。"
+    },
+    "ends": {
+      "local": "本地",
+      "remote": "服务器",
+      "dynamic": "SOCKS5"
+    },
+    "autoStartHint": "每当这个 Host 连接时运行：打开终端、启动其他端口转发或「仅连接」。",
+    "autoStartBadge": "自动"
   },
   "status": {
     "noConnections": "没有连接",
     "connectedTo": "已连接：{{hosts}}",
-    "forwards": "端口转发：{{list}}"
+    "forwards": "端口转发：{{list}}",
+    "forwardsRemote": "服务器 {{from}} → {{to}}",
+    "forwardsDynamic": "SOCKS {{from}}"
   },
   "theme": {
     "title": "外观",

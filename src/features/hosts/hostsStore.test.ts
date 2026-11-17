@@ -133,6 +133,7 @@ describe("hosts store", () => {
     const { store, api } = await loaded({ groups: [], hosts: [host("a"), host("b")] });
     const rule: ForwardDraft = {
       label: "",
+      autoStart: false,
       type: "local",
       bindAddress: "127.0.0.1",
       bindPort: 8080,

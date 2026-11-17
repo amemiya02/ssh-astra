@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use sshastra_core::hosts::{Group, GroupId, Host, HostDraft, HostId, HostStore, HostTree};
 use tauri::State;
 
+use super::connections::ConnectionsState;
 use super::forwards::ForwardsState;
 use crate::commands::credentials::Vault;
 use crate::error::{CommandError, CommandResult};
@@ -48,11 +49,13 @@ pub fn host_save(
 pub fn host_delete(
     hosts: State<'_, HostsState>,
     forwards: State<'_, ForwardsState>,
+    connections: State<'_, ConnectionsState>,
     vault: State<'_, Vault>,
     id: HostId,
 ) -> CommandResult<()> {
     hosts.with(|store| Ok(store.delete(&id)?))?;
     forwards.forwarder.stop_host(&id);
+    connections.release(&id);
     let vault = Vault::clone(&vault);
     // Best effort: an entry left behind is unreachable, never shown again.
     tauri::async_runtime::spawn(async move { vault.clear(id).await });

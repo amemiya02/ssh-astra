@@ -11,7 +11,7 @@ import {
   type DragMoveEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { ArrowRightLeft, ChevronRight, Copy, Folder, FolderInput, FolderPlus, Pencil, SquareTerminal, Trash2 } from "lucide-react";
+import { ArrowRightLeft, ChevronRight, Copy, Folder, FolderInput, FolderPlus, Pencil, PlugZap, SquareTerminal, Trash2, Unplug } from "lucide-react";
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,12 @@ import { RowContextMenu, RowMoreMenu, type MenuEntry } from "./RowMenu";
 export interface HostListActions {
   open(host: Host): void;
   openForwards(host: Host): void;
+  /** "Connect only": a Connection with no Terminal (and its auto-start Port forwards). */
+  connectOnly(host: Host): void;
+  /** Ends "Connect only" on a held Host. */
+  disconnect(host: Host): void;
+  /** Whether the Host is held by "Connect only" (or connecting). */
+  isHeld(host: Host): boolean;
   edit(host: Host): void;
   duplicate(host: Host): void;
   remove(item: { kind: "host"; host: Host } | { kind: "group"; group: Group }): void;
@@ -148,6 +154,9 @@ export function HostList({ tree, nodes, searching, selected, onSelect, renamingG
         const host = node.host;
         const entries: MenuEntry[] = [
           { type: "item", label: t("hosts.open"), icon: <SquareTerminal />, onSelect: () => actions.open(host) },
+          actions.isHeld(host)
+            ? { type: "item", label: t("hosts.disconnect"), icon: <Unplug />, onSelect: () => actions.disconnect(host) }
+            : { type: "item", label: t("hosts.connectOnly"), icon: <PlugZap />, onSelect: () => actions.connectOnly(host) },
           {
             type: "item",
             label: t("hosts.portForwards"),

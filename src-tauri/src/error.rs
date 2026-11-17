@@ -82,6 +82,8 @@ impl From<ForwardError> for CommandError {
             PortInUse { address, port } => ("portInUse", address, port),
             PermissionDenied { address, port } => ("permissionDenied", address, port),
             Listen { address, port, .. } => ("listenFailed", address, port),
+            RemoteRefused { address, port } => ("remoteRefused", address, port),
+            ConnectionLost => return Self::new("connectionLost", &err),
         };
         let details = json!({ "address": address, "port": port });
         Self::new(kind, &err).with_details(details)
@@ -177,6 +179,20 @@ mod tests {
         assert_eq!(json["details"]["address"], "127.0.0.1");
         assert_eq!(json["details"]["port"], 5432);
         assert_eq!(json["message"], "port 5432 on 127.0.0.1 is already in use");
+    }
+
+    #[test]
+    fn a_refused_remote_port_names_the_address_and_port() {
+        let err = ForwardError::RemoteRefused {
+            address: "localhost".into(),
+            port: 9000,
+        };
+
+        let json = serde_json::to_value(CommandError::from(err)).unwrap();
+
+        assert_eq!(json["kind"], "remoteRefused");
+        assert_eq!(json["details"]["address"], "localhost");
+        assert_eq!(json["details"]["port"], 9000);
     }
 
     #[test]
