@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use sshastra_core::hosts::HostStore;
 use sshastra_core::known_hosts::KnownHosts;
-use sshastra_core::ssh::ConnectionManager;
+use sshastra_core::ssh::{Agent, ConnectionManager};
 use sshastra_core::terminal::TerminalRegistry;
 use tauri::Manager;
 
@@ -28,7 +28,7 @@ pub fn run() {
             let known_hosts = KnownHosts::system_default()
                 .unwrap_or_else(|| KnownHosts::new(config_dir.join("known_hosts")));
             app.manage(HostsState::new(hosts));
-            app.manage(ConnectionManager::new(known_hosts));
+            app.manage(ConnectionManager::new(known_hosts).with_agent(Agent::System));
             Ok(())
         })
         .manage(TerminalRegistry::default())

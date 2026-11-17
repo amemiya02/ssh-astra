@@ -39,10 +39,22 @@ impl fmt::Display for HostId {
 
 /// How a Host authenticates. Secrets are asked for (or read from the system
 /// keychain) at connect time, never stored in the Host.
+///
+/// Whatever the variant, a connect tries, as far as the server allows:
+/// ssh-agent, then the private key file (if any), then password, then
+/// keyboard-interactive.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum HostAuth {
+    /// No key file: agent, password, keyboard-interactive.
     Password,
+    /// A private key file (OpenSSH or PEM; ed25519, ECDSA or RSA). A leading
+    /// `~/` means the user's home directory. A passphrase is asked for.
+    Key { identity_file: PathBuf },
 }
 
 /// A saved, named set of connection settings.
@@ -55,6 +67,10 @@ pub struct Host {
     pub port: u16,
     pub user: String,
     pub auth: HostAuth,
+    /// The Jump host this Host is reached through, itself possibly behind
+    /// another one. Absent in files written before Jump hosts existed.
+    #[serde(default)]
+    pub jump_host: Option<HostId>,
 }
 
 /// A Host's editable fields, as entered in the Host form.
@@ -66,6 +82,8 @@ pub struct HostDraft {
     pub port: u16,
     pub user: String,
     pub auth: HostAuth,
+    #[serde(default)]
+    pub jump_host: Option<HostId>,
 }
 
 impl HostDraft {
@@ -81,13 +99,26 @@ impl HostDraft {
         if self.port == 0 {
             return Err(HostStoreError::Invalid("port"));
         }
+        let auth = match self.auth {
+            HostAuth::Key { identity_file } => {
+                let trimmed = identity_file.to_string_lossy().trim().to_owned();
+                if trimmed.is_empty() {
+                    return Err(HostStoreError::Invalid("identityFile"));
+                }
+                HostAuth::Key {
+                    identity_file: PathBuf::from(trimmed),
+                }
+            }
+            other => other,
+        };
         Ok(Host {
             id,
             name: self.name.trim().to_owned(),
             address: self.address.trim().to_owned(),
             port: self.port,
             user: self.user.trim().to_owned(),
-            auth: self.auth,
+            auth,
+            jump_host: self.jump_host,
         })
     }
 }
@@ -108,6 +139,12 @@ pub enum HostStoreError {
     Invalid(&'static str),
     #[error("no such host: {0}")]
     NotFound(HostId),
+    /// Following the Jump hosts leads back to where it started; the names
+    /// along the loop, first and last the same.
+    #[error("the jump hosts form a loop: {}", .0.join(" → "))]
+    JumpHostCycle(Vec<String>),
+    #[error("this host is the jump host of {by}")]
+    InUseAsJumpHost { by: String },
 }
 
 #[derive(Serialize)]
@@ -152,6 +189,12 @@ impl HostStore {
         self.hosts.iter().find(|h| &h.id == id)
     }
 
+    /// The hops to reach Host `id`: its outermost Jump host first, the Host
+    /// itself last (just `[host]` without a Jump host).
+    pub fn jump_chain(&self, id: &HostId) -> Result<Vec<Host>, HostStoreError> {
+        chain(&self.hosts, id)
+    }
+
     /// Adds a Host (`id: None`) or replaces the one with `id`, then saves.
     pub fn upsert(&mut self, id: Option<HostId>, draft: HostDraft) -> Result<Host, HostStoreError> {
         let mut hosts = self.hosts.clone();
@@ -170,11 +213,17 @@ impl HostStore {
                 slot.clone()
             }
         };
+        chain(&hosts, &host.id)?;
         self.save(hosts)?;
         Ok(host)
     }
 
     pub fn delete(&mut self, id: &HostId) -> Result<(), HostStoreError> {
+        if let Some(user) = self.hosts.iter().find(|h| h.jump_host.as_ref() == Some(id)) {
+            return Err(HostStoreError::InUseAsJumpHost {
+                by: user.name.clone(),
+            });
+        }
         let mut hosts = self.hosts.clone();
         let before = hosts.len();
         hosts.retain(|h| &h.id != id);
@@ -199,6 +248,27 @@ impl HostStore {
         self.hosts = hosts;
         Ok(())
     }
+}
+
+/// Follows `id`'s Jump hosts outwards; see [`HostStore::jump_chain`].
+fn chain(hosts: &[Host], id: &HostId) -> Result<Vec<Host>, HostStoreError> {
+    let find = |id: &HostId| {
+        hosts
+            .iter()
+            .find(|h| &h.id == id)
+            .ok_or_else(|| HostStoreError::NotFound(id.clone()))
+    };
+    let mut hops = vec![find(id)?.clone()];
+    while let Some(next) = &hops[hops.len() - 1].jump_host {
+        if let Some(start) = hops.iter().position(|h| &h.id == next) {
+            let mut names: Vec<String> = hops[start..].iter().map(|h| h.name.clone()).collect();
+            names.push(hops[start].name.clone());
+            return Err(HostStoreError::JumpHostCycle(names));
+        }
+        hops.push(find(next)?.clone());
+    }
+    hops.reverse();
+    Ok(hops)
 }
 
 /// Reads any supported file version into the current model.

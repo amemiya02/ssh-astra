@@ -69,10 +69,13 @@ jobs:
         # have no Docker; Windows runners have no Linux containers).
         env:
           SSHASTRA_DOCKER_TESTS: ${{ runner.os == 'Linux' && 'require' || 'skip' }}
+          SSHASTRA_IT_PROJECT: sshastra-it-ci
         run: cargo test --workspace
       - name: Stop test containers
         if: always() && runner.os == 'Linux'
-        run: docker compose -f src-tauri/crates/sshastra-core/tests/sshd/docker-compose.yml down --volumes
+        env:
+          SSHASTRA_IT_PROJECT: sshastra-it-ci
+        run: docker compose -p sshastra-it-ci -f src-tauri/crates/sshastra-core/tests/sshd/docker-compose.yml down --volumes
       - name: Test (front end)
         run: pnpm test
 

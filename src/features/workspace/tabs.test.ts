@@ -19,6 +19,7 @@ const host = (id: string, name = id): Host => ({
   port: 22,
   user: "deploy",
   auth: { type: "password" },
+  jumpHost: null,
 });
 
 const local = (id: string): Pane => ({ id, kind: "local-terminal" });

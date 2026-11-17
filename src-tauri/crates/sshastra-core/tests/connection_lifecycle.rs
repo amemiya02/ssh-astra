@@ -1,12 +1,12 @@
 //! One Connection per Host, counted from the server's side: Terminals share
 //! it, concurrent connects coalesce into it, and it is disconnected once the
 //! last Terminal on it closes. Runs against the `counted` sshd in Docker,
-//! which nothing else connects to (see `support`).
+//! which nothing else connects to (see `support`), and the `jump` sshd, which
+//! no other test connects to while this binary runs.
 
 mod support;
 
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 
 use sshastra_core::hosts::{Host, HostAuth, HostId};
@@ -21,22 +21,27 @@ use tokio::sync::Mutex;
 /// The tests count the server's connections, so they take turns.
 static SERVER: Mutex<()> = Mutex::const_new(());
 
-/// Trusts the host key and answers every password prompt, counting them.
+/// Trusts the host key and answers every password prompt, recording the
+/// address each was for.
 struct CountingPrompter {
     password: &'static str,
-    passwords_asked: AtomicUsize,
+    asked_for: StdMutex<Vec<String>>,
 }
 
 impl CountingPrompter {
     fn new(sshd: &Sshd) -> Arc<Self> {
         Arc::new(Self {
             password: sshd.password,
-            passwords_asked: AtomicUsize::new(0),
+            asked_for: StdMutex::default(),
         })
     }
 
     fn passwords_asked(&self) -> usize {
-        self.passwords_asked.load(Ordering::SeqCst)
+        self.asked_for().len()
+    }
+
+    fn asked_for(&self) -> Vec<String> {
+        self.asked_for.lock().unwrap().clone()
     }
 }
 
@@ -45,8 +50,8 @@ impl Prompter for CountingPrompter {
         Box::pin(async { true })
     }
 
-    fn password(&self, _: PasswordPrompt) -> BoxFuture<'_, Option<String>> {
-        self.passwords_asked.fetch_add(1, Ordering::SeqCst);
+    fn password(&self, prompt: PasswordPrompt) -> BoxFuture<'_, Option<String>> {
+        self.asked_for.lock().unwrap().push(prompt.host);
         Box::pin(async move {
             // Slow enough that a concurrent connect overlaps this one.
             tokio::time::sleep(Duration::from_millis(200)).await;
@@ -72,6 +77,7 @@ impl Fixture {
             port: sshd.port,
             user: sshd.user.into(),
             auth: HostAuth::Password,
+            jump_host: None,
         };
         Self {
             manager: ConnectionManager::new(KnownHosts::new(dir.path().join("known_hosts"))),
@@ -174,5 +180,50 @@ async fn concurrent_connects_to_one_host_coalesce_into_one_connection() {
 
     assert!(Arc::ptr_eq(&first, &second));
     assert_eq!(prompter.passwords_asked(), 1);
+    fx.server_sees(1).await;
+}
+
+/// A Host on the Jump host's private network.
+fn behind(name: &str, jump: &Host) -> Host {
+    Host {
+        id: HostId::from(format!("behind-{name}")),
+        name: name.into(),
+        address: name.into(),
+        port: 22,
+        user: support::USER.into(),
+        auth: HostAuth::Password,
+        jump_host: Some(jump.id.clone()),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn concurrent_connects_through_one_jump_host_share_its_connection() {
+    let Some(sshd) = support::sshd(Service::Jump) else {
+        return;
+    };
+    let _turn = SERVER.lock().await;
+    let mut fx = Fixture::new(sshd);
+    fx.host.id = HostId::from("jump".to_owned());
+    fx.server_sees(0).await;
+    let prompter = CountingPrompter::new(&fx.sshd);
+    let jump = fx.host.clone();
+    let (internal, jump2) = (behind("internal", &jump), behind("jump2", &jump));
+
+    // Two Hosts behind the same Jump host, opened at once.
+    let hops = std::slice::from_ref(&jump);
+    let (a, b) = tokio::join!(
+        fx.manager
+            .connect_through(hops, &internal, prompter.clone()),
+        fx.manager.connect_through(hops, &jump2, prompter.clone()),
+    );
+    let (_a, _b) = (a.unwrap(), b.unwrap());
+
+    let asked = prompter.asked_for();
+    assert_eq!(
+        asked.iter().filter(|h| **h == jump.address).count(),
+        1,
+        "logged in to the Jump host once: {asked:?}"
+    );
+    assert_eq!(asked.len(), 3, "{asked:?}");
     fx.server_sees(1).await;
 }

@@ -12,20 +12,28 @@
     "emptyTitle": "No Hosts yet",
     "emptyBody": "Hosts you add appear here. Double-click one to open a Terminal.",
     "new": "New Host",
-    "newDescription": "Password login. You will be asked for the password each time you connect.",
+    "newDescription": "Keys in ssh-agent are tried first, then the private key file, then the password or the server's own questions (such as a one-time code). Passwords and passphrases are asked for each time.",
     "openHint": "Double-click to connect",
     "fields": {
       "name": "Name",
       "address": "Address",
       "port": "Port",
-      "user": "User"
+      "user": "User",
+      "jumpHost": "Jump host",
+      "auth": "Authentication",
+      "identityFile": "Private key file"
     },
+    "noJumpHost": "None (connect directly)",
     "errors": {
       "required": "Required",
       "port": "Enter a port from 1 to 65535"
     },
     "save": "Save",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "auth": {
+      "password": "Password",
+      "key": "Private key"
+    }
   },
   "tabs": {
     "listLabel": "Open tabs",
@@ -103,7 +111,22 @@
       "hostKeyRevoked": "The host key is revoked. Connection blocked.",
       "authenticationFailed": "Authentication failed.",
       "cancelled": "Connection cancelled.",
-      "generic": "Could not connect."
+      "generic": "Could not connect.",
+      "keyUnreadable": "Could not use the private key {{keyPath}}: {{reason}}",
+      "keyPassphraseIncorrect": "Wrong passphrase for the private key {{keyPath}}.",
+      "keyRejected": "The server rejected the private key {{keyPath}}.",
+      "agentKeysRejected": "The server rejected every key in ssh-agent.",
+      "noSupportedMethod": "No usable sign-in method. The server accepts: {{methods}}."
+    },
+    "atJumpHost": "At jump host {{name}}:",
+    "passphrase": {
+      "title": "Passphrase for the private key",
+      "label": "Passphrase",
+      "retry": "Wrong passphrase. Try again."
+    },
+    "keyboardInteractive": {
+      "title": "{{user}}@{{host}} asks",
+      "description": "The server asks for more information to sign in."
     }
   }
 }

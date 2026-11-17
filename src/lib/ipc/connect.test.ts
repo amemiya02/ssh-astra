@@ -24,6 +24,16 @@ describe("answerPrompts", () => {
     const prompts: ConnectPrompt[] = [
       { type: "hostKey", id: 1, host: "h", port: 22, algorithm: "a", fingerprint: "f" },
       { type: "password", id: 2, host: "h", user: "u", retry: true },
+      { type: "passphrase", id: 3, keyPath: "/k/id_ed25519", retry: false },
+      {
+        type: "keyboardInteractive",
+        id: 4,
+        host: "h",
+        user: "u",
+        name: "",
+        instructions: "",
+        prompts: [{ text: "OTP: ", echo: true }],
+      },
     ];
 
     for (const prompt of prompts) await handle(prompt);
@@ -31,6 +41,8 @@ describe("answerPrompts", () => {
     expect(answer.mock.calls).toEqual([
       [1, { type: "hostKey", trust: false }],
       [2, { type: "password", password: null }],
+      [3, { type: "passphrase", passphrase: null }],
+      [4, { type: "keyboardInteractive", answers: null }],
     ]);
   });
 });

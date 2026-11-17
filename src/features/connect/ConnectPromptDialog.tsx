@@ -20,7 +20,11 @@ interface Props {
   onAnswer: (answer: PromptAnswer) => void;
 }
 
-/** A question asked while connecting: trust a new host key, or type a password. Escape refuses. */
+/**
+ * A question asked while connecting: trust a new host key, type a password or
+ * key passphrase, or answer the server's keyboard-interactive questions.
+ * Escape refuses.
+ */
 export function ConnectPromptDialog({ prompt, open, onAnswer }: Props) {
   return (
     <Dialog
@@ -30,13 +34,141 @@ export function ConnectPromptDialog({ prompt, open, onAnswer }: Props) {
       }}
     >
       <DialogContent showCloseButton={false} className="max-w-[calc(100%-2rem)] gap-3.5 p-5 sm:max-w-130">
-        {prompt.type === "hostKey" ? (
-          <HostKeyQuestion prompt={prompt} onAnswer={onAnswer} />
-        ) : (
-          <PasswordQuestion key={prompt.id} prompt={prompt} onAnswer={onAnswer} />
-        )}
+        <Question key={prompt.id} prompt={prompt} onAnswer={onAnswer} />
       </DialogContent>
     </Dialog>
+  );
+}
+
+function Question({ prompt, onAnswer }: Omit<Props, "open">) {
+  switch (prompt.type) {
+    case "hostKey":
+      return <HostKeyQuestion prompt={prompt} onAnswer={onAnswer} />;
+    case "password":
+      return <PasswordQuestion prompt={prompt} onAnswer={onAnswer} />;
+    case "passphrase":
+      return <PassphraseQuestion prompt={prompt} onAnswer={onAnswer} />;
+    case "keyboardInteractive":
+      return <KeyboardInteractiveQuestion prompt={prompt} onAnswer={onAnswer} />;
+  }
+}
+
+/** Cancel + submit for the form-shaped questions. */
+function FormFooter({ onCancel }: { onCancel: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <DialogFooter>
+      <Button type="button" variant="outline" size="sm" onClick={onCancel}>
+        {t("connect.cancel")}
+      </Button>
+      <Button type="submit" size="sm">
+        {t("connect.password.submit")}
+      </Button>
+    </DialogFooter>
+  );
+}
+
+function PassphraseQuestion({
+  prompt,
+  onAnswer,
+}: {
+  prompt: Extract<ConnectPrompt, { type: "passphrase" }>;
+  onAnswer: Props["onAnswer"];
+}) {
+  const { t } = useTranslation();
+  const [passphrase, setPassphrase] = useState("");
+  const inputId = `prompt-${prompt.id}-passphrase`;
+  return (
+    <form
+      className="grid gap-3.5"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onAnswer({ type: "passphrase", passphrase });
+      }}
+    >
+      <DialogHeader>
+        <DialogTitle>{t("connect.passphrase.title")}</DialogTitle>
+        <DialogDescription className="font-mono break-all">{prompt.keyPath}</DialogDescription>
+      </DialogHeader>
+      <div className="grid gap-1.5">
+        <Label htmlFor={inputId} className="text-xs">
+          {t("connect.passphrase.label")}
+        </Label>
+        <Input
+          id={inputId}
+          type="password"
+          autoFocus
+          autoComplete="off"
+          className="h-8"
+          aria-invalid={prompt.retry || undefined}
+          aria-describedby={prompt.retry ? `${inputId}-retry` : undefined}
+          value={passphrase}
+          onChange={(event) => setPassphrase(event.target.value)}
+        />
+        {prompt.retry && (
+          <p id={`${inputId}-retry`} role="alert" className="text-destructive text-xs">
+            {t("connect.passphrase.retry")}
+          </p>
+        )}
+      </div>
+      <FormFooter onCancel={() => onAnswer({ type: "passphrase", passphrase: null })} />
+    </form>
+  );
+}
+
+/** The server's questions (e.g. a one-time code), one field each, as sent. */
+function KeyboardInteractiveQuestion({
+  prompt,
+  onAnswer,
+}: {
+  prompt: Extract<ConnectPrompt, { type: "keyboardInteractive" }>;
+  onAnswer: Props["onAnswer"];
+}) {
+  const { t } = useTranslation();
+  const [answers, setAnswers] = useState(() => prompt.prompts.map(() => ""));
+  return (
+    <form
+      className="grid gap-3.5"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onAnswer({ type: "keyboardInteractive", answers });
+      }}
+    >
+      <DialogHeader>
+        <DialogTitle>
+          {prompt.name || t("connect.keyboardInteractive.title", { user: prompt.user, host: prompt.host })}
+        </DialogTitle>
+        <DialogDescription className="whitespace-pre-line">
+          {prompt.instructions || t("connect.keyboardInteractive.description")}
+        </DialogDescription>
+      </DialogHeader>
+      {prompt.prompts.map((question, index) => {
+        const inputId = `prompt-${prompt.id}-answer-${index}`;
+        return (
+          <div key={index} className="grid gap-1.5">
+            <Label htmlFor={inputId} className="text-xs whitespace-pre-line">
+              {question.text}
+            </Label>
+            <Input
+              id={inputId}
+              type={question.echo ? "text" : "password"}
+              autoFocus={index === 0}
+              autoComplete="off"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              className="h-8"
+              value={answers[index]}
+              onChange={(event) => {
+                const value = event.target.value;
+                setAnswers((all) => all.map((a, i) => (i === index ? value : a)));
+              }}
+            />
+          </div>
+        );
+      })}
+      <FormFooter onCancel={() => onAnswer({ type: "keyboardInteractive", answers: null })} />
+    </form>
   );
 }
 

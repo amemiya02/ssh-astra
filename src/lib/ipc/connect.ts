@@ -5,9 +5,26 @@ import { decodeTerminalMessage, type TerminalEvent, type TerminalMessage, type T
 /** A question the backend asks while connecting (`src-tauri/src/prompts.rs`). */
 export type ConnectPrompt =
   | { type: "hostKey"; id: number; host: string; port: number; algorithm: string; fingerprint: string }
-  | { type: "password"; id: number; host: string; user: string; retry: boolean };
+  | { type: "password"; id: number; host: string; user: string; retry: boolean }
+  | { type: "passphrase"; id: number; keyPath: string; retry: boolean }
+  | {
+      type: "keyboardInteractive";
+      id: number;
+      host: string;
+      user: string;
+      /** Both may be empty. */
+      name: string;
+      instructions: string;
+      /** Answer each, in order. `echo: false` means a secret. */
+      prompts: { text: string; echo: boolean }[];
+    };
 
-export type PromptAnswer = { type: "hostKey"; trust: boolean } | { type: "password"; password: string | null };
+/** `null` means the user cancelled, which cancels the connect. */
+export type PromptAnswer =
+  | { type: "hostKey"; trust: boolean }
+  | { type: "password"; password: string | null }
+  | { type: "passphrase"; passphrase: string | null }
+  | { type: "keyboardInteractive"; answers: string[] | null };
 
 /** The error shape every command rejects with (`src-tauri/src/error.rs`). */
 export interface CommandError {
@@ -26,7 +43,16 @@ export function readCommandError(error: unknown): CommandError {
 
 /** What "no answer" means for each prompt: refuse, so the connect never hangs. */
 export function refusal(prompt: ConnectPrompt): PromptAnswer {
-  return prompt.type === "hostKey" ? { type: "hostKey", trust: false } : { type: "password", password: null };
+  switch (prompt.type) {
+    case "hostKey":
+      return { type: "hostKey", trust: false };
+    case "password":
+      return { type: "password", password: null };
+    case "passphrase":
+      return { type: "passphrase", passphrase: null };
+    case "keyboardInteractive":
+      return { type: "keyboardInteractive", answers: null };
+  }
 }
 
 /**
@@ -54,7 +80,8 @@ function sendPromptAnswer(id: number, answer: PromptAnswer): Promise<void> {
 
 /**
  * Opens a Terminal on a saved Host, connecting first if needed. `ask` is
- * called for host-key and password questions. Rejects with a `CommandError`
+ * called for each question (host key, password, key passphrase,
+ * keyboard-interactive). Rejects with a `CommandError`
  * (e.g. `kind: "hostKeyMismatch"`) when the connect fails.
  */
 export async function openRemoteTerminal(
