@@ -11,7 +11,7 @@ import {
   type DragMoveEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { ChevronRight, Copy, Folder, FolderInput, FolderPlus, Pencil, SquareTerminal, Trash2 } from "lucide-react";
+import { ArrowRightLeft, ChevronRight, Copy, Folder, FolderInput, FolderPlus, Pencil, SquareTerminal, Trash2 } from "lucide-react";
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Input } from "@/components/ui/input";
@@ -24,6 +24,7 @@ import { RowContextMenu, RowMoreMenu, type MenuEntry } from "./RowMenu";
 /** What the user can do to rows; HostsPanel owns the dialogs and the store calls. */
 export interface HostListActions {
   open(host: Host): void;
+  openForwards(host: Host): void;
   edit(host: Host): void;
   duplicate(host: Host): void;
   remove(item: { kind: "host"; host: Host } | { kind: "group"; group: Group }): void;
@@ -147,6 +148,12 @@ export function HostList({ tree, nodes, searching, selected, onSelect, renamingG
         const host = node.host;
         const entries: MenuEntry[] = [
           { type: "item", label: t("hosts.open"), icon: <SquareTerminal />, onSelect: () => actions.open(host) },
+          {
+            type: "item",
+            label: t("hosts.portForwards"),
+            icon: <ArrowRightLeft />,
+            onSelect: () => actions.openForwards(host),
+          },
           { type: "item", label: t("hosts.edit"), icon: <Pencil />, onSelect: () => actions.edit(host) },
           { type: "item", label: t("hosts.duplicate"), icon: <Copy />, onSelect: () => actions.duplicate(host) },
           { type: "sub", label: t("hosts.moveTo"), icon: <FolderInput />, entries: groupEntries(item) },

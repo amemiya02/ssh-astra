@@ -16,6 +16,7 @@ use sshastra_core::terminal::TerminalRegistry;
 use tauri::Manager;
 use tauri_plugin_window_state::StateFlags;
 
+use commands::forwards::ForwardsState;
 use commands::hosts::HostsState;
 use commands::settings::SettingsState;
 use prompts::PendingPrompts;
@@ -53,6 +54,7 @@ pub fn run() {
             Ok(())
         })
         .manage(TerminalRegistry::default())
+        .manage(ForwardsState::default())
         .manage(Arc::new(PendingPrompts::default()))
         .invoke_handler(tauri::generate_handler![
             commands::hosts::hosts_list,
@@ -65,6 +67,11 @@ pub fn run() {
             commands::hosts::group_rename,
             commands::hosts::group_delete,
             commands::hosts::group_move,
+            commands::forwards::forwards_watch,
+            commands::forwards::forward_save,
+            commands::forwards::forward_delete,
+            commands::forwards::forward_start,
+            commands::forwards::forward_stop,
             commands::settings::settings_load,
             commands::settings::settings_set,
             commands::terminal::local_terminal_open,

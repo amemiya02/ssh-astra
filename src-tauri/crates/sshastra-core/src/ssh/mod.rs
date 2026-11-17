@@ -389,8 +389,9 @@ impl Connection {
         port: u16,
         originator: Option<std::net::SocketAddr>,
     ) -> Result<russh::ChannelStream<client::Msg>, russh::Error> {
-        let (orig_ip, orig_port) = originator
-            .map_or(("127.0.0.1".to_owned(), 0), |a| (a.ip().to_string(), a.port()));
+        let (orig_ip, orig_port) = originator.map_or(("127.0.0.1".to_owned(), 0), |a| {
+            (a.ip().to_string(), a.port())
+        });
         let channel = self
             .handle
             .channel_open_direct_tcpip(host, u32::from(port), orig_ip, u32::from(orig_port))

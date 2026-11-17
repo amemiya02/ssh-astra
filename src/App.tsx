@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useReducer } from "react";
 import { useTranslation } from "react-i18next";
 import { FilePanel } from "@/features/files/FilePanel";
+import { forwardsStore, runningForwards, useForwards } from "@/features/forwards/forwardsStore";
+import { describeForward } from "@/features/forwards/forwardForm";
+import { activeConnections, runningRules } from "@/features/forwards/status";
+import { useHosts } from "@/features/hosts/hostsStore";
 import { HostsPanel } from "@/features/hosts/HostsPanel";
 import { AppShell } from "@/features/shell/AppShell";
 import { isSettingsShortcut } from "@/features/shell/shortcuts";
@@ -45,6 +49,11 @@ export function App() {
   const openLocalTerminal = useCallback(() => openTab(localTerminal), [openTab]);
   const openRemoteTerminal = useCallback((host: Host) => openTab({ kind: "remote-terminal", host }), [openTab]);
   const openSettings = useCallback(() => openTab({ kind: "settings" }), [openTab]);
+  const openForwards = useCallback((host: Host) => openTab({ kind: "port-forwards", host }), [openTab]);
+  // Port forward states are pushed by the backend for the app's lifetime.
+  useEffect(() => {
+    void forwardsStore.getState().watch();
+  }, []);
   // Capture phase, so the shortcut works while a Terminal has focus.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -98,11 +107,20 @@ export function App() {
     }
   });
 
-  const connected = connectedHosts(state);
+  const hosts = useHosts((s) => s.tree.hosts);
+  const forwardStates = useForwards((s) => s.states);
+  const running = runningForwards({ states: forwardStates });
+  const connected = activeConnections(connectedHosts(state), running, hosts);
+  const forwards = runningRules(running, hosts).map(({ rule }) => {
+    const { from, to } = describeForward(rule);
+    return `${from} → ${to}`;
+  });
 
   return (
     <AppShell
-      sidebar={<HostsPanel onOpen={openRemoteTerminal} onOpenLocalTerminal={openLocalTerminal} />}
+      sidebar={
+        <HostsPanel onOpen={openRemoteTerminal} onOpenForwards={openForwards} onOpenLocalTerminal={openLocalTerminal} />
+      }
       tabs={
         <TabStrip
           tabs={tabs}
@@ -128,10 +146,15 @@ export function App() {
       filePanel={<FilePanel />}
       onOpenSettings={openSettings}
       status={
-        <span role="status" className="truncate">
-          {connected.length === 0
-            ? t("status.noConnections")
-            : t("status.connectedTo", { hosts: connected.map((host) => host.name).join(", ") })}
+        <span role="status" className="flex min-w-0 items-center gap-3.5">
+          <span className="truncate">
+            {connected.length === 0
+              ? t("status.noConnections")
+              : t("status.connectedTo", { hosts: connected.map((host) => host.name).join(", ") })}
+          </span>
+          {forwards.length > 0 && (
+            <span className="truncate">{t("status.forwards", { list: forwards.join(", ") })}</span>
+          )}
         </span>
       }
     />

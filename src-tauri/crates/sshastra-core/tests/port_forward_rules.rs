@@ -57,7 +57,7 @@ fn a_local_forward_saved_on_a_host_is_there_after_a_restart() {
 
     let reopened = HostStore::open(&path).unwrap();
     let forwards = &reopened.get(&host.id).unwrap().forwards;
-    assert_eq!(forwards, &[rule.clone()]);
+    assert_eq!(forwards, std::slice::from_ref(&rule));
     assert_eq!(rule.label, "postgres");
     assert_eq!(
         rule.kind,
@@ -75,8 +75,12 @@ fn saving_with_an_id_edits_that_rule_and_deleting_removes_it() {
     let (_dir, path) = store_path();
     let mut store = HostStore::open(&path).unwrap();
     let host = store.upsert(None, draft("db")).unwrap();
-    let a = store.save_forward(&host.id, None, local(8080, "web", 80)).unwrap();
-    let b = store.save_forward(&host.id, None, local(8443, "web", 443)).unwrap();
+    let a = store
+        .save_forward(&host.id, None, local(8080, "web", 80))
+        .unwrap();
+    let b = store
+        .save_forward(&host.id, None, local(8443, "web", 443))
+        .unwrap();
 
     let edited = store
         .save_forward(&host.id, Some(a.id.clone()), local(9090, "web", 8080))
@@ -93,7 +97,9 @@ fn editing_the_host_keeps_its_forwards() {
     let (_dir, path) = store_path();
     let mut store = HostStore::open(&path).unwrap();
     let host = store.upsert(None, draft("db")).unwrap();
-    let rule = store.save_forward(&host.id, None, local(8080, "web", 80)).unwrap();
+    let rule = store
+        .save_forward(&host.id, None, local(8080, "web", 80))
+        .unwrap();
 
     let renamed = store.upsert(Some(host.id.clone()), draft("db2")).unwrap();
 
@@ -105,7 +111,9 @@ fn a_duplicated_host_gets_copies_of_the_forwards_under_new_ids() {
     let (_dir, path) = store_path();
     let mut store = HostStore::open(&path).unwrap();
     let host = store.upsert(None, draft("db")).unwrap();
-    let rule = store.save_forward(&host.id, None, local(8080, "web", 80)).unwrap();
+    let rule = store
+        .save_forward(&host.id, None, local(8080, "web", 80))
+        .unwrap();
 
     let copy = store.duplicate_host(&host.id, "db copy").unwrap();
 
@@ -139,9 +147,8 @@ fn a_blank_bind_address_means_loopback_only() {
     let mut store = HostStore::open(&path).unwrap();
     let host = store.upsert(None, draft("db")).unwrap();
     let mut rule = local(8080, " web ", 80);
-    if let ForwardKind::Local { bind_address, .. } = &mut rule.kind {
-        *bind_address = " ".into();
-    }
+    let ForwardKind::Local { bind_address, .. } = &mut rule.kind;
+    *bind_address = " ".into();
 
     let saved = store.save_forward(&host.id, None, rule).unwrap();
 
@@ -162,7 +169,9 @@ fn forwards_on_an_unknown_host_or_rule_are_not_found() {
     let mut store = HostStore::open(&path).unwrap();
     let host = store.upsert(None, draft("db")).unwrap();
     let other = store.upsert(None, draft("web")).unwrap();
-    let rule = store.save_forward(&host.id, None, local(8080, "web", 80)).unwrap();
+    let rule = store
+        .save_forward(&host.id, None, local(8080, "web", 80))
+        .unwrap();
 
     assert!(matches!(
         store.delete_forward(&other.id, &rule.id),
@@ -188,7 +197,8 @@ fn hosts_saved_before_port_forwards_existed_have_none() {
 
     // The next save writes the current format.
     store.upsert(None, draft("new")).unwrap();
-    let json: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    let json: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(json["version"], 3);
     assert_eq!(json["hosts"][0]["forwards"], serde_json::json!([]));
 }
@@ -198,9 +208,12 @@ fn the_rule_is_stored_flat_with_its_type() {
     let (_dir, path) = store_path();
     let mut store = HostStore::open(&path).unwrap();
     let host = store.upsert(None, draft("db")).unwrap();
-    store.save_forward(&host.id, None, local(8080, "web", 80)).unwrap();
+    store
+        .save_forward(&host.id, None, local(8080, "web", 80))
+        .unwrap();
 
-    let json: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    let json: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
     let rule = &json["hosts"][0]["forwards"][0];
     assert_eq!(rule["type"], "local");
     assert_eq!(rule["bindAddress"], "127.0.0.1");

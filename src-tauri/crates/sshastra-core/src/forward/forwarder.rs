@@ -26,7 +26,9 @@ pub enum ForwardStatus {
     Stopped,
     Running,
     /// It could not start, or stopped by itself; `reason` is for the user.
-    Failed { reason: String },
+    Failed {
+        reason: String,
+    },
 }
 
 /// A rule's state changed (or, from [`PortForwarder::list`], is not stopped).

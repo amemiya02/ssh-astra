@@ -59,7 +59,8 @@
     "auth": {
       "password": "密码",
       "key": "私钥"
-    }
+    },
+    "portForwards": "端口转发"
   },
   "tabs": {
     "listLabel": "已打开的标签页",
@@ -74,7 +75,8 @@
       "connected": "已连接",
       "disconnected": "已断开"
     },
-    "settings": "设置"
+    "settings": "设置",
+    "portForwards": "端口转发"
   },
   "workspace": {
     "emptyTitle": "没有打开的终端",
@@ -89,9 +91,55 @@
     "dockBottom": "将文件面板停靠在下方",
     "dockGroup": "文件面板位置"
   },
+  "forwards": {
+    "title": "端口转发",
+    "lead": "从本机访问 {{host}} 所在网络里的服务。运行中的端口转发会让连接保持，即使没有打开终端。",
+    "emptyTitle": "还没有端口转发",
+    "emptyBody": "添加一条本地端口转发，访问这个 Host 后面的服务，例如数据库。",
+    "add": "添加端口转发",
+    "newTitle": "新建本地端口转发",
+    "editTitle": "编辑端口转发",
+    "fields": {
+      "label": "名称",
+      "bindAddress": "监听地址",
+      "bindPort": "本地端口",
+      "remoteHost": "远端主机",
+      "remotePort": "远端端口"
+    },
+    "labelPlaceholder": "可选",
+    "bindAddressHint": "留空则只接受本机的连接（127.0.0.1）。",
+    "remoteHostHint": "按 Host 看到的地址填写，例如 localhost 或 db.internal。",
+    "errors": {
+      "required": "必填",
+      "port": "请输入 1 到 65535 之间的端口"
+    },
+    "save": "保存",
+    "cancel": "取消",
+    "edit": "编辑",
+    "delete": "删除",
+    "start": "启动",
+    "stop": "停止",
+    "dismiss": "清除错误",
+    "moreActions": "{{name}} 的更多操作",
+    "local": "本地",
+    "listLabel": "{{host}} 上的端口转发",
+    "status": {
+      "stopped": "已停止",
+      "starting": "启动中",
+      "running": "运行中",
+      "failed": "出错"
+    },
+    "restartHint": "修改将在下次启动时生效。",
+    "actionFailed": "无法保存端口转发：{{message}}",
+    "startErrors": {
+      "portInUse": "{{address}} 上的端口 {{port}} 已被占用。请换一个本地端口，或关闭占用它的程序。",
+      "permissionDenied": "没有权限监听端口 {{port}}。1024 以下的端口通常需要管理员权限，请换一个更大的端口。"
+    }
+  },
   "status": {
     "noConnections": "没有连接",
-    "connectedTo": "已连接：{{hosts}}"
+    "connectedTo": "已连接：{{hosts}}",
+    "forwards": "端口转发：{{list}}"
   },
   "theme": {
     "title": "外观",

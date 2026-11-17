@@ -53,7 +53,7 @@ describe("parseHostForm", () => {
 
 describe("hostFormFrom", () => {
   it("round-trips a saved Host through the form", () => {
-    const host = { id: "1", name: "db", address: "db.local", port: 22, user: "root", auth: { type: "password" as const }, jumpHost: "2", groupId: null };
+    const host = { id: "1", name: "db", address: "db.local", port: 22, user: "root", auth: { type: "password" as const }, jumpHost: "2", groupId: null, forwards: [] };
     const form = hostFormFrom(host);
     expect(form).toEqual({
       name: "db",
@@ -64,15 +64,15 @@ describe("hostFormFrom", () => {
       authType: "password",
       identityFile: "",
     });
-    expect(parseHostForm(form)).toEqual({ ok: true, draft: { ...host, id: undefined, groupId: undefined } });
+    expect(parseHostForm(form)).toEqual({ ok: true, draft: { ...host, id: undefined, groupId: undefined, forwards: undefined } });
   });
 
   it("round-trips a key Host through the form", () => {
     const auth = { type: "key" as const, identityFile: "/keys/id_rsa" };
-    const host = { id: "2", name: "db", address: "db.local", port: 22, user: "root", auth, jumpHost: null, groupId: null };
+    const host = { id: "2", name: "db", address: "db.local", port: 22, user: "root", auth, jumpHost: null, groupId: null, forwards: [] };
     const form = hostFormFrom(host);
     expect(form).toMatchObject({ authType: "key", identityFile: "/keys/id_rsa" });
-    expect(parseHostForm(form)).toEqual({ ok: true, draft: { ...host, id: undefined, groupId: undefined } });
+    expect(parseHostForm(form)).toEqual({ ok: true, draft: { ...host, id: undefined, groupId: undefined, forwards: undefined } });
   });
 
   it("round-trips a Host's own Terminal colour scheme", () => {
@@ -85,15 +85,16 @@ describe("hostFormFrom", () => {
       auth: { type: "password" as const },
       jumpHost: null,
       groupId: null,
+      forwards: [],
       terminalScheme: "ember",
     };
     const form = hostFormFrom(host);
     expect(form.terminalScheme).toBe("ember");
-    expect(parseHostForm(form)).toEqual({ ok: true, draft: { ...host, id: undefined, groupId: undefined } });
+    expect(parseHostForm(form)).toEqual({ ok: true, draft: { ...host, id: undefined, groupId: undefined, forwards: undefined } });
   });
 
   it("drops a scheme this build does not know, so the Host follows the global scheme", () => {
-    const host = { id: "1", name: "a", address: "b", port: 22, user: "c", auth: { type: "password" as const }, jumpHost: null, groupId: null };
+    const host = { id: "1", name: "a", address: "b", port: 22, user: "c", auth: { type: "password" as const }, jumpHost: null, groupId: null, forwards: [] };
     expect(hostFormFrom({ ...host, terminalScheme: "retired" }).terminalScheme).toBeUndefined();
   });
 

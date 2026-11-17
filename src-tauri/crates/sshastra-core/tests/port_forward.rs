@@ -104,7 +104,10 @@ async fn a_local_forward_carries_data_both_ways() {
     forwarder.start(connection, &host.id, &rule).unwrap();
 
     assert_eq!(forwarder.status(&rule.id), ForwardStatus::Running);
-    assert_eq!(round_trip(port, b"hello through ssh").await, b"hello through ssh");
+    assert_eq!(
+        round_trip(port, b"hello through ssh").await,
+        b"hello through ssh"
+    );
     // Several clients at once, each on its own channel.
     let big: Vec<u8> = (0..200_000u32).map(|i| i as u8).collect();
     let (a, b) = tokio::join!(round_trip(port, &big), round_trip(port, b"second"));

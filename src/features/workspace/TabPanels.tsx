@@ -3,6 +3,7 @@ import { Fragment } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { PortForwardsPanel } from "@/features/forwards/PortForwardsPanel";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { LocalTerminalView } from "@/features/terminal/LocalTerminalView";
 import { RemoteTerminalView } from "@/features/terminal/RemoteTerminalView";
@@ -113,5 +114,7 @@ function PaneContent({
       );
     case "settings":
       return <SettingsPage />;
+    case "port-forwards":
+      return <PortForwardsPanel host={pane.host} active={active} />;
   }
 }
