@@ -1,15 +1,19 @@
-import { Eye, EyeOff, LoaderCircle, RefreshCw, Unplug } from "lucide-react";
-import { useEffect } from "react";
+import { Download, Eye, EyeOff, LoaderCircle, RefreshCw, Unplug, Upload } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { IconButton } from "@/components/IconButton";
 import { Button } from "@/components/ui/button";
 import { useFilePanelDock } from "@/features/shell/file-panel-dock";
 import type { ConnectionStatus } from "@/features/workspace/tabs";
+import { transfersStore } from "@/features/transfers/transfersStore";
+import { useOsFileDrop } from "@/features/transfers/use-os-file-drop";
 import type { Host } from "@/lib/ipc/hosts";
+import { pickDownloadFolder, pickFilesToUpload } from "@/lib/ipc/transfers";
 import { useSetting } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import { FileBrowser } from "./FileBrowser";
+import { childPath } from "./fileList";
 import { errorText } from "./fileErrors";
 import { followConnection } from "./fileBrowserStore";
 import { fileBrowsers } from "./fileBrowsers";
@@ -50,8 +54,37 @@ function RemoteFilePanel({ pane }: { pane: FilePanelPane }) {
   useEffect(() => followConnection(store, pane.status, !collapsed), [pane.status, collapsed, store]);
 
   const ready = phase === "open" && path !== null;
+  const hasSelection = useStore(store, (s) => s.selection.size > 0);
+
+  const upload = (paths: string[]) => {
+    if (path !== null) void transfersStore.getState().upload(pane.host.id, paths, path);
+  };
+  const pickAndUpload = async () => {
+    if (path === null) return;
+    const paths = await pickFilesToUpload(t("files.uploadTitle", { path }));
+    if (paths) upload(paths);
+  };
+  /** Downloads `names` in the current folder (default: the selection) to a folder the user picks. */
+  const download = async (names?: string[]) => {
+    const { path: dir, selection } = store.getState();
+    const chosen = names ?? [...selection];
+    if (dir === null || chosen.length === 0) return;
+    const target = await pickDownloadFolder(t("files.downloadTitle"));
+    if (target === null) return;
+    const paths = chosen.map((name) => childPath(dir, name));
+    void transfersStore.getState().download(pane.host.id, paths, target);
+  };
+  const dropZone = useRef<HTMLDivElement>(null);
+  const { over } = useOsFileDrop(dropZone, ready && !collapsed, upload);
+
   const actions = (
     <>
+      <IconButton label={t("files.upload")} disabled={!ready} onClick={() => void pickAndUpload()}>
+        <Upload />
+      </IconButton>
+      <IconButton label={t("files.download")} disabled={!ready || !hasSelection} onClick={() => void download()}>
+        <Download />
+      </IconButton>
       <IconButton
         label={t("files.showHidden")}
         aria-pressed={prefs.showHidden}
@@ -74,7 +107,18 @@ function RemoteFilePanel({ pane }: { pane: FilePanelPane }) {
   } else if (pane.status === "connecting") {
     body = <Notice icon={<LoaderCircle className="motion-safe:animate-spin" />} text={t("files.connecting")} />;
   } else if (ready) {
-    body = <FileBrowser store={store} hostName={pane.host.name} />;
+    body = (
+      <div ref={dropZone} className="relative h-full">
+        <FileBrowser store={store} hostName={pane.host.name} onDownload={(names) => void download(names)} />
+        {over && (
+          <div className="bg-selected ring-ring pointer-events-none absolute inset-1 flex items-center justify-center rounded-lg ring-2 ring-inset">
+            <p className="bg-surface shadow-panel rounded-md px-3 py-1.5 text-xs font-medium">
+              {t("files.dropHere", { path })}
+            </p>
+          </div>
+        )}
+      </div>
+    );
   } else if (phase === "closed" && error) {
     body = (
       <Notice icon={<Unplug />} text={errorText(t, error, pane.host.name)}>

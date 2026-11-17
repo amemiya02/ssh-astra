@@ -134,6 +134,46 @@
       "notADirectory": "不是文件夹：{{path}}",
       "timedOut": "服务器没有及时响应。",
       "other": "无法列出文件夹：{{message}}"
+    },
+    "upload": "上传文件",
+    "uploadTitle": "上传到 {{path}}",
+    "download": "下载…",
+    "downloadTitle": "下载到…",
+    "dropHere": "松开即可上传到 {{path}}"
+  },
+  "transfers": {
+    "title": "传输",
+    "expand": "显示传输",
+    "collapse": "隐藏传输",
+    "active": "进行中 {{count}}",
+    "done": "已完成 {{count}}",
+    "noneActive": "没有进行中的传输。",
+    "noneDone": "没有已完成的传输。",
+    "clearDone": "清除已完成",
+    "retry": "重试",
+    "cancel": "取消",
+    "dismiss": "移除",
+    "progress": "{{done}} / {{total}}",
+    "files": "{{done}} / {{total}} 个文件",
+    "timeLeft": "剩余 {{time}}",
+    "direction": {
+      "upload": "上传",
+      "download": "下载"
+    },
+    "state": {
+      "queued": "等待中",
+      "conflict": "等待你的选择",
+      "cancelled": "已取消",
+      "done": "已完成"
+    },
+    "failed": "无法开始传输：{{message}}",
+    "conflict": {
+      "title": "文件已存在",
+      "body": "目标位置已有同名文件。要替换它吗？",
+      "overwrite": "替换",
+      "skip": "跳过",
+      "overwriteAll": "全部替换",
+      "skipAll": "全部跳过"
     }
   },
   "forwards": {
@@ -184,7 +224,9 @@
   "status": {
     "noConnections": "没有连接",
     "connectedTo": "已连接：{{hosts}}",
-    "forwards": "端口转发：{{list}}"
+    "forwards": "端口转发：{{list}}",
+    "transfers": "传输：{{count}}",
+    "transfersSpeed": "传输：{{count}} · {{speed}}/s"
   },
   "theme": {
     "title": "外观",
@@ -292,7 +334,8 @@
       "appearance": "外观",
       "terminal": "终端",
       "connection": "连接",
-      "language": "语言"
+      "language": "语言",
+      "transfers": "传输"
     },
     "theme": {
       "label": "主题",
@@ -341,6 +384,12 @@
         "description": "空闲的 Connection 多久确认一次服务器仍在。连续三次没有回应即视为掉线。对新的 Connection 生效。",
         "off": "关",
         "seconds": "{{count}} 秒"
+      }
+    },
+    "transfers": {
+      "concurrency": {
+        "label": "同时传输数",
+        "description": "同时进行的上传和下载数量，其余的排队等待。文件夹内的文件逐个复制。"
       }
     }
   }

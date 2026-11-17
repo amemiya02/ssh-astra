@@ -1,4 +1,14 @@
-import { ArrowUp, ChevronDown, ChevronUp, Copy, File, FileSymlink, Folder, FolderSymlink } from "lucide-react";
+import {
+  ArrowUp,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Download,
+  File,
+  FileSymlink,
+  Folder,
+  FolderSymlink,
+} from "lucide-react";
 import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
@@ -34,8 +44,19 @@ const overscan = 8;
 const columns =
   "grid grid-cols-[minmax(0,1fr)_4.5rem] @sm:grid-cols-[minmax(0,1fr)_4.5rem_8.5rem] @md:grid-cols-[minmax(0,1fr)_4.5rem_8.5rem_6rem]";
 
-/** The path bar and the file table of one File panel. */
-export function FileBrowser({ store, hostName }: { store: FileBrowserStore; hostName: string }) {
+/**
+ * The path bar and the file table of one File panel. `onDownload` downloads the named
+ * entries of the current folder (the row's context menu offers it for the selection).
+ */
+export function FileBrowser({
+  store,
+  hostName,
+  onDownload,
+}: {
+  store: FileBrowserStore;
+  hostName: string;
+  onDownload?(names: string[]): void;
+}) {
   const { t } = useTranslation();
   const path = useStore(store, (s) => s.path);
   const error = useStore(store, (s) => s.error);
@@ -48,7 +69,7 @@ export function FileBrowser({ store, hostName }: { store: FileBrowserStore; host
         </p>
       )}
       {/* Keyed by path: a new directory starts scrolled to the top with nothing focused. */}
-      {path !== null && <FileTable key={path} store={store} path={path} />}
+      {path !== null && <FileTable key={path} store={store} path={path} onDownload={onDownload} />}
     </div>
   );
 }
@@ -104,7 +125,15 @@ function PathBar({ store }: { store: FileBrowserStore }) {
   );
 }
 
-function FileTable({ store, path }: { store: FileBrowserStore; path: string }) {
+function FileTable({
+  store,
+  path,
+  onDownload,
+}: {
+  store: FileBrowserStore;
+  path: string;
+  onDownload?(names: string[]): void;
+}) {
   const { t, i18n } = useTranslation();
   const entries = useStore(store, (s) => s.entries);
   const selection = useStore(store, (s) => s.selection);
@@ -245,6 +274,10 @@ function FileTable({ store, path }: { store: FileBrowserStore; path: string }) {
                   onContextMenu={() => {
                     if (!selection.has(entry.name)) select(entry.name, "only");
                   }}
+                  onDownload={
+                    onDownload &&
+                    (() => onDownload(selection.has(entry.name) ? order.filter((n) => selection.has(n)) : [entry.name]))
+                  }
                 />
               );
             })}
@@ -310,6 +343,7 @@ function FileRow({
   onClick,
   onOpen,
   onContextMenu,
+  onDownload,
 }: {
   id: string;
   index: number;
@@ -321,6 +355,7 @@ function FileRow({
   onClick(event: MouseEvent): void;
   onOpen(): void;
   onContextMenu(): void;
+  onDownload?: () => void;
 }) {
   const { t } = useTranslation();
   const dir = isDirLike(entry);
@@ -364,6 +399,12 @@ function FileRow({
       </ContextMenuTrigger>
       <ContextMenuContent className="min-w-40">
         {dir && <ContextMenuItem onSelect={onOpen}>{t("files.open")}</ContextMenuItem>}
+        {onDownload && (
+          <ContextMenuItem onSelect={onDownload}>
+            <Download />
+            {t("files.download")}
+          </ContextMenuItem>
+        )}
         <ContextMenuItem onSelect={() => void writeClipboardText(childPath(path, entry.name))}>
           <Copy />
           {t("files.copyPath")}

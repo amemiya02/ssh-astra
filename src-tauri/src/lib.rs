@@ -9,7 +9,7 @@ mod prompts;
 use std::sync::Arc;
 
 use sshastra_core::credentials;
-use sshastra_core::files::FsRegistry;
+use sshastra_core::files::{FsRegistry, TransferSettings};
 use sshastra_core::hosts::HostStore;
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::settings::SettingsStore;
@@ -22,6 +22,7 @@ use commands::credentials::Vault;
 use commands::forwards::ForwardsState;
 use commands::hosts::HostsState;
 use commands::settings::SettingsState;
+use commands::transfers::TransfersState;
 use prompts::PendingPrompts;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -42,6 +43,8 @@ pub fn run() {
         // Terminal links open in the browser; copy on select / paste use the system clipboard.
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        // Picking the local folder a download goes to.
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
             let hosts = HostStore::open(config_dir.join("hosts.json")).map_err(Into::into);
@@ -51,6 +54,10 @@ pub fn run() {
                 .unwrap_or_else(|| KnownHosts::new(config_dir.join("known_hosts")));
             let settings =
                 SettingsStore::open(config_dir.join("settings.json")).map_err(Into::into);
+            if let Ok(store) = &settings {
+                app.state::<TransfersState>()
+                    .apply(&store.section(TransferSettings::SECTION));
+            }
             // The system keychain; where there is none (Linux without a
             // Secret Service) nothing is saved and every connect asks.
             let vault = credentials::system_vault();
@@ -67,6 +74,7 @@ pub fn run() {
         .manage(TerminalRegistry::default())
         .manage(ForwardsState::default())
         .manage(FsRegistry::default())
+        .manage(TransfersState::default())
         .manage(Arc::new(PendingPrompts::default()))
         .invoke_handler(tauri::generate_handler![
             commands::hosts::hosts_list,
@@ -97,6 +105,13 @@ pub fn run() {
             commands::files::files_open,
             commands::files::files_list,
             commands::files::files_close,
+            commands::transfers::transfers_watch,
+            commands::transfers::transfers_upload,
+            commands::transfers::transfers_download,
+            commands::transfers::transfer_cancel,
+            commands::transfers::transfer_retry,
+            commands::transfers::transfer_answer,
+            commands::transfers::transfers_remove,
         ])
         .run(tauri::generate_context!())
         .expect("error while running sshastra");

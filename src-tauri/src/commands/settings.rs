@@ -3,8 +3,11 @@
 use std::sync::Mutex;
 
 use serde_json::{Map, Value};
+use sshastra_core::files::TransferSettings;
 use sshastra_core::settings::SettingsStore;
 use tauri::State;
+
+use super::transfers::TransfersState;
 
 use crate::error::{CommandError, CommandResult};
 
@@ -35,12 +38,20 @@ pub fn settings_load(settings: State<'_, SettingsState>) -> CommandResult<Map<St
     settings.with(|store| Ok(store.sections().clone()))
 }
 
-/// Replaces one section and saves the file.
+/// Replaces one section and saves the file. Sections the core runs on
+/// (`transfers`) take effect at once.
 #[tauri::command]
 pub fn settings_set(
     settings: State<'_, SettingsState>,
+    transfers: State<'_, TransfersState>,
     section: String,
     value: Value,
 ) -> CommandResult<()> {
-    settings.with(|store| Ok(store.set(&section, value)?))
+    settings.with(|store| {
+        store.set(&section, value)?;
+        if section == TransferSettings::SECTION {
+            transfers.apply(&store.section(TransferSettings::SECTION));
+        }
+        Ok(())
+    })
 }

@@ -123,8 +123,9 @@ pub enum ConflictAnswer {
 
 type Listener = dyn Fn(&Transfer) + Send + Sync;
 
-/// Runs transfers; see the module docs. Methods that start work must be
-/// called on a Tokio runtime.
+/// Runs transfers; see the module docs. [`upload`](Self::upload) and
+/// [`download`](Self::download) must be called on a Tokio runtime, which
+/// every transfer then runs on; the other methods may be called anywhere.
 pub struct TransferQueue {
     inner: Arc<Inner>,
 }
@@ -135,6 +136,8 @@ struct Inner {
     state: Mutex<State>,
     /// Held while a conflict question is open, so the user gets one at a time.
     asking: tokio::sync::Mutex<()>,
+    /// The runtime of the latest upload/download call.
+    runtime: Mutex<Option<tokio::runtime::Handle>>,
 }
 
 struct State {
@@ -188,6 +191,7 @@ impl TransferQueue {
                     answer_all: None,
                 }),
                 asking: tokio::sync::Mutex::new(()),
+                runtime: Mutex::new(None),
             }),
         }
     }
@@ -326,6 +330,8 @@ impl TransferQueue {
     }
 
     fn enqueue(&self, job: Job) -> TransferId {
+        *self.inner.runtime.lock().unwrap_or_else(|p| p.into_inner()) =
+            Some(tokio::runtime::Handle::current());
         let (source, target) = match job.direction {
             TransferDirection::Upload => (job.local.display().to_string(), job.remote.clone()),
             TransferDirection::Download => (job.remote.clone(), job.local.display().to_string()),
@@ -422,7 +428,13 @@ impl Inner {
             };
             self.emit(&snapshot);
             let inner = Arc::clone(self);
-            tokio::spawn(async move {
+            let runtime = self
+                .runtime
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .clone()
+                .expect("a transfer was queued on a runtime");
+            runtime.spawn(async move {
                 let result = tokio::select! {
                     r = inner.attempt(id, &job) => r,
                     () = cancelled_by(cancelled) => Err(Stop::Cancelled),
