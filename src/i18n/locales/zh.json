@@ -3,12 +3,63 @@
     "name": "sshastra"
   },
   "tabs": {
-    "localTerminal": "本地终端"
+    "localTerminal": "本地终端",
+    "close": "关闭标签页"
   },
   "terminal": {
     "starting": "正在启动 shell…",
     "exited": "进程已退出，退出码 {{code}}",
     "exitedUnknown": "进程已退出",
     "failedToStart": "无法启动 shell：{{message}}"
+  },
+  "hosts": {
+    "title": "主机",
+    "new": "新建主机",
+    "empty": "还没有主机，点 + 添加。",
+    "openHint": "双击连接",
+    "fields": {
+      "name": "名称",
+      "address": "地址",
+      "port": "端口",
+      "user": "用户名"
+    },
+    "errors": {
+      "required": "必填",
+      "port": "请输入 1 到 65535 之间的端口"
+    },
+    "passwordNote": "使用密码登录，每次连接时输入密码。",
+    "save": "保存",
+    "cancel": "取消"
+  },
+  "connect": {
+    "cancel": "取消",
+    "hostKey": {
+      "title": "未知主机",
+      "body": "这是第一次连接 {{host}}。信任之前，请确认这个指纹确实属于该服务器。",
+      "hint": "信任后会写入 ~/.ssh/known_hosts，与 ssh 命令共用。",
+      "trust": "信任并连接"
+    },
+    "password": {
+      "title": "{{user}}@{{host}} 的密码",
+      "label": "密码",
+      "retry": "密码错误，请重试。",
+      "submit": "连接"
+    },
+    "mismatch": {
+      "title": "主机密钥已变化，连接已阻断",
+      "body": "{{host}} 提供的密钥与记录不一致。可能有人在拦截连接，也可能服务器重装过。",
+      "presented": "当前密钥",
+      "recorded": "记录的密钥",
+      "fix": "如果确认变化是正常的，请手动删除 {{path}} 第 {{line}} 行，然后重新连接。"
+    },
+    "errors": {
+      "unreachable": "无法连接到主机。",
+      "timedOut": "主机响应超时。",
+      "hostKeyDeclined": "未信任主机密钥，已取消连接。",
+      "hostKeyRevoked": "主机密钥已被吊销，连接已阻断。",
+      "authenticationFailed": "认证失败。",
+      "cancelled": "已取消连接。",
+      "generic": "连接失败。"
+    }
   }
 }

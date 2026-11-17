@@ -25,10 +25,18 @@ Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/ag
   - `src-tauri/src/commands/<domain>.rs` — Tauri commands, registered in `src-tauri/src/lib.rs`. Errors map to `CommandError { kind, message }` in `src-tauri/src/error.rs`.
   - `src-tauri/crates/sshastra-core/` — all domain logic, no Tauri dependency (CI checks this). Tests in `crates/sshastra-core/tests/`.
 - Streams (terminal output, later transfer progress / Connection state) go to the UI through a `tauri::ipc::Channel` passed as a command argument, never polled. Terminals use one channel each: raw bytes for output, then a JSON `{ exitCode }` message last.
+- Core modules: `hosts` (HostStore: versioned JSON, atomic writes, no secrets), `known_hosts` (OpenSSH `known_hosts`, shared with the `ssh` CLI), `ssh` (ConnectionManager / Connection / RemoteShell), `terminal` (Terminal trait, LocalPty, TerminalRegistry).
+- SSH: get a Connection with `ConnectionManager::connect(&host, prompter)`; it is shared per Host and lives while any holder keeps its `Arc` (a RemoteShell holds one). Anything needing the user mid-connect (host key, password, later passphrase / keyboard-interactive) is a method on the `ssh::Prompter` trait; the app implements it in `src-tauri/src/prompts.rs` as a prompt `Channel` plus the `prompt_answer` command. Host key Mismatch/Revoked is never a prompt: it fails with a `ConnectError`.
+
+## Integration tests (Docker OpenSSH)
+
+- `src-tauri/crates/sshastra-core/tests/sshd/`: Debian OpenSSH image (user `tester` / `testpass`, fixed test-only host key) and `docker-compose.yml` (project `sshastra-it`): `ssh` (published on a random loopback port), `jump` (published + private network), `internal` (private network only, reach it via `jump` as `internal:22`). Add new servers/services (echo server for Port forwards, key/agent users) here, not from individual tests.
+- In a test: `mod support;` then `let Some(sshd) = support::sshd(Service::Ssh) else { return };` (see `tests/ssh_connection.rs`). The harness runs `docker compose up --build --wait` once per test binary and leaves containers running; stop them with `docker compose -p sshastra-it down`.
+- `SSHASTRA_DOCKER_TESTS`: unset/`auto` runs them when Docker works and skips otherwise; `require` fails instead of skipping (CI Linux); `skip` never touches Docker (CI macOS/Windows).
 
 ## Commands
 
 - `pnpm dev` / `pnpm tauri dev` — front end only / full app
 - `pnpm lint`, `pnpm typecheck`, `pnpm test` (Vitest)
-- `cd src-tauri && cargo test --workspace` (also `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`)
+- `cd src-tauri && cargo test --workspace` (runs the Docker integration tests if Docker is available; also `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`)
 - `pnpm tauri build --debug --no-bundle` — build the app

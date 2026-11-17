@@ -3,12 +3,63 @@
     "name": "sshastra"
   },
   "tabs": {
-    "localTerminal": "Local terminal"
+    "localTerminal": "Local terminal",
+    "close": "Close tab"
   },
   "terminal": {
     "starting": "Starting shell…",
     "exited": "Process exited with code {{code}}",
     "exitedUnknown": "Process exited",
     "failedToStart": "Could not start the shell: {{message}}"
+  },
+  "hosts": {
+    "title": "Hosts",
+    "new": "New host",
+    "empty": "No hosts yet. Add one with +.",
+    "openHint": "Double-click to connect",
+    "fields": {
+      "name": "Name",
+      "address": "Address",
+      "port": "Port",
+      "user": "User"
+    },
+    "errors": {
+      "required": "Required",
+      "port": "Enter a port from 1 to 65535"
+    },
+    "passwordNote": "Password login. You will be asked for the password each time you connect.",
+    "save": "Save",
+    "cancel": "Cancel"
+  },
+  "connect": {
+    "cancel": "Cancel",
+    "hostKey": {
+      "title": "Unknown host",
+      "body": "This is the first connection to {{host}}. Check that this fingerprint is the server's before trusting it.",
+      "hint": "Trusting adds the key to ~/.ssh/known_hosts, shared with the ssh command.",
+      "trust": "Trust and connect"
+    },
+    "password": {
+      "title": "Password for {{user}}@{{host}}",
+      "label": "Password",
+      "retry": "Wrong password. Try again.",
+      "submit": "Connect"
+    },
+    "mismatch": {
+      "title": "Host key has changed. Connection blocked",
+      "body": "{{host}} presented a different key than the one recorded. Someone may be intercepting the connection, or the server was reinstalled.",
+      "presented": "Presented",
+      "recorded": "Recorded",
+      "fix": "If you are sure the change is legitimate, remove line {{line}} of {{path}} yourself, then connect again."
+    },
+    "errors": {
+      "unreachable": "Could not reach the host.",
+      "timedOut": "The host did not respond in time.",
+      "hostKeyDeclined": "The host key was not trusted. Not connected.",
+      "hostKeyRevoked": "The host key is revoked. Connection blocked.",
+      "authenticationFailed": "Authentication failed.",
+      "cancelled": "Connection cancelled.",
+      "generic": "Could not connect."
+    }
   }
 }

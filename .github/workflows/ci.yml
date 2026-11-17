@@ -65,7 +65,14 @@ jobs:
 
       - name: Test (Rust)
         working-directory: src-tauri
+        # Docker OpenSSH integration tests run on Linux only (macOS runners
+        # have no Docker; Windows runners have no Linux containers).
+        env:
+          SSHASTRA_DOCKER_TESTS: ${{ runner.os == 'Linux' && 'require' || 'skip' }}
         run: cargo test --workspace
+      - name: Stop test containers
+        if: always() && runner.os == 'Linux'
+        run: docker compose -f src-tauri/crates/sshastra-core/tests/sshd/docker-compose.yml down --volumes
       - name: Test (front end)
         run: pnpm test
 

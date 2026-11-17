@@ -13,7 +13,7 @@ export type TerminalEvent =
   | { type: "exit"; code: number | null };
 
 /** Raw message shape on a Terminal's channel (see `src-tauri/src/commands/terminal.rs`). */
-type TerminalMessage = ArrayBuffer | number[] | { exitCode: number | null };
+export type TerminalMessage = ArrayBuffer | number[] | { exitCode: number | null };
 
 export function decodeTerminalMessage(message: TerminalMessage): TerminalEvent {
   if (message instanceof ArrayBuffer) return { type: "output", data: new Uint8Array(message) };
