@@ -127,7 +127,7 @@ impl Saved {
     }
 }
 
-struct Session<'a, H: client::Handler> {
+struct AuthAttempt<'a, H: client::Handler> {
     handle: &'a mut Handle<H>,
     host: &'a Host,
     prompter: &'a dyn Prompter,
@@ -149,7 +149,7 @@ pub(super) async fn authenticate<H: client::Handler>(
             remaining_methods, ..
         } => remaining_methods,
     };
-    let mut session = Session {
+    let mut attempt = AuthAttempt {
         handle,
         host,
         prompter,
@@ -168,10 +168,10 @@ pub(super) async fn authenticate<H: client::Handler>(
         Method::KeyboardInteractive,
     ] {
         let step = match method {
-            Method::Agent => session.agent(agent).await?,
-            Method::KeyFile => session.key_file().await?,
-            Method::Password => session.password().await?,
-            Method::KeyboardInteractive => session.keyboard_interactive().await?,
+            Method::Agent => attempt.agent(agent).await?,
+            Method::KeyFile => attempt.key_file().await?,
+            Method::Password => attempt.password().await?,
+            Method::KeyboardInteractive => attempt.keyboard_interactive().await?,
         };
         match step {
             Step::Done => return Ok(()),
@@ -181,7 +181,7 @@ pub(super) async fn authenticate<H: client::Handler>(
         }
     }
     Err(failure.unwrap_or_else(|| ConnectError::NoSupportedMethod {
-        methods: session
+        methods: attempt
             .allowed
             .iter()
             .map(|m| <&str>::from(m).to_owned())
@@ -197,7 +197,7 @@ enum Method {
     KeyboardInteractive,
 }
 
-impl<H: client::Handler> Session<'_, H> {
+impl<H: client::Handler> AuthAttempt<'_, H> {
     fn allows(&self, method: MethodKind) -> bool {
         self.allowed.contains(&method)
     }

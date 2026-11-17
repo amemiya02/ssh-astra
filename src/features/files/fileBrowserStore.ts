@@ -92,7 +92,7 @@ export function createFileBrowserStore(api: FilesApi, hostId: HostId): StoreApi<
   let fsId: FsId | null = null;
   let opening: Promise<void> | null = null;
   /** Bumped by `disconnect`, so an open that finishes afterwards is closed again. */
-  let session = 0;
+  let openGeneration = 0;
   /** Bumped by each listing request; only the latest one is shown. */
   let request = 0;
   let anchor: string | null = null;
@@ -186,11 +186,11 @@ export function createFileBrowserStore(api: FilesApi, hostId: HostId): StoreApi<
       connect() {
         if (get().phase === "open") return Promise.resolve();
         opening ??= (async () => {
-          const mine = session;
+          const mine = openGeneration;
           set({ phase: "opening", error: null });
           try {
             const id = await api.openFiles(hostId);
-            if (mine !== session) {
+            if (mine !== openGeneration) {
               void api.closeFiles(id).catch(() => {});
               return;
             }
@@ -198,7 +198,7 @@ export function createFileBrowserStore(api: FilesApi, hostId: HostId): StoreApi<
             set({ phase: "open" });
             await list(get().path ?? "", true);
           } catch (e) {
-            if (mine === session) set({ phase: "closed", error: readCommandError(e) });
+            if (mine === openGeneration) set({ phase: "closed", error: readCommandError(e) });
           } finally {
             opening = null;
           }
@@ -276,7 +276,7 @@ export function createFileBrowserStore(api: FilesApi, hostId: HostId): StoreApi<
       setPermissions: (name, mode) => operate((id, dir) => api.chmodFile(id, childPath(dir, name), mode)),
 
       disconnect() {
-        session += 1;
+        openGeneration += 1;
         request += 1;
         opening = null;
         if (fsId !== null) void api.closeFiles(fsId).catch(() => {});
