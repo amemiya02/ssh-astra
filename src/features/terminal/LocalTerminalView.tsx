@@ -1,7 +1,5 @@
-import { FitAddon } from "@xterm/addon-fit";
-import { WebglAddon } from "@xterm/addon-webgl";
-import { Terminal as XTerm } from "@xterm/xterm";
-import { useEffect, useRef } from "react";
+import type { Terminal as XTerm } from "@xterm/xterm";
+import { useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
   closeTerminal,
@@ -10,10 +8,8 @@ import {
   writeTerminal,
   type TerminalId,
 } from "@/lib/ipc/terminal";
-import { useTheme } from "@/theme/theme-context";
-import { terminalThemes } from "@/theme/terminal-themes";
+import { XtermView } from "./XtermView";
 
-const fontFamily = 'ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace';
 const dim = (text: string) => `\x1b[2m${text}\x1b[0m`;
 
 interface LocalTerminalViewProps {
@@ -24,17 +20,12 @@ interface LocalTerminalViewProps {
 }
 
 /**
- * A Local terminal: xterm.js (WebGL) wired to a LocalPty in the Rust backend.
+ * A Local terminal: an `XtermView` wired to a LocalPty in the Rust backend.
  * Stays mounted while its tab is hidden. When the shell exits or cannot start,
  * Enter starts a new one in the same tab.
  */
 export function LocalTerminalView({ active = true, onTitleChange }: LocalTerminalViewProps) {
   const { t } = useTranslation();
-  const { theme } = useTheme();
-  const containerRef = useRef<HTMLDivElement>(null);
-  const xtermRef = useRef<XTerm | null>(null);
-  const fitRef = useRef<FitAddon | null>(null);
-  const themeRef = useRef(theme);
   // Read through refs so a language change or a new callback never recreates the Terminal.
   const tRef = useRef(t);
   const onTitleChangeRef = useRef(onTitleChange);
@@ -44,37 +35,7 @@ export function LocalTerminalView({ active = true, onTitleChange }: LocalTermina
     onTitleChangeRef.current = onTitleChange;
   });
 
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const xterm = new XTerm({
-      allowProposedApi: true,
-      cursorBlink: true,
-      fontFamily,
-      fontSize: 13,
-      lineHeight: 1.2,
-      scrollback: 10_000,
-      theme: terminalThemes[themeRef.current],
-    });
-    const fit = new FitAddon();
-    xterm.loadAddon(fit);
-    xterm.open(container);
-    try {
-      const webgl = new WebglAddon();
-      webgl.onContextLoss(() => webgl.dispose()); // falls back to the DOM renderer
-      xterm.loadAddon(webgl);
-    } catch {
-      // WebGL unavailable: the DOM renderer is slower but correct.
-    }
-    // A hidden tab has no size; fitting it would shrink the shell to a sliver.
-    const fitIfVisible = () => {
-      if (container.clientWidth > 0 && container.clientHeight > 0) fit.fit();
-    };
-    fitIfVisible();
-    xtermRef.current = xterm;
-    fitRef.current = fit;
-
+  const attach = useCallback((xterm: XTerm) => {
     let id: TerminalId | undefined;
     let disposed = false;
     /** No shell attached: the next Enter starts one. */
@@ -137,34 +98,14 @@ export function LocalTerminalView({ active = true, onTitleChange }: LocalTermina
     const onResize = xterm.onResize((next) => {
       if (id !== undefined) void resizeTerminal(id, next);
     });
-    const onTitle = xterm.onTitleChange((title) => onTitleChangeRef.current?.(title));
-
-    const observer = new ResizeObserver(fitIfVisible);
-    observer.observe(container);
 
     return () => {
       disposed = true;
-      observer.disconnect();
       onData.dispose();
       onResize.dispose();
-      onTitle.dispose();
       if (id !== undefined) void closeTerminal(id);
-      xterm.dispose();
-      xtermRef.current = null;
-      fitRef.current = null;
     };
   }, []);
 
-  useEffect(() => {
-    themeRef.current = theme;
-    if (xtermRef.current) xtermRef.current.options.theme = terminalThemes[theme];
-  }, [theme]);
-
-  useEffect(() => {
-    if (!active) return;
-    fitRef.current?.fit();
-    xtermRef.current?.focus();
-  }, [active]);
-
-  return <div ref={containerRef} className="h-full w-full py-2 pr-1 pl-3" />;
+  return <XtermView active={active} onTitleChange={onTitleChange} attach={attach} />;
 }

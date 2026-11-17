@@ -71,6 +71,10 @@ pub struct Host {
     /// another one. Absent in files written before Jump hosts existed.
     #[serde(default)]
     pub jump_host: Option<HostId>,
+    /// The Terminal colour scheme for this Host (e.g. to mark production),
+    /// overriding the global one. Opaque to the core: the UI owns the names.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_scheme: Option<String>,
 }
 
 /// A Host's editable fields, as entered in the Host form.
@@ -84,6 +88,10 @@ pub struct HostDraft {
     pub auth: HostAuth,
     #[serde(default)]
     pub jump_host: Option<HostId>,
+    /// The Terminal colour scheme for this Host (e.g. to mark production),
+    /// overriding the global one. Opaque to the core: the UI owns the names.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_scheme: Option<String>,
 }
 
 impl HostDraft {
@@ -119,6 +127,10 @@ impl HostDraft {
             user: self.user.trim().to_owned(),
             auth,
             jump_host: self.jump_host,
+            terminal_scheme: self
+                .terminal_scheme
+                .map(|s| s.trim().to_owned())
+                .filter(|s| !s.is_empty()),
         })
     }
 }

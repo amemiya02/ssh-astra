@@ -78,6 +78,7 @@ impl Fixture {
             user: sshd.user.into(),
             auth: HostAuth::Password,
             jump_host: None,
+            terminal_scheme: None,
         };
         Self {
             manager: ConnectionManager::new(KnownHosts::new(dir.path().join("known_hosts"))),
@@ -193,6 +194,7 @@ fn behind(name: &str, jump: &Host) -> Host {
         user: support::USER.into(),
         auth: HostAuth::Password,
         jump_host: Some(jump.id.clone()),
+        terminal_scheme: None,
     }
 }
 

@@ -75,6 +75,27 @@ describe("hostFormFrom", () => {
     expect(parseHostForm(form)).toEqual({ ok: true, draft: { ...host, id: undefined } });
   });
 
+  it("round-trips a Host's own Terminal colour scheme", () => {
+    const host = {
+      id: "1",
+      name: "prod",
+      address: "prod.local",
+      port: 22,
+      user: "root",
+      auth: { type: "password" as const },
+      jumpHost: null,
+      terminalScheme: "ember",
+    };
+    const form = hostFormFrom(host);
+    expect(form.terminalScheme).toBe("ember");
+    expect(parseHostForm(form)).toEqual({ ok: true, draft: { ...host, id: undefined } });
+  });
+
+  it("drops a scheme this build does not know, so the Host follows the global scheme", () => {
+    const host = { id: "1", name: "a", address: "b", port: 22, user: "c", auth: { type: "password" as const }, jumpHost: null };
+    expect(hostFormFrom({ ...host, terminalScheme: "retired" }).terminalScheme).toBeUndefined();
+  });
+
   it("starts new Hosts on port 22", () => {
     expect(emptyHostForm.port).toBe("22");
   });

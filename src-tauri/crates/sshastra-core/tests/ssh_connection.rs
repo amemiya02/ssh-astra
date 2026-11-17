@@ -75,6 +75,7 @@ fn host(sshd: &Sshd) -> Host {
         user: sshd.user.into(),
         auth: HostAuth::Password,
         jump_host: None,
+        terminal_scheme: None,
     }
 }
 
@@ -265,6 +266,7 @@ async fn an_unreachable_address_is_reported() {
         user: "x".into(),
         auth: HostAuth::Password,
         jump_host: None,
+        terminal_scheme: None,
     };
     let prompter = ScriptedPrompter::new(true, &[]);
 
@@ -515,6 +517,7 @@ fn behind(name: &str, jump: &Host) -> Host {
         user: support::USER.into(),
         auth: HostAuth::Password,
         jump_host: Some(jump.id.clone()),
+        terminal_scheme: None,
     }
 }
 

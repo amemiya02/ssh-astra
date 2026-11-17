@@ -19,6 +19,8 @@ export interface HostDraft {
   auth: HostAuth;
   /** The Jump host this Host is reached through, or `null` to connect directly. */
   jumpHost: HostId | null;
+  /** This Host's Terminal colour scheme id, overriding the global one; absent follows it. */
+  terminalScheme?: string | null;
 }
 
 /** A saved Host (`sshastra_core::hosts::Host`). */

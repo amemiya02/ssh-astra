@@ -115,6 +115,7 @@ fn host(sshd: &Sshd, auth: HostAuth) -> Host {
         user: sshd.user.into(),
         auth,
         jump_host: None,
+        terminal_scheme: None,
     }
 }
 

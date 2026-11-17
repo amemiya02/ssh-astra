@@ -11,6 +11,7 @@ import {
 } from "@/lib/ipc/connect";
 import type { Host } from "@/lib/ipc/hosts";
 import type { ConnectionStatus } from "@/features/workspace/tabs";
+import { isTerminalColorScheme } from "@/theme/terminal-themes";
 import { TerminalSurface, type OpenTerminal } from "./TerminalSurface";
 
 interface PendingPrompt {
@@ -74,6 +75,7 @@ export function RemoteTerminalView({ host, active = true, onTitleChange, onStatu
           onExit={() => onStatusChange?.("disconnected")}
           label={host.name}
           active={active}
+          colorScheme={isTerminalColorScheme(host.terminalScheme) ? host.terminalScheme : undefined}
           onTitleChange={onTitleChange}
         />
       )}
