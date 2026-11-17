@@ -5,9 +5,12 @@
 //! [`RemoteEditor`] owns every open edit. Temp files live under its root, one
 //! directory per Host (`<root>/<host id>/<edit id>/<file name>`), and are
 //! deleted when the edit is closed ([`RemoteEditor::close`]) or the app exits
-//! ([`RemoteEditor::close_all`]).
+//! ([`RemoteEditor::close_all`]). The app's root is a per-run folder under a
+//! stable base ([`RemoteEditor::start`]), so a run that crashed leaves its
+//! files where the next run finds and deletes them.
 
 use std::collections::HashMap;
+use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -96,7 +99,13 @@ pub struct RemoteEditor {
     debounce: Duration,
     next_id: AtomicU64,
     edits: Mutex<HashMap<EditId, Edit>>,
+    /// The locked `.lock` file marking a [`start`](Self::start)ed run's root
+    /// as in use; released before the root is deleted.
+    run_lock: Mutex<Option<File>>,
 }
+
+/// The file in a run folder whose lock says its run is still going.
+const RUN_LOCK: &str = ".lock";
 
 impl RemoteEditor {
     /// Temp files go under `root`, which belongs to the editor: it is
@@ -108,7 +117,25 @@ impl RemoteEditor {
             debounce: DEFAULT_DEBOUNCE,
             next_id: AtomicU64::new(0),
             edits: Mutex::new(HashMap::new()),
+            run_lock: Mutex::new(None),
         }
+    }
+
+    /// An editor for this run of the app: deletes the run folders under
+    /// `base` whose run has ended (crashed, or exited without cleaning up),
+    /// then keeps its temp files in a new run folder of its own, marked as in
+    /// use by a lock that ends with the process.
+    pub fn start(base: impl AsRef<Path>, opener: Arc<dyn Opener>) -> std::io::Result<Self> {
+        let base = base.as_ref();
+        std::fs::create_dir_all(base)?;
+        remove_ended_runs(base);
+        let root = base.join(format!("{}-{}", std::process::id(), uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root)?;
+        let lock = File::create(root.join(RUN_LOCK))?;
+        lock.try_lock().map_err(std::io::Error::other)?;
+        let editor = Self::new(root, opener);
+        *editor.run_lock.lock().unwrap_or_else(|p| p.into_inner()) = Some(lock);
+        Ok(editor)
     }
 
     pub fn with_debounce(mut self, debounce: Duration) -> Self {
@@ -282,6 +309,13 @@ impl RemoteEditor {
         for id in ids {
             self.close(id);
         }
+        // Unlocked and closed first: Windows cannot delete an open file.
+        drop(
+            self.run_lock
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .take(),
+        );
         let _ = std::fs::remove_dir_all(&self.root);
     }
 
@@ -347,6 +381,27 @@ impl Uploader {
             Err(e) => (self.on_event)(EditEvent::UploadFailed {
                 reason: e.to_string(),
             }),
+        }
+    }
+}
+
+/// Deletes each run folder under `base` whose lock nobody holds.
+fn remove_ended_runs(base: &Path) {
+    let Ok(entries) = std::fs::read_dir(base) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let dir = entry.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        let ended = match File::open(dir.join(RUN_LOCK)) {
+            // Locked by a live run: `try_lock` fails.
+            Ok(lock) => lock.try_lock().is_ok(),
+            Err(e) => e.kind() == std::io::ErrorKind::NotFound,
+        };
+        if ended {
+            let _ = std::fs::remove_dir_all(&dir);
         }
     }
 }

@@ -491,6 +491,49 @@ async fn only_regular_files_are_opened() {
     assert!(matches!(opened, Err(EditError::NotAFile)), "{opened:?}");
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_run_deletes_the_folders_runs_that_ended_left_behind() {
+    let base = tempfile::tempdir().unwrap();
+    // A run that crashed: its folder (and lock file) are still there.
+    let crashed = base.path().join("crashed-run");
+    std::fs::create_dir_all(crashed.join("host-1").join("1")).unwrap();
+    std::fs::write(crashed.join(".lock"), "").unwrap();
+    std::fs::write(crashed.join("host-1").join("1").join("app.conf"), "a").unwrap();
+
+    let editor = RemoteEditor::start(base.path(), Arc::new(RecordingOpener::default())).unwrap();
+
+    assert!(!crashed.exists());
+    let fs = FakeFs::with("/etc/app.conf", "a\n");
+    let id = editor
+        .open(fs, &host(), "/etc/app.conf", |_| {})
+        .await
+        .unwrap();
+    let local = editor.local_path(id).unwrap();
+    assert!(local.starts_with(base.path()));
+    assert!(!local.starts_with(&crashed));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_running_editor_keeps_its_folder_when_another_run_starts() {
+    let base = tempfile::tempdir().unwrap();
+    let first = RemoteEditor::start(base.path(), Arc::new(RecordingOpener::default())).unwrap();
+    let fs = FakeFs::with("/etc/app.conf", "a\n");
+    let id = first
+        .open(fs, &host(), "/etc/app.conf", |_| {})
+        .await
+        .unwrap();
+    let local = first.local_path(id).unwrap();
+
+    let second = RemoteEditor::start(base.path(), Arc::new(RecordingOpener::default())).unwrap();
+    assert!(local.exists());
+
+    // Exiting deletes only the exiting run's folder.
+    second.close_all();
+    assert!(local.exists());
+    first.close_all();
+    assert!(!local.exists());
+}
+
 struct Trusting(&'static str);
 
 impl Prompter for Trusting {

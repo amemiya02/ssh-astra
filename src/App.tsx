@@ -23,6 +23,7 @@ import {
   connectedHosts,
   emptyTabs,
   newPane,
+  remoteTerminalPaneIds,
   tabTitle,
   tabsReducer,
   type ConnectionStatus,
@@ -192,9 +193,7 @@ export function App() {
     focusedPane?.kind === "remote-terminal"
       ? { id: focusedPane.id, host: focusedPane.host, status: focusedPane.status ?? "connecting" }
       : undefined;
-  const remotePaneIds = tabs.flatMap((tab) =>
-    tab.panes.filter((pane) => pane.kind === "remote-terminal").map((pane) => pane.id),
-  );
+  const remotePaneIds = remoteTerminalPaneIds(state);
 
   return (
     <>

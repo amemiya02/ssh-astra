@@ -103,6 +103,11 @@ export function connectedHosts(state: TabsState): Host[] {
   return [...hosts.values()];
 }
 
+/** Every open remote Terminal pane's id; a File panel whose pane is not listed is closed. */
+export function remoteTerminalPaneIds(state: TabsState): string[] {
+  return state.tabs.flatMap((tab) => tab.panes.filter((pane) => pane.kind === "remote-terminal").map((p) => p.id));
+}
+
 /**
  * The tab's label, from its focused pane: the program's own title, else the kind's name,
  * numbered from the second tab of that kind (`ordinal` is 1-based among tabs of the same

@@ -90,11 +90,10 @@ pub fn run() {
         .manage(ForwardsState::default())
         .manage(ConnectionsState::default())
         .manage(FsRegistry::default())
-        // Temp files of remote edits, one directory per Host; deleted on exit.
-        .manage(RemoteEditor::new(
-            std::env::temp_dir().join(format!("sshastra-edit-{}", std::process::id())),
-            Arc::new(SystemOpener),
-        ))
+        // Temp files of remote edits: a folder per run under
+        // $TMPDIR/sshastra-edit (one directory per Host), deleted on exit;
+        // the next run deletes what a crashed one left.
+        .manage(remote_editor())
         .manage(TransfersState::default())
         .manage(Arc::new(PendingPrompts::default()))
         .invoke_handler(tauri::generate_handler![
@@ -157,4 +156,15 @@ pub fn run() {
                 app.state::<RemoteEditor>().close_all();
             }
         });
+}
+
+fn remote_editor() -> RemoteEditor {
+    let base = std::env::temp_dir().join("sshastra-edit");
+    RemoteEditor::start(&base, Arc::new(SystemOpener)).unwrap_or_else(|e| {
+        eprintln!("remote edit temp folder {}: {e}", base.display());
+        RemoteEditor::new(
+            base.join(format!("{}-unlocked", std::process::id())),
+            Arc::new(SystemOpener),
+        )
+    })
 }
