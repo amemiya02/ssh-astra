@@ -109,7 +109,32 @@
     "hide": "Hide File panel",
     "dockRight": "Dock File panel on the right",
     "dockBottom": "Dock File panel at the bottom",
-    "dockGroup": "File panel position"
+    "dockGroup": "File panel position",
+    "up": "Up one folder",
+    "refresh": "Refresh",
+    "path": "Path",
+    "copyPath": "Copy path",
+    "showHidden": "Show hidden files",
+    "open": "Open",
+    "listLabel": "Files in {{path}}",
+    "columns": {
+      "name": "Name",
+      "size": "Size",
+      "modified": "Modified",
+      "permissions": "Permissions"
+    },
+    "emptyFolder": "This folder is empty.",
+    "connecting": "Connecting…",
+    "disconnected": "The Connection to {{host}} was lost.",
+    "retry": "Try again",
+    "errors": {
+      "notConnected": "{{host}} is not connected.",
+      "notFound": "No such folder: {{path}}",
+      "permissionDenied": "Permission denied: {{path}}",
+      "notADirectory": "Not a folder: {{path}}",
+      "timedOut": "The server did not answer in time.",
+      "other": "Could not list the folder: {{message}}"
+    }
   },
   "forwards": {
     "title": "Port forwards",

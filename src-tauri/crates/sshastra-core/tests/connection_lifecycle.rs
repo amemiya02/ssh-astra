@@ -10,6 +10,7 @@ mod support;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 
+use sshastra_core::files::RemoteFs;
 use sshastra_core::forward::{ForwardId, ForwardKind, PortForward, PortForwarder};
 use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
@@ -187,6 +188,38 @@ async fn concurrent_connects_to_one_host_coalesce_into_one_connection() {
     assert!(Arc::ptr_eq(&first, &second));
     assert_eq!(prompter.passwords_asked(), 1);
     fx.server_sees(1).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_file_panel_browses_over_the_terminals_connection() {
+    let Some(sshd) = support::sshd(Service::Counted) else {
+        return;
+    };
+    let _turn = SERVER.lock().await;
+    let fx = Fixture::new(sshd);
+    fx.server_sees(0).await;
+    let prompter = CountingPrompter::new(&fx.sshd);
+    assert!(fx.manager.live(&fx.host.id).await.is_none());
+    let mut terminal = open_terminal(&fx.connect(&prompter).await).await;
+
+    let live = fx.manager.live(&fx.host.id).await;
+    let files = live
+        .expect("the Terminal's Connection")
+        .open_sftp()
+        .await
+        .unwrap();
+    files.home().await.unwrap();
+
+    fx.server_sees(1).await;
+    assert_eq!(prompter.passwords_asked(), 1);
+
+    // The File panel alone keeps the Connection open...
+    terminal.close().unwrap();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    fx.server_sees(1).await;
+    // ...until it closes too.
+    drop(files);
+    fx.server_sees(0).await;
 }
 
 /// A Host on the Jump host's private network.
