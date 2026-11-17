@@ -12,8 +12,12 @@ use serde::{Deserialize, Serialize};
 use crate::forward::{ForwardDraft, ForwardId, PortForward};
 use crate::fs_util::write_atomically;
 
-/// The file format version this build writes. Bump it together with a
-/// migration step in [`migrate`].
+mod transfer;
+pub use transfer::{ImportSummary, EXPORT_FORMAT};
+
+/// The file format version this build writes, to the store and to export
+/// files. Bump it together with a migration step in [`migrate`], which reads
+/// both.
 const CURRENT_VERSION: u32 = 3;
 
 /// Identifies a Host across restarts and across the IPC boundary.
@@ -212,6 +216,9 @@ pub enum HostStoreError {
 
 #[derive(Serialize)]
 struct FileRef<'a> {
+    /// [`EXPORT_FORMAT`] in export files; absent in the store's own file.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    format: Option<&'static str>,
     version: u32,
     groups: &'a [Group],
     hosts: &'a [Host],
@@ -571,6 +578,7 @@ impl HostStore {
     /// of the file.
     fn save(&mut self, library: Library) -> Result<(), HostStoreError> {
         let json = serde_json::to_vec_pretty(&FileRef {
+            format: None,
             version: CURRENT_VERSION,
             groups: &library.groups,
             hosts: &library.hosts,
@@ -614,7 +622,8 @@ fn chain(hosts: &[Host], id: &HostId) -> Result<Vec<Host>, HostStoreError> {
     Ok(hops)
 }
 
-/// Reads any supported file version into the current model.
+/// Reads any supported version of the store file or an export file into the
+/// current model.
 fn migrate(text: &str) -> Result<Library, HostStoreError> {
     let corrupt = |e: serde_json::Error| HostStoreError::Corrupt(e.to_string());
     let FileVersion { version } = serde_json::from_str(text).map_err(corrupt)?;
