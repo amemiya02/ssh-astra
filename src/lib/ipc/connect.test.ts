@@ -10,11 +10,27 @@ describe("answerPrompts", () => {
     }, answer);
 
     await handle({ type: "hostKey", id: 7, host: "h", port: 22, algorithm: "ssh-ed25519", fingerprint: "SHA256:abc" });
-    await handle({ type: "password", id: 8, host: "h", user: "u", retry: false });
+    await handle({ type: "password", id: 8, host: "h", user: "u", retry: false, canSave: true });
 
     expect(answer.mock.calls).toEqual([
       [7, { type: "hostKey", trust: true }],
       [8, { type: "password", password: "pw" }],
+    ]);
+  });
+
+  it("passes on the user's choice to save a password or passphrase", async () => {
+    const answer = vi.fn(() => Promise.resolve());
+    const handle = answerPrompts(async (prompt) => {
+      if (prompt.type === "password") return { type: "password", password: "pw", save: prompt.canSave };
+      return { type: "passphrase", passphrase: "pp", save: true };
+    }, answer);
+
+    await handle({ type: "password", id: 1, host: "h", user: "u", retry: false, canSave: true });
+    await handle({ type: "passphrase", id: 2, keyPath: "/k/id_ed25519", retry: false, canSave: true });
+
+    expect(answer.mock.calls).toEqual([
+      [1, { type: "password", password: "pw", save: true }],
+      [2, { type: "passphrase", passphrase: "pp", save: true }],
     ]);
   });
 
@@ -23,8 +39,8 @@ describe("answerPrompts", () => {
     const handle = answerPrompts(() => Promise.reject(new Error("dialog closed")), answer);
     const prompts: ConnectPrompt[] = [
       { type: "hostKey", id: 1, host: "h", port: 22, algorithm: "a", fingerprint: "f" },
-      { type: "password", id: 2, host: "h", user: "u", retry: true },
-      { type: "passphrase", id: 3, keyPath: "/k/id_ed25519", retry: false },
+      { type: "password", id: 2, host: "h", user: "u", retry: true, canSave: false },
+      { type: "passphrase", id: 3, keyPath: "/k/id_ed25519", retry: false, canSave: false },
       {
         type: "keyboardInteractive",
         id: 4,

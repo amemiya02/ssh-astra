@@ -12,8 +12,10 @@
     "emptyTitle": "No Hosts yet",
     "emptyBody": "Hosts you add appear here. Double-click one to open a Terminal.",
     "new": "New Host",
-    "newDescription": "Keys in ssh-agent are tried first, then the private key file, then the password or the server's own questions (such as a one-time code). Passwords and passphrases are asked for each time.",
+    "newDescription": "Keys in ssh-agent are tried first, then the private key file, then the password or the server's own questions (such as a one-time code). When asked for a password or passphrase, you can save it in the system keychain.",
     "openHint": "Double-click to connect",
+    "clearCredentials": "Clear saved credentials",
+    "credentialsCleared": "Saved credentials cleared. The next connect asks again.",
     "fields": {
       "name": "Name",
       "address": "Address",
@@ -161,7 +163,7 @@
     },
     "password": {
       "title": "Password for {{user}}@{{host}}",
-      "description": "The password is used for this Connection only and is not saved.",
+      "description": "Used to sign in to this Host.",
       "label": "Password",
       "retry": "Wrong password. Try again.",
       "submit": "Connect"
@@ -188,6 +190,10 @@
       "noSupportedMethod": "No usable sign-in method. The server accepts: {{methods}}."
     },
     "atJumpHost": "At jump host {{name}}:",
+    "save": {
+      "label": "Save in the system keychain",
+      "unavailable": "No system keychain is available, so this is asked for each time."
+    },
     "passphrase": {
       "title": "Passphrase for the private key",
       "label": "Passphrase",

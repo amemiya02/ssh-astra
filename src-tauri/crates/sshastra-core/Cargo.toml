@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 base64 = "0.22"
 hmac = "0.13"
+keyring = "4"
 portable-pty = "0.9"
 # `ring` instead of the default aws-lc-rs: no cmake/NASM needed on any platform.
 russh = { version = "0.65", default-features = false, features = ["ring", "rsa", "flate2"] }
