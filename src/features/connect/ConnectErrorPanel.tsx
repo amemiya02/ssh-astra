@@ -11,6 +11,9 @@ const alertClass =
  */
 export function ConnectErrorPanel({ error }: { error: CommandError }) {
   const { t } = useTranslation();
+  // Set when a Jump host on the way failed rather than the Host itself.
+  const jumpHost = error.details?.jumpHost;
+  const hop = jumpHost === undefined ? null : <p className="mt-1.5 font-medium">{t("connect.atJumpHost", { name: jumpHost })}</p>;
 
   if (error.kind === "hostKeyMismatch" && error.details) {
     const d = error.details;
@@ -20,6 +23,7 @@ export function ConnectErrorPanel({ error }: { error: CommandError }) {
           <TriangleAlert className="size-4 shrink-0" aria-hidden />
           {t("connect.mismatch.title")}
         </h2>
+        {hop}
         <p className="mt-1.5">{t("connect.mismatch.body", { host: d.host })}</p>
         <dl className="mt-3 grid gap-2">
           <div className="bg-muted rounded-lg border px-3.5 py-3">
@@ -46,6 +50,7 @@ export function ConnectErrorPanel({ error }: { error: CommandError }) {
         <CircleAlert className="size-4 shrink-0" aria-hidden />
         {kind ? t(`connect.errors.${kind}`) : t("connect.errors.generic")}
       </p>
+      {hop}
       <p className="text-muted-foreground mt-1">{error.message}</p>
     </div>
   );

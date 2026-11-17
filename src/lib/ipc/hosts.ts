@@ -13,6 +13,8 @@ export interface HostDraft {
   port: number;
   user: string;
   auth: HostAuth;
+  /** The Jump host this Host is reached through, or `null` to connect directly. */
+  jumpHost: HostId | null;
 }
 
 /** A saved Host (`sshastra_core::hosts::Host`). */

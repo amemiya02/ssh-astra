@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 
-use sshastra_core::hosts::{HostAuth, HostDraft, HostStore, HostStoreError};
+use sshastra_core::hosts::{Host, HostAuth, HostDraft, HostStore, HostStoreError};
 
 fn draft(name: &str) -> HostDraft {
     HostDraft {
@@ -15,6 +15,14 @@ fn draft(name: &str) -> HostDraft {
         port: 2222,
         user: "deploy".into(),
         auth: HostAuth::Password,
+        jump_host: None,
+    }
+}
+
+fn via(name: &str, jump: &Host) -> HostDraft {
+    HostDraft {
+        jump_host: Some(jump.id.clone()),
+        ..draft(name)
     }
 }
 
@@ -209,4 +217,95 @@ fn readers_never_see_a_half_written_file() {
     // Only the store file remains: no temporary files left behind.
     let entries: Vec<_> = fs::read_dir(path.parent().unwrap()).unwrap().collect();
     assert_eq!(entries.len(), 1, "unexpected files in {:?}", dir.path());
+}
+
+#[test]
+fn a_host_reaches_its_target_through_its_chain_of_jump_hosts() {
+    let (_dir, path) = store_path();
+    let mut store = HostStore::open(&path).unwrap();
+    let outer = store.upsert(None, draft("outer")).unwrap();
+    let inner = store.upsert(None, via("inner", &outer)).unwrap();
+    let target = store.upsert(None, via("target", &inner)).unwrap();
+
+    let reopened = HostStore::open(&path).unwrap();
+
+    assert_eq!(
+        reopened.get(&target.id).unwrap().jump_host,
+        Some(inner.id.clone())
+    );
+    assert_eq!(
+        reopened.jump_chain(&target.id).unwrap(),
+        [outer.clone(), inner, target]
+    );
+    assert_eq!(reopened.jump_chain(&outer.id).unwrap(), [outer]);
+}
+
+#[test]
+fn a_jump_host_cycle_is_refused_when_saving() {
+    let (_dir, path) = store_path();
+    let mut store = HostStore::open(&path).unwrap();
+    let a = store.upsert(None, draft("a")).unwrap();
+    let b = store.upsert(None, via("b", &a)).unwrap();
+    let c = store.upsert(None, via("c", &b)).unwrap();
+
+    let result = store.upsert(Some(a.id.clone()), via("a", &c));
+    match result {
+        Err(HostStoreError::JumpHostCycle(names)) => assert_eq!(names, ["a", "c", "b", "a"]),
+        other => panic!("expected a cycle, got {other:?}"),
+    }
+    let result = store.upsert(Some(a.id.clone()), via("a", &a));
+    assert!(
+        matches!(result, Err(HostStoreError::JumpHostCycle(_))),
+        "{result:?}"
+    );
+
+    assert_eq!(HostStore::open(&path).unwrap().list(), [a, b, c]);
+}
+
+#[test]
+fn a_missing_jump_host_is_refused_when_saving() {
+    let (_dir, path) = store_path();
+    let mut store = HostStore::open(&path).unwrap();
+    let gone = store.upsert(None, draft("gone")).unwrap();
+    store.delete(&gone.id).unwrap();
+
+    let result = store.upsert(None, via("x", &gone));
+
+    assert!(
+        matches!(result, Err(HostStoreError::NotFound(_))),
+        "{result:?}"
+    );
+    assert!(store.list().is_empty());
+}
+
+#[test]
+fn a_host_in_use_as_a_jump_host_cannot_be_deleted() {
+    let (_dir, path) = store_path();
+    let mut store = HostStore::open(&path).unwrap();
+    let jump = store.upsert(None, draft("bastion")).unwrap();
+    let target = store.upsert(None, via("db", &jump)).unwrap();
+
+    match store.delete(&jump.id) {
+        Err(HostStoreError::InUseAsJumpHost { by }) => assert_eq!(by, "db"),
+        other => panic!("expected in use, got {other:?}"),
+    }
+
+    store.delete(&target.id).unwrap();
+    store.delete(&jump.id).unwrap();
+}
+
+#[test]
+fn hosts_saved_before_jump_hosts_existed_still_load() {
+    let (_dir, path) = store_path();
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        r#"{"version": 1, "hosts": [{"id": "1", "name": "web", "address": "a", "port": 22,
+            "user": "u", "auth": {"type": "password"}}]}"#,
+    )
+    .unwrap();
+
+    let store = HostStore::open(&path).unwrap();
+
+    assert_eq!(store.list()[0].jump_host, None);
 }

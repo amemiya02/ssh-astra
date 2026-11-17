@@ -18,8 +18,10 @@
       "name": "Name",
       "address": "Address",
       "port": "Port",
-      "user": "User"
+      "user": "User",
+      "jumpHost": "Jump host"
     },
+    "noJumpHost": "None (connect directly)",
     "errors": {
       "required": "Required",
       "port": "Enter a port from 1 to 65535"
@@ -95,6 +97,7 @@
       "authenticationFailed": "Authentication failed.",
       "cancelled": "Connection cancelled.",
       "generic": "Could not connect."
-    }
+    },
+    "atJumpHost": "At jump host {{name}}:"
   }
 }

@@ -7,6 +7,13 @@
 #             a Jump host.
 #   internal  on the private network only: reachable only through `jump`
 #             (as `internal:22`).
+#   jump2     on the private and the deep network: a second Jump host,
+#             reached through `jump` (as `jump2:22`).
+#   deep      on the deep network only: reachable only through `jump` then
+#             `jump2` (as `deep:22`).
+#
+# Each server's hostname is its service name, so a test can tell where a
+# shell landed.
 #
 # Add services here (e.g. a TCP echo server for Port forward tests) rather
 # than starting containers from individual tests.
@@ -19,17 +26,30 @@ x-sshd: &sshd
 services:
   ssh:
     <<: *sshd
+    hostname: ssh
     ports: ["127.0.0.1::22"]
     networks: [public]
   jump:
     <<: *sshd
+    hostname: jump
     ports: ["127.0.0.1::22"]
     networks: [public, private]
   internal:
     <<: *sshd
+    hostname: internal
     networks: [private]
+  jump2:
+    <<: *sshd
+    hostname: jump2
+    networks: [private, deep]
+  deep:
+    <<: *sshd
+    hostname: deep
+    networks: [deep]
 
 networks:
   public: {}
   private:
+    internal: true
+  deep:
     internal: true

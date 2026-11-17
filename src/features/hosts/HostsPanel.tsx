@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { readCommandError } from "@/lib/ipc/connect";
 import { listHosts, saveHost, type Host } from "@/lib/ipc/hosts";
 import { cn } from "@/lib/utils";
@@ -76,6 +77,7 @@ export function HostsPanel({ onOpen, onOpenLocalTerminal }: HostsPanelProps) {
       <Dialog open={creating} onOpenChange={setCreating}>
         {creating && (
           <HostFormDialogContent
+            hosts={hosts}
             onCancel={() => setCreating(false)}
             onSaved={(host) => {
               setHosts((all) => [...all, host]);
@@ -154,7 +156,19 @@ const fields: { field: HostFormField; inputMode?: "numeric" }[] = [
   { field: "user" },
 ];
 
-function HostFormDialogContent({ onSaved, onCancel }: { onSaved: (host: Host) => void; onCancel: () => void }) {
+/** Sentinel for "no Jump host": Radix Select reserves the empty string for clearing. */
+const NO_JUMP_HOST = "none";
+
+function HostFormDialogContent({
+  hosts,
+  onSaved,
+  onCancel,
+}: {
+  /** Hosts that can be picked as the Jump host. */
+  hosts: Host[];
+  onSaved: (host: Host) => void;
+  onCancel: () => void;
+}) {
   const { t } = useTranslation();
   const [values, setValues] = useState<HostFormValues>(emptyHostForm);
   const [errors, setErrors] = useState<Extract<HostFormResult, { ok: false }>["errors"]>({});
@@ -213,6 +227,27 @@ function HostFormDialogContent({ onSaved, onCancel }: { onSaved: (host: Host) =>
             </div>
           );
         })}
+        <div className="grid gap-1.5">
+          <Label htmlFor="host-form-jumpHost" className="text-xs">
+            {t("hosts.fields.jumpHost")}
+          </Label>
+          <Select
+            value={values.jumpHost || NO_JUMP_HOST}
+            onValueChange={(value) => setValues((v) => ({ ...v, jumpHost: value === NO_JUMP_HOST ? "" : value }))}
+          >
+            <SelectTrigger id="host-form-jumpHost" size="sm" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_JUMP_HOST}>{t("hosts.noJumpHost")}</SelectItem>
+              {hosts.map((host) => (
+                <SelectItem key={host.id} value={host.id}>
+                  {host.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         {saveError && (
           <p role="alert" className="text-destructive text-xs">
             {saveError}
