@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "integration/**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [ubuntu-22.04, macos-latest, windows-latest]
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Lint (front end)
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Lint (Rust)
+        working-directory: src-tauri
+        run: |
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: sshastra-core must not depend on Tauri
+        if: runner.os == 'Linux'
+        working-directory: src-tauri
+        run: |
+          if cargo tree -p sshastra-core -e normal --prefix none | grep -E '^tauri'; then
+            echo "sshastra-core depends on Tauri" >&2
+            exit 1
+          fi
+
+      - name: Test (Rust)
+        working-directory: src-tauri
+        run: cargo test --workspace
+      - name: Test (front end)
+        run: pnpm test
+
+      - name: Build app
+        run: pnpm tauri build --debug --no-bundle
