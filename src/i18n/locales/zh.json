@@ -317,10 +317,10 @@
         "bindAddress": "监听地址"
       },
       "remote": {
-        "bindPort": "服务器端口",
+        "bindPort": "Host 上的端口",
         "targetHost": "本地主机",
         "targetPort": "本地端口",
-        "bindAddress": "服务器监听地址"
+        "bindAddress": "Host 上的监听地址"
       },
       "dynamic": {
         "bindPort": "本地端口",
@@ -334,7 +334,7 @@
       },
       "remote": {
         "targetHost": "按本机看到的地址填写，例如 127.0.0.1。",
-        "bindAddress": "留空则只接受服务器本机的连接（localhost）。"
+        "bindAddress": "留空则只接受 Host 本机的连接（localhost）。"
       },
       "dynamic": {
         "bindAddress": "留空则只接受本机的连接（127.0.0.1）。"
@@ -347,12 +347,12 @@
     },
     "kindHints": {
       "local": "本机的端口，连到 Host 一侧的地址（ssh -L）。",
-      "remote": "服务器上的端口，连到本机一侧的地址（ssh -R）。",
+      "remote": "Host 上的端口，连到本机一侧的地址（ssh -R）。",
       "dynamic": "本机上的 SOCKS5 代理，每个连接由 Host 发起（ssh -D）。"
     },
     "ends": {
       "local": "本地",
-      "remote": "服务器",
+      "remote": "Host",
       "dynamic": "SOCKS5"
     },
     "autoStartHint": "每当这个 Host 连接时运行：打开终端、启动其他端口转发或「仅连接」。",
@@ -362,7 +362,7 @@
     "noConnections": "没有连接",
     "connectedTo": "已连接：{{hosts}}",
     "forwards": "端口转发：{{list}}",
-    "forwardsRemote": "服务器 {{from}} → {{to}}",
+    "forwardsRemote": "Host 上 {{from}} → {{to}}",
     "forwardsDynamic": "SOCKS {{from}}",
     "transfers": "传输：{{count}}",
     "transfersSpeed": "传输：{{count}} · {{speed}}/s"
