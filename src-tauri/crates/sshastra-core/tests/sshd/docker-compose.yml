@@ -11,6 +11,11 @@
 #             reached through `jump` (as `jump2:22`).
 #   deep      on the deep network only: reachable only through `jump` then
 #             `jump2` (as `deep:22`).
+#   keyonly   published: accepts public keys only (no password, no
+#             keyboard-interactive).
+#   kbdint    published: keyboard-interactive (PAM asks for the password)
+#             instead of the password method, either alone or as the second
+#             step after a public key ("partial success").
 #
 # Each server's hostname is its service name, so a test can tell where a
 # shell landed.
@@ -46,6 +51,27 @@ services:
     <<: *sshd
     hostname: deep
     networks: [deep]
+  keyonly:
+    <<: *sshd
+    hostname: keyonly
+    ports: ["127.0.0.1::22"]
+    networks: [public]
+    command: [/usr/sbin/sshd, -D, -e, -o, PasswordAuthentication=no, -o, KbdInteractiveAuthentication=no]
+  kbdint:
+    <<: *sshd
+    hostname: kbdint
+    ports: ["127.0.0.1::22"]
+    networks: [public]
+    command:
+      - /usr/sbin/sshd
+      - -D
+      - -e
+      - -o
+      - PasswordAuthentication=no
+      - -o
+      - KbdInteractiveAuthentication=yes
+      - -o
+      - AuthenticationMethods=publickey,keyboard-interactive keyboard-interactive
 
 networks:
   public: {}

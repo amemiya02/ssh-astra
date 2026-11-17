@@ -39,10 +39,22 @@ impl fmt::Display for HostId {
 
 /// How a Host authenticates. Secrets are asked for (or read from the system
 /// keychain) at connect time, never stored in the Host.
+///
+/// Whatever the variant, a connect tries, as far as the server allows:
+/// ssh-agent, then the private key file (if any), then password, then
+/// keyboard-interactive.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum HostAuth {
+    /// No key file: agent, password, keyboard-interactive.
     Password,
+    /// A private key file (OpenSSH or PEM; ed25519, ECDSA or RSA). A leading
+    /// `~/` means the user's home directory. A passphrase is asked for.
+    Key { identity_file: PathBuf },
 }
 
 /// A saved, named set of connection settings.
@@ -87,13 +99,25 @@ impl HostDraft {
         if self.port == 0 {
             return Err(HostStoreError::Invalid("port"));
         }
+        let auth = match self.auth {
+            HostAuth::Key { identity_file } => {
+                let trimmed = identity_file.to_string_lossy().trim().to_owned();
+                if trimmed.is_empty() {
+                    return Err(HostStoreError::Invalid("identityFile"));
+                }
+                HostAuth::Key {
+                    identity_file: PathBuf::from(trimmed),
+                }
+            }
+            other => other,
+        };
         Ok(Host {
             id,
             name: self.name.trim().to_owned(),
             address: self.address.trim().to_owned(),
             port: self.port,
             user: self.user.trim().to_owned(),
-            auth: self.auth,
+            auth,
             jump_host: self.jump_host,
         })
     }

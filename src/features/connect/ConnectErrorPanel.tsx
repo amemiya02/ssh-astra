@@ -42,16 +42,30 @@ export function ConnectErrorPanel({ error }: { error: CommandError }) {
     );
   }
 
-  const known = ["unreachable", "timedOut", "hostKeyDeclined", "hostKeyRevoked", "authenticationFailed", "cancelled"] as const;
+  const known = [
+    "unreachable",
+    "timedOut",
+    "hostKeyDeclined",
+    "hostKeyRevoked",
+    "authenticationFailed",
+    "cancelled",
+    "keyUnreadable",
+    "keyPassphraseIncorrect",
+    "keyRejected",
+    "agentKeysRejected",
+    "noSupportedMethod",
+  ] as const;
   const kind = known.find((k) => k === error.kind);
+  // Authentication errors carry `keyPath`, `reason` or `methods` for their copy.
+  const details = error.details ?? {};
   return (
     <div role="alert" className={alertClass}>
       <p className="text-destructive flex items-center gap-2 font-semibold">
         <CircleAlert className="size-4 shrink-0" aria-hidden />
-        {kind ? t(`connect.errors.${kind}`) : t("connect.errors.generic")}
+        <span className="break-all">{kind ? t(`connect.errors.${kind}`, details) : t("connect.errors.generic")}</span>
       </p>
       {hop}
-      <p className="text-muted-foreground mt-1">{error.message}</p>
+      <p className="text-muted-foreground mt-1 break-all">{error.message}</p>
     </div>
   );
 }

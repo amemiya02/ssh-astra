@@ -32,6 +32,11 @@ pub enum Service {
     Ssh,
     /// A Jump host that can also reach `internal:22`.
     Jump,
+    /// Accepts public keys only.
+    KeyOnly,
+    /// Keyboard-interactive (PAM asks for the password), alone or after a
+    /// public key; no password method.
+    KbdInt,
 }
 
 impl Service {
@@ -39,6 +44,8 @@ impl Service {
         match self {
             Service::Ssh => "ssh",
             Service::Jump => "jump",
+            Service::KeyOnly => "keyonly",
+            Service::KbdInt => "kbdint",
         }
     }
 }
@@ -92,6 +99,15 @@ pub fn sshd(service: Service) -> Option<Sshd> {
         host_key: HostKey::from_openssh(&host_key).unwrap(),
     })
 }
+
+/// A private key fixture in `tests/sshd/keys/` (e.g. `id_ed25519`). Its
+/// public key is authorized for [`USER`] unless named `*_unauthorized`.
+pub fn key(name: &str) -> PathBuf {
+    sshd_dir().join("keys").join(name)
+}
+
+/// The passphrase of `key("id_ed25519_passphrase")`.
+pub const KEY_PASSPHRASE: &str = "testphrase";
 
 fn compose_up() -> Result<(), String> {
     compose(&["up", "--detach", "--build", "--wait", "--quiet-pull"]).map(drop)

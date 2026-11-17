@@ -106,6 +106,15 @@ impl From<ConnectError> for CommandError {
             HostCertificateUnsupported => Self::new("unsupported", &err),
             KnownHosts(_) => Self::new("knownHosts", &err),
             AuthenticationFailed => Self::new("authenticationFailed", &err),
+            KeyUnreadable { path, reason } => Self::new("keyUnreadable", &err)
+                .with_details(json!({ "keyPath": path.display().to_string(), "reason": reason })),
+            KeyPassphraseIncorrect { path } => Self::new("keyPassphraseIncorrect", &err)
+                .with_details(json!({ "keyPath": path.display().to_string() })),
+            KeyRejected { path } => Self::new("keyRejected", &err)
+                .with_details(json!({ "keyPath": path.display().to_string() })),
+            AgentKeysRejected => Self::new("agentKeysRejected", &err),
+            NoSupportedMethod { methods } => Self::new("noSupportedMethod", &err)
+                .with_details(json!({ "methods": methods.join(", ") })),
             Cancelled => Self::new("cancelled", &err),
             Protocol(_) => Self::new("protocol", &err),
             JumpHost { .. } => unreachable!("unwrapped above"),
