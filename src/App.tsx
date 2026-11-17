@@ -1,8 +1,9 @@
-import { useCallback, useReducer } from "react";
+import { useCallback, useEffect, useReducer } from "react";
 import { useTranslation } from "react-i18next";
 import { FilePanel } from "@/features/files/FilePanel";
 import { HostsPanel } from "@/features/hosts/HostsPanel";
 import { AppShell } from "@/features/shell/AppShell";
+import { isSettingsShortcut } from "@/features/shell/shortcuts";
 import { TabPanels } from "@/features/workspace/TabPanels";
 import { TabStrip } from "@/features/workspace/TabStrip";
 import { emptyTabs, tabsReducer, type TabsState } from "@/features/workspace/tabs";
@@ -27,6 +28,20 @@ export function App() {
     (host: Host) => dispatch({ type: "open", tab: { id: crypto.randomUUID(), kind: "remote-terminal", host } }),
     [],
   );
+  const openSettings = useCallback(
+    () => dispatch({ type: "open", tab: { id: crypto.randomUUID(), kind: "settings" } }),
+    [],
+  );
+  // Capture phase, so the shortcut works while a Terminal has focus.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isSettingsShortcut(event)) return;
+      event.preventDefault();
+      openSettings();
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [openSettings]);
   const retitle = useCallback((id: string, title: string) => dispatch({ type: "retitle", id, title }), []);
 
   return (
@@ -51,6 +66,7 @@ export function App() {
       }
       filePanel={<FilePanel />}
       status={<span>{t("status.noConnections")}</span>}
+      onOpenSettings={openSettings}
     />
   );
 }

@@ -1,6 +1,7 @@
 use serde::Serialize;
 use serde_json::{json, Value};
 use sshastra_core::hosts::HostStoreError;
+use sshastra_core::settings::SettingsError;
 use sshastra_core::ssh::ConnectError;
 use sshastra_core::terminal::TerminalError;
 
@@ -55,6 +56,19 @@ impl From<HostStoreError> for CommandError {
             }
             NotFound(_) => Self::new("notFound", &err),
         }
+    }
+}
+
+impl From<SettingsError> for CommandError {
+    fn from(err: SettingsError) -> Self {
+        use SettingsError::*;
+        let kind = match &err {
+            Io { .. } => "io",
+            Corrupt(_) => "settingsCorrupt",
+            UnsupportedVersion(_) => "settingsUnsupportedVersion",
+            ReservedSection => "invalid",
+        };
+        Self::new(kind, err)
     }
 }
 

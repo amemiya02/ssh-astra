@@ -31,7 +31,8 @@
     "listLabel": "已打开的标签页",
     "localTerminal": "本地终端",
     "newLocalTerminal": "新建本地终端",
-    "close": "关闭 {{title}}"
+    "close": "关闭 {{title}}",
+    "settings": "设置"
   },
   "workspace": {
     "emptyTitle": "没有打开的终端",
@@ -95,6 +96,28 @@
       "authenticationFailed": "认证失败。",
       "cancelled": "已取消连接。",
       "generic": "连接失败。"
+    }
+  },
+  "settings": {
+    "title": "设置",
+    "lead": "修改立即生效，重启后保持不变。",
+    "open": "设置",
+    "sections": {
+      "appearance": "外观",
+      "language": "语言"
+    },
+    "theme": {
+      "label": "主题",
+      "description": "跟随系统会随电脑的浅色或深色设置切换。"
+    },
+    "language": {
+      "label": "界面语言",
+      "description": "跟随系统时使用电脑的语言；sshastra 不支持该语言时使用英文。",
+      "options": {
+        "system": "跟随系统",
+        "en": "English",
+        "zh": "中文"
+      }
     }
   }
 }

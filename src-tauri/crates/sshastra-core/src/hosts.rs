@@ -4,11 +4,12 @@
 
 use std::fmt;
 use std::fs;
-use std::io::{self, Write};
-use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::io;
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+
+use crate::fs_util::write_atomically;
 
 /// The file format version this build writes. Bump it together with a
 /// migration step in [`migrate`].
@@ -208,44 +209,5 @@ fn migrate(text: &str) -> Result<Vec<Host>, HostStoreError> {
     match version {
         1 => Ok(serde_json::from_str::<FileV1>(text).map_err(corrupt)?.hosts),
         other => Err(HostStoreError::UnsupportedVersion(other)),
-    }
-}
-
-/// Writes a sibling temp file, flushes it to disk, then renames it over
-/// `path`: readers see either the old file or the new one, never a mix.
-fn write_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let dir = path.parent().unwrap_or_else(|| Path::new("."));
-    fs::create_dir_all(dir)?;
-    let file_name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let tmp = dir.join(format!(".{file_name}.{}.tmp", uuid::Uuid::new_v4()));
-
-    let result = (|| {
-        let mut file = fs::File::create(&tmp)?;
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        drop(file);
-        rename_replacing(&tmp, path)
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&tmp);
-    }
-    result
-}
-
-/// `fs::rename`, retried briefly: on Windows a reader holding the target open
-/// can make the replace fail with "access denied" for a moment.
-fn rename_replacing(from: &Path, to: &Path) -> io::Result<()> {
-    let mut attempts = 0;
-    loop {
-        match fs::rename(from, to) {
-            Err(e) if e.kind() == io::ErrorKind::PermissionDenied && attempts < 20 => {
-                attempts += 1;
-                std::thread::sleep(Duration::from_millis(10));
-            }
-            other => return other,
-        }
     }
 }

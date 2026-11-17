@@ -31,7 +31,8 @@
     "listLabel": "Open tabs",
     "localTerminal": "Local terminal",
     "newLocalTerminal": "New Local terminal",
-    "close": "Close {{title}}"
+    "close": "Close {{title}}",
+    "settings": "Settings"
   },
   "workspace": {
     "emptyTitle": "No open Terminals",
@@ -95,6 +96,28 @@
       "authenticationFailed": "Authentication failed.",
       "cancelled": "Connection cancelled.",
       "generic": "Could not connect."
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "lead": "Changes apply right away and are kept after a restart.",
+    "open": "Settings",
+    "sections": {
+      "appearance": "Appearance",
+      "language": "Language"
+    },
+    "theme": {
+      "label": "Theme",
+      "description": "System follows your computer's light or dark setting."
+    },
+    "language": {
+      "label": "Interface language",
+      "description": "System uses your computer's language when sshastra has it, otherwise English.",
+      "options": {
+        "system": "System",
+        "en": "English",
+        "zh": "中文"
+      }
     }
   }
 }

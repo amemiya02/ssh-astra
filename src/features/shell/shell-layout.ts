@@ -1,4 +1,4 @@
-import { readItem, writeItem, type KeyValueStore } from "@/lib/storage";
+import { defineSection } from "@/lib/storage";
 
 /** Where the File panel sits relative to the Terminal area. */
 export type FilePanelDock = "right" | "bottom";
@@ -15,28 +15,18 @@ export interface ShellLayout {
 
 export const defaultShellLayout: ShellLayout = { dock: "right", groups: {} };
 
-const storageKey = "sshastra.layout.v1";
-
-export function loadShellLayout(store: KeyValueStore | undefined): ShellLayout {
-  const raw = readItem(store, storageKey);
-  if (raw === null) return defaultShellLayout;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return defaultShellLayout;
-  }
-  if (!isRecord(parsed)) return defaultShellLayout;
-
-  const dock: FilePanelDock = parsed.dock === "bottom" ? "bottom" : "right";
+/** The `layout` section of the settings file. The window's own size and position are kept by Tauri. */
+export const layoutSetting = defineSection<ShellLayout>("layout", defaultShellLayout, (raw) => {
+  if (!isRecord(raw)) return defaultShellLayout;
+  const dock: FilePanelDock = raw.dock === "bottom" ? "bottom" : "right";
   const groups: Record<string, GroupLayout> = {};
-  if (isRecord(parsed.groups)) {
-    for (const [id, layout] of Object.entries(parsed.groups)) {
+  if (isRecord(raw.groups)) {
+    for (const [id, layout] of Object.entries(raw.groups)) {
       if (isGroupLayout(layout)) groups[id] = layout;
     }
   }
   return { dock, groups };
-}
+});
 
 /** Collapsible panels collapse to 0%; sub-percent leftovers from rounding count as collapsed too. */
 export function isPanelCollapsed(layout: GroupLayout | undefined, panelId: string): boolean {
@@ -53,8 +43,4 @@ function isGroupLayout(value: unknown): value is GroupLayout {
     isRecord(value) &&
     Object.values(value).every((size) => typeof size === "number" && size >= 0 && size <= 100)
   );
-}
-
-export function saveShellLayout(store: KeyValueStore | undefined, layout: ShellLayout): void {
-  writeItem(store, storageKey, JSON.stringify(layout));
 }
