@@ -60,8 +60,8 @@ export function LocalTerminalView({ active = true, onTitleChange }: LocalTermina
           xterm.write(event.data);
           return;
         }
-        // Local terminals have no Connection.
-        if (event.type === "connection") return;
+        // Local terminals have no Connection and no ShellIntegration.
+        if (event.type === "connection" || event.type === "cwd") return;
         exited = true;
         const message =
           event.code === null

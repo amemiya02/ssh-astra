@@ -143,6 +143,7 @@
     "dockGroup": "File panel position",
     "up": "Up one folder",
     "refresh": "Refresh",
+    "syncToTerminal": "Sync to Terminal folder",
     "path": "Path",
     "copyPath": "Copy path",
     "showHidden": "Show hidden files",
@@ -378,6 +379,10 @@
       "rightClickPaste": {
         "label": "Right-click paste",
         "description": "Right-clicking in a Terminal pastes the clipboard."
+      },
+      "shellIntegration": {
+        "label": "Shell integration",
+        "description": "New remote bash and zsh Terminals tell the File panel when you cd, so it follows. Turn off to type nothing into the shell; Sync to Terminal folder still works."
       }
     },
     "connection": {

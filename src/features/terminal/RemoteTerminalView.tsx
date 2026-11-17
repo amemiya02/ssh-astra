@@ -38,13 +38,24 @@ interface RemoteTerminalViewProps {
    * After the Connection drops: connecting while it reconnects, disconnected once the tries give up.
    */
   onStatusChange?(status: ConnectionStatus): void;
+  /** Its shell reported its directory (ShellIntegration, or when asked with `reportTerminalCwd`). */
+  onCwd?(path: string): void;
+  /** Its Terminal opened (`null`: it ended). */
+  onTerminal?(id: TerminalId | null): void;
 }
 
 /**
  * A Terminal on a saved Host: connects (asking about host keys and the
  * password in a dialog) and then shows the remote shell.
  */
-export function RemoteTerminalView({ host, active = true, onTitleChange, onStatusChange }: RemoteTerminalViewProps) {
+export function RemoteTerminalView({
+  host,
+  active = true,
+  onTitleChange,
+  onStatusChange,
+  onCwd,
+  onTerminal,
+}: RemoteTerminalViewProps) {
   const [pending, setPending] = useState<PendingPrompt | null>(null);
   const [error, setError] = useState<CommandError | null>(null);
   const pendingRef = useRef<PendingPrompt | null>(null);
@@ -66,8 +77,12 @@ export function RemoteTerminalView({ host, active = true, onTitleChange, onStatu
   const [lost, setLost] = useState<Exclude<ConnectionState, { state: "connected" }> | null>(null);
   const terminalId = useRef<TerminalId | null>(null);
   const onStatusChangeRef = useRef(onStatusChange);
+  const onCwdRef = useRef(onCwd);
+  const onTerminalRef = useRef(onTerminal);
   useEffect(() => {
     onStatusChangeRef.current = onStatusChange;
+    onCwdRef.current = onCwd;
+    onTerminalRef.current = onTerminal;
   });
 
   const open = useCallback<OpenTerminal>(
@@ -76,6 +91,8 @@ export function RemoteTerminalView({ host, active = true, onTitleChange, onStatu
         host.id,
         size,
         (event) => {
+          if (event.type === "cwd") return onCwdRef.current?.(event.path);
+          if (event.type === "exit") onTerminalRef.current?.(null);
           if (event.type !== "connection") return onEvent(event);
           const state = event.state;
           setLost(state.state === "connected" ? null : state);
@@ -84,6 +101,7 @@ export function RemoteTerminalView({ host, active = true, onTitleChange, onStatu
         (prompt) => new Promise((resolve) => show({ prompt, resolve })),
       );
       terminalId.current = id;
+      onTerminalRef.current?.(id);
       return id;
     },
     [host.id, show],

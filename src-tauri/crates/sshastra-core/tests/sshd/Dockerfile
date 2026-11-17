@@ -4,13 +4,19 @@
 FROM debian:bookworm-slim
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends openssh-server socat \
+ && apt-get install -y --no-install-recommends openssh-server socat zsh \
  && rm -rf /var/lib/apt/lists/* \
  && mkdir -p /run/sshd \
  && rm -f /etc/ssh/ssh_host_*
 
 # Password login: tester / testpass.
 RUN useradd -m -s /bin/bash tester && echo 'tester:testpass' | chpasswd
+
+# A zsh user for the ShellIntegration tests: zester / testpass, with a plain
+# prompt (and a .zshrc, so zsh skips its first-run wizard).
+RUN useradd -m -s /usr/bin/zsh zester && echo 'zester:testpass' | chpasswd \
+ && printf "PROMPT='%%n@%%m:%%~%%# '\n" > /home/zester/.zshrc \
+ && chown zester:zester /home/zester/.zshrc
 
 # Key login for tester with the public keys of the fixtures in keys/ (all
 # test-only; id_ed25519_unauthorized is deliberately left out).

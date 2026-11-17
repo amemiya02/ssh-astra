@@ -20,6 +20,12 @@ describe("decodeTerminalMessage", () => {
   });
 });
 
+describe("decodeTerminalMessage for a remote Terminal's directory", () => {
+  it("reads the directory its shell reported", () => {
+    expect(decodeTerminalMessage({ cwd: "/tmp/my dir/日本" })).toEqual({ type: "cwd", path: "/tmp/my dir/日本" });
+  });
+});
+
 describe("decodeTerminalMessage for a remote Terminal's Connection", () => {
   it("reads reconnect progress", () => {
     expect(decodeTerminalMessage({ connection: { state: "reconnecting", attempt: 2, attempts: 3 } })).toEqual({

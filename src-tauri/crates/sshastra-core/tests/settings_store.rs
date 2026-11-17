@@ -201,3 +201,27 @@ fn the_keepalive_interval_comes_from_the_connection_section() {
         .unwrap();
     assert_eq!(read(&store), None);
 }
+
+#[test]
+fn shell_integration_is_on_unless_the_terminal_section_turns_it_off() {
+    use sshastra_core::terminal::TerminalSettings;
+    let (_dir, path) = store_path();
+    let mut store = SettingsStore::open(&path).unwrap();
+    let read = |store: &SettingsStore| {
+        store
+            .section::<TerminalSettings>(TerminalSettings::SECTION)
+            .shell_integration
+    };
+
+    assert!(read(&store));
+    // The UI's other terminal preferences share the section.
+    store
+        .set(
+            "terminal",
+            json!({ "fontSize": 14, "shellIntegration": false }),
+        )
+        .unwrap();
+    assert!(!read(&store));
+    store.set("terminal", json!({ "fontSize": 14 })).unwrap();
+    assert!(read(&store));
+}
