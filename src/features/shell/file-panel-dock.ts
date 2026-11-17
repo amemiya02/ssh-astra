@@ -4,6 +4,8 @@ import type { FilePanelDock } from "./shell-layout";
 /** What the File panel's content may know and do about the dock it lives in. */
 export interface FilePanelDockValue {
   dock: FilePanelDock;
+  /** Hidden: content may skip work (e.g. opening an SFTP session) until it is shown. */
+  collapsed: boolean;
   collapse(): void;
 }
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { connectionsStore, useConnections } from "@/features/connect/connectionsStore";
-import { FilePanel } from "@/features/files/FilePanel";
+import { FilePanelContent, type FilePanelPane } from "@/features/files/FilePanelContent";
 import { forwardsStore, runningForwards, useForwards } from "@/features/forwards/forwardsStore";
 import { describeForward } from "@/features/forwards/forwardForm";
 import { activeConnections, runningRules } from "@/features/forwards/status";
@@ -193,6 +193,15 @@ export function App() {
       [heldHosts, t],
     ),
   );
+  const focused = activeTab(state);
+  const focusedPane = focused && activePane(focused);
+  const filePanelPane: FilePanelPane | undefined =
+    focusedPane?.kind === "remote-terminal"
+      ? { id: focusedPane.id, host: focusedPane.host, status: focusedPane.status ?? "connecting" }
+      : undefined;
+  const remotePaneIds = tabs.flatMap((tab) =>
+    tab.panes.filter((pane) => pane.kind === "remote-terminal").map((pane) => pane.id),
+  );
 
   return (
     <>
@@ -226,7 +235,7 @@ export function App() {
             onStatusChange={setStatus}
           />
         }
-        filePanel={<FilePanel />}
+        filePanel={<FilePanelContent pane={filePanelPane} remotePaneIds={remotePaneIds} />}
         onOpenSettings={openSettings}
         status={
           <span role="status" className="flex min-w-0 items-center gap-3.5">

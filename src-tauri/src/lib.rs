@@ -9,6 +9,7 @@ mod prompts;
 use std::sync::Arc;
 
 use sshastra_core::credentials;
+use sshastra_core::files::FsRegistry;
 use sshastra_core::hosts::HostStore;
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::settings::SettingsStore;
@@ -67,6 +68,7 @@ pub fn run() {
         .manage(TerminalRegistry::default())
         .manage(ForwardsState::default())
         .manage(ConnectionsState::default())
+        .manage(FsRegistry::default())
         .manage(Arc::new(PendingPrompts::default()))
         .invoke_handler(tauri::generate_handler![
             commands::hosts::hosts_list,
@@ -97,6 +99,9 @@ pub fn run() {
             commands::terminal::terminal_resize,
             commands::terminal::terminal_close,
             commands::terminal::terminal_reconnect,
+            commands::files::files_open,
+            commands::files::files_list,
+            commands::files::files_close,
         ])
         .run(tauri::generate_context!())
         .expect("error while running sshastra");

@@ -113,7 +113,32 @@
     "hide": "隐藏文件面板",
     "dockRight": "将文件面板停靠在右侧",
     "dockBottom": "将文件面板停靠在下方",
-    "dockGroup": "文件面板位置"
+    "dockGroup": "文件面板位置",
+    "up": "上一级文件夹",
+    "refresh": "刷新",
+    "path": "路径",
+    "copyPath": "复制路径",
+    "showHidden": "显示隐藏文件",
+    "open": "打开",
+    "listLabel": "{{path}} 中的文件",
+    "columns": {
+      "name": "名称",
+      "size": "大小",
+      "modified": "修改时间",
+      "permissions": "权限"
+    },
+    "emptyFolder": "这个文件夹是空的。",
+    "connecting": "正在连接…",
+    "disconnected": "与 {{host}} 的连接已断开。",
+    "retry": "重试",
+    "errors": {
+      "notConnected": "{{host}} 未连接。",
+      "notFound": "文件夹不存在：{{path}}",
+      "permissionDenied": "没有权限：{{path}}",
+      "notADirectory": "不是文件夹：{{path}}",
+      "timedOut": "服务器没有及时响应。",
+      "other": "无法列出文件夹：{{message}}"
+    }
   },
   "forwards": {
     "title": "端口转发",

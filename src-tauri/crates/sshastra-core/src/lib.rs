@@ -3,6 +3,7 @@
 //! with plain `cargo test`.
 
 pub mod credentials;
+pub mod files;
 pub mod forward;
 mod fs_util;
 pub mod hosts;

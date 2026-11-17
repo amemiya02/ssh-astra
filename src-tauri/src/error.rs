@@ -1,6 +1,7 @@
 use serde::Serialize;
 use serde_json::{json, Value};
 use sshastra_core::credentials::VaultError;
+use sshastra_core::files::FsError;
 use sshastra_core::forward::ForwardError;
 use sshastra_core::hosts::HostStoreError;
 use sshastra_core::settings::SettingsError;
@@ -25,6 +26,11 @@ impl CommandError {
             message: err.to_string(),
             details: None,
         }
+    }
+
+    /// A File panel id that is not (or no longer) open.
+    pub fn not_open() -> Self {
+        Self::new("notOpen", "the File panel's SFTP session is closed")
     }
 
     fn with_details(mut self, details: Value) -> Self {
@@ -100,6 +106,21 @@ impl From<SettingsError> for CommandError {
             ReservedSection => "invalid",
         };
         Self::new(kind, err)
+    }
+}
+
+impl From<FsError> for CommandError {
+    fn from(err: FsError) -> Self {
+        use FsError::*;
+        let path = |p: &String| json!({ "path": p });
+        match &err {
+            NotConnected => Self::new("notConnected", &err),
+            NotFound(p) => Self::new("notFound", &err).with_details(path(p)),
+            PermissionDenied(p) => Self::new("permissionDenied", &err).with_details(path(p)),
+            NotADirectory(p) => Self::new("notADirectory", &err).with_details(path(p)),
+            TimedOut => Self::new("timedOut", &err),
+            Protocol(_) => Self::new("protocol", &err),
+        }
     }
 }
 

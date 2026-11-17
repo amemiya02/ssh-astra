@@ -1,6 +1,6 @@
 //! SSH Connections. [`ConnectionManager::connect`] returns one shared
-//! [`Connection`] per Host; every remote Terminal and running Port forward
-//! (and, later, File panel) on that Host runs over it.
+//! [`Connection`] per Host; every remote Terminal, running Port forward and
+//! File panel on that Host runs over it.
 //!
 //! Decisions that need the user (trusting a new host key, typing a password
 //! or key passphrase, answering keyboard-interactive questions) are delegated
@@ -48,6 +48,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 
 use crate::credentials::{CredentialVault, NoVault};
+use crate::files::{FsError, SftpFs};
 use crate::hosts::{Host, HostId};
 use crate::known_hosts::{HostKey, KnownHost, KnownHosts, KnownHostsError, Verdict};
 use crate::terminal::{TerminalEvent, TerminalSize};
@@ -381,6 +382,14 @@ impl ConnectionManager {
         .await
     }
 
+    /// The Host's live Connection, if it has one, without connecting. While
+    /// a connect to it is in flight, waits for that one.
+    pub async fn live(&self, id: &HostId) -> Option<Arc<Connection>> {
+        let slot = self.slot(id);
+        let current = slot.lock().await;
+        current.upgrade().filter(|c| !c.is_closed())
+    }
+
     /// The live Connection in `id`'s slot, or the one `establish` opens,
     /// which is then kept there for later connects.
     async fn shared<F, Fut>(
@@ -394,7 +403,7 @@ impl ConnectionManager {
     {
         let slot = self.slot(id);
         let mut current = slot.lock().await;
-        if let Some(live) = current.upgrade().filter(|c| !c.handle.is_closed()) {
+        if let Some(live) = current.upgrade().filter(|c| !c.is_closed()) {
             return Ok(live);
         }
         let connection = Arc::new(establish().await?);
@@ -562,6 +571,17 @@ impl Connection {
     {
         let channel = self.handle.channel_open_session().await?;
         shell::start(Arc::clone(self), channel, size, sink).await
+    }
+
+    /// Opens an SFTP session on this Connection, for a File panel. It keeps
+    /// the Connection alive while it is open.
+    pub async fn open_sftp(self: &Arc<Self>) -> Result<SftpFs, FsError> {
+        let channel = self
+            .handle
+            .channel_open_session()
+            .await
+            .map_err(|e| FsError::Protocol(e.to_string()))?;
+        SftpFs::start(Arc::clone(self), channel).await
     }
 }
 
