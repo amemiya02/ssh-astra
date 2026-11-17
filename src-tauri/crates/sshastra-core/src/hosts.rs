@@ -9,11 +9,12 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::forward::{ForwardDraft, ForwardId, PortForward};
 use crate::fs_util::write_atomically;
 
 /// The file format version this build writes. Bump it together with a
 /// migration step in [`migrate`].
-const CURRENT_VERSION: u32 = 2;
+const CURRENT_VERSION: u32 = 3;
 
 /// Identifies a Host across restarts and across the IPC boundary.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -112,6 +113,11 @@ pub struct Host {
     /// moving the Host, never by the Host form.
     #[serde(default)]
     pub group_id: Option<GroupId>,
+    /// Port forward rules, in the order the user added them. Changed only
+    /// through [`HostStore::save_forward`] / [`HostStore::delete_forward`],
+    /// never by the Host form.
+    #[serde(default)]
+    pub forwards: Vec<PortForward>,
 }
 
 /// A Host's editable fields, as entered in the Host form.
@@ -169,6 +175,7 @@ impl HostDraft {
                 .map(|s| s.trim().to_owned())
                 .filter(|s| !s.is_empty()),
             group_id: None,
+            forwards: Vec::new(),
         })
     }
 }
@@ -191,6 +198,8 @@ pub enum HostStoreError {
     NotFound(HostId),
     #[error("no such group: {0}")]
     GroupNotFound(GroupId),
+    #[error("no such Port forward: {0}")]
+    ForwardNotFound(ForwardId),
     #[error("a group cannot move into itself or a group inside it")]
     InvalidMove,
     /// Following the Jump hosts leads back to where it started; the names
@@ -218,6 +227,7 @@ struct FileV1 {
     hosts: Vec<Host>,
 }
 
+/// Versions 2 and 3 (which added `Host::forwards`).
 #[derive(Deserialize)]
 struct FileV2 {
     groups: Vec<Group>,
@@ -240,6 +250,13 @@ impl Library {
             }
             _ => Ok(()),
         }
+    }
+
+    fn host_mut(&mut self, id: &HostId) -> Result<&mut Host, HostStoreError> {
+        self.hosts
+            .iter_mut()
+            .find(|h| &h.id == id)
+            .ok_or_else(|| HostStoreError::NotFound(id.clone()))
     }
 
     fn group_index(&self, id: &GroupId) -> Result<usize, HostStoreError> {
@@ -353,8 +370,10 @@ impl HostStore {
                     .find(|h| h.id == id)
                     .ok_or_else(|| HostStoreError::NotFound(id.clone()))?;
                 let group_id = slot.group_id.clone();
+                let forwards = std::mem::take(&mut slot.forwards);
                 *slot = Host {
                     group_id,
+                    forwards,
                     ..draft.into_host(id)?
                 };
                 slot.clone()
@@ -381,6 +400,49 @@ impl HostStore {
         library.hosts.retain(|h| &h.id != id);
         if library.hosts.len() == before {
             return Err(HostStoreError::NotFound(id.clone()));
+        }
+        self.save(library)
+    }
+
+    /// Adds a Port forward rule to Host `host` (`id: None`, at the end) or
+    /// replaces its rule `id`, then saves.
+    pub fn save_forward(
+        &mut self,
+        host: &HostId,
+        id: Option<ForwardId>,
+        draft: ForwardDraft,
+    ) -> Result<PortForward, HostStoreError> {
+        let mut library = self.library.clone();
+        let forwards = &mut library.host_mut(host)?.forwards;
+        let forward = match id {
+            None => {
+                let forward = draft
+                    .into_forward(ForwardId::generate())
+                    .map_err(HostStoreError::Invalid)?;
+                forwards.push(forward.clone());
+                forward
+            }
+            Some(id) => {
+                let slot = forwards
+                    .iter_mut()
+                    .find(|f| f.id == id)
+                    .ok_or_else(|| HostStoreError::ForwardNotFound(id.clone()))?;
+                *slot = draft.into_forward(id).map_err(HostStoreError::Invalid)?;
+                slot.clone()
+            }
+        };
+        self.save(library)?;
+        Ok(forward)
+    }
+
+    /// Removes Host `host`'s Port forward rule `id`, then saves.
+    pub fn delete_forward(&mut self, host: &HostId, id: &ForwardId) -> Result<(), HostStoreError> {
+        let mut library = self.library.clone();
+        let forwards = &mut library.host_mut(host)?.forwards;
+        let before = forwards.len();
+        forwards.retain(|f| &f.id != id);
+        if forwards.len() == before {
+            return Err(HostStoreError::ForwardNotFound(id.clone()));
         }
         self.save(library)
     }
@@ -413,11 +475,14 @@ impl HostStore {
             .position(|h| &h.id == id)
             .ok_or_else(|| HostStoreError::NotFound(id.clone()))?;
         // A clone, so every setting (including ones added later) is copied.
-        let copy = Host {
+        let mut copy = Host {
             id: HostId::generate(),
             name: required_name(name)?,
             ..library.hosts[at].clone()
         };
+        for forward in &mut copy.forwards {
+            forward.id = ForwardId::generate();
+        }
         library.hosts.insert(at + 1, copy.clone());
         self.save(library)?;
         Ok(copy)
@@ -559,7 +624,9 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
             groups: Vec::new(),
             hosts: serde_json::from_str::<FileV1>(text).map_err(corrupt)?.hosts,
         }),
-        2 => {
+        // v3 added Port forwards on Hosts; v2 Hosts have none, which
+        // `Host::forwards` defaults to.
+        2 | 3 => {
             let FileV2 { groups, hosts } = serde_json::from_str(text).map_err(corrupt)?;
             Ok(Library { groups, hosts })
         }

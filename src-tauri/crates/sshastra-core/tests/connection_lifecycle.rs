@@ -80,6 +80,7 @@ impl Fixture {
             jump_host: None,
             group_id: None,
             terminal_scheme: None,
+            forwards: Vec::new(),
         };
         Self {
             manager: ConnectionManager::new(KnownHosts::new(dir.path().join("known_hosts"))),
@@ -197,6 +198,7 @@ fn behind(name: &str, jump: &Host) -> Host {
         jump_host: Some(jump.id.clone()),
         group_id: None,
         terminal_scheme: None,
+        forwards: Vec::new(),
     }
 }
 
