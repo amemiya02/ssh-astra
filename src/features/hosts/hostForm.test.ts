@@ -26,10 +26,10 @@ describe("parseHostForm", () => {
 
 describe("hostFormFrom", () => {
   it("round-trips a saved Host through the form", () => {
-    const host = { id: "1", name: "db", address: "db.local", port: 22, user: "root", auth: { type: "password" as const } };
+    const host = { id: "1", name: "db", address: "db.local", port: 22, user: "root", auth: { type: "password" as const }, groupId: null };
     const form = hostFormFrom(host);
     expect(form).toEqual({ name: "db", address: "db.local", port: "22", user: "root" });
-    expect(parseHostForm(form)).toEqual({ ok: true, draft: { ...host, id: undefined } });
+    expect(parseHostForm(form)).toEqual({ ok: true, draft: { ...host, id: undefined, groupId: undefined } });
   });
 
   it("starts new Hosts on port 22", () => {

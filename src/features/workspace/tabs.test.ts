@@ -76,7 +76,7 @@ describe("tabTitle", () => {
   });
 
   it("names a remote Terminal after its Host", () => {
-    const host = { id: "h", name: "web-1", address: "10.0.0.5", port: 22, user: "deploy", auth: { type: "password" as const } };
+    const host = { id: "h", name: "web-1", address: "10.0.0.5", port: 22, user: "deploy", auth: { type: "password" as const }, groupId: null };
     expect(tabTitle({ id: "r", kind: "remote-terminal", host }, t, 1)).toBe("web-1");
   });
 });

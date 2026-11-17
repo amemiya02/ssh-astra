@@ -1,5 +1,5 @@
-import { Plus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { FolderPlus, Plus, Search, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
 import { Button } from "@/components/ui/button";
@@ -14,10 +14,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { readCommandError } from "@/lib/ipc/connect";
-import { listHosts, saveHost, type Host } from "@/lib/ipc/hosts";
+import type { Group, Host, HostDraft, HostId } from "@/lib/ipc/hosts";
 import { cn } from "@/lib/utils";
+import { HostList, type HostListActions } from "./HostList";
 import { HostsSidebar } from "./HostsSidebar";
-import { emptyHostForm, parseHostForm, type HostFormField, type HostFormResult, type HostFormValues } from "./hostForm";
+import { emptyHostForm, hostFormFrom, parseHostForm, type HostFormField, type HostFormResult, type HostFormValues } from "./hostForm";
+import { searchTree, type DragItem } from "./hostTree";
+import { hostsStore, useHosts } from "./hostsStore";
 
 interface HostsPanelProps {
   /** Open a remote Terminal on the Host. */
@@ -25,39 +28,121 @@ interface HostsPanelProps {
   onOpenLocalTerminal(): void;
 }
 
-/** The Host list in the sidebar, with a "New Host" dialog. Double-click (or Enter on) a Host to open it. */
+type Removal = { kind: "host"; host: Host } | { kind: "group"; group: Group };
+
+/**
+ * The Host list in the sidebar: search, nested Groups, drag and drop, and the
+ * Host editor. Double-click (or Enter on) a Host to open it.
+ */
 export function HostsPanel({ onOpen, onOpenLocalTerminal }: HostsPanelProps) {
   const { t } = useTranslation();
-  const [hosts, setHosts] = useState<Host[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const tree = useHosts((s) => s.tree);
+  const status = useHosts((s) => s.status);
+  const loadError = useHosts((s) => s.error);
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState<DragItem | null>(null);
+  /** The Host editor: "new", a Host being edited, or closed. */
+  const [editing, setEditing] = useState<Host | "new" | null>(null);
+  const [removing, setRemoving] = useState<Removal | null>(null);
+  const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
-    listHosts().then(setHosts, (e: unknown) => setLoadError(readCommandError(e).message));
+    void hostsStore.getState().load();
   }, []);
 
+  const searching = query.trim() !== "";
+  const nodes = useMemo(() => searchTree(tree, query), [tree, query]);
+  const store = hostsStore.getState;
+
+  /** Runs a store change, showing why it failed instead of throwing. */
+  const attempt = async <T,>(change: () => Promise<T>): Promise<T | undefined> => {
+    setActionError(null);
+    try {
+      return await change();
+    } catch (e) {
+      setActionError(t("hosts.actionFailed", { message: readCommandError(e).message }));
+      return undefined;
+    }
+  };
+
+  const selectedGroupId = selected?.kind === "group" ? selected.id : null;
+
+  const createGroup = async (parentId: string | null) => {
+    const group = await attempt(() => store().createGroup(t("hosts.newGroupName"), parentId));
+    if (group) {
+      setSelected({ kind: "group", id: group.id });
+      setRenamingGroupId(group.id);
+    }
+  };
+
+  const actions: HostListActions = {
+    open: onOpen,
+    edit: (host) => setEditing(host),
+    duplicate: async (host) => {
+      const copy = await attempt(() => store().duplicateHost(host.id, t("hosts.copyName", { name: host.name })));
+      if (copy) {
+        setSelected({ kind: "host", id: copy.id });
+        setEditing(copy);
+      }
+    },
+    remove: setRemoving,
+    createGroup: (parentId) => void createGroup(parentId),
+    startRename: setRenamingGroupId,
+    rename: (id, name) => {
+      setRenamingGroupId(null);
+      void attempt(() => store().renameGroup(id, name));
+    },
+    cancelRename: () => setRenamingGroupId(null),
+    move: (op) => void attempt(() => store().move(op)),
+  };
+
+  /** Saves the editor; a new Host goes into the selected Group, last. */
+  const save = async (draft: HostDraft, id?: HostId) => {
+    const host = await store().saveHost(draft, id);
+    if (!id && selectedGroupId) {
+      const index = store().tree.hosts.filter((h) => h.groupId === selectedGroupId).length;
+      await attempt(() => store().move({ kind: "host", id: host.id, parentId: selectedGroupId, index }));
+    }
+    return host;
+  };
+
   let list;
-  if (loadError) {
+  if (status === "error") {
     list = (
       <p role="alert" className="text-destructive px-1 py-2 text-xs">
         {loadError}
       </p>
     );
-  } else if (hosts.length > 0) {
+  } else if (tree.hosts.length > 0 || tree.groups.length > 0) {
     list = (
-      <ul aria-label={t("hosts.title")} className="grid gap-0.5">
-        {hosts.map((host) => (
-          <li key={host.id}>
-            <HostRow
-              host={host}
-              selected={host.id === selectedId}
-              onSelect={() => setSelectedId(host.id)}
-              onOpen={() => onOpen(host)}
+      <div className="flex h-full flex-col gap-2">
+        <SearchField value={query} onChange={setQuery} />
+        {actionError && (
+          <p role="alert" className="text-destructive px-1 text-xs">
+            {actionError}
+          </p>
+        )}
+        <div className="min-h-0 flex-1">
+          {searching && nodes.length === 0 ? (
+            <div className="flex flex-col items-start gap-2 px-1 py-4">
+              <Search className="text-muted-foreground size-5" aria-hidden />
+              <p className="font-medium">{t("hosts.noResultsTitle")}</p>
+              <p className="text-muted-foreground text-pretty">{t("hosts.noResultsBody")}</p>
+            </div>
+          ) : (
+            <HostList
+              tree={tree}
+              nodes={nodes}
+              searching={searching}
+              selected={selected}
+              onSelect={setSelected}
+              renamingGroupId={renamingGroupId}
+              actions={actions}
             />
-          </li>
-        ))}
-      </ul>
+          )}
+        </div>
+      </div>
     );
   }
 
@@ -66,21 +151,41 @@ export function HostsPanel({ onOpen, onOpenLocalTerminal }: HostsPanelProps) {
       <HostsSidebar
         onOpenLocalTerminal={onOpenLocalTerminal}
         actions={
-          <IconButton label={t("hosts.new")} onClick={() => setCreating(true)}>
-            <Plus />
-          </IconButton>
+          <>
+            <IconButton label={t("hosts.newGroup")} onClick={() => void createGroup(selectedGroupId)}>
+              <FolderPlus />
+            </IconButton>
+            <IconButton label={t("hosts.new")} onClick={() => setEditing("new")}>
+              <Plus />
+            </IconButton>
+          </>
         }
       >
         {list}
       </HostsSidebar>
-      <Dialog open={creating} onOpenChange={setCreating}>
-        {creating && (
+      <Dialog open={editing !== null} onOpenChange={(open) => !open && setEditing(null)}>
+        {editing !== null && (
           <HostFormDialogContent
-            onCancel={() => setCreating(false)}
+            host={editing === "new" ? undefined : editing}
+            save={save}
+            onCancel={() => setEditing(null)}
             onSaved={(host) => {
-              setHosts((all) => [...all, host]);
-              setSelectedId(host.id);
-              setCreating(false);
+              setSelected({ kind: "host", id: host.id });
+              setEditing(null);
+            }}
+          />
+        )}
+      </Dialog>
+      <Dialog open={removing !== null} onOpenChange={(open) => !open && setRemoving(null)}>
+        {removing && (
+          <ConfirmRemoveDialogContent
+            removal={removing}
+            onCancel={() => setRemoving(null)}
+            onConfirm={() => {
+              const target = removing;
+              setRemoving(null);
+              if (target.kind === "host") void attempt(() => store().deleteHost(target.host.id));
+              else void attempt(() => store().deleteGroup(target.group.id));
             }}
           />
         )}
@@ -89,61 +194,66 @@ export function HostsPanel({ onOpen, onOpenLocalTerminal }: HostsPanelProps) {
   );
 }
 
-const initials = (name: string) =>
-  name
-    .split(/[\s._-]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("") || "?";
-
-function HostRow({
-  host,
-  selected,
-  onSelect,
-  onOpen,
-}: {
-  host: Host;
-  selected: boolean;
-  onSelect(): void;
-  onOpen(): void;
-}) {
+/** Fuzzy search over names, addresses and users. Escape clears it. */
+function SearchField({ value, onChange }: { value: string; onChange(value: string): void }) {
   const { t } = useTranslation();
   return (
-    <button
-      type="button"
-      title={t("hosts.openHint")}
-      aria-current={selected || undefined}
-      className={cn(
-        "focus-visible:ring-ring/50 flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left outline-none focus-visible:ring-[3px]",
-        selected ? "bg-selected" : "hover:bg-accent",
+    <div className="relative">
+      <Search aria-hidden className="text-muted-foreground pointer-events-none absolute top-2 left-2.5 size-3.5" />
+      <Input
+        type="search"
+        aria-label={t("hosts.search")}
+        placeholder={t("hosts.search")}
+        className="bg-surface h-7.5 pr-8 pl-8 text-sm [&::-webkit-search-cancel-button]:hidden"
+        value={value}
+        autoCapitalize="off"
+        autoCorrect="off"
+        spellCheck={false}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && value) {
+            event.preventDefault();
+            onChange("");
+          }
+        }}
+      />
+      {value && (
+        <IconButton label={t("hosts.clearSearch")} className="absolute top-0.5 right-0.5" onClick={() => onChange("")}>
+          <X />
+        </IconButton>
       )}
-      onClick={onSelect}
-      onDoubleClick={onOpen}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          onOpen();
-        }
-      }}
-    >
-      <span
-        aria-hidden
-        className={cn(
-          "grid size-6.5 shrink-0 place-items-center rounded-md text-xs font-semibold",
-          selected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
-        )}
-      >
-        {initials(host.name)}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate font-medium">{host.name}</span>
-        <span className="text-muted-foreground block truncate text-xs">
-          {host.user}@{host.address}
-          {host.port === 22 ? "" : `:${host.port}`}
-        </span>
-      </span>
-    </button>
+    </div>
+  );
+}
+
+/** Confirms deleting a Host or a Group. */
+function ConfirmRemoveDialogContent({
+  removal,
+  onConfirm,
+  onCancel,
+}: {
+  removal: Removal;
+  onConfirm(): void;
+  onCancel(): void;
+}) {
+  const { t } = useTranslation();
+  const isHost = removal.kind === "host";
+  const name = isHost ? removal.host.name : removal.group.name;
+  return (
+    <DialogContent showCloseButton={false} className="max-w-[calc(100%-2rem)] p-5 sm:max-w-120">
+      <DialogHeader>
+        <DialogTitle>{isHost ? t("hosts.deleteHostTitle", { name }) : t("hosts.deleteGroupTitle", { name })}</DialogTitle>
+        <DialogDescription>{isHost ? t("hosts.deleteHostBody") : t("hosts.deleteGroupBody")}</DialogDescription>
+      </DialogHeader>
+      <DialogFooter>
+        <Button type="button" variant="outline" size="sm" autoFocus onClick={onCancel}>
+          {t("hosts.cancel")}
+        </Button>
+        <Button type="button" variant="destructive" size="sm" onClick={onConfirm}>
+          {t("hosts.delete")}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
   );
 }
 
@@ -154,9 +264,20 @@ const fields: { field: HostFormField; inputMode?: "numeric" }[] = [
   { field: "user" },
 ];
 
-function HostFormDialogContent({ onSaved, onCancel }: { onSaved: (host: Host) => void; onCancel: () => void }) {
+/** The Host editor: a new Host (`host` omitted) or edits to `host`. */
+function HostFormDialogContent({
+  host,
+  save,
+  onSaved,
+  onCancel,
+}: {
+  host?: Host;
+  save: (draft: HostDraft, id?: HostId) => Promise<Host>;
+  onSaved: (host: Host) => void;
+  onCancel: () => void;
+}) {
   const { t } = useTranslation();
-  const [values, setValues] = useState<HostFormValues>(emptyHostForm);
+  const [values, setValues] = useState<HostFormValues>(() => (host ? hostFormFrom(host) : emptyHostForm));
   const [errors, setErrors] = useState<Extract<HostFormResult, { ok: false }>["errors"]>({});
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -174,15 +295,15 @@ function HostFormDialogContent({ onSaved, onCancel }: { onSaved: (host: Host) =>
           }
           setErrors({});
           setSaving(true);
-          saveHost(result.draft).then(onSaved, (e: unknown) => {
+          save(result.draft, host?.id).then(onSaved, (e: unknown) => {
             setSaveError(readCommandError(e).message);
             setSaving(false);
           });
         }}
       >
         <DialogHeader>
-          <DialogTitle>{t("hosts.new")}</DialogTitle>
-          <DialogDescription>{t("hosts.newDescription")}</DialogDescription>
+          <DialogTitle>{host ? t("hosts.edit") : t("hosts.new")}</DialogTitle>
+          <DialogDescription>{host ? t("hosts.editDescription") : t("hosts.newDescription")}</DialogDescription>
         </DialogHeader>
         {fields.map(({ field, inputMode }) => {
           const id = `host-form-${field}`;

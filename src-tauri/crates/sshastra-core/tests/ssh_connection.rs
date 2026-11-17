@@ -74,6 +74,7 @@ fn host(sshd: &Sshd) -> Host {
         port: sshd.port,
         user: sshd.user.into(),
         auth: HostAuth::Password,
+        group_id: None,
     }
 }
 
@@ -263,6 +264,7 @@ async fn an_unreachable_address_is_reported() {
         port,
         user: "x".into(),
         auth: HostAuth::Password,
+        group_id: None,
     };
     let prompter = ScriptedPrompter::new(true, &[]);
 

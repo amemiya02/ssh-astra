@@ -147,7 +147,7 @@ fn the_file_is_versioned_json() {
 
     let json: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(json["version"], 1);
+    assert_eq!(json["version"], 2);
     assert_eq!(json["hosts"][0]["name"], "web");
     assert_eq!(json["hosts"][0]["auth"]["type"], "password");
 }
