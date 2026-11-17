@@ -8,11 +8,13 @@ interface HostsSidebarProps {
   actions?: ReactNode;
   /** The Host list. Omit to show the first-run empty state. */
   children?: ReactNode;
+  /** Shown under the first-run empty state (e.g. "Import ~/.ssh/config"). */
+  emptyAction?: ReactNode;
   onOpenLocalTerminal(): void;
 }
 
 /** The left column: title, Host list slot, and the Local terminal shortcut pinned at the bottom. */
-export function HostsSidebar({ actions, children, onOpenLocalTerminal }: HostsSidebarProps) {
+export function HostsSidebar({ actions, children, emptyAction, onOpenLocalTerminal }: HostsSidebarProps) {
   const { t } = useTranslation();
   return (
     <div className="flex h-full min-h-0 flex-col py-2.5 pr-1 pl-2.5">
@@ -20,7 +22,7 @@ export function HostsSidebar({ actions, children, onOpenLocalTerminal }: HostsSi
         <h2 className="flex-1 truncate font-semibold">{t("hosts.title")}</h2>
         {actions}
       </div>
-      <div className="mt-2 min-h-0 flex-1 overflow-y-auto">{children ?? <HostListEmpty />}</div>
+      <div className="mt-2 min-h-0 flex-1 overflow-y-auto">{children ?? <HostListEmpty action={emptyAction} />}</div>
       <Button variant="outline" size="sm" className="mt-2 w-full" onClick={onOpenLocalTerminal}>
         <SquareTerminal aria-hidden />
         {t("tabs.localTerminal")}
@@ -29,13 +31,14 @@ export function HostsSidebar({ actions, children, onOpenLocalTerminal }: HostsSi
   );
 }
 
-function HostListEmpty() {
+function HostListEmpty({ action }: { action?: ReactNode }) {
   const { t } = useTranslation();
   return (
     <div className="flex flex-col items-start gap-2 px-1 py-4">
       <Server className="text-muted-foreground size-5" aria-hidden />
       <p className="font-medium">{t("hosts.emptyTitle")}</p>
       <p className="text-muted-foreground text-pretty">{t("hosts.emptyBody")}</p>
+      {action}
     </div>
   );
 }
