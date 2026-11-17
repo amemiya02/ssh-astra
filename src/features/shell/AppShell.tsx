@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useGroupRef, usePanelRef } from "react-resizable-panels";
 import { IconButton } from "@/components/IconButton";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { usePaletteActions, type PaletteAction } from "@/features/palette/palette-actions";
 import { cn } from "@/lib/utils";
 import { FilePanelDockContext } from "./file-panel-dock";
 import { isPanelCollapsed, type FilePanelDock } from "./shell-layout";
@@ -85,6 +86,24 @@ export function AppShell({ sidebar, tabs, workspace, filePanel, status, onOpenSe
     panel.expand();
     if (fallback && panel.getSize().inPixels < parseFloat(fallback)) panel.resize(fallback);
   };
+
+  // The palette runs the latest toggle without re-registering on every render.
+  const toggleFilesRef = useRef(() => {});
+  useEffect(() => {
+    toggleFilesRef.current = () => toggle(filesRef, filesCollapsed, defaultFilesSize[dock]);
+  });
+  usePaletteActions(
+    useMemo(
+      (): PaletteAction[] => [
+        {
+          id: "files.togglePanel",
+          title: filesCollapsed ? t("files.show") : t("files.hide"),
+          run: () => toggleFilesRef.current(),
+        },
+      ],
+      [filesCollapsed, t],
+    ),
+  );
 
   return (
     <div className="flex h-full flex-col">
