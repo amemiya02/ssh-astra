@@ -23,6 +23,8 @@ export interface TerminalPrefs {
    * Read by the core too (`TerminalSettings`); applies to Terminals opened afterwards.
    */
   shellIntegration: boolean;
+  /** Ask before pasting more than one line (`PasteConfirmDialog`), since a shell runs each as it arrives. */
+  confirmMultilinePaste: boolean;
 }
 
 export const minFontSize = 8;
@@ -36,6 +38,7 @@ export const defaultTerminalPrefs: TerminalPrefs = {
   copyOnSelect: true,
   rightClickPaste: true,
   shellIntegration: true,
+  confirmMultilinePaste: true,
 };
 
 /** The `terminal` section of the settings file. */
@@ -60,5 +63,6 @@ export function normalizeTerminalPrefs(raw: Partial<Record<keyof TerminalPrefs, 
     copyOnSelect: bool(raw.copyOnSelect, d.copyOnSelect),
     rightClickPaste: bool(raw.rightClickPaste, d.rightClickPaste),
     shellIntegration: bool(raw.shellIntegration, d.shellIntegration),
+    confirmMultilinePaste: bool(raw.confirmMultilinePaste, d.confirmMultilinePaste),
   };
 }

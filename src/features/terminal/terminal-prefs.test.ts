@@ -25,6 +25,7 @@ describe("terminal preferences", () => {
     expect(prefs.copyOnSelect).toBe(true);
     expect(prefs.rightClickPaste).toBe(true);
     expect(prefs.shellIntegration).toBe(true);
+    expect(prefs.confirmMultilinePaste).toBe(true);
   });
 
   it("survives a restart", async () => {
@@ -37,6 +38,7 @@ describe("terminal preferences", () => {
       copyOnSelect: false,
       rightClickPaste: false,
       shellIntegration: false,
+      confirmMultilinePaste: false,
     };
     (await openSettings(backend)).set(terminalSetting, changed);
     expect(backend.file.terminal).toEqual(changed);

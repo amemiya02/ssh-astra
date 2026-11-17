@@ -517,6 +517,10 @@
         "label": "右键粘贴",
         "description": "在终端中右键单击时粘贴剪贴板内容。"
       },
+      "confirmMultilinePaste": {
+        "label": "多行粘贴前确认",
+        "description": "粘贴多于一行的内容前先询问，因为 shell 会逐行立即执行。"
+      },
       "shellIntegration": {
         "label": "Shell 集成",
         "description": "新开的远程 bash、zsh 终端在你 cd 时通知文件面板，让它跟着切换目录。关闭后不会向 shell 输入任何内容，「同步到终端目录」仍然可用。"

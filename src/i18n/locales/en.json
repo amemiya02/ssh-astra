@@ -517,6 +517,10 @@
         "label": "Right-click paste",
         "description": "Right-clicking in a Terminal pastes the clipboard."
       },
+      "confirmMultilinePaste": {
+        "label": "Confirm multi-line paste",
+        "description": "Ask before pasting more than one line, since the shell runs each line as it arrives."
+      },
       "shellIntegration": {
         "label": "Shell integration",
         "description": "New remote bash and zsh Terminals tell the File panel when you cd, so it follows. Turn off to type nothing into the shell; Sync to Terminal folder still works."

@@ -12,7 +12,7 @@ import { resolveTerminalTheme, terminalSearchDecorations, type TerminalColorSche
 import { PasteConfirmDialog, type PendingPaste } from "./PasteConfirmDialog";
 import { TerminalSearchBar, type SearchDirection, type SearchResults } from "./TerminalSearchBar";
 import { currentPlatform, matchTerminalShortcut } from "@/features/workspace/shortcuts";
-import { pasteLines } from "./terminal-input";
+import { planPaste } from "./terminal-input";
 import { useTerminalPrefs } from "./terminal-prefs-context";
 
 export const scrollbackLines = 10_000;
@@ -62,12 +62,12 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
     onTitleChangeRef.current = onTitleChange;
   });
 
-  /** Pastes through xterm (so bracketed paste works), asking first when it is several lines. */
+  /** Pastes through xterm (so bracketed paste works), asking first for several lines if the preference says so. */
   const requestPaste = useCallback((text: string) => {
-    const lines = pasteLines(text);
-    if (lines === 0) return;
-    if (lines > 1) setPendingPaste({ text, lines });
-    else xtermRef.current?.paste(text);
+    const plan = planPaste(text, prefsRef.current.confirmMultilinePaste);
+    if (!plan) return;
+    if ("ask" in plan) setPendingPaste(plan.ask);
+    else xtermRef.current?.paste(plan.paste);
   }, []);
 
   useEffect(() => {
