@@ -116,6 +116,7 @@ impl From<FsError> for CommandError {
             NotFound(p) => Self::new("notFound", &err).with_details(path(p)),
             PermissionDenied(p) => Self::new("permissionDenied", &err).with_details(path(p)),
             NotADirectory(p) => Self::new("notADirectory", &err).with_details(path(p)),
+            AlreadyExists(p) => Self::new("alreadyExists", &err).with_details(path(p)),
             TimedOut => Self::new("timedOut", &err),
             Protocol(_) => Self::new("protocol", &err),
         }

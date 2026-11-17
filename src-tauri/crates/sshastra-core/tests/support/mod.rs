@@ -172,6 +172,24 @@ impl Sshd {
 }
 
 impl Sshd {
+    /// Runs a `bash` script inside the server's container as `tester` (to
+    /// set up files a test needs) and returns its stdout.
+    pub fn run_as_tester(&self, script: &str) -> String {
+        compose(&[
+            "exec",
+            "-T",
+            "-u",
+            "tester",
+            self.service.name(),
+            "bash",
+            "-c",
+            script,
+        ])
+        .unwrap_or_else(|e| panic!("script failed on {}: {e}", self.service.name()))
+    }
+}
+
+impl Sshd {
     /// Kills the server's per-connection processes, so every Connection to
     /// it drops at once (as when the server restarts or the network resets).
     pub fn drop_connections(&self) {

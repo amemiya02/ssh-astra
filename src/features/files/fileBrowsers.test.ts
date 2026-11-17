@@ -7,6 +7,11 @@ const api = (): FilesApi => ({
   openFiles: vi.fn(() => Promise.resolve(1)),
   listFiles: vi.fn(() => Promise.resolve({ path: "/home/me", entries: [] })),
   closeFiles: vi.fn(() => Promise.resolve()),
+  createDir: vi.fn(() => Promise.resolve()),
+  renameFile: vi.fn(() => Promise.resolve()),
+  countFiles: vi.fn(() => Promise.resolve(0)),
+  deleteFiles: vi.fn(() => Promise.resolve()),
+  chmodFile: vi.fn(() => Promise.resolve()),
 });
 
 describe("fileBrowsers", () => {

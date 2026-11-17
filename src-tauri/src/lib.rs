@@ -96,6 +96,11 @@ pub fn run() {
             commands::terminal::terminal_reconnect,
             commands::files::files_open,
             commands::files::files_list,
+            commands::files::files_create_dir,
+            commands::files::files_rename,
+            commands::files::files_count,
+            commands::files::files_delete,
+            commands::files::files_chmod,
             commands::files::files_close,
         ])
         .run(tauri::generate_context!())

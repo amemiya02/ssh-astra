@@ -134,6 +134,49 @@
       "notADirectory": "不是文件夹：{{path}}",
       "timedOut": "服务器没有及时响应。",
       "other": "无法列出文件夹：{{message}}"
+    },
+    "newFolder": "新建文件夹",
+    "create": "创建",
+    "cancel": "取消",
+    "name": "名称",
+    "renameAction": "重命名…",
+    "permissionsAction": "权限…",
+    "deleteAction": "删除…",
+    "newFolderAction": "新建文件夹…",
+    "rename": {
+      "title": "重命名“{{name}}”",
+      "confirm": "重命名"
+    },
+    "nameProblem": {
+      "slash": "名称不能包含“/”。",
+      "dots": "不能使用“{{name}}”作为名称。",
+      "taken": "此文件夹中已有“{{name}}”。"
+    },
+    "delete": {
+      "titleOne": "删除“{{name}}”？",
+      "titleMany": "删除 {{count}} 项？",
+      "counting": "正在统计将被删除的条目…",
+      "count_one": "将删除 {{count}} 个条目。此操作无法撤销。",
+      "count_other": "将删除 {{count}} 个条目（包括文件夹中的全部内容）。此操作无法撤销。",
+      "confirm": "删除"
+    },
+    "permissions": {
+      "title": "“{{name}}”的权限",
+      "owner": "所有者",
+      "group": "组",
+      "others": "其他人",
+      "read": "读",
+      "write": "写",
+      "execute": "执行",
+      "octal": "八进制",
+      "apply": "应用"
+    },
+    "operationErrors": {
+      "notFound": "文件或文件夹不存在：{{path}}",
+      "permissionDenied": "权限不足：{{path}}",
+      "alreadyExists": "已存在：{{path}}",
+      "notOpen": "File panel 未连接。",
+      "other": "服务器拒绝了操作：{{message}}"
     }
   },
   "forwards": {
