@@ -22,15 +22,23 @@ export type TerminalEvent =
   | { type: "output"; data: Uint8Array }
   /** Remote Terminals only. */
   | { type: "connection"; state: ConnectionState }
+  /** Remote Terminals only: the shell's current directory (ShellIntegration or `reportTerminalCwd`). */
+  | { type: "cwd"; path: string }
   | { type: "exit"; code: number | null };
 
 /** Raw message shape on a Terminal's channel (see `src-tauri/src/commands/terminal.rs`). */
-export type TerminalMessage = ArrayBuffer | number[] | { connection: ConnectionState } | { exitCode: number | null };
+export type TerminalMessage =
+  | ArrayBuffer
+  | number[]
+  | { connection: ConnectionState }
+  | { cwd: string }
+  | { exitCode: number | null };
 
 export function decodeTerminalMessage(message: TerminalMessage): TerminalEvent {
   if (message instanceof ArrayBuffer) return { type: "output", data: new Uint8Array(message) };
   if (Array.isArray(message)) return { type: "output", data: Uint8Array.from(message) };
   if ("connection" in message) return { type: "connection", state: message.connection };
+  if ("cwd" in message) return { type: "cwd", path: message.cwd };
   return { type: "exit", code: message.exitCode };
 }
 
@@ -57,6 +65,14 @@ export function resizeTerminal(id: TerminalId, size: TerminalSize): Promise<void
 /** Tries a remote Terminal's dropped Connection again now. */
 export function reconnectTerminal(id: TerminalId): Promise<void> {
   return invoke("terminal_reconnect", { id });
+}
+
+/**
+ * Makes a remote Terminal's shell report its directory once (a `cwd` event follows), by typing a
+ * command into it: for shells ShellIntegration does not cover, or with it turned off.
+ */
+export function reportTerminalCwd(id: TerminalId): Promise<void> {
+  return invoke("terminal_report_cwd", { id });
 }
 
 export function closeTerminal(id: TerminalId): Promise<void> {

@@ -26,7 +26,7 @@ mod remote_terminal;
 mod shell;
 
 pub use auth::Agent;
-pub use remote_terminal::{ReconnectPolicy, RemoteTerminal};
+pub use remote_terminal::{ReconnectPolicy, RemoteTerminal, RemoteTerminalOptions};
 pub use shell::RemoteShell;
 
 use std::collections::HashMap;

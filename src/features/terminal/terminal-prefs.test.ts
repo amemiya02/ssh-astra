@@ -24,6 +24,7 @@ describe("terminal preferences", () => {
     expect(prefs.colorScheme).toBe("app");
     expect(prefs.copyOnSelect).toBe(true);
     expect(prefs.rightClickPaste).toBe(true);
+    expect(prefs.shellIntegration).toBe(true);
   });
 
   it("survives a restart", async () => {
@@ -35,6 +36,7 @@ describe("terminal preferences", () => {
       colorScheme: "solarizedDark" as const,
       copyOnSelect: false,
       rightClickPaste: false,
+      shellIntegration: false,
     };
     (await openSettings(backend)).set(terminalSetting, changed);
     expect(backend.file.terminal).toEqual(changed);
@@ -43,7 +45,7 @@ describe("terminal preferences", () => {
 
   it("keeps the valid parts of a damaged or older saved value and defaults the rest", async () => {
     const backend = memoryBackend({
-      terminal: { fontSize: 400, colorScheme: "neon", copyOnSelect: false, fontFamily: "" },
+      terminal: { fontSize: 400, colorScheme: "neon", copyOnSelect: false, fontFamily: "", shellIntegration: "no" },
     });
     expect((await openSettings(backend)).get(terminalSetting)).toEqual({
       ...defaultTerminalPrefs,

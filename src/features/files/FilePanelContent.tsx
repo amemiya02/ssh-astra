@@ -1,4 +1,4 @@
-import { Eye, EyeOff, LoaderCircle, RefreshCw, Unplug } from "lucide-react";
+import { Eye, EyeOff, FolderSync, LoaderCircle, RefreshCw, Unplug } from "lucide-react";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
@@ -15,6 +15,7 @@ import { followConnection } from "./fileBrowserStore";
 import { fileBrowsers } from "./fileBrowsers";
 import { filesSetting } from "./file-prefs";
 import { FilePanel } from "./FilePanel";
+import { terminalCwds } from "./terminalCwds";
 
 /** The focused remote Terminal pane, whose Host the File panel browses. */
 export interface FilePanelPane {
@@ -30,7 +31,11 @@ export interface FilePanelPane {
  */
 export function FilePanelContent({ pane, remotePaneIds }: { pane?: FilePanelPane; remotePaneIds: string[] }) {
   const key = remotePaneIds.join("\n");
-  useEffect(() => fileBrowsers.retain(new Set(key ? key.split("\n") : [])), [key]);
+  useEffect(() => {
+    const ids = new Set(key ? key.split("\n") : []);
+    fileBrowsers.retain(ids);
+    terminalCwds.retain(ids);
+  }, [key]);
   if (!pane) return <FilePanel />;
   return <RemoteFilePanel key={pane.id} pane={pane} />;
 }
@@ -59,6 +64,9 @@ function RemoteFilePanel({ pane }: { pane: FilePanelPane }) {
         onClick={() => setPrefs({ ...prefs, showHidden: !prefs.showHidden })}
       >
         {prefs.showHidden ? <Eye /> : <EyeOff />}
+      </IconButton>
+      <IconButton label={t("files.syncToTerminal")} disabled={!ready} onClick={() => terminalCwds.sync(pane.id)}>
+        <FolderSync />
       </IconButton>
       <IconButton label={t("files.refresh")} disabled={!ready} onClick={() => void store.getState().refresh()}>
         <RefreshCw className={cn(loading && "motion-safe:animate-spin")} />

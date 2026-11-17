@@ -74,8 +74,8 @@ export function TerminalSurface({
           xterm.write(event.data);
           return;
         }
-        // Remote Terminal views handle their Connection before events reach here.
-        if (event.type === "connection") return;
+        // Remote Terminal views handle their Connection and directory before events reach here.
+        if (event.type === "connection" || event.type === "cwd") return;
         const message =
           event.code === null
             ? tRef.current("terminal.exitedUnknown")

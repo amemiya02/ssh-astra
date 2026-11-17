@@ -27,6 +27,8 @@ use sshastra_core::known_hosts::HostKey;
 
 pub const USER: &str = "tester";
 pub const PASSWORD: &str = "testpass";
+/// A user whose login shell is zsh (same password), for ShellIntegration tests.
+pub const ZSH_USER: &str = "zester";
 
 /// The TCP echo server (`echo` in `tests/sshd/docker-compose.yml`) as the
 /// sshd servers on the public network see it: every byte sent comes back.

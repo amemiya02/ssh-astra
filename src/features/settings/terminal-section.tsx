@@ -7,7 +7,7 @@ import { maxFontSize, minFontSize, type TerminalPrefs } from "@/features/termina
 import { TerminalSchemeSelect } from "@/features/terminal/TerminalSchemeSelect";
 import { SettingRow } from "./SettingRow";
 
-type BooleanPref = "ligatures" | "copyOnSelect" | "rightClickPaste";
+type BooleanPref = "ligatures" | "copyOnSelect" | "rightClickPaste" | "shellIntegration";
 
 /**
  * A text field that applies its value when it loses focus or on Enter, so a half-typed
@@ -121,6 +121,7 @@ export function TerminalSection() {
       </SettingRow>
       {toggle("copyOnSelect")}
       {toggle("rightClickPaste")}
+      {toggle("shellIntegration")}
     </>
   );
 }

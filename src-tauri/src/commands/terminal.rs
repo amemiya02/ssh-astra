@@ -4,6 +4,8 @@
 //! - a remote Terminal's Connection changes are JSON
 //!   `{ "connection": { "state": "reconnecting", "attempt": 1, "attempts": 3 } }`
 //!   (also `"connected"`, `"disconnected"` with a `reason`),
+//! - a remote Terminal's shell reporting its directory (ShellIntegration) is
+//!   JSON `{ "cwd": "/abs/path" }`,
 //! - the final message is JSON `{ "exitCode": number | null }`.
 //!
 //! Local terminals and remote Terminals share every command after `open`.
@@ -12,10 +14,12 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use sshastra_core::hosts::HostId;
-use sshastra_core::ssh::{ConnectionManager, ConnectionSettings, ReconnectPolicy, RemoteTerminal};
+use sshastra_core::ssh::{
+    ConnectionManager, ConnectionSettings, ReconnectPolicy, RemoteTerminal, RemoteTerminalOptions,
+};
 use sshastra_core::terminal::{
     ConnectionState, LocalPty, ShellCommand, TerminalEvent, TerminalId, TerminalRegistry,
-    TerminalSize,
+    TerminalSettings, TerminalSize, REPORT_CWD,
 };
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Manager, State};
@@ -29,6 +33,11 @@ use crate::prompts::{ChannelPrompter, PendingPrompts, PromptAnswer, PromptReques
 #[serde(rename_all = "camelCase")]
 struct ExitMessage {
     exit_code: Option<u32>,
+}
+
+#[derive(Serialize)]
+struct CwdMessage {
+    cwd: String,
 }
 
 #[derive(Serialize)]
@@ -53,6 +62,7 @@ fn channel_sink(on_event: Channel<InvokeResponseBody>) -> impl FnMut(TerminalEve
             TerminalEvent::Connection(connection) => {
                 send_json(&on_event, &ConnectionMessage { connection })
             }
+            TerminalEvent::Cwd(cwd) => send_json(&on_event, &CwdMessage { cwd }),
             TerminalEvent::Exit { code } => send_json(&on_event, &ExitMessage { exit_code: code }),
         }
     }
@@ -81,6 +91,7 @@ pub async fn remote_terminal_open(
     app: AppHandle,
     registry: State<'_, TerminalRegistry>,
     hosts: State<'_, HostsState>,
+    settings: State<'_, SettingsState>,
     pending: State<'_, Arc<PendingPrompts>>,
     host_id: HostId,
     size: TerminalSize,
@@ -108,13 +119,16 @@ pub async fn remote_terminal_open(
             connections.connect_through(&hops, &host, prompter).await
         }
     };
-    let terminal = RemoteTerminal::open(
-        connect,
-        ReconnectPolicy::default(),
-        size,
-        channel_sink(on_event),
-    )
-    .await?;
+    let shell_integration = settings
+        .with(|store| Ok(store.section::<TerminalSettings>(TerminalSettings::SECTION)))
+        .unwrap_or_default()
+        .shell_integration;
+    let options = RemoteTerminalOptions {
+        reconnect: ReconnectPolicy::default(),
+        shell_integration,
+    };
+    let terminal =
+        RemoteTerminal::open_with(connect, options, size, channel_sink(on_event)).await?;
     Ok(registry.insert(Box::new(terminal)))
 }
 
@@ -126,6 +140,16 @@ pub async fn terminal_reconnect(
     id: TerminalId,
 ) -> CommandResult<()> {
     Ok(registry.reconnect(id)?)
+}
+
+/// Makes a Terminal's shell report its directory once, by typing a command
+/// into it (the File panel's "sync" button, for shells without ShellIntegration).
+#[tauri::command]
+pub async fn terminal_report_cwd(
+    registry: State<'_, TerminalRegistry>,
+    id: TerminalId,
+) -> CommandResult<()> {
+    Ok(registry.write(id, REPORT_CWD.as_bytes())?)
 }
 
 /// Answers a question sent on a `remote_terminal_open` prompt channel.

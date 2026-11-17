@@ -94,6 +94,7 @@ pub fn run() {
             commands::terminal::terminal_resize,
             commands::terminal::terminal_close,
             commands::terminal::terminal_reconnect,
+            terminal::terminal_report_cwd,
             commands::files::files_open,
             commands::files::files_list,
             commands::files::files_close,
