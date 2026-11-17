@@ -19,6 +19,11 @@ const api: FilesApi = {
   }),
   retryRemoteEdit: vi.fn(() => Promise.resolve()),
   closeRemoteEdit: vi.fn(() => Promise.resolve()),
+  createDir: vi.fn(() => Promise.resolve()),
+  renameFile: vi.fn(() => Promise.resolve()),
+  countFiles: vi.fn(() => Promise.resolve(0)),
+  deleteFiles: vi.fn(() => Promise.resolve()),
+  chmodFile: vi.fn(() => Promise.resolve()),
 };
 
 let root: Root | null = null;

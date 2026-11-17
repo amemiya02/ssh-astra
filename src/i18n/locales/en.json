@@ -180,6 +180,49 @@
       "notADirectory": "Not a folder: {{path}}",
       "timedOut": "The server did not answer in time.",
       "other": "Could not list the folder: {{message}}"
+    },
+    "newFolder": "New folder",
+    "create": "Create",
+    "cancel": "Cancel",
+    "name": "Name",
+    "renameAction": "Rename…",
+    "permissionsAction": "Permissions…",
+    "deleteAction": "Delete…",
+    "newFolderAction": "New folder…",
+    "rename": {
+      "title": "Rename “{{name}}”",
+      "confirm": "Rename"
+    },
+    "nameProblem": {
+      "slash": "A name cannot contain “/”.",
+      "dots": "“{{name}}” cannot be used as a name.",
+      "taken": "“{{name}}” already exists in this folder."
+    },
+    "delete": {
+      "titleOne": "Delete “{{name}}”?",
+      "titleMany": "Delete {{count}} items?",
+      "counting": "Counting what will be deleted…",
+      "count_one": "{{count}} item will be deleted. This cannot be undone.",
+      "count_other": "{{count}} items will be deleted, including everything inside folders. This cannot be undone.",
+      "confirm": "Delete"
+    },
+    "permissions": {
+      "title": "Permissions of “{{name}}”",
+      "owner": "Owner",
+      "group": "Group",
+      "others": "Others",
+      "read": "Read",
+      "write": "Write",
+      "execute": "Execute",
+      "octal": "Octal",
+      "apply": "Apply"
+    },
+    "operationErrors": {
+      "notFound": "No such file or folder: {{path}}",
+      "permissionDenied": "Permission denied: {{path}}",
+      "alreadyExists": "Already exists: {{path}}",
+      "notOpen": "The File panel is not connected.",
+      "other": "The server refused: {{message}}"
     }
   },
   "forwards": {

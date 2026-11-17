@@ -8,8 +8,11 @@ import type { FileEntry, FsId } from "@/lib/ipc/files";
 import type { HostId } from "@/lib/ipc/hosts";
 import { childPath, isDirLike, isFileLike, parentPath } from "./fileList";
 
-/** The SFTP and remote edit commands a File panel uses (`@/lib/ipc/files`, `@/lib/ipc/edit`); a fake in tests. */
-export type FilesApi = Pick<typeof ipc, "openFiles" | "listFiles" | "closeFiles"> &
+/** The SFTP, file operation and remote edit commands a File panel uses (`@/lib/ipc/files`, `@/lib/ipc/edit`); a fake in tests. */
+export type FilesApi = Pick<
+  typeof ipc,
+  "openFiles" | "listFiles" | "closeFiles" | "createDir" | "renameFile" | "countFiles" | "deleteFiles" | "chmodFile"
+> &
   Pick<typeof editIpc, "openRemoteEdit" | "retryRemoteEdit" | "closeRemoteEdit">;
 
 /**
@@ -61,11 +64,25 @@ export interface FileBrowserState {
   closeEdit(path: string): void;
   /** `order` is the names as displayed, for Shift-click ranges. */
   select(name: string, mode: SelectMode, order: readonly string[]): void;
+  // File operations act on entries of `path` by name. Each refreshes the listing and resolves with
+  // why it failed (`null` on success), for the dialog that asked; they leave `error` alone.
+  /** Creates the folder `name` and selects it. */
+  createFolder(name: string): Promise<CommandError | null>;
+  /** Renames `name` to `newName` (never over an existing entry) and selects it. */
+  rename(name: string, newName: string): Promise<CommandError | null>;
+  /** How many entries deleting `names` removes, folders' contents included. */
+  countForDelete(names: readonly string[]): Promise<{ count: number } | { error: CommandError }>;
+  /** Deletes `names`, folders with everything in them. */
+  remove(names: readonly string[]): Promise<CommandError | null>;
+  /** Sets the permission bits of `name`. */
+  setPermissions(name: string, mode: number): Promise<CommandError | null>;
   /** Closes the SFTP session (the Connection dropped, or the pane closed); keeps the path for `connect`. Edits stay open. */
   disconnect(): void;
   /** The pane closed: disconnects and closes every edit. */
   dispose(): void;
 }
+
+const notOpen: CommandError = { kind: "notOpen", message: "the File panel is not open" };
 
 /**
  * One File panel's state: the SFTP session over its Host's Connection, the directory shown
@@ -133,6 +150,28 @@ export function createFileBrowserStore(api: FilesApi, hostId: HostId): StoreApi<
         // Opening again an edit that is already open only failed to show it.
         if (current && current.id === null) updateEdit(path, { status: "openFailed", error: readCommandError(e) });
       }
+    };
+
+    /** Runs an operation on the open session, then refreshes (also after a partial failure). */
+    const operate = async (
+      run: (id: FsId, dir: string) => Promise<void>,
+      select?: string,
+    ): Promise<CommandError | null> => {
+      const dir = get().path;
+      if (fsId === null || dir === null) return notOpen;
+      let failure: CommandError | null = null;
+      try {
+        await run(fsId, dir);
+      } catch (e) {
+        failure = readCommandError(e);
+      }
+      // Unless the user has gone elsewhere meanwhile.
+      if (get().path === dir) await list(dir, true);
+      if (failure === null && select !== undefined && get().entries.some((e) => e.name === select)) {
+        anchor = select;
+        set({ selection: new Set([select]) });
+      }
+      return failure;
     };
 
     return {
@@ -220,6 +259,21 @@ export function createFileBrowserStore(api: FilesApi, hostId: HostId): StoreApi<
         anchor = name;
         set({ selection: new Set([name]) });
       },
+
+      createFolder: (name) => operate((id, dir) => api.createDir(id, childPath(dir, name)), name),
+      rename: (name, newName) =>
+        operate((id, dir) => api.renameFile(id, childPath(dir, name), childPath(dir, newName)), newName),
+      async countForDelete(names) {
+        const dir = get().path;
+        if (fsId === null || dir === null) return { error: notOpen };
+        try {
+          return { count: await api.countFiles(fsId, names.map((n) => childPath(dir, n))) };
+        } catch (e) {
+          return { error: readCommandError(e) };
+        }
+      },
+      remove: (names) => operate((id, dir) => api.deleteFiles(id, names.map((n) => childPath(dir, n)))),
+      setPermissions: (name, mode) => operate((id, dir) => api.chmodFile(id, childPath(dir, name), mode)),
 
       disconnect() {
         session += 1;

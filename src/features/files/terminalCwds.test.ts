@@ -18,6 +18,11 @@ const api: FilesApi = {
   openRemoteEdit: () => Promise.resolve(1),
   retryRemoteEdit: () => Promise.resolve(),
   closeRemoteEdit: () => Promise.resolve(),
+  createDir: () => Promise.resolve(),
+  renameFile: () => Promise.resolve(),
+  countFiles: () => Promise.resolve(0),
+  deleteFiles: () => Promise.resolve(),
+  chmodFile: () => Promise.resolve(),
 };
 
 async function setup() {

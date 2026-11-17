@@ -38,10 +38,39 @@ export function openFiles(hostId: HostId): Promise<FsId> {
 /**
  * Lists a directory. `""` and `~` are the home directory, `~/x` is under it; the server
  * resolves the rest (`..`, symlinks). Rejects with `notFound`, `permissionDenied`,
- * `notADirectory`, `timedOut`, `protocol` or `notOpen`.
+ * `notADirectory`, `timedOut`, `protocol` or `notOpen` (the file operations below too, plus
+ * `alreadyExists`).
  */
 export function listFiles(id: FsId, path: string): Promise<Listing> {
   return invoke<Listing>("files_list", { id, path });
+}
+
+/** Creates the directory `path`. Rejects with `alreadyExists` when the name is taken. */
+export function createDir(id: FsId, path: string): Promise<void> {
+  return invoke("files_create_dir", { id, path });
+}
+
+/** Renames (moves) `from` to `to`; rejects with `alreadyExists` rather than replacing `to`. */
+export function renameFile(id: FsId, from: string, to: string): Promise<void> {
+  return invoke("files_rename", { id, from, to });
+}
+
+/**
+ * How many entries deleting `paths` removes: each path itself plus, for a directory, everything
+ * under it (symlinks are not followed). For the delete confirmation.
+ */
+export function countFiles(id: FsId, paths: string[]): Promise<number> {
+  return invoke<number>("files_count", { id, paths });
+}
+
+/** Deletes `paths`, directories recursively; symlinks are deleted, not followed. Stops at the first failure. */
+export function deleteFiles(id: FsId, paths: string[]): Promise<void> {
+  return invoke("files_delete", { id, paths });
+}
+
+/** Sets the permission bits of `path` (e.g. `0o755`). */
+export function chmodFile(id: FsId, path: string, mode: number): Promise<void> {
+  return invoke("files_chmod", { id, path, mode });
 }
 
 export function closeFiles(id: FsId): Promise<void> {

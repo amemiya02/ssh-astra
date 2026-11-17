@@ -92,6 +92,36 @@ impl RemoteFs for FakeFs {
             Ok(())
         })
     }
+
+    // Remote editing never changes the tree.
+
+    fn lstat<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileStat>> {
+        self.stat(path)
+    }
+
+    fn create_dir<'a>(&'a self, _: &'a str) -> BoxFuture<'a, FsResult<()>> {
+        unused()
+    }
+
+    fn rename<'a>(&'a self, _: &'a str, _: &'a str) -> BoxFuture<'a, FsResult<()>> {
+        unused()
+    }
+
+    fn remove_file<'a>(&'a self, _: &'a str) -> BoxFuture<'a, FsResult<()>> {
+        unused()
+    }
+
+    fn remove_dir<'a>(&'a self, _: &'a str) -> BoxFuture<'a, FsResult<()>> {
+        unused()
+    }
+
+    fn set_permissions<'a>(&'a self, _: &'a str, _: u32) -> BoxFuture<'a, FsResult<()>> {
+        unused()
+    }
+}
+
+fn unused<'a>() -> BoxFuture<'a, FsResult<()>> {
+    Box::pin(async { Err(FsError::Protocol("not used by remote editing".into())) })
 }
 
 /// Records what it was asked to open; fails if `refuse` is set.

@@ -44,6 +44,20 @@ impl SftpFs {
     }
 }
 
+impl SftpFs {
+    /// OpenSSH answers a bare "failure" when the target of a mkdir or rename
+    /// exists; tell that case apart so the user sees why.
+    async fn unless_taken(&self, target: &str, err: FsError) -> FsError {
+        if !matches!(err, FsError::Protocol(_)) {
+            return err;
+        }
+        match self.session.symlink_metadata(target).await {
+            Ok(_) => FsError::AlreadyExists(target.to_owned()),
+            Err(_) => err,
+        }
+    }
+}
+
 impl Drop for SftpFs {
     fn drop(&mut self) {
         // Closes the channel even while a spawned symlink lookup still holds
@@ -129,6 +143,68 @@ impl RemoteFs for SftpFs {
             file.close()
                 .await
                 .map_err(|e| FsError::Protocol(format!("{path}: {e}")))
+        })
+    }
+
+    fn lstat<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileStat>> {
+        Box::pin(async move {
+            let meta = self
+                .session
+                .symlink_metadata(path)
+                .await
+                .map_err(|e| error(path, e))?;
+            Ok(stat(&meta))
+        })
+    }
+
+    fn create_dir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move {
+            match self.session.create_dir(path).await {
+                Ok(()) => Ok(()),
+                Err(e) => Err(self.unless_taken(path, error(path, e)).await),
+            }
+        })
+    }
+
+    fn rename<'a>(&'a self, from: &'a str, to: &'a str) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move {
+            // Plain SSH_FXP_RENAME, which OpenSSH refuses over an existing
+            // target (unlike the posix-rename extension).
+            match self.session.rename(from, to).await {
+                Ok(()) => Ok(()),
+                Err(e) => Err(self.unless_taken(to, error(from, e)).await),
+            }
+        })
+    }
+
+    fn remove_file<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move {
+            self.session
+                .remove_file(path)
+                .await
+                .map_err(|e| error(path, e))
+        })
+    }
+
+    fn remove_dir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move {
+            self.session
+                .remove_dir(path)
+                .await
+                .map_err(|e| error(path, e))
+        })
+    }
+
+    fn set_permissions<'a>(&'a self, path: &'a str, mode: u32) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move {
+            let attrs = Metadata {
+                permissions: Some(mode & 0o7777),
+                ..Metadata::empty()
+            };
+            self.session
+                .set_metadata(path, attrs)
+                .await
+                .map_err(|e| error(path, e))
         })
     }
 }

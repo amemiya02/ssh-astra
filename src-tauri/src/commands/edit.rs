@@ -67,6 +67,30 @@ impl RemoteFs for LiveHostFs {
     fn write_file<'a>(&'a self, path: &'a str, data: &'a [u8]) -> BoxFuture<'a, FsResult<()>> {
         Box::pin(async move { self.sftp().await?.write_file(path, data).await })
     }
+
+    fn lstat<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileStat>> {
+        Box::pin(async move { self.sftp().await?.lstat(path).await })
+    }
+
+    fn create_dir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move { self.sftp().await?.create_dir(path).await })
+    }
+
+    fn rename<'a>(&'a self, from: &'a str, to: &'a str) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move { self.sftp().await?.rename(from, to).await })
+    }
+
+    fn remove_file<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move { self.sftp().await?.remove_file(path).await })
+    }
+
+    fn remove_dir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move { self.sftp().await?.remove_dir(path).await })
+    }
+
+    fn set_permissions<'a>(&'a self, path: &'a str, mode: u32) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move { self.sftp().await?.set_permissions(path, mode).await })
+    }
 }
 
 /// Downloads `path` from `host_id` over its live Connection and opens it in
