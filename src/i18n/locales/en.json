@@ -86,6 +86,16 @@
         "jumpHostLoop": "Its Jump hosts lead back to itself",
         "jumpHostUnavailable": "Its Jump host {{hop}} was not imported"
       }
+    },
+    "transfer": {
+      "import": "Import Host list…",
+      "export": "Export Host list…",
+      "fileType": "sshastra Host list",
+      "exported": "Host list exported. Passwords and passphrases are never included.",
+      "imported": "Import done. Hosts added: {{hosts}}. Groups added: {{groups}}.",
+      "skipped": "Skipped because a Host with the same name exists: {{names}}.",
+      "exportFailed": "Could not export the Host list: {{message}}",
+      "importFailed": "Could not import the file: {{message}}"
     }
   },
   "tabs": {

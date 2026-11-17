@@ -48,7 +48,17 @@ export function RowContextMenu({ entries, children }: { entries: MenuEntry[]; ch
 }
 
 /** The row's hover "More actions" button, for pointer and keyboard users who don't right-click. */
-export function RowMoreMenu({ entries, label, className }: { entries: MenuEntry[]; label: string; className?: string }) {
+export function RowMoreMenu({
+  entries,
+  label,
+  className,
+  align = "start",
+}: {
+  entries: MenuEntry[];
+  label: string;
+  className?: string;
+  align?: "start" | "end";
+}) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -56,7 +66,7 @@ export function RowMoreMenu({ entries, label, className }: { entries: MenuEntry[
           <MoreHorizontal />
         </IconButton>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="min-w-44">
+      <DropdownMenuContent align={align} className="min-w-44">
         {renderDropdown(entries)}
       </DropdownMenuContent>
     </DropdownMenu>

@@ -1,4 +1,4 @@
-import { FileInput, FolderPlus, Plus, Search, X } from "lucide-react";
+import { Download, FileInput, FolderPlus, Plus, Search, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ConnectPromptDialog } from "@/features/connect/ConnectPromptDialog";
 import { connectionsStore, useConnections } from "@/features/connect/connectionsStore";
 import { readCommandError, refusal, type ConnectPrompt, type PromptAnswer } from "@/lib/ipc/connect";
+import { pickOpenPath, pickSavePath } from "@/lib/ipc/system";
 import type { Group, Host, HostDraft, HostId, ImportReport } from "@/lib/ipc/hosts";
 import { cn } from "@/lib/utils";
 import { usePaletteActions } from "@/features/palette/palette-actions";
@@ -71,6 +72,8 @@ export function HostsPanel({ onOpen, onOpenForwards, onOpenLocalTerminal }: Host
     [],
   );
   const [importReport, setImportReport] = useState<ImportReport | null>(null);
+  /** The outcome of the last export or import. */
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     void hostsStore.getState().load();
@@ -87,21 +90,65 @@ export function HostsPanel({ onOpen, onOpenForwards, onOpenLocalTerminal }: Host
   const store = hostsStore.getState;
 
   /** Runs a store change, showing why it failed instead of throwing. */
-  const attempt = async <T,>(change: () => Promise<T>): Promise<T | undefined> => {
-    setActionError(null);
-    try {
-      return await change();
-    } catch (e) {
-      setActionError(t("hosts.actionFailed", { message: readCommandError(e).message }));
-      return undefined;
-    }
-  };
+  const attempt = useCallback(
+    async <T,>(
+      change: () => Promise<T>,
+      failed: "hosts.actionFailed" | "hosts.transfer.exportFailed" | "hosts.transfer.importFailed" = "hosts.actionFailed",
+    ): Promise<T | undefined> => {
+      setActionError(null);
+      setNotice(null);
+      try {
+        return await change();
+      } catch (e) {
+        setActionError(t(failed, { message: readCommandError(e).message }));
+        return undefined;
+      }
+    },
+    [t],
+  );
+
+  const transfer = useMemo(() => {
+    const filters = [{ name: t("hosts.transfer.fileType"), extensions: ["json"] }];
+    return {
+      async exportHosts() {
+        const exported = await attempt(async () => {
+          const path = await pickSavePath({ title: t("hosts.transfer.export"), defaultPath: "sshastra-hosts.json", filters });
+          if (path) await hostsStore.getState().exportHosts(path);
+          return path;
+        }, "hosts.transfer.exportFailed");
+        if (exported) setNotice(t("hosts.transfer.exported"));
+      },
+      async importHosts() {
+        const summary = await attempt(async () => {
+          const path = await pickOpenPath({ title: t("hosts.transfer.import"), filters });
+          return path ? hostsStore.getState().importHosts(path) : null;
+        }, "hosts.transfer.importFailed");
+        if (!summary) return;
+        const added = t("hosts.transfer.imported", { hosts: summary.hostsAdded, groups: summary.groupsAdded });
+        const skipped = summary.skippedHosts.length
+          ? " " + t("hosts.transfer.skipped", { names: summary.skippedHosts.join(", ") })
+          : "";
+        setNotice(added + skipped);
+      },
+    };
+  }, [t, attempt]);
+
+  usePaletteActions(
+    useMemo(
+      () => [
+        { id: "hosts.import", title: t("hosts.transfer.import"), run: () => void transfer.importHosts() },
+        { id: "hosts.export", title: t("hosts.transfer.export"), run: () => void transfer.exportHosts() },
+      ],
+      [t, transfer],
+    ),
+  );
 
   const selectedGroupId = selected?.kind === "group" ? selected.id : null;
 
   /** Imports ~/.ssh/config, then shows the report (or why it failed). */
   const importSshConfig = useCallback(() => {
     setActionError(null);
+    setNotice(null);
     hostsStore
       .getState()
       .importSshConfig()
@@ -177,22 +224,36 @@ export function HostsPanel({ onOpen, onOpenForwards, onOpenLocalTerminal }: Host
     return host;
   };
 
+  const messages = (actionError || notice) && (
+    <>
+      {actionError && (
+        <p role="alert" className="text-destructive px-1 text-xs">
+          {actionError}
+        </p>
+      )}
+      {notice && (
+        <p role="status" className="text-muted-foreground px-1 text-xs">
+          {notice}
+        </p>
+      )}
+    </>
+  );
+
   let list;
   if (status === "error") {
     list = (
-      <p role="alert" className="text-destructive px-1 py-2 text-xs">
-        {loadError}
-      </p>
+      <div className="flex flex-col gap-2">
+        <p role="alert" className="text-destructive px-1 py-2 text-xs">
+          {loadError}
+        </p>
+        {messages}
+      </div>
     );
   } else if (tree.hosts.length > 0 || tree.groups.length > 0) {
     list = (
       <div className="flex h-full flex-col gap-2">
         <SearchField value={query} onChange={setQuery} />
-        {actionError && (
-          <p role="alert" className="text-destructive px-1 text-xs">
-            {actionError}
-          </p>
-        )}
+        {messages}
         <div className="min-h-0 flex-1">
           {searching && nodes.length === 0 ? (
             <div className="flex flex-col items-start gap-2 px-1 py-4">
@@ -226,27 +287,36 @@ export function HostsPanel({ onOpen, onOpenForwards, onOpenLocalTerminal }: Host
               <FileInput aria-hidden />
               {t("hosts.import.action")}
             </Button>
-            {actionError && (
-              <p role="alert" className="text-destructive text-xs">
-                {actionError}
-              </p>
-            )}
+            {messages}
           </>
         }
         actions={
           <>
-            <RowMoreMenu
-              label={t("hosts.moreActions")}
-              entries={[
-                { type: "item", label: t("hosts.import.action"), icon: <FileInput />, onSelect: importSshConfig },
-              ]}
-            />
             <IconButton label={t("hosts.newGroup")} onClick={() => void createGroup(selectedGroupId)}>
               <FolderPlus />
             </IconButton>
             <IconButton label={t("hosts.new")} onClick={() => setEditing("new")}>
               <Plus />
             </IconButton>
+            <RowMoreMenu
+              label={t("hosts.moreActions")}
+              align="end"
+              entries={[
+                { type: "item", label: t("hosts.import.action"), icon: <FileInput />, onSelect: importSshConfig },
+                {
+                  type: "item",
+                  label: t("hosts.transfer.import"),
+                  icon: <Download />,
+                  onSelect: () => void transfer.importHosts(),
+                },
+                {
+                  type: "item",
+                  label: t("hosts.transfer.export"),
+                  icon: <Upload />,
+                  onSelect: () => void transfer.exportHosts(),
+                },
+              ]}
+            />
           </>
         }
       >

@@ -86,6 +86,16 @@
         "jumpHostLoop": "它的跳板机最终又指回自己",
         "jumpHostUnavailable": "它的跳板机 {{hop}} 没有导入"
       }
+    },
+    "transfer": {
+      "import": "导入 Host 列表…",
+      "export": "导出 Host 列表…",
+      "fileType": "sshastra Host 列表",
+      "exported": "Host 列表已导出。导出文件从不包含密码和密钥口令。",
+      "imported": "导入完成。新增 Host：{{hosts}} 个，新增 Group：{{groups}} 个。",
+      "skipped": "已存在同名 Host，已跳过：{{names}}。",
+      "exportFailed": "无法导出 Host 列表：{{message}}",
+      "importFailed": "无法导入该文件：{{message}}"
     }
   },
   "tabs": {
