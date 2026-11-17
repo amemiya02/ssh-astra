@@ -55,6 +55,10 @@ pub struct Host {
     pub port: u16,
     pub user: String,
     pub auth: HostAuth,
+    /// The Terminal colour scheme for this Host (e.g. to mark production),
+    /// overriding the global one. Opaque to the core: the UI owns the names.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_scheme: Option<String>,
 }
 
 /// A Host's editable fields, as entered in the Host form.
@@ -66,6 +70,10 @@ pub struct HostDraft {
     pub port: u16,
     pub user: String,
     pub auth: HostAuth,
+    /// The Terminal colour scheme for this Host (e.g. to mark production),
+    /// overriding the global one. Opaque to the core: the UI owns the names.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_scheme: Option<String>,
 }
 
 impl HostDraft {
@@ -88,6 +96,10 @@ impl HostDraft {
             port: self.port,
             user: self.user.trim().to_owned(),
             auth: self.auth,
+            terminal_scheme: self
+                .terminal_scheme
+                .map(|s| s.trim().to_owned())
+                .filter(|s| !s.is_empty()),
         })
     }
 }

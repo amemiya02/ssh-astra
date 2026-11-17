@@ -1,4 +1,5 @@
 import type { Host, HostDraft } from "@/lib/ipc/hosts";
+import { isTerminalColorScheme, type TerminalColorScheme } from "@/theme/terminal-themes";
 
 /** The Host form's raw input values. */
 export interface HostFormValues {
@@ -6,9 +7,12 @@ export interface HostFormValues {
   address: string;
   port: string;
   user: string;
+  /** The Host's own Terminal colour scheme; absent follows the global one. */
+  terminalScheme?: TerminalColorScheme;
 }
 
-export type HostFormField = keyof HostFormValues;
+/** The text fields, validated by `parseHostForm`. */
+export type HostFormField = Exclude<keyof HostFormValues, "terminalScheme">;
 /** Error codes; the UI maps them to copy under `hosts.errors.*`. */
 export type HostFormError = "required" | "port";
 
@@ -19,7 +23,9 @@ export type HostFormResult =
 export const emptyHostForm: HostFormValues = { name: "", address: "", port: "22", user: "" };
 
 export function hostFormFrom(host: Host): HostFormValues {
-  return { name: host.name, address: host.address, port: String(host.port), user: host.user };
+  const form: HostFormValues = { name: host.name, address: host.address, port: String(host.port), user: host.user };
+  if (isTerminalColorScheme(host.terminalScheme)) form.terminalScheme = host.terminalScheme;
+  return form;
 }
 
 export function parseHostForm(values: HostFormValues): HostFormResult {
@@ -36,5 +42,7 @@ export function parseHostForm(values: HostFormValues): HostFormResult {
   if (!(port >= 1 && port <= 65535)) errors.port = "port";
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
-  return { ok: true, draft: { name, address, port, user, auth: { type: "password" } } };
+  const draft: HostDraft = { name, address, port, user, auth: { type: "password" } };
+  if (values.terminalScheme) draft.terminalScheme = values.terminalScheme;
+  return { ok: true, draft };
 }

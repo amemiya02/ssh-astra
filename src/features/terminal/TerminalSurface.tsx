@@ -1,7 +1,5 @@
-import { FitAddon } from "@xterm/addon-fit";
-import { WebglAddon } from "@xterm/addon-webgl";
-import { Terminal as XTerm } from "@xterm/xterm";
-import { useEffect, useRef } from "react";
+import type { Terminal as XTerm } from "@xterm/xterm";
+import { useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
   closeTerminal,
@@ -11,10 +9,8 @@ import {
   type TerminalId,
   type TerminalSize,
 } from "@/lib/ipc/terminal";
-import { useTheme } from "@/theme/theme-context";
-import { terminalThemes } from "@/theme/terminal-themes";
-
-const fontFamily = 'ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace';
+import type { TerminalColorScheme } from "@/theme/terminal-themes";
+import { XtermView } from "./XtermView";
 
 export type OpenTerminal = (size: TerminalSize, onEvent: (event: TerminalEvent) => void) => Promise<TerminalId>;
 
@@ -26,21 +22,18 @@ interface Props {
   label: string;
   /** Whether its tab is shown; becoming active refits and focuses the Terminal. */
   active?: boolean;
+  /** The Host's own colour scheme, overriding the global one. */
+  colorScheme?: TerminalColorScheme;
   /** The program set a window title (OSC 0/2); an empty string clears it. */
   onTitleChange?(title: string): void;
 }
 
 /**
- * xterm.js (WebGL) wired to any backend Terminal: input, resize (sent to the
- * backend so vim/tmux reflow), the app theme, and close on unmount.
+ * An `XtermView` wired to any backend Terminal: input, resize (sent to the
+ * backend so vim/tmux reflow) and close on unmount.
  */
-export function TerminalSurface({ open, onOpenError, label, active = true, onTitleChange }: Props) {
+export function TerminalSurface({ open, onOpenError, label, active = true, colorScheme, onTitleChange }: Props) {
   const { t } = useTranslation();
-  const { theme } = useTheme();
-  const containerRef = useRef<HTMLDivElement>(null);
-  const xtermRef = useRef<XTerm | null>(null);
-  const fitRef = useRef<FitAddon | null>(null);
-  const themeRef = useRef(theme);
   // Read through refs: the Terminal is opened once per mount; later prop changes don't reopen it.
   const openRef = useRef(open);
   const onOpenErrorRef = useRef(onOpenError);
@@ -53,37 +46,7 @@ export function TerminalSurface({ open, onOpenError, label, active = true, onTit
     onTitleChangeRef.current = onTitleChange;
   });
 
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const xterm = new XTerm({
-      allowProposedApi: true,
-      cursorBlink: true,
-      fontFamily,
-      fontSize: 13,
-      lineHeight: 1.2,
-      scrollback: 10_000,
-      theme: terminalThemes[themeRef.current],
-    });
-    const fit = new FitAddon();
-    xterm.loadAddon(fit);
-    xterm.open(container);
-    try {
-      const webgl = new WebglAddon();
-      webgl.onContextLoss(() => webgl.dispose()); // falls back to the DOM renderer
-      xterm.loadAddon(webgl);
-    } catch {
-      // WebGL unavailable: the DOM renderer is slower but correct.
-    }
-    // A hidden tab has no size; fitting it would shrink the shell to a sliver.
-    const fitIfVisible = () => {
-      if (container.clientWidth > 0 && container.clientHeight > 0) fit.fit();
-    };
-    fitIfVisible();
-    xtermRef.current = xterm;
-    fitRef.current = fit;
-
+  const attach = useCallback((xterm: XTerm) => {
     let id: TerminalId | undefined;
     let disposed = false;
     const size = () => ({ cols: xterm.cols, rows: xterm.rows });
@@ -121,34 +84,16 @@ export function TerminalSurface({ open, onOpenError, label, active = true, onTit
     const onResize = xterm.onResize((next) => {
       if (id !== undefined) void resizeTerminal(id, next);
     });
-    const onTitle = xterm.onTitleChange((title) => onTitleChangeRef.current?.(title));
-
-    const observer = new ResizeObserver(fitIfVisible);
-    observer.observe(container);
 
     return () => {
       disposed = true;
-      observer.disconnect();
       onData.dispose();
       onResize.dispose();
-      onTitle.dispose();
       if (id !== undefined) void closeTerminal(id);
-      xterm.dispose();
-      xtermRef.current = null;
-      fitRef.current = null;
     };
   }, []);
 
-  useEffect(() => {
-    themeRef.current = theme;
-    if (xtermRef.current) xtermRef.current.options.theme = terminalThemes[theme];
-  }, [theme]);
-
-  useEffect(() => {
-    if (!active) return;
-    fitRef.current?.fit();
-    xtermRef.current?.focus();
-  }, [active]);
-
-  return <div ref={containerRef} className="h-full w-full py-2 pr-1 pl-3" aria-label={label} />;
+  return (
+    <XtermView label={label} active={active} colorScheme={colorScheme} onTitleChange={onTitleChange} attach={attach} />
+  );
 }

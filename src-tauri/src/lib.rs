@@ -20,6 +20,9 @@ use prompts::PendingPrompts;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Terminal links open in the browser; copy on select / paste use the system clipboard.
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
             let hosts = HostStore::open(config_dir.join("hosts.json")).map_err(Into::into);

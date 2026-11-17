@@ -13,6 +13,8 @@ export interface HostDraft {
   port: number;
   user: string;
   auth: HostAuth;
+  /** This Host's Terminal colour scheme id, overriding the global one; absent follows it. */
+  terminalScheme?: string | null;
 }
 
 /** A saved Host (`sshastra_core::hosts::Host`). */

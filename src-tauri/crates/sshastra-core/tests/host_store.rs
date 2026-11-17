@@ -15,7 +15,61 @@ fn draft(name: &str) -> HostDraft {
         port: 2222,
         user: "deploy".into(),
         auth: HostAuth::Password,
+        terminal_scheme: None,
     }
+}
+
+#[test]
+fn a_hosts_own_terminal_colour_scheme_is_kept_across_restarts() {
+    let (_dir, path) = store_path();
+    let prod = HostStore::open(&path)
+        .unwrap()
+        .upsert(
+            None,
+            HostDraft {
+                terminal_scheme: Some("ember".into()),
+                ..draft("prod")
+            },
+        )
+        .unwrap();
+
+    let reopened = HostStore::open(&path).unwrap();
+    assert_eq!(
+        reopened.get(&prod.id).unwrap().terminal_scheme.as_deref(),
+        Some("ember")
+    );
+}
+
+#[test]
+fn hosts_saved_before_terminal_schemes_existed_follow_the_global_scheme() {
+    let (_dir, path) = store_path();
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        r#"{"version":1,"hosts":[{"id":"h1","name":"old","address":"a","port":22,"user":"u","auth":{"type":"password"}}]}"#,
+    )
+    .unwrap();
+
+    let store = HostStore::open(&path).unwrap();
+    assert_eq!(store.list()[0].terminal_scheme, None);
+}
+
+#[test]
+fn a_blank_terminal_scheme_means_none() {
+    let (_dir, path) = store_path();
+    let host = HostStore::open(&path)
+        .unwrap()
+        .upsert(
+            None,
+            HostDraft {
+                terminal_scheme: Some("  ".into()),
+                ..draft("x")
+            },
+        )
+        .unwrap();
+    assert_eq!(host.terminal_scheme, None);
+    let json = fs::read_to_string(&path).unwrap();
+    assert!(!json.contains("terminalScheme"), "{json}");
 }
 
 fn store_path() -> (tempfile::TempDir, PathBuf) {

@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { readCommandError } from "@/lib/ipc/connect";
 import { listHosts, saveHost, type Host } from "@/lib/ipc/hosts";
 import { cn } from "@/lib/utils";
+import { TerminalSchemeSelect } from "@/features/terminal/TerminalSchemeSelect";
 import { HostsSidebar } from "./HostsSidebar";
 import { emptyHostForm, parseHostForm, type HostFormField, type HostFormResult, type HostFormValues } from "./hostForm";
 
@@ -213,6 +214,21 @@ function HostFormDialogContent({ onSaved, onCancel }: { onSaved: (host: Host) =>
             </div>
           );
         })}
+        <div className="grid gap-1.5">
+          <Label htmlFor="host-form-terminal-scheme" className="text-xs">
+            {t("hosts.fields.terminalScheme")}
+          </Label>
+          <TerminalSchemeSelect
+            id="host-form-terminal-scheme"
+            aria-describedby="host-form-terminal-scheme-hint"
+            value={values.terminalScheme}
+            inheritLabel={t("hosts.terminalSchemeInherit")}
+            onValueChange={(terminalScheme) => setValues((v) => ({ ...v, terminalScheme }))}
+          />
+          <p id="host-form-terminal-scheme-hint" className="text-muted-foreground text-xs">
+            {t("hosts.terminalSchemeHint")}
+          </p>
+        </div>
         {saveError && (
           <p role="alert" className="text-destructive text-xs">
             {saveError}
