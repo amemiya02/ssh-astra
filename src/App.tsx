@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FilePanel } from "@/features/files/FilePanel";
 import { forwardsStore, runningForwards, useForwards } from "@/features/forwards/forwardsStore";
@@ -6,9 +6,12 @@ import { describeForward } from "@/features/forwards/forwardForm";
 import { activeConnections, runningRules } from "@/features/forwards/status";
 import { useHosts } from "@/features/hosts/hostsStore";
 import { HostsPanel } from "@/features/hosts/HostsPanel";
+import { CommandPalette, type PaletteTab } from "@/features/palette/CommandPalette";
+import { usePaletteActions, type PaletteAction } from "@/features/palette/palette-actions";
+import { rememberHostOpened } from "@/features/palette/recent-hosts";
 import { AppShell } from "@/features/shell/AppShell";
-import { isSettingsShortcut } from "@/features/shell/shortcuts";
-import { currentPlatform, type WorkspaceCommand } from "@/features/workspace/shortcuts";
+import { isSettingsShortcut, settingsShortcut } from "@/features/shell/shortcuts";
+import { currentPlatform, shortcutLabel, type WorkspaceCommand } from "@/features/workspace/shortcuts";
 import { TabPanels } from "@/features/workspace/TabPanels";
 import { TabStrip } from "@/features/workspace/TabStrip";
 import {
@@ -17,6 +20,7 @@ import {
   connectedHosts,
   emptyTabs,
   newPane,
+  tabTitle,
   tabsReducer,
   type ConnectionStatus,
   type PaneKind,
@@ -47,7 +51,13 @@ export function App() {
     [],
   );
   const openLocalTerminal = useCallback(() => openTab(localTerminal), [openTab]);
-  const openRemoteTerminal = useCallback((host: Host) => openTab({ kind: "remote-terminal", host }), [openTab]);
+  const openRemoteTerminal = useCallback(
+    (host: Host) => {
+      rememberHostOpened(host.id);
+      openTab({ kind: "remote-terminal", host });
+    },
+    [openTab],
+  );
   const openSettings = useCallback(() => openTab({ kind: "settings" }), [openTab]);
   const openForwards = useCallback((host: Host) => openTab({ kind: "port-forwards", host }), [openTab]);
   // Port forward states are pushed by the backend for the app's lifetime.
@@ -82,6 +92,55 @@ export function App() {
     dispatch({ type: "split", orientation, pane: newPane(kind) });
   };
 
+  // The palette's split actions run the latest `split`, without re-registering on every change.
+  const splitRef = useRef(split);
+  useEffect(() => {
+    splitRef.current = split;
+  });
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const activateTab = useCallback((id: string) => dispatch({ type: "activate", id }), []);
+  const paletteTabs = useMemo(
+    (): PaletteTab[] =>
+      tabs.map((tab, index) => {
+        const kind = activePane(tab).kind;
+        const ordinal = tabs.slice(0, index + 1).filter((other) => activePane(other).kind === kind).length;
+        return { id: tab.id, title: tabTitle(tab, t, ordinal) };
+      }),
+    [tabs, t],
+  );
+  usePaletteActions(
+    useMemo(
+      (): PaletteAction[] => [
+        {
+          id: "terminal.newLocal",
+          title: t("tabs.newLocalTerminal"),
+          shortcut: shortcutLabel("newTab", platform),
+          run: openLocalTerminal,
+        },
+        {
+          id: "workspace.splitRight",
+          title: t("tabs.splitRight"),
+          shortcut: shortcutLabel("splitRight", platform),
+          run: () => splitRef.current("horizontal"),
+        },
+        {
+          id: "workspace.splitDown",
+          title: t("tabs.splitDown"),
+          shortcut: shortcutLabel("splitDown", platform),
+          run: () => splitRef.current("vertical"),
+        },
+        {
+          id: "settings.open",
+          title: t("palette.actions.openSettings"),
+          keywords: [t("palette.keywords.preferences")],
+          shortcut: settingsShortcut,
+          run: openSettings,
+        },
+      ],
+      [t, openLocalTerminal, openSettings],
+    ),
+  );
+
   useWorkspaceShortcuts(platform, (command: WorkspaceCommand) => {
     const tab = activeTab(state);
     switch (command.type) {
@@ -99,6 +158,8 @@ export function App() {
       case "moveTab":
         if (tab) dispatch({ type: "move", id: tab.id, to: tabs.indexOf(tab) + command.step });
         return;
+      case "openPalette":
+        return setPaletteOpen((open) => !open);
       case "goToTab": {
         const target = tabs.at(command.index);
         if (target) dispatch({ type: "activate", id: target.id });
@@ -117,46 +178,59 @@ export function App() {
   });
 
   return (
-    <AppShell
-      sidebar={
-        <HostsPanel onOpen={openRemoteTerminal} onOpenForwards={openForwards} onOpenLocalTerminal={openLocalTerminal} />
-      }
-      tabs={
-        <TabStrip
-          tabs={tabs}
-          activeId={activeId}
-          platform={platform}
-          onActivate={(id) => dispatch({ type: "activate", id })}
-          onClose={(id) => dispatch({ type: "close", id })}
-          onMove={(id, to) => dispatch({ type: "move", id, to })}
-          onNewLocalTerminal={openLocalTerminal}
-          onSplit={split}
-        />
-      }
-      workspace={
-        <TabPanels
-          tabs={tabs}
-          activeId={activeId}
-          onNewLocalTerminal={openLocalTerminal}
-          onFocusPane={(paneId) => dispatch({ type: "focusPane", paneId })}
-          onTitleChange={retitle}
-          onStatusChange={setStatus}
-        />
-      }
-      filePanel={<FilePanel />}
-      onOpenSettings={openSettings}
-      status={
-        <span role="status" className="flex min-w-0 items-center gap-3.5">
-          <span className="truncate">
-            {connected.length === 0
-              ? t("status.noConnections")
-              : t("status.connectedTo", { hosts: connected.map((host) => host.name).join(", ") })}
+    <>
+      <AppShell
+        sidebar={
+          <HostsPanel
+            onOpen={openRemoteTerminal}
+            onOpenForwards={openForwards}
+            onOpenLocalTerminal={openLocalTerminal}
+          />
+        }
+        tabs={
+          <TabStrip
+            tabs={tabs}
+            activeId={activeId}
+            platform={platform}
+            onActivate={(id) => dispatch({ type: "activate", id })}
+            onClose={(id) => dispatch({ type: "close", id })}
+            onMove={(id, to) => dispatch({ type: "move", id, to })}
+            onNewLocalTerminal={openLocalTerminal}
+            onSplit={split}
+          />
+        }
+        workspace={
+          <TabPanels
+            tabs={tabs}
+            activeId={activeId}
+            onNewLocalTerminal={openLocalTerminal}
+            onFocusPane={(paneId) => dispatch({ type: "focusPane", paneId })}
+            onTitleChange={retitle}
+            onStatusChange={setStatus}
+          />
+        }
+        filePanel={<FilePanel />}
+        onOpenSettings={openSettings}
+        status={
+          <span role="status" className="flex min-w-0 items-center gap-3.5">
+            <span className="truncate">
+              {connected.length === 0
+                ? t("status.noConnections")
+                : t("status.connectedTo", { hosts: connected.map((host) => host.name).join(", ") })}
+            </span>
+            {forwards.length > 0 && (
+              <span className="truncate">{t("status.forwards", { list: forwards.join(", ") })}</span>
+            )}
           </span>
-          {forwards.length > 0 && (
-            <span className="truncate">{t("status.forwards", { list: forwards.join(", ") })}</span>
-          )}
-        </span>
-      }
-    />
+        }
+      />
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        tabs={paletteTabs}
+        onOpenHost={openRemoteTerminal}
+        onActivateTab={activateTab}
+      />
+    </>
   );
 }

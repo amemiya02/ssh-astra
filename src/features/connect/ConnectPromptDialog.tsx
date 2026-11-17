@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -53,6 +54,35 @@ function Question({ prompt, onAnswer }: Omit<Props, "open">) {
   }
 }
 
+/**
+ * "Save in the system keychain" for a password or passphrase, or why it is
+ * not offered (no keychain, e.g. Linux without a Secret Service).
+ */
+function SaveField({
+  id,
+  canSave,
+  checked,
+  onChange,
+}: {
+  id: string;
+  canSave: boolean;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  if (!canSave) {
+    return <p className="text-muted-foreground text-xs">{t("connect.save.unavailable")}</p>;
+  }
+  return (
+    <div className="flex items-center gap-2">
+      <Checkbox id={id} checked={checked} onCheckedChange={(next) => onChange(next === true)} />
+      <Label htmlFor={id} className="text-xs font-normal">
+        {t("connect.save.label")}
+      </Label>
+    </div>
+  );
+}
+
 /** Cancel + submit for the form-shaped questions. */
 function FormFooter({ onCancel }: { onCancel: () => void }) {
   const { t } = useTranslation();
@@ -77,13 +107,14 @@ function PassphraseQuestion({
 }) {
   const { t } = useTranslation();
   const [passphrase, setPassphrase] = useState("");
+  const [save, setSave] = useState(false);
   const inputId = `prompt-${prompt.id}-passphrase`;
   return (
     <form
       className="grid gap-3.5"
       onSubmit={(event) => {
         event.preventDefault();
-        onAnswer({ type: "passphrase", passphrase });
+        onAnswer({ type: "passphrase", passphrase, save: prompt.canSave && save });
       }}
     >
       <DialogHeader>
@@ -111,6 +142,7 @@ function PassphraseQuestion({
           </p>
         )}
       </div>
+      <SaveField id={`${inputId}-save`} canSave={prompt.canSave} checked={save} onChange={setSave} />
       <FormFooter onCancel={() => onAnswer({ type: "passphrase", passphrase: null })} />
     </form>
   );
@@ -215,13 +247,14 @@ function PasswordQuestion({
 }) {
   const { t } = useTranslation();
   const [password, setPassword] = useState("");
+  const [save, setSave] = useState(false);
   const inputId = `prompt-${prompt.id}-password`;
   return (
     <form
       className="grid gap-3.5"
       onSubmit={(event) => {
         event.preventDefault();
-        onAnswer({ type: "password", password });
+        onAnswer({ type: "password", password, save: prompt.canSave && save });
       }}
     >
       <DialogHeader>
@@ -249,6 +282,7 @@ function PasswordQuestion({
           </p>
         )}
       </div>
+      <SaveField id={`${inputId}-save`} canSave={prompt.canSave} checked={save} onChange={setSave} />
       <DialogFooter>
         <Button
           type="button"

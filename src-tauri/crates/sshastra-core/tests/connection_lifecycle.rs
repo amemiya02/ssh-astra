@@ -14,7 +14,7 @@ use sshastra_core::forward::{ForwardId, ForwardKind, PortForward, PortForwarder}
 use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::ssh::{
-    BoxFuture, Connection, ConnectionManager, HostKeyPrompt, PasswordPrompt, Prompter,
+    BoxFuture, Connection, ConnectionManager, HostKeyPrompt, PasswordPrompt, Prompter, Secret,
 };
 use sshastra_core::terminal::{Terminal, TerminalEvent, TerminalSize};
 use support::{Service, Sshd};
@@ -53,12 +53,12 @@ impl Prompter for CountingPrompter {
         Box::pin(async { true })
     }
 
-    fn password(&self, prompt: PasswordPrompt) -> BoxFuture<'_, Option<String>> {
+    fn password(&self, prompt: PasswordPrompt) -> BoxFuture<'_, Option<Secret>> {
         self.asked_for.lock().unwrap().push(prompt.host);
         Box::pin(async move {
             // Slow enough that a concurrent connect overlaps this one.
             tokio::time::sleep(Duration::from_millis(200)).await;
-            Some(self.password.to_owned())
+            Some(Secret::new(self.password))
         })
     }
 }

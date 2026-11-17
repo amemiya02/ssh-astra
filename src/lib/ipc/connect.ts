@@ -5,8 +5,9 @@ import { decodeTerminalMessage, type TerminalEvent, type TerminalMessage, type T
 /** A question the backend asks while connecting (`src-tauri/src/prompts.rs`). */
 export type ConnectPrompt =
   | { type: "hostKey"; id: number; host: string; port: number; algorithm: string; fingerprint: string }
-  | { type: "password"; id: number; host: string; user: string; retry: boolean }
-  | { type: "passphrase"; id: number; keyPath: string; retry: boolean }
+  /** `canSave`: offer "save" (the system keychain works). */
+  | { type: "password"; id: number; host: string; user: string; retry: boolean; canSave: boolean }
+  | { type: "passphrase"; id: number; keyPath: string; retry: boolean; canSave: boolean }
   | {
       type: "keyboardInteractive";
       id: number;
@@ -19,11 +20,14 @@ export type ConnectPrompt =
       prompts: { text: string; echo: boolean }[];
     };
 
-/** `null` means the user cancelled, which cancels the connect. */
+/**
+ * `null` means the user cancelled, which cancels the connect. `save` keeps the
+ * password or passphrase in the system keychain once it proves right.
+ */
 export type PromptAnswer =
   | { type: "hostKey"; trust: boolean }
-  | { type: "password"; password: string | null }
-  | { type: "passphrase"; passphrase: string | null }
+  | { type: "password"; password: string | null; save?: boolean }
+  | { type: "passphrase"; passphrase: string | null; save?: boolean }
   | { type: "keyboardInteractive"; answers: string[] | null };
 
 /** The error shape every command rejects with (`src-tauri/src/error.rs`). */
