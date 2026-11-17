@@ -1,0 +1,12 @@
+[package]
+name = "sshastra-core"
+description = "Domain logic for sshastra. Must not depend on Tauri."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+portable-pty = "0.9"
+serde.workspace = true
+thiserror.workspace = true
