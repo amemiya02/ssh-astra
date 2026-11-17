@@ -45,6 +45,8 @@
     "starting": "Starting shell…",
     "exited": "Process exited with code {{code}}",
     "exitedUnknown": "Process exited",
-    "failedToStart": "Could not start the shell: {{message}}"
+    "failedToStart": "The shell could not start.",
+    "failureDetail": "Details: {{message}}",
+    "pressEnterToRestart": "Press Enter to start a new shell."
   }
 }

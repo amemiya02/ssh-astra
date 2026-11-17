@@ -21,6 +21,6 @@ STORY: The user sees their Hosts, opens one, and the Terminal fills the stage; f
 
 FIRST VIEWPORT: Left 248px Host list on the ground (title, add, collapse, search, groups, Local terminal at the bottom). Right: tab strip on the ground; the active tab is cut from the Terminal panel (same colour, joined edge). Terminal panel fills; File panel docked right (340px) or bottom, collapsible; 26px status bar across the bottom.
 
-FORM: pinned direction (Termius/Linear restraint), position 1. seed: none (unavailable)
+FORM: pinned direction (Termius/Linear restraint), position 1. Roll skipped: the owner pinned the direction in ticket #3, so concept-seed was deliberately not run (no seed reference). Adaptation: the Host list collapse toggle sits at the start of the tab strip so it stays reachable while the list is collapsed.
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance

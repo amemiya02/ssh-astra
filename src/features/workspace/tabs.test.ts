@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { emptyTabs, tabsReducer, type TabsState } from "./tabs";
+import { emptyTabs, tabsReducer, tabTitle, type TabsState } from "./tabs";
 
 const local = (id: string) => ({ id, kind: "local-terminal" as const });
 
@@ -51,8 +51,28 @@ describe("tabsReducer", () => {
     expect(tabsReducer(withTabs(["a", "b"], "a"), { type: "cycle", step: -1 }).activeId).toBe("b");
   });
 
+  it("retitles a tab when its shell sets a title, and clears it on an empty title", () => {
+    const titled = tabsReducer(withTabs(["a", "b"], "a"), { type: "retitle", id: "b", title: "vim notes.md" });
+    expect(titled.tabs[1]).toEqual({ id: "b", kind: "local-terminal", title: "vim notes.md" });
+    const cleared = tabsReducer(titled, { type: "retitle", id: "b", title: "  " });
+    expect(cleared.tabs[1]?.title).toBeUndefined();
+  });
+
   it("does nothing when cycling with no tabs", () => {
     expect(tabsReducer(emptyTabs, { type: "cycle", step: 1 })).toBe(emptyTabs);
+  });
+});
+
+describe("tabTitle", () => {
+  const t = () => "Local terminal";
+
+  it("numbers Local terminals after the first so tabs stay distinguishable", () => {
+    expect(tabTitle(local("a"), t, 1)).toBe("Local terminal");
+    expect(tabTitle(local("b"), t, 2)).toBe("Local terminal 2");
+  });
+
+  it("prefers the title the shell set", () => {
+    expect(tabTitle({ ...local("a"), title: "htop" }, t, 2)).toBe("htop");
   });
 });
 

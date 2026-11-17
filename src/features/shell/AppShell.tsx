@@ -1,7 +1,7 @@
 import { PanelBottom, PanelLeft, PanelRight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { useGroupRef, usePanelRef, type Layout } from "react-resizable-panels";
+import { useGroupRef, usePanelRef } from "react-resizable-panels";
 import { IconButton } from "@/components/IconButton";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { cn } from "@/lib/utils";
@@ -28,11 +28,8 @@ export interface AppShellProps {
 
 const shellGroup = "shell";
 const workspaceGroup = (dock: FilePanelDock) => `workspace-${dock}`;
-/** Used when a dock has no saved sizes yet; percentages of the workspace. */
-const defaultWorkspaceLayout: Record<FilePanelDock, Layout> = {
-  right: { terminal: 72, files: 28 },
-  bottom: { terminal: 64, files: 36 },
-};
+/** File panel size for a dock with no saved size; it keeps its pixel size when the window resizes. */
+const defaultFilesSize: Record<FilePanelDock, string> = { right: "340px", bottom: "260px" };
 
 /**
  * The main window: Host list | (tab strip / Terminal workspace + File panel dock) | status bar.
@@ -59,9 +56,10 @@ export function AppShell({ sidebar, tabs, workspace, filePanel, status }: AppShe
   useEffect(() => {
     if (firstDock.current === dock) return;
     firstDock.current = dock;
-    const next = layout.groups[workspaceGroup(dock)] ?? defaultWorkspaceLayout[dock];
-    workspaceRef.current?.setLayout(next);
-    setFilesCollapsed(isPanelCollapsed(next, "files"));
+    const saved = layout.groups[workspaceGroup(dock)];
+    if (saved) workspaceRef.current?.setLayout(saved);
+    else filesRef.current?.resize(defaultFilesSize[dock]);
+    setFilesCollapsed(isPanelCollapsed(saved, "files"));
     // Only a dock change should restore sizes; later saves of the same dock must not re-apply.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dock]);
@@ -132,7 +130,7 @@ export function AppShell({ sidebar, tabs, workspace, filePanel, status }: AppShe
               groupRef={workspaceRef}
               orientation={dock === "right" ? "horizontal" : "vertical"}
               className="min-h-0 flex-1 pb-1.5"
-              defaultLayout={layout.groups[workspaceGroup(dock)] ?? defaultWorkspaceLayout[dock]}
+              defaultLayout={layout.groups[workspaceGroup(dock)]}
               onLayoutChange={(next) => setFilesCollapsed(isPanelCollapsed(next, "files"))}
               onLayoutChanged={(next, meta) => saveGroup(workspaceGroup(dock), meta.requestedLayout ?? next)}
             >
@@ -148,7 +146,9 @@ export function AppShell({ sidebar, tabs, workspace, filePanel, status }: AppShe
               <ResizablePanel
                 id="files"
                 panelRef={filesRef}
+                defaultSize={defaultFilesSize[dock]}
                 minSize={dock === "right" ? "240px" : "140px"}
+                groupResizeBehavior="preserve-pixel-size"
                 collapsible
               >
                 <section
@@ -168,7 +168,7 @@ export function AppShell({ sidebar, tabs, workspace, filePanel, status }: AppShe
 
   function selectDock(next: FilePanelDock) {
     if (next === dock) {
-      toggle(filesRef, filesCollapsed, dock === "right" ? "320px" : "240px");
+      toggle(filesRef, filesCollapsed, defaultFilesSize[dock]);
       return;
     }
     setDock(next);

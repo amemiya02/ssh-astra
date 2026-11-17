@@ -8,13 +8,15 @@ interface TabPanelsProps {
   tabs: Tab[];
   activeId: string | null;
   onNewLocalTerminal(): void;
+  /** A program in the tab set its title (empty string clears it). */
+  onTitleChange(id: string, title: string): void;
 }
 
 /**
  * Every open tab stays mounted (a Terminal keeps its shell and scrollback while hidden);
  * only the active one is shown.
  */
-export function TabPanels({ tabs, activeId, onNewLocalTerminal }: TabPanelsProps) {
+export function TabPanels({ tabs, activeId, onNewLocalTerminal, onTitleChange }: TabPanelsProps) {
   const { t } = useTranslation();
 
   if (tabs.length === 0) {
@@ -43,15 +45,23 @@ export function TabPanels({ tabs, activeId, onNewLocalTerminal }: TabPanelsProps
         hidden={!active}
         className="absolute inset-0"
       >
-        <TabContent tab={tab} active={active} />
+        <TabContent tab={tab} active={active} onTitleChange={(title) => onTitleChange(tab.id, title)} />
       </div>
     );
   });
 }
 
-function TabContent({ tab, active }: { tab: Tab; active: boolean }) {
+function TabContent({
+  tab,
+  active,
+  onTitleChange,
+}: {
+  tab: Tab;
+  active: boolean;
+  onTitleChange(title: string): void;
+}) {
   switch (tab.kind) {
     case "local-terminal":
-      return <LocalTerminalView active={active} />;
+      return <LocalTerminalView active={active} onTitleChange={onTitleChange} />;
   }
 }

@@ -48,9 +48,10 @@ export function TabStrip({ tabs, activeId, onActivate, onClose, onNewLocalTermin
         className="flex min-w-0 items-end gap-0.5 overflow-x-auto [scrollbar-width:none]"
         onKeyDown={onKeyDown}
       >
-        {tabs.map((tab) => {
+        {tabs.map((tab, index) => {
           const active = tab.id === activeId;
-          const title = tabTitle(tab, t);
+          const ordinal = tabs.slice(0, index + 1).filter((other) => other.kind === tab.kind).length;
+          const title = tabTitle(tab, t, ordinal);
           return (
             <div
               key={tab.id}

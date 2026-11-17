@@ -22,6 +22,7 @@ export function App() {
   const [{ tabs, activeId }, dispatch] = useReducer(tabsReducer, undefined, initialTabs);
 
   const openLocalTerminal = useCallback(() => dispatch({ type: "open", tab: newLocalTerminal() }), []);
+  const retitle = useCallback((id: string, title: string) => dispatch({ type: "retitle", id, title }), []);
 
   return (
     <AppShell
@@ -35,7 +36,14 @@ export function App() {
           onNewLocalTerminal={openLocalTerminal}
         />
       }
-      workspace={<TabPanels tabs={tabs} activeId={activeId} onNewLocalTerminal={openLocalTerminal} />}
+      workspace={
+        <TabPanels
+          tabs={tabs}
+          activeId={activeId}
+          onNewLocalTerminal={openLocalTerminal}
+          onTitleChange={retitle}
+        />
+      }
       filePanel={<FilePanel />}
       status={<span>{t("status.noConnections")}</span>}
     />

@@ -17,7 +17,7 @@ import { useTheme } from "@/theme/theme-context";
 export function StatusBar({ children }: { children?: ReactNode }) {
   return (
     <footer className="text-muted-foreground flex h-6.5 shrink-0 items-center gap-3.5 border-t px-3 text-xs">
-      <div aria-live="polite" className="flex min-w-0 flex-1 items-center gap-3.5">{children}</div>
+      <div className="flex min-w-0 flex-1 items-center gap-3.5">{children}</div>
       <ThemeMenu />
     </footer>
   );

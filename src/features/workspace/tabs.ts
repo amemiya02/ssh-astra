@@ -2,7 +2,12 @@
  * What a tab in the workspace shows. Extend this union for new kinds (a remote
  * Terminal on a Host, ...) and add a matching case in `TabContent`.
  */
-export type Tab = { id: string; kind: "local-terminal" };
+export type Tab = {
+  id: string;
+  kind: "local-terminal";
+  /** Title set by the program running in the tab (OSC 0/2), if any. */
+  title?: string;
+};
 
 export interface TabsState {
   tabs: Tab[];
@@ -13,7 +18,8 @@ export type TabsAction =
   | { type: "open"; tab: Tab }
   | { type: "close"; id: string }
   | { type: "activate"; id: string }
-  | { type: "cycle"; step: 1 | -1 };
+  | { type: "cycle"; step: 1 | -1 }
+  | { type: "retitle"; id: string; title: string };
 
 export const emptyTabs: TabsState = { tabs: [], activeId: null };
 
@@ -21,11 +27,18 @@ export const emptyTabs: TabsState = { tabs: [], activeId: null };
 export const tabId = (id: string) => `tab-${id}`;
 export const tabPanelId = (id: string) => `tabpanel-${id}`;
 
-/** The tab's label. Remote Terminals will use the Host name. */
-export function tabTitle(tab: Tab, t: (key: "tabs.localTerminal") => string): string {
+/**
+ * The tab's label: the program's own title, else the kind's name, numbered from the second
+ * tab of that kind (`ordinal` is 1-based among tabs of the same kind). Remote Terminals will
+ * use the Host name.
+ */
+export function tabTitle(tab: Tab, t: (key: "tabs.localTerminal") => string, ordinal: number): string {
+  if (tab.title) return tab.title;
   switch (tab.kind) {
-    case "local-terminal":
-      return t("tabs.localTerminal");
+    case "local-terminal": {
+      const name = t("tabs.localTerminal");
+      return ordinal > 1 ? `${name} ${ordinal}` : name;
+    }
   }
 }
 
@@ -50,6 +63,13 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
       const index = state.tabs.findIndex((t) => t.id === state.activeId);
       const next = state.tabs[(index + action.step + count) % count];
       return { ...state, activeId: next?.id ?? null };
+    }
+    case "retitle": {
+      const title = action.title.trim() || undefined;
+      return {
+        ...state,
+        tabs: state.tabs.map((tab) => (tab.id === action.id ? { ...tab, title } : tab)),
+      };
     }
   }
 }
