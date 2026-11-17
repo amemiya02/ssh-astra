@@ -104,6 +104,7 @@ fn host(sshd: &Sshd, auth: HostAuth) -> Host {
         user: sshd.user.into(),
         auth,
         jump_host: None,
+        terminal_scheme: None,
     }
 }
 
@@ -357,6 +358,7 @@ fn draft(sshd: &Sshd, auth: HostAuth) -> HostDraft {
         user: sshd.user.into(),
         auth,
         jump_host: None,
+        terminal_scheme: None,
     }
 }
 

@@ -4,6 +4,7 @@ import "./i18n";
 import "./index.css";
 import { App } from "./App";
 import { TooltipProvider } from "./components/ui/tooltip";
+import { TerminalPrefsProvider } from "./features/terminal/TerminalPrefsProvider";
 import { applyInitialTheme } from "./theme/theme";
 import { ThemeProvider } from "./theme/ThemeProvider";
 
@@ -15,9 +16,11 @@ if (!root) throw new Error("#root element missing from index.html");
 createRoot(root).render(
   <StrictMode>
     <ThemeProvider>
-      <TooltipProvider delayDuration={500}>
-        <App />
-      </TooltipProvider>
+      <TerminalPrefsProvider>
+        <TooltipProvider delayDuration={500}>
+          <App />
+        </TooltipProvider>
+      </TerminalPrefsProvider>
     </ThemeProvider>
   </StrictMode>,
 );

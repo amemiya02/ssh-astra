@@ -10,6 +10,7 @@ import {
   type PromptAnswer,
 } from "@/lib/ipc/connect";
 import type { Host } from "@/lib/ipc/hosts";
+import { isTerminalColorScheme } from "@/theme/terminal-themes";
 import { TerminalSurface, type OpenTerminal } from "./TerminalSurface";
 
 interface PendingPrompt {
@@ -63,6 +64,7 @@ export function RemoteTerminalView({ host, active = true, onTitleChange }: Remot
           onOpenError={onOpenError}
           label={host.name}
           active={active}
+          colorScheme={isTerminalColorScheme(host.terminalScheme) ? host.terminalScheme : undefined}
           onTitleChange={onTitleChange}
         />
       )}

@@ -23,9 +23,12 @@
       "user": "User",
       "jumpHost": "Jump host",
       "auth": "Authentication",
-      "identityFile": "Private key file"
+      "identityFile": "Private key file",
+      "terminalScheme": "Terminal colours"
     },
     "noJumpHost": "None (connect directly)",
+    "terminalSchemeInherit": "Same as other Terminals",
+    "terminalSchemeHint": "Give production Hosts their own colours so they are hard to mistake.",
     "errors": {
       "required": "Required",
       "port": "Enter a port from 1 to 65535"
@@ -72,7 +75,31 @@
     "exitedUnknown": "Process exited",
     "failedToStart": "The shell could not start.",
     "failureDetail": "Details: {{message}}",
-    "pressEnterToRestart": "Press Enter to start a new shell."
+    "pressEnterToRestart": "Press Enter to start a new shell.",
+    "search": {
+      "label": "Find in Terminal",
+      "placeholder": "Find",
+      "results": "{{current}} of {{count}}",
+      "noResults": "No results",
+      "previous": "Previous match",
+      "next": "Next match",
+      "close": "Close find"
+    },
+    "paste": {
+      "title": "Paste {{count}} lines?",
+      "body": "The shell may run each line as soon as it arrives. Check the text before pasting.",
+      "confirm": "Paste",
+      "cancel": "Cancel"
+    },
+    "schemes": {
+      "app": "Match app theme",
+      "light": "Light",
+      "dark": "Dark",
+      "solarizedLight": "Solarized Light",
+      "solarizedDark": "Solarized Dark",
+      "nord": "Nord",
+      "ember": "Ember (for production)"
+    }
   },
   "connect": {
     "cancel": "Cancel",

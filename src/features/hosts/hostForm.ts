@@ -1,4 +1,5 @@
 import type { Host, HostAuth, HostDraft } from "@/lib/ipc/hosts";
+import { isTerminalColorScheme, type TerminalColorScheme } from "@/theme/terminal-themes";
 
 /** The Host form's raw input values. */
 export interface HostFormValues {
@@ -11,10 +12,12 @@ export interface HostFormValues {
   authType: HostAuth["type"];
   /** Private key path; used when `authType` is `"key"`. */
   identityFile: string;
+  /** The Host's own Terminal colour scheme; absent follows the global one. */
+  terminalScheme?: TerminalColorScheme;
 }
 
 /** The free-text fields, validated here. */
-export type HostFormField = Exclude<keyof HostFormValues, "jumpHost" | "authType">;
+export type HostFormField = Exclude<keyof HostFormValues, "jumpHost" | "authType" | "terminalScheme">;
 /** Error codes; the UI maps them to copy under `hosts.errors.*`. */
 export type HostFormError = "required" | "port";
 
@@ -33,7 +36,7 @@ export const emptyHostForm: HostFormValues = {
 };
 
 export function hostFormFrom(host: Host): HostFormValues {
-  return {
+  const form: HostFormValues = {
     name: host.name,
     address: host.address,
     port: String(host.port),
@@ -42,6 +45,8 @@ export function hostFormFrom(host: Host): HostFormValues {
     authType: host.auth.type,
     identityFile: host.auth.type === "key" ? host.auth.identityFile : "",
   };
+  if (isTerminalColorScheme(host.terminalScheme)) form.terminalScheme = host.terminalScheme;
+  return form;
 }
 
 /** Validates the form. Jump host loops are checked by the backend on save. */
@@ -63,5 +68,7 @@ export function parseHostForm(values: HostFormValues): HostFormResult {
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   const jumpHost = values.jumpHost || null;
   const auth: HostAuth = values.authType === "key" ? { type: "key", identityFile } : { type: "password" };
-  return { ok: true, draft: { name, address, port, user, auth, jumpHost } };
+  const draft: HostDraft = { name, address, port, user, auth, jumpHost };
+  if (values.terminalScheme) draft.terminalScheme = values.terminalScheme;
+  return { ok: true, draft };
 }
