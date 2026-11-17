@@ -43,7 +43,7 @@ function NameList({ heading, names }: { heading: string; names: string[] }) {
   return (
     <section className="grid gap-1">
       <h3 className="text-muted-foreground text-xs font-medium">{heading}</h3>
-      <p className="font-mono text-xs break-words">{names.join(", ")}</p>
+      <p className="text-xs break-words">{names.join(", ")}</p>
     </section>
   );
 }
