@@ -4,7 +4,7 @@ import { readCommandError } from "@/lib/ipc/connect";
 import * as forwardsIpc from "@/lib/ipc/forwards";
 import type { ForwardDraft, ForwardId, PortForward } from "@/lib/ipc/forwards";
 import * as hostsIpc from "@/lib/ipc/hosts";
-import type { Group, GroupId, Host, HostDraft, HostId, HostTree } from "@/lib/ipc/hosts";
+import type { Group, GroupId, Host, HostDraft, HostId, HostTree, ImportReport } from "@/lib/ipc/hosts";
 import type { MoveOp } from "./hostTree";
 
 const ipc = { ...hostsIpc, ...forwardsIpc };
@@ -23,6 +23,7 @@ export type HostsApi = Pick<
   | "deleteGroup"
   | "saveForward"
   | "deleteForward"
+  | "importSshConfig"
 >;
 
 export interface HostsState {
@@ -46,6 +47,8 @@ export interface HostsState {
   saveForward(hostId: HostId, draft: ForwardDraft, id?: ForwardId): Promise<PortForward>;
   /** Stops and deletes a Host's Port forward rule. */
   deleteForward(hostId: HostId, id: ForwardId): Promise<void>;
+  /** Imports `~/.ssh/config` once (names already taken are skipped) and says what happened. */
+  importSshConfig(): Promise<ImportReport>;
 }
 
 /**
@@ -134,6 +137,12 @@ export function createHostsStore(api: HostsApi): StoreApi<HostsState> {
       async deleteForward(hostId, id) {
         await api.deleteForward(hostId, id);
         updateForwards(hostId, (forwards) => forwards.filter((f) => f.id !== id));
+      },
+
+      async importSshConfig() {
+        const { tree, report } = await api.importSshConfig();
+        set({ tree });
+        return report;
       },
     };
   });

@@ -2,7 +2,13 @@
 
 use std::sync::Mutex;
 
-use sshastra_core::hosts::{Group, GroupId, Host, HostDraft, HostId, HostStore, HostTree};
+use std::path::PathBuf;
+
+use serde::Serialize;
+use sshastra_core::hosts::{
+    Group, GroupId, Host, HostDraft, HostId, HostStore, HostTree, ImportReport,
+};
+use sshastra_core::ssh_config::{parse_user_config, ParseContext};
 use tauri::State;
 
 use super::forwards::ForwardsState;
@@ -127,5 +133,33 @@ pub fn group_move(
     hosts.with(|store| {
         store.move_group(&id, parent_id, index)?;
         Ok(store.tree())
+    })
+}
+
+/// The Host list after an import, and what the import did.
+#[derive(Serialize)]
+pub struct SshConfigImport {
+    tree: HostTree,
+    report: ImportReport,
+}
+
+/// Imports the Hosts in the user's `~/.ssh/config` (with its `Include`s),
+/// skipping names already taken. A missing file imports nothing.
+#[tauri::command]
+pub fn hosts_import_ssh_config(hosts: State<'_, HostsState>) -> CommandResult<SshConfigImport> {
+    let var = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty());
+    let home = var(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+        .map(PathBuf::from)
+        .ok_or_else(|| std::io::Error::other("no home directory"))?;
+    let local_user = var(if cfg!(windows) { "USERNAME" } else { "USER" })
+        .map(|u| u.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "root".to_owned());
+    let parsed = parse_user_config(&home, &ParseContext { local_user })?;
+    hosts.with(|store| {
+        let report = store.import_ssh_config(parsed)?;
+        Ok(SshConfigImport {
+            tree: store.tree(),
+            report,
+        })
     })
 }

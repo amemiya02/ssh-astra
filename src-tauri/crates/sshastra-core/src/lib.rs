@@ -10,4 +10,5 @@ pub mod hosts;
 pub mod known_hosts;
 pub mod settings;
 pub mod ssh;
+pub mod ssh_config;
 pub mod terminal;
