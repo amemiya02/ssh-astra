@@ -28,6 +28,10 @@ use sshastra_core::known_hosts::HostKey;
 pub const USER: &str = "tester";
 pub const PASSWORD: &str = "testpass";
 
+/// The TCP echo server (`echo` in `tests/sshd/docker-compose.yml`) as the
+/// sshd servers on the public network see it: every byte sent comes back.
+pub const ECHO: (&str, u16) = ("echo", 7777);
+
 /// A service in `tests/sshd/docker-compose.yml` reachable from the tests.
 #[derive(Debug, Clone, Copy)]
 pub enum Service {

@@ -7,10 +7,27 @@ export type ConnectionStatus = "connecting" | "connected" | "disconnected";
  * What a pane shows. Extend this union for new kinds and add a matching case in
  * `PaneContent` (`TabPanels.tsx`).
  */
-export type PaneKind = { kind: "local-terminal" } | { kind: "remote-terminal"; host: Host } | { kind: "settings" };
+export type PaneKind =
+  | { kind: "local-terminal" }
+  | { kind: "remote-terminal"; host: Host }
+  | { kind: "settings" }
+  /** A Host's Port forward rules; the panel reads the live Host by `host.id`. */
+  | { kind: "port-forwards"; host: Host };
 
-/** Kinds with at most one pane: opening another focuses the open one. */
-const singletonKinds: ReadonlySet<PaneKind["kind"]> = new Set(["settings"]);
+/**
+ * What makes a pane one of a kind: opening another pane with the same key focuses the open
+ * one. `undefined` for kinds that may be open many times.
+ */
+function singletonKey(pane: PaneKind): string | undefined {
+  switch (pane.kind) {
+    case "settings":
+      return "settings";
+    case "port-forwards":
+      return `port-forwards:${pane.host.id}`;
+    default:
+      return undefined;
+  }
+}
 
 /** One Terminal in a tab. A tab has one pane, or several side by side when split. */
 export type Pane = {
@@ -89,11 +106,11 @@ export function connectedHosts(state: TabsState): Host[] {
 /**
  * The tab's label, from its focused pane: the program's own title, else the kind's name,
  * numbered from the second tab of that kind (`ordinal` is 1-based among tabs of the same
- * kind). A remote Terminal uses its Host's name.
+ * kind). A remote Terminal uses its Host's name; a Port forwards tab adds it.
  */
 export function tabTitle(
   tab: Tab,
-  t: (key: "tabs.localTerminal" | "tabs.settings") => string,
+  t: (key: "tabs.localTerminal" | "tabs.settings" | "tabs.portForwards") => string,
   ordinal: number,
 ): string {
   const pane = activePane(tab);
@@ -107,14 +124,17 @@ export function tabTitle(
       return pane.host.name;
     case "settings":
       return t("tabs.settings");
+    case "port-forwards":
+      return `${t("tabs.portForwards")} · ${pane.host.name}`;
   }
 }
 
 export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
   switch (action.type) {
     case "open": {
-      if (singletonKinds.has(action.pane.kind)) {
-        const open = state.tabs.flatMap((t) => t.panes).find((pane) => pane.kind === action.pane.kind);
+      const key = singletonKey(action.pane);
+      if (key) {
+        const open = state.tabs.flatMap((t) => t.panes).find((pane) => singletonKey(pane) === key);
         if (open) return tabsReducer(state, { type: "focusPane", paneId: open.id });
       }
       const tab: Tab = {

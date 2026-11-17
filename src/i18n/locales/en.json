@@ -61,7 +61,8 @@
     "auth": {
       "password": "Password",
       "key": "Private key"
-    }
+    },
+    "portForwards": "Port forwards"
   },
   "tabs": {
     "listLabel": "Open tabs",
@@ -76,7 +77,8 @@
       "connected": "Connected",
       "disconnected": "Disconnected"
     },
-    "settings": "Settings"
+    "settings": "Settings",
+    "portForwards": "Port forwards"
   },
   "workspace": {
     "emptyTitle": "No open Terminals",
@@ -109,9 +111,55 @@
     "dockBottom": "Dock File panel at the bottom",
     "dockGroup": "File panel position"
   },
+  "forwards": {
+    "title": "Port forwards",
+    "lead": "Reach services on {{host}}'s network from this machine. A running Port forward keeps the Connection open, even with no Terminal.",
+    "emptyTitle": "No Port forwards yet",
+    "emptyBody": "Add a local Port forward to reach a service behind this Host, such as a database.",
+    "add": "Add Port forward",
+    "newTitle": "New local Port forward",
+    "editTitle": "Edit Port forward",
+    "fields": {
+      "label": "Name",
+      "bindAddress": "Listen address",
+      "bindPort": "Local port",
+      "remoteHost": "Remote host",
+      "remotePort": "Remote port"
+    },
+    "labelPlaceholder": "Optional",
+    "bindAddressHint": "Leave blank to accept connections from this machine only (127.0.0.1).",
+    "remoteHostHint": "As the Host sees it, for example localhost or db.internal.",
+    "errors": {
+      "required": "Required",
+      "port": "Enter a port from 1 to 65535"
+    },
+    "save": "Save",
+    "cancel": "Cancel",
+    "edit": "Edit",
+    "delete": "Delete",
+    "start": "Start",
+    "stop": "Stop",
+    "dismiss": "Clear error",
+    "moreActions": "More actions for {{name}}",
+    "local": "Local",
+    "listLabel": "Port forwards on {{host}}",
+    "status": {
+      "stopped": "Stopped",
+      "starting": "Starting",
+      "running": "Running",
+      "failed": "Failed"
+    },
+    "restartHint": "Changes apply the next time it starts.",
+    "actionFailed": "Could not save the Port forward: {{message}}",
+    "startErrors": {
+      "portInUse": "Port {{port}} on {{address}} is already in use. Choose another local port, or stop the program using it.",
+      "permissionDenied": "Not allowed to listen on port {{port}}. Ports below 1024 usually need administrator rights; choose a higher one."
+    }
+  },
   "status": {
     "noConnections": "No Connections",
-    "connectedTo": "Connected to {{hosts}}"
+    "connectedTo": "Connected to {{hosts}}",
+    "forwards": "Port forwards: {{list}}"
   },
   "theme": {
     "title": "Appearance",

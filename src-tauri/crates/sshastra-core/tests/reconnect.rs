@@ -63,6 +63,7 @@ impl Fixture {
             jump_host: None,
             group_id: None,
             terminal_scheme: None,
+            forwards: Vec::new(),
         };
         Self {
             manager: Arc::new(ConnectionManager::new(KnownHosts::new(

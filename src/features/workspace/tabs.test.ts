@@ -21,6 +21,7 @@ const host = (id: string, name = id): Host => ({
   auth: { type: "password" },
   jumpHost: null,
   groupId: null,
+  forwards: [],
 });
 
 const local = (id: string): Pane => ({ id, kind: "local-terminal" });
@@ -60,6 +61,17 @@ describe("tabsReducer: tabs", () => {
     const again = tabsReducer(back, { type: "open", tabId: "s2", pane: settings("s2.1") });
     expect(ids(again)).toEqual(["a", "s1"]);
     expect(again.activeId).toBe("s1");
+  });
+
+  it("opens one Port forwards tab per Host, focusing the open one", () => {
+    const forwards = (id: string, on: Host): Pane => ({ id, kind: "port-forwards", host: on });
+    const [web, db] = [host("web"), host("db")];
+    let state = tabsReducer(withTabs(["a"], "a"), { type: "open", tabId: "f1", pane: forwards("f1.1", web) });
+    state = tabsReducer(state, { type: "open", tabId: "f2", pane: forwards("f2.1", db) });
+    state = tabsReducer(state, { type: "activate", id: "a" });
+    state = tabsReducer(state, { type: "open", tabId: "f3", pane: forwards("f3.1", web) });
+    expect(ids(state)).toEqual(["a", "f1", "f2"]);
+    expect(state.activeId).toBe("f1");
   });
 
   it("closing the active tab focuses the tab to its right, like a browser", () => {
@@ -232,7 +244,8 @@ describe("connectedHosts", () => {
 });
 
 describe("tabTitle", () => {
-  const t = (key: "tabs.localTerminal" | "tabs.settings") => (key === "tabs.settings" ? "Settings" : "Local terminal");
+  const names = { "tabs.localTerminal": "Local terminal", "tabs.settings": "Settings", "tabs.portForwards": "Port forwards" };
+  const t = (key: keyof typeof names) => names[key];
 
   it("names the Settings tab", () => {
     expect(tabTitle(tab("s", [{ id: "s.1", kind: "settings" }]), t, 1)).toBe("Settings");
@@ -247,6 +260,12 @@ describe("tabTitle", () => {
     const titled = tab("a", [local("a.1"), { ...local("a.2"), title: "htop" }]);
     expect(tabTitle({ ...titled, activePaneId: "a.2" }, t, 2)).toBe("htop");
     expect(tabTitle(titled, t, 1)).toBe("Local terminal");
+  });
+
+  it("names a Port forwards tab after its Host", () => {
+    expect(tabTitle(tab("f", [{ id: "f.1", kind: "port-forwards", host: host("h", "web-1") }]), t, 1)).toBe(
+      "Port forwards · web-1",
+    );
   });
 
   it("names a remote Terminal after its Host", () => {

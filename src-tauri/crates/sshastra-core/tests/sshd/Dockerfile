@@ -4,7 +4,7 @@
 FROM debian:bookworm-slim
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends openssh-server \
+ && apt-get install -y --no-install-recommends openssh-server socat \
  && rm -rf /var/lib/apt/lists/* \
  && mkdir -p /run/sshd \
  && rm -f /etc/ssh/ssh_host_*

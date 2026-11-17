@@ -22,12 +22,14 @@
 #   flaky     published: only the reconnect tests use it; they kill its
 #             connections (`Sshd::drop_connections`) and freeze it
 #             (`Sshd::pause`) to make Connections drop.
+#   echo      on the public network only, not published: a TCP echo server
+#             on port 7777 (`support::ECHO`), the target of Port forward
+#             tests, reached through an sshd as `echo:7777`.
 #
 # Each server's hostname is its service name, so a test can tell where a
 # shell landed.
 #
-# Add services here (e.g. a TCP echo server for Port forward tests) rather
-# than starting containers from individual tests.
+# Add services here rather than starting containers from individual tests.
 #
 # Project and image tag come from SSHASTRA_IT_PROJECT, which the test harness
 # sets per checkout (`sshastra-it-<path hash>`) so parallel worktrees don't
@@ -87,6 +89,16 @@ services:
     hostname: counted
     ports: ["127.0.0.1::22"]
     networks: [public]
+  echo:
+    <<: *sshd
+    hostname: echo
+    networks: [public]
+    command: [socat, "TCP-LISTEN:7777,fork,reuseaddr", "EXEC:cat"]
+    healthcheck:
+      test: [CMD, bash, -c, "exec 3<>/dev/tcp/127.0.0.1/7777"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
 
   flaky:
     <<: *sshd

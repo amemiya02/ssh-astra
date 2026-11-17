@@ -107,6 +107,7 @@ fn host(sshd: &Sshd, auth: HostAuth) -> Host {
         jump_host: None,
         terminal_scheme: None,
         group_id: None,
+        forwards: Vec::new(),
     }
 }
 

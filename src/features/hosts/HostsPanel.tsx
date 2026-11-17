@@ -28,6 +28,8 @@ import { hostsStore, useHosts } from "./hostsStore";
 interface HostsPanelProps {
   /** Open a remote Terminal on the Host. */
   onOpen(host: Host): void;
+  /** Opens the Host's Port forwards. */
+  onOpenForwards(host: Host): void;
   onOpenLocalTerminal(): void;
 }
 
@@ -37,7 +39,7 @@ type Removal = { kind: "host"; host: Host } | { kind: "group"; group: Group };
  * The Host list in the sidebar: search, nested Groups, drag and drop, and the
  * Host editor. Double-click (or Enter on) a Host to open it.
  */
-export function HostsPanel({ onOpen, onOpenLocalTerminal }: HostsPanelProps) {
+export function HostsPanel({ onOpen, onOpenForwards, onOpenLocalTerminal }: HostsPanelProps) {
   const { t } = useTranslation();
   const tree = useHosts((s) => s.tree);
   const status = useHosts((s) => s.status);
@@ -81,6 +83,7 @@ export function HostsPanel({ onOpen, onOpenLocalTerminal }: HostsPanelProps) {
 
   const actions: HostListActions = {
     open: onOpen,
+    openForwards: onOpenForwards,
     edit: (host) => setEditing(host),
     duplicate: async (host) => {
       const copy = await attempt(() => store().duplicateHost(host.id, t("hosts.copyName", { name: host.name })));

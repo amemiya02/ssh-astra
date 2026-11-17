@@ -11,6 +11,7 @@ const host = (id: string, groupId: string | null = null, extra: Partial<Host> = 
   auth: { type: "password" },
   jumpHost: null,
   groupId,
+  forwards: [],
   ...extra,
 });
 const group = (id: string, parentId: string | null = null): Group => ({ id, name: id, parentId });

@@ -1,6 +1,6 @@
 //! SSH Connections. [`ConnectionManager::connect`] returns one shared
-//! [`Connection`] per Host; every remote Terminal (and, later, File panel and
-//! Port forward) on that Host runs over it.
+//! [`Connection`] per Host; every remote Terminal and running Port forward
+//! (and, later, File panel) on that Host runs over it.
 //!
 //! Decisions that need the user (trusting a new host key, typing a password
 //! or key passphrase, answering keyboard-interactive questions) are delegated
@@ -481,19 +481,38 @@ impl Connection {
         &self,
         host: &Host,
     ) -> Result<impl AsyncRead + AsyncWrite + Unpin + Send + 'static, ConnectError> {
-        let channel = tokio::time::timeout(
+        tokio::time::timeout(
             CONNECT_TIMEOUT,
-            self.handle.channel_open_direct_tcpip(
-                host.address.as_str(),
-                u32::from(host.port),
-                "127.0.0.1",
-                0,
-            ),
+            self.open_direct_tcpip(&host.address, host.port, None),
         )
         .await
         .map_err(|_| ConnectError::TimedOut)?
-        .map_err(|e| ConnectError::Unreachable(format!("{}:{}: {e}", host.address, host.port)))?;
+        .map_err(|e| ConnectError::Unreachable(format!("{}:{}: {e}", host.address, host.port)))
+    }
+
+    /// A byte stream to `host:port` as this Connection's server sees that
+    /// address (a `direct-tcpip` channel). `originator` is the local peer the
+    /// stream is opened for, if any.
+    pub(crate) async fn open_direct_tcpip(
+        &self,
+        host: &str,
+        port: u16,
+        originator: Option<std::net::SocketAddr>,
+    ) -> Result<russh::ChannelStream<client::Msg>, russh::Error> {
+        let (orig_ip, orig_port) = originator.map_or(("127.0.0.1".to_owned(), 0), |a| {
+            (a.ip().to_string(), a.port())
+        });
+        let channel = self
+            .handle
+            .channel_open_direct_tcpip(host, u32::from(port), orig_ip, u32::from(orig_port))
+            .await?;
         Ok(channel.into_stream())
+    }
+
+    /// Whether the transport has ended (the server went away, keepalives
+    /// failed, ...).
+    pub(crate) fn is_closed(&self) -> bool {
+        self.handle.is_closed()
     }
 
     /// Opens an interactive shell (a remote Terminal) with a PTY of `size`.

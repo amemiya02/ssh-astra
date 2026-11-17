@@ -83,6 +83,7 @@ fn host(sshd: &Sshd) -> Host {
         auth: HostAuth::Password,
         jump_host: None,
         terminal_scheme: None,
+        forwards: Vec::new(),
         group_id: None,
     }
 }
@@ -275,6 +276,7 @@ async fn an_unreachable_address_is_reported() {
         auth: HostAuth::Password,
         jump_host: None,
         terminal_scheme: None,
+        forwards: Vec::new(),
         group_id: None,
     };
     let prompter = ScriptedPrompter::new(true, &[]);
@@ -530,6 +532,7 @@ fn behind(name: &str, jump: &Host) -> Host {
         auth: HostAuth::Password,
         jump_host: Some(jump.id.clone()),
         terminal_scheme: None,
+        forwards: Vec::new(),
         group_id: None,
     }
 }

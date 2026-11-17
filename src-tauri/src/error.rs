@@ -1,6 +1,7 @@
 use serde::Serialize;
 use serde_json::{json, Value};
 use sshastra_core::credentials::VaultError;
+use sshastra_core::forward::ForwardError;
 use sshastra_core::hosts::HostStoreError;
 use sshastra_core::settings::SettingsError;
 use sshastra_core::ssh::ConnectError;
@@ -61,7 +62,7 @@ impl From<HostStoreError> for CommandError {
                 let field = *field;
                 Self::new("invalid", &err).with_details(json!({ "field": field }))
             }
-            NotFound(_) | GroupNotFound(_) => Self::new("notFound", &err),
+            NotFound(_) | GroupNotFound(_) | ForwardNotFound(_) => Self::new("notFound", &err),
             InvalidMove => Self::new("invalidMove", &err),
             JumpHostCycle(names) => {
                 let details = json!({ "hosts": names });
@@ -71,6 +72,19 @@ impl From<HostStoreError> for CommandError {
                 Self::new("inUseAsJumpHost", &err).with_details(json!({ "by": by }))
             }
         }
+    }
+}
+
+impl From<ForwardError> for CommandError {
+    fn from(err: ForwardError) -> Self {
+        use ForwardError::*;
+        let (kind, address, port) = match &err {
+            PortInUse { address, port } => ("portInUse", address, port),
+            PermissionDenied { address, port } => ("permissionDenied", address, port),
+            Listen { address, port, .. } => ("listenFailed", address, port),
+        };
+        let details = json!({ "address": address, "port": port });
+        Self::new(kind, &err).with_details(details)
     }
 }
 
@@ -149,6 +163,21 @@ pub type CommandResult<T> = Result<T, CommandError>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_taken_port_names_the_address_and_port() {
+        let err = ForwardError::PortInUse {
+            address: "127.0.0.1".into(),
+            port: 5432,
+        };
+
+        let json = serde_json::to_value(CommandError::from(err)).unwrap();
+
+        assert_eq!(json["kind"], "portInUse");
+        assert_eq!(json["details"]["address"], "127.0.0.1");
+        assert_eq!(json["details"]["port"], 5432);
+        assert_eq!(json["message"], "port 5432 on 127.0.0.1 is already in use");
+    }
 
     #[test]
     fn a_failing_jump_host_keeps_the_kind_and_names_the_hop() {

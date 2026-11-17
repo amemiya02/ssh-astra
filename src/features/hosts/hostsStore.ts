@@ -1,11 +1,15 @@
 import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import { readCommandError } from "@/lib/ipc/connect";
-import * as ipc from "@/lib/ipc/hosts";
+import * as forwardsIpc from "@/lib/ipc/forwards";
+import type { ForwardDraft, ForwardId, PortForward } from "@/lib/ipc/forwards";
+import * as hostsIpc from "@/lib/ipc/hosts";
 import type { Group, GroupId, Host, HostDraft, HostId, HostTree } from "@/lib/ipc/hosts";
 import type { MoveOp } from "./hostTree";
 
-/** The HostStore commands the hosts store uses (`@/lib/ipc/hosts`); a fake in tests. */
+const ipc = { ...hostsIpc, ...forwardsIpc };
+
+/** The HostStore commands the hosts store uses (`@/lib/ipc/hosts`, `@/lib/ipc/forwards`); a fake in tests. */
 export type HostsApi = Pick<
   typeof ipc,
   | "loadHostTree"
@@ -17,6 +21,8 @@ export type HostsApi = Pick<
   | "createGroup"
   | "renameGroup"
   | "deleteGroup"
+  | "saveForward"
+  | "deleteForward"
 >;
 
 export interface HostsState {
@@ -36,6 +42,10 @@ export interface HostsState {
   renameGroup(id: GroupId, name: string): Promise<Group>;
   /** Deletes a Group; its contents move up into its parent. */
   deleteGroup(id: GroupId): Promise<void>;
+  /** Adds a Port forward rule to a Host (no `id`), or saves edits to its rule `id`. */
+  saveForward(hostId: HostId, draft: ForwardDraft, id?: ForwardId): Promise<PortForward>;
+  /** Stops and deletes a Host's Port forward rule. */
+  deleteForward(hostId: HostId, id: ForwardId): Promise<void>;
 }
 
 /**
@@ -46,6 +56,11 @@ export interface HostsState {
 export function createHostsStore(api: HostsApi): StoreApi<HostsState> {
   return createStore<HostsState>()((set, get) => {
     const update = (change: (tree: HostTree) => HostTree) => set({ tree: change(get().tree) });
+    const updateForwards = (hostId: HostId, change: (forwards: PortForward[]) => PortForward[]) =>
+      update((tree) => ({
+        ...tree,
+        hosts: tree.hosts.map((h) => (h.id === hostId ? { ...h, forwards: change(h.forwards) } : h)),
+      }));
     return {
       tree: { groups: [], hosts: [] },
       status: "loading",
@@ -104,6 +119,21 @@ export function createHostsStore(api: HostsApi): StoreApi<HostsState> {
 
       async deleteGroup(id) {
         set({ tree: await api.deleteGroup(id) });
+      },
+
+      async saveForward(hostId, draft, id) {
+        const saved = await api.saveForward(hostId, draft, id);
+        updateForwards(hostId, (forwards) =>
+          forwards.some((f) => f.id === saved.id)
+            ? forwards.map((f) => (f.id === saved.id ? saved : f))
+            : [...forwards, saved],
+        );
+        return saved;
+      },
+
+      async deleteForward(hostId, id) {
+        await api.deleteForward(hostId, id);
+        updateForwards(hostId, (forwards) => forwards.filter((f) => f.id !== id));
       },
     };
   });

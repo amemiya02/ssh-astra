@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { PortForward } from "./forwards";
 
 /** Mirrors `sshastra_core::hosts::HostId`. */
 export type HostId = string;
@@ -31,6 +32,8 @@ export interface Host extends HostDraft {
   id: HostId;
   /** The Group the Host sits in; null is the top level. Changed only by moving it. */
   groupId: GroupId | null;
+  /** Port forward rules, in the order added. Changed only through `saveForward` / `deleteForward`. */
+  forwards: PortForward[];
 }
 
 /** A folder in the Host list (`sshastra_core::hosts::Group`). */

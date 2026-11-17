@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ForwardDraft, PortForward } from "@/lib/ipc/forwards";
 import type { Group, Host, HostDraft, HostTree } from "@/lib/ipc/hosts";
 import { createHostsStore, type HostsApi } from "./hostsStore";
 
@@ -10,14 +11,15 @@ const draft = (name: string): HostDraft => ({
   auth: { type: "password" },
   jumpHost: null,
 });
-const host = (id: string, groupId: string | null = null): Host => ({ ...draft(id), id, groupId });
+const host = (id: string, groupId: string | null = null): Host => ({ ...draft(id), id, groupId, forwards: [] });
 const group = (id: string, parentId: string | null = null): Group => ({ id, name: id, parentId });
 
 /** An API whose every call resolves with a canned answer; override per test. */
 function fakeApi(initial: HostTree, overrides: Partial<HostsApi> = {}): HostsApi {
+  let forwards = 0;
   return {
     loadHostTree: vi.fn(() => Promise.resolve(initial)),
-    saveHost: vi.fn((d: HostDraft, id?: string) => Promise.resolve({ ...d, id: id ?? "new", groupId: null })),
+    saveHost: vi.fn((d: HostDraft, id?: string) => Promise.resolve({ ...d, id: id ?? "new", groupId: null, forwards: [] })),
     deleteHost: vi.fn(() => Promise.resolve()),
     duplicateHost: vi.fn((id: string, name: string) =>
       Promise.resolve({ ...initial.hosts.find((h) => h.id === id)!, id: "copy", name }),
@@ -27,6 +29,8 @@ function fakeApi(initial: HostTree, overrides: Partial<HostsApi> = {}): HostsApi
     createGroup: vi.fn((name: string, parentId: string | null) => Promise.resolve({ id: "g-new", name, parentId })),
     renameGroup: vi.fn((id: string, name: string) => Promise.resolve({ ...initial.groups.find((g) => g.id === id)!, name })),
     deleteGroup: vi.fn(() => Promise.resolve(initial)),
+    saveForward: vi.fn((_host: string, d: ForwardDraft, id?: string) => Promise.resolve({ ...d, id: id ?? `f${++forwards}` })),
+    deleteForward: vi.fn(() => Promise.resolve()),
     ...overrides,
   };
 }
@@ -123,5 +127,30 @@ describe("hosts store", () => {
     await expect(store.getState().move({ kind: "group", id: "prod", parentId: "prod", index: 0 })).rejects.toBe(refusal);
     await expect(store.getState().deleteHost("a")).rejects.toBe(refusal);
     expect(store.getState().tree).toEqual(before);
+  });
+
+  it("adds, edits and deletes a Host's Port forwards", async () => {
+    const { store, api } = await loaded({ groups: [], hosts: [host("a"), host("b")] });
+    const rule: ForwardDraft = {
+      label: "",
+      type: "local",
+      bindAddress: "127.0.0.1",
+      bindPort: 8080,
+      remoteHost: "web",
+      remotePort: 80,
+    };
+    const forwardsOf = (id: string) => store.getState().tree.hosts.find((h) => h.id === id)!.forwards;
+
+    const added: PortForward = await store.getState().saveForward("a", rule);
+    await store.getState().saveForward("a", { ...rule, bindPort: 8443 });
+    await store.getState().saveForward("a", { ...rule, bindPort: 9090 }, added.id);
+
+    expect(api.saveForward).toHaveBeenLastCalledWith("a", { ...rule, bindPort: 9090 }, "f1");
+    expect(forwardsOf("a").map((f) => f.bindPort)).toEqual([9090, 8443]);
+    expect(forwardsOf("b")).toEqual([]);
+
+    await store.getState().deleteForward("a", added.id);
+    expect(api.deleteForward).toHaveBeenCalledWith("a", "f1");
+    expect(forwardsOf("a").map((f) => f.bindPort)).toEqual([8443]);
   });
 });
