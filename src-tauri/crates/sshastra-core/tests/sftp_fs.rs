@@ -175,3 +175,32 @@ async fn a_directory_of_ten_thousand_entries_lists_in_full() {
 
     assert_eq!(listing.entries.len(), 10_000);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_whole_file_is_written_and_read_back() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let (fs, _dir) = sftp(&sshd).await;
+    let path = format!("/home/tester/write-{}.txt", uuid::Uuid::new_v4());
+
+    fs.write_file(&path, b"first, longer contents\n")
+        .await
+        .unwrap();
+    fs.write_file(&path, b"second\n").await.unwrap();
+
+    assert_eq!(fs.read_file(&path).await.unwrap(), b"second\n");
+    assert_eq!(fs.read_file("/srv/files/.hidden").await.unwrap(), b"x");
+    assert!(matches!(
+        fs.read_file("/srv/files/hello.txt").await,
+        Err(FsError::PermissionDenied(_))
+    ));
+    assert!(matches!(
+        fs.read_file("/srv/files/nope").await,
+        Err(FsError::NotFound(_))
+    ));
+    assert!(matches!(
+        fs.write_file("/srv/files/hello.txt", b"x").await,
+        Err(FsError::PermissionDenied(_))
+    ));
+}

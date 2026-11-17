@@ -15,6 +15,7 @@ import { followConnection } from "./fileBrowserStore";
 import { fileBrowsers } from "./fileBrowsers";
 import { filesSetting } from "./file-prefs";
 import { FilePanel } from "./FilePanel";
+import { RemoteEdits } from "./RemoteEdits";
 
 /** The focused remote Terminal pane, whose Host the File panel browses. */
 export interface FilePanelPane {
@@ -87,7 +88,11 @@ function RemoteFilePanel({ pane }: { pane: FilePanelPane }) {
     body = <Notice icon={<LoaderCircle className="motion-safe:animate-spin" />} text={t("files.connecting")} />;
   }
 
-  return <FilePanel actions={actions}>{body}</FilePanel>;
+  return (
+    <FilePanel actions={actions} footer={<RemoteEdits store={store} hostName={pane.host.name} />}>
+      {body}
+    </FilePanel>
+  );
 }
 
 function Notice({ icon, text, children }: { icon: React.ReactNode; text: string; children?: React.ReactNode }) {

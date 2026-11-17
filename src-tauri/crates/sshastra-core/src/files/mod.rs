@@ -97,6 +97,12 @@ pub trait RemoteFs: Send + Sync {
     fn list_dir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<Vec<FileEntry>>>;
     /// The metadata of `path`, following symlinks.
     fn stat<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileStat>>;
+    /// The whole contents of the file `path` (for small files, e.g. remote
+    /// editing; transfers stream instead).
+    fn read_file<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<Vec<u8>>>;
+    /// Replaces the contents of the file `path` with `data`, creating it if
+    /// needed (an existing file keeps its permissions).
+    fn write_file<'a>(&'a self, path: &'a str, data: &'a [u8]) -> BoxFuture<'a, FsResult<()>>;
 }
 
 /// The directory the user asked for, as the File panel shows it: `""` and

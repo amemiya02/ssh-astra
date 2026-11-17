@@ -127,6 +127,20 @@
     "connecting": "正在连接…",
     "disconnected": "与 {{host}} 的连接已断开。",
     "retry": "重试",
+    "openInEditor": "在编辑器中打开",
+    "edit": {
+      "title": "在编辑器中打开",
+      "opening": "正在下载…",
+      "editing": "已在编辑器中打开，保存后自动上传。",
+      "uploading": "正在上传…",
+      "uploaded": "已保存到 {{host}}",
+      "uploadFailed": "上传失败：{{message}}",
+      "openFailed": "无法打开文件：{{message}}",
+      "noApplication": "这台电脑上没有能打开此文件的应用。",
+      "notFound": "文件已不存在。",
+      "retry": "重试",
+      "close": "停止编辑 {{name}}"
+    },
     "errors": {
       "notConnected": "{{host}} 未连接。",
       "notFound": "文件夹不存在：{{path}}",

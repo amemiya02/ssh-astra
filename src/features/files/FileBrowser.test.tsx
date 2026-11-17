@@ -33,6 +33,9 @@ const api: FilesApi = {
     return listing ? Promise.resolve(listing) : Promise.reject({ kind: "notFound", message: "no", details: { path } });
   }),
   closeFiles: vi.fn(() => Promise.resolve()),
+  openRemoteEdit: vi.fn(() => Promise.resolve(1)),
+  retryRemoteEdit: vi.fn(() => Promise.resolve()),
+  closeRemoteEdit: vi.fn(() => Promise.resolve()),
 };
 
 let root: Root | null = null;

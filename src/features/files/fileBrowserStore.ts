@@ -1,13 +1,32 @@
 import { createStore, type StoreApi } from "zustand/vanilla";
 import type { ConnectionStatus } from "@/features/workspace/tabs";
 import { readCommandError, type CommandError } from "@/lib/ipc/connect";
+import * as editIpc from "@/lib/ipc/edit";
+import type { EditEvent, EditId } from "@/lib/ipc/edit";
 import * as ipc from "@/lib/ipc/files";
 import type { FileEntry, FsId } from "@/lib/ipc/files";
 import type { HostId } from "@/lib/ipc/hosts";
-import { childPath, isDirLike, parentPath } from "./fileList";
+import { childPath, isDirLike, isFileLike, parentPath } from "./fileList";
 
-/** The SFTP commands a File panel uses (`@/lib/ipc/files`); a fake in tests. */
-export type FilesApi = Pick<typeof ipc, "openFiles" | "listFiles" | "closeFiles">;
+/** The SFTP and remote edit commands a File panel uses (`@/lib/ipc/files`, `@/lib/ipc/edit`); a fake in tests. */
+export type FilesApi = Pick<typeof ipc, "openFiles" | "listFiles" | "closeFiles"> &
+  Pick<typeof editIpc, "openRemoteEdit" | "retryRemoteEdit" | "closeRemoteEdit">;
+
+/**
+ * A remote file opened in the user's editor from this File panel: `opening` (downloading),
+ * `editing` (no save yet), then `uploading` / `uploaded` / `uploadFailed` per save;
+ * `openFailed` if it could not be downloaded or opened.
+ */
+export interface RemoteEditItem {
+  /** Absolute remote path; identifies the item. */
+  path: string;
+  name: string;
+  /** `null` until it opened. */
+  id: EditId | null;
+  status: "opening" | "editing" | "uploading" | "uploaded" | "uploadFailed" | "openFailed";
+  /** Why it could not be opened or uploaded (`kind: "uploadFailed"` for uploads). */
+  error: CommandError | null;
+}
 
 /** How a click changes the selection: plain, Cmd/Ctrl, Shift. */
 export type SelectMode = "only" | "toggle" | "range";
@@ -32,12 +51,20 @@ export interface FileBrowserState {
   navigate(path: string): Promise<void>;
   up(): Promise<void>;
   refresh(): Promise<void>;
-  /** Enters a directory (or a link to one); does nothing for files. */
+  /** Enters a directory (or a link to one); opens a file (or a link to one) in the user's editor. */
   open(entry: FileEntry): Promise<void>;
+  /** Files opened in the user's editor, uploaded on every save; oldest first. */
+  edits: RemoteEditItem[];
+  /** Uploads a failed edit again, or opens again one that could not be opened. */
+  retryEdit(path: string): Promise<void>;
+  /** Stops uploading the file and deletes its temp copy. */
+  closeEdit(path: string): void;
   /** `order` is the names as displayed, for Shift-click ranges. */
   select(name: string, mode: SelectMode, order: readonly string[]): void;
-  /** Closes the SFTP session (the Connection dropped, or the pane closed); keeps the path for `connect`. */
+  /** Closes the SFTP session (the Connection dropped, or the pane closed); keeps the path for `connect`. Edits stay open. */
   disconnect(): void;
+  /** The pane closed: disconnects and closes every edit. */
+  dispose(): void;
 }
 
 /**
@@ -73,8 +100,44 @@ export function createFileBrowserStore(api: FilesApi, hostId: HostId): StoreApi<
       }
     };
 
+    const updateEdit = (path: string, change: Partial<RemoteEditItem>) =>
+      set({ edits: get().edits.map((e) => (e.path === path ? { ...e, ...change } : e)) });
+
+    const onEditEvent = (path: string) => (event: EditEvent) => {
+      if (event.state === "uploadFailed") {
+        updateEdit(path, { status: "uploadFailed", error: { kind: "uploadFailed", message: event.reason } });
+      } else {
+        updateEdit(path, { status: event.state, error: null });
+      }
+    };
+
+    const startEdit = async (path: string) => {
+      const existing = get().edits.find((e) => e.path === path);
+      if (existing) {
+        if (existing.status === "openFailed") updateEdit(path, { status: "opening", error: null });
+      } else {
+        const name = path.slice(path.lastIndexOf("/") + 1);
+        set({ edits: [...get().edits, { path, name, id: null, status: "opening", error: null }] });
+      }
+      try {
+        const id = await api.openRemoteEdit(hostId, path, onEditEvent(path));
+        const current = get().edits.find((e) => e.path === path);
+        if (!current) {
+          // Closed while it was opening.
+          void api.closeRemoteEdit(id).catch(() => {});
+          return;
+        }
+        updateEdit(path, current.status === "opening" ? { id, status: "editing" } : { id });
+      } catch (e) {
+        const current = get().edits.find((x) => x.path === path);
+        // Opening again an edit that is already open only failed to show it.
+        if (current && current.id === null) updateEdit(path, { status: "openFailed", error: readCommandError(e) });
+      }
+    };
+
     return {
       phase: "closed",
+      edits: [],
       path: null,
       entries: [],
       loading: false,
@@ -109,7 +172,31 @@ export function createFileBrowserStore(api: FilesApi, hostId: HostId): StoreApi<
       refresh: () => list(get().path ?? "", true),
       async open(entry) {
         const dir = get().path;
-        if (dir !== null && isDirLike(entry)) await list(childPath(dir, entry.name), false);
+        if (dir === null) return;
+        if (isDirLike(entry)) await list(childPath(dir, entry.name), false);
+        else if (isFileLike(entry)) await startEdit(childPath(dir, entry.name));
+      },
+
+      async retryEdit(path) {
+        const edit = get().edits.find((e) => e.path === path);
+        if (!edit) return;
+        if (edit.id === null) {
+          await startEdit(path);
+          return;
+        }
+        updateEdit(path, { status: "uploading", error: null });
+        try {
+          await api.retryRemoteEdit(edit.id);
+        } catch (e) {
+          updateEdit(path, { status: "uploadFailed", error: readCommandError(e) });
+        }
+      },
+
+      closeEdit(path) {
+        const edit = get().edits.find((e) => e.path === path);
+        if (!edit) return;
+        set({ edits: get().edits.filter((e) => e.path !== path) });
+        if (edit.id !== null) void api.closeRemoteEdit(edit.id).catch(() => {});
       },
 
       select(name, mode, order) {
@@ -141,6 +228,11 @@ export function createFileBrowserStore(api: FilesApi, hostId: HostId): StoreApi<
         if (fsId !== null) void api.closeFiles(fsId).catch(() => {});
         fsId = null;
         set({ phase: "closed", loading: false });
+      },
+
+      dispose() {
+        get().disconnect();
+        for (const edit of get().edits) get().closeEdit(edit.path);
       },
     };
   });

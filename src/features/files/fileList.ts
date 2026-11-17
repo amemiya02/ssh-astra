@@ -21,6 +21,11 @@ export function isDirLike(entry: FileEntry): boolean {
   return entry.kind === "dir" || (entry.kind === "symlink" && entry.linkTarget === "dir");
 }
 
+/** Files, and symlinks to them, open in the user's editor on double-click. */
+export function isFileLike(entry: FileEntry): boolean {
+  return entry.kind === "file" || (entry.kind === "symlink" && entry.linkTarget === "file");
+}
+
 /**
  * The rows the File panel shows, in order: directories first, then files, each sorted by
  * `sort` (ties by name); dotfiles only with `showHidden`.
