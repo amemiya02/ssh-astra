@@ -2,4 +2,5 @@
 //! translate IPC arguments into a `sshastra-core` call.
 
 pub mod hosts;
+pub mod settings;
 pub mod terminal;

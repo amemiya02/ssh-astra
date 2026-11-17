@@ -7,7 +7,10 @@ export type ConnectionStatus = "connecting" | "connected" | "disconnected";
  * What a pane shows. Extend this union for new kinds and add a matching case in
  * `PaneContent` (`TabPanels.tsx`).
  */
-export type PaneKind = { kind: "local-terminal" } | { kind: "remote-terminal"; host: Host };
+export type PaneKind = { kind: "local-terminal" } | { kind: "remote-terminal"; host: Host } | { kind: "settings" };
+
+/** Kinds with at most one pane: opening another focuses the open one. */
+const singletonKinds: ReadonlySet<PaneKind["kind"]> = new Set(["settings"]);
 
 /** One Terminal in a tab. A tab has one pane, or several side by side when split. */
 export type Pane = {
@@ -88,7 +91,11 @@ export function connectedHosts(state: TabsState): Host[] {
  * numbered from the second tab of that kind (`ordinal` is 1-based among tabs of the same
  * kind). A remote Terminal uses its Host's name.
  */
-export function tabTitle(tab: Tab, t: (key: "tabs.localTerminal") => string, ordinal: number): string {
+export function tabTitle(
+  tab: Tab,
+  t: (key: "tabs.localTerminal" | "tabs.settings") => string,
+  ordinal: number,
+): string {
   const pane = activePane(tab);
   if (pane.title) return pane.title;
   switch (pane.kind) {
@@ -98,12 +105,18 @@ export function tabTitle(tab: Tab, t: (key: "tabs.localTerminal") => string, ord
     }
     case "remote-terminal":
       return pane.host.name;
+    case "settings":
+      return t("tabs.settings");
   }
 }
 
 export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
   switch (action.type) {
     case "open": {
+      if (singletonKinds.has(action.pane.kind)) {
+        const open = state.tabs.flatMap((t) => t.panes).find((pane) => pane.kind === action.pane.kind);
+        if (open) return tabsReducer(state, { type: "focusPane", paneId: open.id });
+      }
       const tab: Tab = {
         id: action.tabId,
         panes: [action.pane],

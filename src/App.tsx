@@ -1,8 +1,9 @@
-import { useCallback, useReducer } from "react";
+import { useCallback, useEffect, useReducer } from "react";
 import { useTranslation } from "react-i18next";
 import { FilePanel } from "@/features/files/FilePanel";
 import { HostsPanel } from "@/features/hosts/HostsPanel";
 import { AppShell } from "@/features/shell/AppShell";
+import { isSettingsShortcut } from "@/features/shell/shortcuts";
 import { currentPlatform, type WorkspaceCommand } from "@/features/workspace/shortcuts";
 import { TabPanels } from "@/features/workspace/TabPanels";
 import { TabStrip } from "@/features/workspace/TabStrip";
@@ -43,13 +44,27 @@ export function App() {
   );
   const openLocalTerminal = useCallback(() => openTab(localTerminal), [openTab]);
   const openRemoteTerminal = useCallback((host: Host) => openTab({ kind: "remote-terminal", host }), [openTab]);
+  const openSettings = useCallback(() => openTab({ kind: "settings" }), [openTab]);
+  // Capture phase, so the shortcut works while a Terminal has focus.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isSettingsShortcut(event)) return;
+      event.preventDefault();
+      openSettings();
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [openSettings]);
   const retitle = useCallback((paneId: string, title: string) => dispatch({ type: "retitle", paneId, title }), []);
   const setStatus = useCallback(
     (paneId: string, status: ConnectionStatus) => dispatch({ type: "status", paneId, status }),
     [],
   );
 
-  /** A new pane beside the focused one, running the same kind of Terminal (the same Host's shares its Connection). */
+  /**
+   * A new pane beside the focused one, running the same kind of Terminal (the same Host's shares its
+   * Connection); beside Settings, a Local terminal.
+   */
   const split = (orientation: SplitOrientation) => {
     const tab = activeTab(state);
     if (!tab) return;
@@ -111,6 +126,7 @@ export function App() {
         />
       }
       filePanel={<FilePanel />}
+      onOpenSettings={openSettings}
       status={
         <span role="status" className="truncate">
           {connected.length === 0

@@ -50,7 +50,8 @@
       "connecting": "Connecting",
       "connected": "Connected",
       "disconnected": "Disconnected"
-    }
+    },
+    "settings": "Settings"
   },
   "workspace": {
     "emptyTitle": "No open Terminals",
@@ -154,6 +155,57 @@
     "keyboardInteractive": {
       "title": "{{user}}@{{host}} asks",
       "description": "The server asks for more information to sign in."
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "lead": "Changes apply right away and are kept after a restart.",
+    "open": "Settings",
+    "sections": {
+      "appearance": "Appearance",
+      "terminal": "Terminal",
+      "language": "Language"
+    },
+    "theme": {
+      "label": "Theme",
+      "description": "System follows your computer's light or dark setting."
+    },
+    "language": {
+      "label": "Interface language",
+      "description": "System uses your computer's language when sshastra has it, otherwise English.",
+      "options": {
+        "system": "System",
+        "en": "English",
+        "zh": "中文"
+      }
+    },
+    "on": "On",
+    "off": "Off",
+    "terminal": {
+      "font": {
+        "label": "Font",
+        "description": "A CSS font list; the first font installed on this computer is used."
+      },
+      "fontSize": {
+        "label": "Font size",
+        "description": "In pixels, from {{min}} to {{max}}."
+      },
+      "ligatures": {
+        "label": "Ligatures",
+        "description": "Joins character pairs such as -> and != when the font supports it."
+      },
+      "colorScheme": {
+        "label": "Colour scheme",
+        "description": "Used by every Terminal unless its Host sets its own."
+      },
+      "copyOnSelect": {
+        "label": "Copy on select",
+        "description": "Selecting text in a Terminal copies it to the clipboard."
+      },
+      "rightClickPaste": {
+        "label": "Right-click paste",
+        "description": "Right-clicking in a Terminal pastes the clipboard."
+      }
     }
   }
 }

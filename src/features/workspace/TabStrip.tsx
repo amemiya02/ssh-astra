@@ -1,4 +1,4 @@
-import { Columns2, Plus, Rows2, SquareTerminal, X } from "lucide-react";
+import { Columns2, Plus, Rows2, Settings, SquareTerminal, X } from "lucide-react";
 import { useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
@@ -109,7 +109,14 @@ export function TabStrip({
           const title = tabTitle(tab, t, ordinal);
           const status = tabStatus(tab);
           const label = status ? `${title} (${t(`tabs.status.${status}`)})` : title;
-          const TabIcon = tab.panes.length === 1 ? SquareTerminal : tab.orientation === "horizontal" ? Columns2 : Rows2;
+          const TabIcon =
+            tab.panes.length > 1
+              ? tab.orientation === "horizontal"
+                ? Columns2
+                : Rows2
+              : kind === "settings"
+                ? Settings
+                : SquareTerminal;
           return (
             <div
               key={tab.id}

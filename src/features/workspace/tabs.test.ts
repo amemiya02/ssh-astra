@@ -52,6 +52,15 @@ describe("tabsReducer: tabs", () => {
     expect(state.tabs[1]).toEqual(tab("b", [local("b.1")]));
   });
 
+  it("opening Settings again focuses the open Settings tab instead of adding a second", () => {
+    const settings = (id: string): Pane => ({ id, kind: "settings" });
+    const opened = tabsReducer(withTabs(["a"], "a"), { type: "open", tabId: "s1", pane: settings("s1.1") });
+    const back = tabsReducer(opened, { type: "activate", id: "a" });
+    const again = tabsReducer(back, { type: "open", tabId: "s2", pane: settings("s2.1") });
+    expect(ids(again)).toEqual(["a", "s1"]);
+    expect(again.activeId).toBe("s1");
+  });
+
   it("closing the active tab focuses the tab to its right, like a browser", () => {
     const state = tabsReducer(withTabs(["a", "b", "c"], "b"), { type: "close", id: "b" });
     expect(state).toEqual(withTabs(["a", "c"], "c"));
@@ -222,7 +231,11 @@ describe("connectedHosts", () => {
 });
 
 describe("tabTitle", () => {
-  const t = () => "Local terminal";
+  const t = (key: "tabs.localTerminal" | "tabs.settings") => (key === "tabs.settings" ? "Settings" : "Local terminal");
+
+  it("names the Settings tab", () => {
+    expect(tabTitle(tab("s", [{ id: "s.1", kind: "settings" }]), t, 1)).toBe("Settings");
+  });
 
   it("numbers Local terminals after the first so tabs stay distinguishable", () => {
     expect(tabTitle(tab("a"), t, 1)).toBe("Local terminal");

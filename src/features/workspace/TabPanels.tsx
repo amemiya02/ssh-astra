@@ -3,6 +3,7 @@ import { Fragment } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { SettingsPage } from "@/features/settings/SettingsPage";
 import { LocalTerminalView } from "@/features/terminal/LocalTerminalView";
 import { RemoteTerminalView } from "@/features/terminal/RemoteTerminalView";
 import { cn } from "@/lib/utils";
@@ -110,5 +111,7 @@ function PaneContent({
           onStatusChange={(status) => onStatusChange(pane.id, status)}
         />
       );
+    case "settings":
+      return <SettingsPage />;
   }
 }
