@@ -11,7 +11,8 @@ import { useTheme } from "@/theme/theme-context";
 import { resolveTerminalTheme, terminalSearchDecorations, type TerminalColorScheme } from "@/theme/terminal-themes";
 import { PasteConfirmDialog, type PendingPaste } from "./PasteConfirmDialog";
 import { TerminalSearchBar, type SearchDirection, type SearchResults } from "./TerminalSearchBar";
-import { isFindShortcut, isMacPlatform, pasteLines } from "./terminal-input";
+import { currentPlatform, matchTerminalShortcut } from "@/features/workspace/shortcuts";
+import { pasteLines } from "./terminal-input";
 import { useTerminalPrefs } from "./terminal-prefs-context";
 
 export const scrollbackLines = 10_000;
@@ -106,9 +107,9 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
     };
     fitIfVisible();
 
-    const mac = isMacPlatform();
+    const platform = currentPlatform();
     xterm.attachCustomKeyEventHandler((event) => {
-      if (!isFindShortcut(event, mac)) return true;
+      if (event.type !== "keydown" || matchTerminalShortcut(event, platform) !== "find") return true;
       event.preventDefault();
       setSearching(true);
       return false;

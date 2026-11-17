@@ -1,6 +1,9 @@
 import type { SplitOrientation } from "./tabs";
 
-/** The default shortcuts for tabs and splits. On Windows and Linux they avoid plain Ctrl+letter, which the shell owns. */
+/**
+ * Every keyboard shortcut in the app, as tables per platform: macOS uses Cmd; Windows and Linux use
+ * Ctrl+Shift and avoid plain Ctrl+letter, which the shell owns.
+ */
 export type Platform = "mac" | "other";
 
 export type WorkspaceCommand =
@@ -12,7 +15,8 @@ export type WorkspaceCommand =
   | { type: "moveTab"; step: 1 | -1 }
   /** 0-based; -1 is the last tab. */
   | { type: "goToTab"; index: number }
-  | { type: "openPalette" };
+  | { type: "openPalette" }
+  | { type: "openSettings" };
 
 /** Where keyboard focus is: a Terminal owns every key but the reserved ones; the rest of the app owns a few more. */
 export type KeyFocus = "terminal" | "app";
@@ -38,7 +42,9 @@ export type ShortcutName =
   | "splitDown"
   | "nextTab"
   | "previousTab"
-  | "commandPalette";
+  | "commandPalette"
+  | "settings"
+  | "find";
 
 interface Binding {
   name?: ShortcutName;
@@ -76,6 +82,7 @@ const bindings: Record<Platform, Binding[]> = {
     { code: "BracketRight", mods: ["meta"], command: { type: "cyclePane", step: 1 } },
     { code: "BracketLeft", mods: ["meta"], command: { type: "cyclePane", step: -1 } },
     { name: "commandPalette", code: "KeyK", mods: ["meta"], command: { type: "openPalette" } },
+    { name: "settings", code: "Comma", mods: ["meta"], command: { type: "openSettings" } },
     ...goToTab("meta"),
     ...shared,
   ],
@@ -89,6 +96,7 @@ const bindings: Record<Platform, Binding[]> = {
     { code: "KeyN", mods: ["ctrl", "shift"], command: { type: "cyclePane", step: 1 } },
     { code: "KeyP", mods: ["ctrl", "shift"], command: { type: "cyclePane", step: -1 } },
     { name: "commandPalette", code: "KeyK", mods: ["ctrl", "shift"], command: { type: "openPalette" } },
+    { name: "settings", code: "Comma", mods: ["ctrl", "shift"], command: { type: "openSettings" } },
     // Ctrl+K is kill-line in readline and emacs, so a Terminal keeps it.
     { code: "KeyK", mods: ["ctrl"], command: { type: "openPalette" }, appOnly: true },
     ...goToTab("alt"),
@@ -96,8 +104,29 @@ const bindings: Record<Platform, Binding[]> = {
   ],
 };
 
+/** Shortcuts a focused Terminal handles itself (xterm's key handler), not the window. */
+export type TerminalCommand = "find";
+
+interface TerminalBinding {
+  name: ShortcutName;
+  code: string;
+  mods: Modifier[];
+  command: TerminalCommand;
+}
+
+const terminalBindings: Record<Platform, TerminalBinding[]> = {
+  mac: [{ name: "find", code: "KeyF", mods: ["meta"], command: "find" }],
+  // Ctrl+F is forward-char in readline, so the shell keeps it.
+  other: [{ name: "find", code: "KeyF", mods: ["ctrl", "shift"], command: "find" }],
+};
+
 function pressed(chord: KeyChord, mod: Modifier): boolean {
   return { meta: chord.metaKey, ctrl: chord.ctrlKey, alt: chord.altKey, shift: chord.shiftKey }[mod];
+}
+
+function exactly(chord: KeyChord, mods: Modifier[]): boolean {
+  const all: Modifier[] = ["meta", "ctrl", "alt", "shift"];
+  return all.every((mod) => pressed(chord, mod) === mods.includes(mod));
 }
 
 /**
@@ -105,14 +134,15 @@ function pressed(chord: KeyChord, mod: Modifier): boolean {
  * While a Terminal has focus only the reserved chords match; everything else goes to the remote program.
  */
 export function matchShortcut(chord: KeyChord, platform: Platform, focus: KeyFocus = "terminal"): WorkspaceCommand | null {
-  const all: Modifier[] = ["meta", "ctrl", "alt", "shift"];
   const binding = bindings[platform].find(
-    (b) =>
-      b.code === chord.code &&
-      (focus === "app" || !b.appOnly) &&
-      all.every((mod) => pressed(chord, mod) === b.mods.includes(mod)),
+    (b) => b.code === chord.code && (focus === "app" || !b.appOnly) && exactly(chord, b.mods),
   );
   return binding?.command ?? null;
+}
+
+/** The Terminal's own command a key press inside it triggers (e.g. find), or `null`. */
+export function matchTerminalShortcut(chord: KeyChord, platform: Platform): TerminalCommand | null {
+  return terminalBindings[platform].find((b) => b.code === chord.code && exactly(chord, b.mods))?.command ?? null;
 }
 
 const macSymbols: Record<Modifier, string> = { ctrl: "⌃", alt: "⌥", shift: "⇧", meta: "⌘" };
@@ -121,12 +151,12 @@ const pcNames: Record<Modifier, string> = { ctrl: "Ctrl", alt: "Alt", shift: "Sh
 function keyName(code: string): string {
   if (code.startsWith("Key")) return code.slice(3);
   if (code.startsWith("Digit")) return code.slice(5);
-  return { BracketRight: "]", BracketLeft: "[", PageDown: "PgDn", PageUp: "PgUp" }[code] ?? code;
+  return { BracketRight: "]", BracketLeft: "[", PageDown: "PgDn", PageUp: "PgUp", Comma: "," }[code] ?? code;
 }
 
 /** How a named shortcut is written on `platform`, for tooltips: `⇧⌘D`, `Ctrl+Shift+T`. */
 export function shortcutLabel(name: ShortcutName, platform: Platform): string {
-  const binding = bindings[platform].find((b) => b.name === name);
+  const binding = [...bindings[platform], ...terminalBindings[platform]].find((b) => b.name === name);
   if (!binding) return "";
   if (platform === "mac") {
     // macOS orders modifiers ⌃⌥⇧⌘.

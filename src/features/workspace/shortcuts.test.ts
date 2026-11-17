@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchShortcut, shortcutLabel, type KeyChord } from "./shortcuts";
+import { matchShortcut, matchTerminalShortcut, shortcutLabel, type KeyChord } from "./shortcuts";
 
 const chord = (key: string, mods: Partial<Omit<KeyChord, "key" | "code">> = {}, code?: string): KeyChord => ({
   key,
@@ -129,4 +129,36 @@ describe("keys a focused Terminal keeps (vim, tmux, emacs)", () => {
       expect(taken).toEqual([]);
     });
   }
+});
+
+describe("Settings shortcut", () => {
+  const settings = { type: "openSettings" };
+
+  it("is Cmd+, on macOS, even from a Terminal", () => {
+    expect(matchShortcut(chord(",", { metaKey: true }, "Comma"), "mac", "terminal")).toEqual(settings);
+    expect(matchShortcut(chord(",", { ctrlKey: true }, "Comma"), "mac", "app")).toBeNull();
+    expect(shortcutLabel("settings", "mac")).toBe("⌘,");
+  });
+
+  it("is Ctrl+Shift+, elsewhere, leaving Ctrl+, to the shell", () => {
+    expect(matchShortcut(chord("<", { ctrlKey: true, shiftKey: true }, "Comma"), "other", "terminal")).toEqual(settings);
+    expect(matchShortcut(chord(",", { ctrlKey: true }, "Comma"), "other", "terminal")).toBeNull();
+    expect(shortcutLabel("settings", "other")).toBe("Ctrl+Shift+,");
+  });
+});
+
+describe("matchTerminalShortcut", () => {
+  it("finds in the Terminal with Cmd+F on macOS", () => {
+    expect(matchTerminalShortcut(chord("f", { metaKey: true }), "mac")).toBe("find");
+    expect(matchTerminalShortcut(chord("f", { ctrlKey: true }), "mac")).toBeNull();
+  });
+
+  it("finds with Ctrl+Shift+F elsewhere, leaving Ctrl+F to the shell", () => {
+    expect(matchTerminalShortcut(chord("F", { ctrlKey: true, shiftKey: true }), "other")).toBe("find");
+    expect(matchTerminalShortcut(chord("f", { ctrlKey: true }), "other")).toBeNull();
+  });
+
+  it("is not a window-wide shortcut", () => {
+    expect(matchShortcut(chord("f", { metaKey: true }), "mac", "app")).toBeNull();
+  });
 });

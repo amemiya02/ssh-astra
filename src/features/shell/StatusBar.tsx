@@ -13,7 +13,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { ThemePreference } from "@/theme/theme";
 import { useTheme } from "@/theme/theme-context";
-import { settingsShortcut } from "./shortcuts";
+import { currentPlatform, shortcutLabel } from "@/features/workspace/shortcuts";
+
+const settingsShortcut = shortcutLabel("settings", currentPlatform());
 
 /** The bottom bar: app-wide state on the left (`children`), appearance and Settings on the right. */
 export function StatusBar({ children, onOpenSettings }: { children?: ReactNode; onOpenSettings(): void }) {

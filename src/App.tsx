@@ -13,7 +13,6 @@ import { CommandPalette, type PaletteTab } from "@/features/palette/CommandPalet
 import { usePaletteActions, type PaletteAction } from "@/features/palette/palette-actions";
 import { rememberHostOpened } from "@/features/palette/recent-hosts";
 import { AppShell } from "@/features/shell/AppShell";
-import { isSettingsShortcut, settingsShortcut } from "@/features/shell/shortcuts";
 import { currentPlatform, shortcutLabel, type WorkspaceCommand } from "@/features/workspace/shortcuts";
 import { TabPanels } from "@/features/workspace/TabPanels";
 import { ConflictDialog } from "@/features/transfers/ConflictDialog";
@@ -70,16 +69,6 @@ export function App() {
     void forwardsStore.getState().watch();
     void transfersStore.getState().watch();
   }, []);
-  // Capture phase, so the shortcut works while a Terminal has focus.
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!isSettingsShortcut(event)) return;
-      event.preventDefault();
-      openSettings();
-    };
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [openSettings]);
   const retitle = useCallback((paneId: string, title: string) => dispatch({ type: "retitle", paneId, title }), []);
   const setStatus = useCallback(
     (paneId: string, status: ConnectionStatus) => dispatch({ type: "status", paneId, status }),
@@ -139,7 +128,7 @@ export function App() {
           id: "settings.open",
           title: t("palette.actions.openSettings"),
           keywords: [t("palette.keywords.preferences")],
-          shortcut: settingsShortcut,
+          shortcut: shortcutLabel("settings", platform),
           run: openSettings,
         },
       ],
@@ -166,6 +155,8 @@ export function App() {
         return;
       case "openPalette":
         return setPaletteOpen((open) => !open);
+      case "openSettings":
+        return openSettings();
       case "goToTab": {
         const target = tabs.at(command.index);
         if (target) dispatch({ type: "activate", id: target.id });
