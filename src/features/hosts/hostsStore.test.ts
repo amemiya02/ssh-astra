@@ -31,6 +31,10 @@ function fakeApi(initial: HostTree, overrides: Partial<HostsApi> = {}): HostsApi
     deleteGroup: vi.fn(() => Promise.resolve(initial)),
     saveForward: vi.fn((_host: string, d: ForwardDraft, id?: string) => Promise.resolve({ ...d, id: id ?? `f${++forwards}` })),
     deleteForward: vi.fn(() => Promise.resolve()),
+    exportHosts: vi.fn(() => Promise.resolve()),
+    importHosts: vi.fn(() =>
+      Promise.resolve({ summary: { hostsAdded: 0, groupsAdded: 0, skippedHosts: [] }, tree: initial }),
+    ),
     ...overrides,
   };
 }
@@ -152,5 +156,35 @@ describe("hosts store", () => {
     await store.getState().deleteForward("a", added.id);
     expect(api.deleteForward).toHaveBeenCalledWith("a", "f1");
     expect(forwardsOf("a").map((f) => f.bindPort)).toEqual([8443]);
+  });
+
+  it("shows the Host list the HostStore saved after an import", async () => {
+    const after = { groups: [group("prod")], hosts: [host("a"), host("b", "prod")] };
+    const summary = { hostsAdded: 1, groupsAdded: 1, skippedHosts: ["a"] };
+    const { api, store } = await loaded(
+      { groups: [], hosts: [host("a")] },
+      { importHosts: vi.fn(() => Promise.resolve({ summary, tree: after })) },
+    );
+
+    await expect(store.getState().importHosts("/tmp/hosts.json")).resolves.toEqual(summary);
+
+    expect(api.importHosts).toHaveBeenCalledWith("/tmp/hosts.json");
+    expect(ids(store.getState().tree)).toEqual({ groups: ["prod"], hosts: ["a", "b"] });
+  });
+
+  it("keeps the list as it was when an import fails", async () => {
+    const { store } = await loaded(
+      { groups: [], hosts: [host("a")] },
+      { importHosts: () => Promise.reject({ kind: "hostStoreCorrupt", message: "damaged" }) },
+    );
+
+    await expect(store.getState().importHosts("/tmp/x.json")).rejects.toMatchObject({ kind: "hostStoreCorrupt" });
+    expect(ids(store.getState().tree)).toEqual({ groups: [], hosts: ["a"] });
+  });
+
+  it("exports through the HostStore", async () => {
+    const { api, store } = await loaded({ groups: [], hosts: [host("a")] });
+    await store.getState().exportHosts("/tmp/out.json");
+    expect(api.exportHosts).toHaveBeenCalledWith("/tmp/out.json");
   });
 });

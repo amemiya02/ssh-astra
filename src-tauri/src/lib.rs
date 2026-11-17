@@ -41,6 +41,7 @@ pub fn run() {
         // Terminal links open in the browser; copy on select / paste use the system clipboard.
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
             let hosts = HostStore::open(config_dir.join("hosts.json")).map_err(Into::into);
@@ -77,6 +78,8 @@ pub fn run() {
             commands::hosts::group_rename,
             commands::hosts::group_delete,
             commands::hosts::group_move,
+            commands::hosts::hosts_export,
+            commands::hosts::hosts_import,
             commands::forwards::forwards_watch,
             commands::forwards::forward_save,
             commands::forwards::forward_delete,

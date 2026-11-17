@@ -123,7 +123,11 @@ fn an_export_file_holds_no_credentials() {
             .set(&host.id, CredentialKind::Password, "hunter2-password")
             .unwrap();
         vault
-            .set(&host.id, CredentialKind::KeyPassphrase, "correct-horse-passphrase")
+            .set(
+                &host.id,
+                CredentialKind::KeyPassphrase,
+                "correct-horse-passphrase",
+            )
             .unwrap();
     }
 

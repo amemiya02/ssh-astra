@@ -4,11 +4,14 @@
 //! Credentials are never part of it: they live only in the CredentialVault.
 
 use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
 use super::{chain, migrate, FileRef, Group, GroupId, Host, HostId, HostStore, HostStoreError};
 use crate::forward::ForwardId;
+use crate::fs_util::write_atomically;
 
 /// The `format` marker of an export file. Files without one (e.g. a copied
 /// `hosts.json`) are accepted too.
@@ -42,6 +45,23 @@ impl HostStore {
             hosts: &self.library.hosts,
         })
         .expect("the Host list always serializes")
+    }
+
+    /// Writes [`HostStore::export`] to `path`, replacing it atomically.
+    pub fn export_to(&self, path: &Path) -> Result<(), HostStoreError> {
+        write_atomically(path, self.export().as_bytes()).map_err(|source| HostStoreError::Io {
+            path: path.to_owned(),
+            source,
+        })
+    }
+
+    /// [`HostStore::import`] of the file at `path`.
+    pub fn import_from(&mut self, path: &Path) -> Result<ImportSummary, HostStoreError> {
+        let text = fs::read_to_string(path).map_err(|source| HostStoreError::Io {
+            path: path.to_owned(),
+            source,
+        })?;
+        self.import(&text)
     }
 
     /// Adds the Groups and Hosts of an export file (any supported version),
@@ -115,8 +135,11 @@ fn merge_groups(
     groups: &mut Vec<Group>,
     incoming: &[Group],
 ) -> Result<HashMap<GroupId, GroupId>, HostStoreError> {
-    let position: HashMap<&GroupId, usize> =
-        incoming.iter().enumerate().map(|(i, g)| (&g.id, i)).collect();
+    let position: HashMap<&GroupId, usize> = incoming
+        .iter()
+        .enumerate()
+        .map(|(i, g)| (&g.id, i))
+        .collect();
     let existing = groups.len();
     let mut mapped: HashMap<GroupId, GroupId> = HashMap::new();
     let mut added: Vec<(usize, Group)> = Vec::new();

@@ -4,7 +4,7 @@ import { readCommandError } from "@/lib/ipc/connect";
 import * as forwardsIpc from "@/lib/ipc/forwards";
 import type { ForwardDraft, ForwardId, PortForward } from "@/lib/ipc/forwards";
 import * as hostsIpc from "@/lib/ipc/hosts";
-import type { Group, GroupId, Host, HostDraft, HostId, HostTree } from "@/lib/ipc/hosts";
+import type { Group, GroupId, Host, HostDraft, HostId, HostTree, ImportSummary } from "@/lib/ipc/hosts";
 import type { MoveOp } from "./hostTree";
 
 const ipc = { ...hostsIpc, ...forwardsIpc };
@@ -23,6 +23,8 @@ export type HostsApi = Pick<
   | "deleteGroup"
   | "saveForward"
   | "deleteForward"
+  | "exportHosts"
+  | "importHosts"
 >;
 
 export interface HostsState {
@@ -46,6 +48,10 @@ export interface HostsState {
   saveForward(hostId: HostId, draft: ForwardDraft, id?: ForwardId): Promise<PortForward>;
   /** Stops and deletes a Host's Port forward rule. */
   deleteForward(hostId: HostId, id: ForwardId): Promise<void>;
+  /** Writes the Host list to an export file (never credentials). */
+  exportHosts(path: string): Promise<void>;
+  /** Adds the Groups and Hosts of an export file; Hosts whose name is taken are skipped. */
+  importHosts(path: string): Promise<ImportSummary>;
 }
 
 /**
@@ -134,6 +140,16 @@ export function createHostsStore(api: HostsApi): StoreApi<HostsState> {
       async deleteForward(hostId, id) {
         await api.deleteForward(hostId, id);
         updateForwards(hostId, (forwards) => forwards.filter((f) => f.id !== id));
+      },
+
+      exportHosts(path) {
+        return api.exportHosts(path);
+      },
+
+      async importHosts(path) {
+        const { summary, tree } = await api.importHosts(path);
+        set({ tree });
+        return summary;
       },
     };
   });

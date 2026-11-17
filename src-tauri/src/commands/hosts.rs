@@ -1,8 +1,12 @@
 //! Host commands: the saved Host list (HostStore) with its Groups.
 
+use std::path::PathBuf;
 use std::sync::Mutex;
 
-use sshastra_core::hosts::{Group, GroupId, Host, HostDraft, HostId, HostStore, HostTree};
+use serde::Serialize;
+use sshastra_core::hosts::{
+    Group, GroupId, Host, HostDraft, HostId, HostStore, HostTree, ImportSummary,
+};
 use tauri::State;
 
 use super::forwards::ForwardsState;
@@ -127,5 +131,32 @@ pub fn group_move(
     hosts.with(|store| {
         store.move_group(&id, parent_id, index)?;
         Ok(store.tree())
+    })
+}
+
+/// Writes the whole Host list (no credentials) as an export file at `path`.
+#[tauri::command]
+pub fn hosts_export(hosts: State<'_, HostsState>, path: PathBuf) -> CommandResult<()> {
+    hosts.with(|store| Ok(store.export_to(&path)?))
+}
+
+/// What `hosts_import` added, and the Host list afterwards.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportResult {
+    summary: ImportSummary,
+    tree: HostTree,
+}
+
+/// Adds the Groups and Hosts of the export file at `path`; Hosts whose name
+/// is taken are skipped.
+#[tauri::command]
+pub fn hosts_import(hosts: State<'_, HostsState>, path: PathBuf) -> CommandResult<ImportResult> {
+    hosts.with(|store| {
+        let summary = store.import_from(&path)?;
+        Ok(ImportResult {
+            summary,
+            tree: store.tree(),
+        })
     })
 }

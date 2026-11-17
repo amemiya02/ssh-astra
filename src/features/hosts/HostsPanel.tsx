@@ -1,5 +1,5 @@
-import { FolderPlus, Plus, Search, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Download, FolderPlus, Plus, Search, Upload, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
 import { Button } from "@/components/ui/button";
@@ -15,8 +15,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { readCommandError } from "@/lib/ipc/connect";
+import { pickOpenPath, pickSavePath } from "@/lib/ipc/system";
 import type { Group, Host, HostDraft, HostId } from "@/lib/ipc/hosts";
 import { cn } from "@/lib/utils";
+import { usePaletteActions } from "@/features/palette/palette-actions";
 import { TerminalSchemeSelect } from "@/features/terminal/TerminalSchemeSelect";
 import { ClearCredentialsButton } from "./ClearCredentialsButton";
 import { HostList, type HostListActions } from "./HostList";
@@ -24,6 +26,7 @@ import { HostsSidebar } from "./HostsSidebar";
 import { emptyHostForm, hostFormFrom, parseHostForm, type HostFormField, type HostFormResult, type HostFormValues } from "./hostForm";
 import { searchTree, type DragItem } from "./hostTree";
 import { hostsStore, useHosts } from "./hostsStore";
+import { RowMoreMenu } from "./RowMenu";
 
 interface HostsPanelProps {
   /** Open a remote Terminal on the Host. */
@@ -51,6 +54,8 @@ export function HostsPanel({ onOpen, onOpenForwards, onOpenLocalTerminal }: Host
   const [removing, setRemoving] = useState<Removal | null>(null);
   const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  /** The outcome of the last export or import. */
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     void hostsStore.getState().load();
@@ -61,15 +66,58 @@ export function HostsPanel({ onOpen, onOpenForwards, onOpenLocalTerminal }: Host
   const store = hostsStore.getState;
 
   /** Runs a store change, showing why it failed instead of throwing. */
-  const attempt = async <T,>(change: () => Promise<T>): Promise<T | undefined> => {
-    setActionError(null);
-    try {
-      return await change();
-    } catch (e) {
-      setActionError(t("hosts.actionFailed", { message: readCommandError(e).message }));
-      return undefined;
-    }
-  };
+  const attempt = useCallback(
+    async <T,>(
+      change: () => Promise<T>,
+      failed: "hosts.actionFailed" | "hosts.transfer.exportFailed" | "hosts.transfer.importFailed" = "hosts.actionFailed",
+    ): Promise<T | undefined> => {
+      setActionError(null);
+      setNotice(null);
+      try {
+        return await change();
+      } catch (e) {
+        setActionError(t(failed, { message: readCommandError(e).message }));
+        return undefined;
+      }
+    },
+    [t],
+  );
+
+  const transfer = useMemo(() => {
+    const filters = [{ name: t("hosts.transfer.fileType"), extensions: ["json"] }];
+    return {
+      async exportHosts() {
+        const exported = await attempt(async () => {
+          const path = await pickSavePath({ title: t("hosts.transfer.export"), defaultPath: "sshastra-hosts.json", filters });
+          if (path) await hostsStore.getState().exportHosts(path);
+          return path;
+        }, "hosts.transfer.exportFailed");
+        if (exported) setNotice(t("hosts.transfer.exported"));
+      },
+      async importHosts() {
+        const summary = await attempt(async () => {
+          const path = await pickOpenPath({ title: t("hosts.transfer.import"), filters });
+          return path ? hostsStore.getState().importHosts(path) : null;
+        }, "hosts.transfer.importFailed");
+        if (!summary) return;
+        const added = t("hosts.transfer.imported", { hosts: summary.hostsAdded, groups: summary.groupsAdded });
+        const skipped = summary.skippedHosts.length
+          ? " " + t("hosts.transfer.skipped", { names: summary.skippedHosts.join(", ") })
+          : "";
+        setNotice(added + skipped);
+      },
+    };
+  }, [t, attempt]);
+
+  usePaletteActions(
+    useMemo(
+      () => [
+        { id: "hosts.import", title: t("hosts.transfer.import"), run: () => void transfer.importHosts() },
+        { id: "hosts.export", title: t("hosts.transfer.export"), run: () => void transfer.exportHosts() },
+      ],
+      [t, transfer],
+    ),
+  );
 
   const selectedGroupId = selected?.kind === "group" ? selected.id : null;
 
@@ -113,22 +161,36 @@ export function HostsPanel({ onOpen, onOpenForwards, onOpenLocalTerminal }: Host
     return host;
   };
 
+  const messages = (actionError || notice) && (
+    <>
+      {actionError && (
+        <p role="alert" className="text-destructive px-1 text-xs">
+          {actionError}
+        </p>
+      )}
+      {notice && (
+        <p role="status" className="text-muted-foreground px-1 text-xs">
+          {notice}
+        </p>
+      )}
+    </>
+  );
+
   let list;
   if (status === "error") {
     list = (
-      <p role="alert" className="text-destructive px-1 py-2 text-xs">
-        {loadError}
-      </p>
+      <div className="flex flex-col gap-2">
+        <p role="alert" className="text-destructive px-1 py-2 text-xs">
+          {loadError}
+        </p>
+        {messages}
+      </div>
     );
   } else if (tree.hosts.length > 0 || tree.groups.length > 0) {
     list = (
       <div className="flex h-full flex-col gap-2">
         <SearchField value={query} onChange={setQuery} />
-        {actionError && (
-          <p role="alert" className="text-destructive px-1 text-xs">
-            {actionError}
-          </p>
-        )}
+        {messages}
         <div className="min-h-0 flex-1">
           {searching && nodes.length === 0 ? (
             <div className="flex flex-col items-start gap-2 px-1 py-4">
@@ -150,6 +212,8 @@ export function HostsPanel({ onOpen, onOpenForwards, onOpenLocalTerminal }: Host
         </div>
       </div>
     );
+  } else if (messages) {
+    list = <div className="flex flex-col gap-2">{messages}</div>;
   }
 
   return (
@@ -164,6 +228,24 @@ export function HostsPanel({ onOpen, onOpenForwards, onOpenLocalTerminal }: Host
             <IconButton label={t("hosts.new")} onClick={() => setEditing("new")}>
               <Plus />
             </IconButton>
+            <RowMoreMenu
+              label={t("hosts.listActions")}
+              align="end"
+              entries={[
+                {
+                  type: "item",
+                  label: t("hosts.transfer.import"),
+                  icon: <Download />,
+                  onSelect: () => void transfer.importHosts(),
+                },
+                {
+                  type: "item",
+                  label: t("hosts.transfer.export"),
+                  icon: <Upload />,
+                  onSelect: () => void transfer.exportHosts(),
+                },
+              ]}
+            />
           </>
         }
       >

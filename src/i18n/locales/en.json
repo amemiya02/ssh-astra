@@ -62,7 +62,18 @@
       "password": "Password",
       "key": "Private key"
     },
-    "portForwards": "Port forwards"
+    "portForwards": "Port forwards",
+    "listActions": "Host list actions",
+    "transfer": {
+      "import": "Import Hosts…",
+      "export": "Export Hosts…",
+      "fileType": "sshastra Host list",
+      "exported": "Host list exported. Passwords and passphrases are never included.",
+      "imported": "Import done. Hosts added: {{hosts}}. Groups added: {{groups}}.",
+      "skipped": "Skipped because a Host with the same name exists: {{names}}.",
+      "exportFailed": "Could not export the Host list: {{message}}",
+      "importFailed": "Could not import the file: {{message}}"
+    }
   },
   "tabs": {
     "listLabel": "Open tabs",
