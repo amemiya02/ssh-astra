@@ -19,6 +19,10 @@ interface Props {
   open: OpenTerminal;
   /** Called if `open` rejects; the view stays mounted. */
   onOpenError?: (error: unknown) => void;
+  /** The backend Terminal is running. */
+  onOpened?(): void;
+  /** The backend Terminal ended (its shell exited or its Connection dropped). */
+  onExit?(): void;
   label: string;
   /** Whether its tab is shown; becoming active refits and focuses the Terminal. */
   active?: boolean;
@@ -32,17 +36,30 @@ interface Props {
  * An `XtermView` wired to any backend Terminal: input, resize (sent to the
  * backend so vim/tmux reflow) and close on unmount.
  */
-export function TerminalSurface({ open, onOpenError, label, active = true, colorScheme, onTitleChange }: Props) {
+export function TerminalSurface({
+  open,
+  onOpenError,
+  onOpened,
+  onExit,
+  label,
+  active = true,
+  colorScheme,
+  onTitleChange,
+}: Props) {
   const { t } = useTranslation();
   // Read through refs: the Terminal is opened once per mount; later prop changes don't reopen it.
   const openRef = useRef(open);
   const onOpenErrorRef = useRef(onOpenError);
+  const onOpenedRef = useRef(onOpened);
+  const onExitRef = useRef(onExit);
   const onTitleChangeRef = useRef(onTitleChange);
   const tRef = useRef(t);
 
   useEffect(() => {
     tRef.current = t;
     onOpenErrorRef.current = onOpenError;
+    onOpenedRef.current = onOpened;
+    onExitRef.current = onExit;
     onTitleChangeRef.current = onTitleChange;
   });
 
@@ -64,6 +81,7 @@ export function TerminalSurface({ open, onOpenError, label, active = true, color
         xterm.write(`\r\n\x1b[2m${message}\x1b[0m\r\n`);
         xterm.options.cursorBlink = false;
         onTitleChangeRef.current?.("");
+        onExitRef.current?.();
       })
       .then(
         (opened) => {
@@ -72,6 +90,7 @@ export function TerminalSurface({ open, onOpenError, label, active = true, color
             return;
           }
           id = opened;
+          onOpenedRef.current?.();
           // Catch up on any resize that happened while connecting.
           void resizeTerminal(opened, size());
         },

@@ -66,6 +66,14 @@
     "localTerminal": "本地终端",
     "newLocalTerminal": "新建本地终端",
     "close": "关闭 {{title}}",
+    "splitRight": "向右分屏",
+    "splitDown": "向下分屏",
+    "pane": "第 {{index}} 个窗格，共 {{count}} 个",
+    "status": {
+      "connecting": "连接中",
+      "connected": "已连接",
+      "disconnected": "已断开"
+    },
     "settings": "设置"
   },
   "workspace": {
@@ -82,7 +90,8 @@
     "dockGroup": "文件面板位置"
   },
   "status": {
-    "noConnections": "没有连接"
+    "noConnections": "没有连接",
+    "connectedTo": "已连接：{{hosts}}"
   },
   "theme": {
     "title": "外观",

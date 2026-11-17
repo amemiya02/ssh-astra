@@ -66,6 +66,14 @@
     "localTerminal": "Local terminal",
     "newLocalTerminal": "New Local terminal",
     "close": "Close {{title}}",
+    "splitRight": "Split right",
+    "splitDown": "Split down",
+    "pane": "Pane {{index}} of {{count}}",
+    "status": {
+      "connecting": "Connecting",
+      "connected": "Connected",
+      "disconnected": "Disconnected"
+    },
     "settings": "Settings"
   },
   "workspace": {
@@ -82,7 +90,8 @@
     "dockGroup": "File panel position"
   },
   "status": {
-    "noConnections": "No Connections"
+    "noConnections": "No Connections",
+    "connectedTo": "Connected to {{hosts}}"
   },
   "theme": {
     "title": "Appearance",

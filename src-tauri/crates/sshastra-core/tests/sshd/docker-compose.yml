@@ -16,6 +16,9 @@
 #   kbdint    published: keyboard-interactive (PAM asks for the password)
 #             instead of the password method, either alone or as the second
 #             step after a public key ("partial success").
+#   counted   reachable from the test process like `ssh`, but only the
+#             Connection lifecycle tests use it, so they can count the TCP
+#             connections it sees (`Sshd::established_connections`).
 #
 # Each server's hostname is its service name, so a test can tell where a
 # shell landed.
@@ -76,6 +79,11 @@ services:
       - KbdInteractiveAuthentication=yes
       - -o
       - AuthenticationMethods=publickey,keyboard-interactive keyboard-interactive
+  counted:
+    <<: *sshd
+    hostname: counted
+    ports: ["127.0.0.1::22"]
+    networks: [public]
 
 networks:
   public: {}
