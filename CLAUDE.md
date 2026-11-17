@@ -21,6 +21,7 @@ Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/ag
   - `src/lib/ipc/<domain>.ts` — the only place that calls `invoke`/`Channel`; typed wrappers over Tauri commands.
   - `src/i18n/locales/{en,zh}.json` — all UI copy. Keys must match exactly (enforced by `src/i18n/locales.test.ts`).
   - `src/components/ui/` — shadcn components (`pnpm dlx shadcn@latest add <name>`).
+  - UI follows `DESIGN.md`. `src/App.tsx` fills the `AppShell` slots (sidebar, tabs, workspace, filePanel, status); the Host list lives in `HostsSidebar` (`features/hosts/HostsPanel.tsx`). A new tab kind extends the `Tab` union in `features/workspace/tabs.ts` plus a case in `TabContent`, and stays mounted while hidden (Local terminal and remote Terminal both render through it). Semantic token classes only (literal hex only in `src/theme/terminal-themes.ts`); icon-only controls are `IconButton` with a `label`; prefs go through `src/lib/storage.ts`.
 - `src-tauri/` — Cargo workspace root and the Tauri app crate (`sshastra`, lib `sshastra_lib`): a thin IPC bridge.
   - `src-tauri/src/commands/<domain>.rs` — Tauri commands, registered in `src-tauri/src/lib.rs`. Errors map to `CommandError { kind, message }` in `src-tauri/src/error.rs`.
   - `src-tauri/crates/sshastra-core/` — all domain logic, no Tauri dependency (CI checks this). Tests in `crates/sshastra-core/tests/`.

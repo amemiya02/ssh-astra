@@ -17,11 +17,18 @@ interface PendingPrompt {
   resolve: (answer: PromptAnswer) => void;
 }
 
+interface RemoteTerminalViewProps {
+  host: Host;
+  /** Whether its tab is shown. A question asked while hidden waits until the tab is shown. */
+  active?: boolean;
+  onTitleChange?(title: string): void;
+}
+
 /**
  * A Terminal on a saved Host: connects (asking about host keys and the
- * password in place) and then shows the remote shell.
+ * password in a dialog) and then shows the remote shell.
  */
-export function RemoteTerminalView({ host }: { host: Host }) {
+export function RemoteTerminalView({ host, active = true, onTitleChange }: RemoteTerminalViewProps) {
   const [pending, setPending] = useState<PendingPrompt | null>(null);
   const [error, setError] = useState<CommandError | null>(null);
   const pendingRef = useRef<PendingPrompt | null>(null);
@@ -48,10 +55,21 @@ export function RemoteTerminalView({ host }: { host: Host }) {
 
   return (
     <div className="relative h-full">
-      {error ? <ConnectErrorPanel error={error} /> : <TerminalSurface open={open} onOpenError={onOpenError} label={host.name} />}
+      {error ? (
+        <ConnectErrorPanel error={error} />
+      ) : (
+        <TerminalSurface
+          open={open}
+          onOpenError={onOpenError}
+          label={host.name}
+          active={active}
+          onTitleChange={onTitleChange}
+        />
+      )}
       {pending && (
         <ConnectPromptDialog
           prompt={pending.prompt}
+          open={active}
           onAnswer={(answer) => {
             show(null);
             pending.resolve(answer);

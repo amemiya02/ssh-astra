@@ -1,34 +1,46 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { ConnectPrompt, PromptAnswer } from "@/lib/ipc/connect";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { refusal, type ConnectPrompt, type PromptAnswer } from "@/lib/ipc/connect";
 
 interface Props {
   prompt: ConnectPrompt;
+  /** False while the asking tab is hidden; the question stays pending. */
+  open: boolean;
   onAnswer: (answer: PromptAnswer) => void;
 }
-
-const buttonBase = "rounded-md px-3 py-1.5 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring";
 
 /**
  * A question asked while connecting: trust a new host key, type a password or
  * key passphrase, or answer the server's keyboard-interactive questions.
+ * Escape refuses.
  */
-export function ConnectPromptDialog({ prompt, onAnswer }: Props) {
+export function ConnectPromptDialog({ prompt, open, onAnswer }: Props) {
   return (
-    <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/30 p-4">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={`prompt-${prompt.id}-title`}
-        className="bg-popover text-popover-foreground w-full max-w-md rounded-lg border p-5 shadow-lg"
-      >
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onAnswer(refusal(prompt));
+      }}
+    >
+      <DialogContent showCloseButton={false} className="max-w-[calc(100%-2rem)] gap-3.5 p-5 sm:max-w-130">
         <Question key={prompt.id} prompt={prompt} onAnswer={onAnswer} />
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
-function Question({ prompt, onAnswer }: Props) {
+function Question({ prompt, onAnswer }: Omit<Props, "open">) {
   switch (prompt.type) {
     case "hostKey":
       return <HostKeyQuestion prompt={prompt} onAnswer={onAnswer} />;
@@ -41,21 +53,18 @@ function Question({ prompt, onAnswer }: Props) {
   }
 }
 
-const inputClass =
-  "bg-background focus-visible:outline-ring mt-1 w-full rounded-md border px-3 py-1.5 text-sm focus-visible:outline-2";
-
-/** Cancel + submit buttons for the form-shaped questions. */
-function FormButtons({ onCancel }: { onCancel: () => void }) {
+/** Cancel + submit for the form-shaped questions. */
+function FormFooter({ onCancel }: { onCancel: () => void }) {
   const { t } = useTranslation();
   return (
-    <div className="mt-5 flex justify-end gap-2">
-      <button type="button" className={`${buttonBase} border`} onClick={onCancel}>
+    <DialogFooter>
+      <Button type="button" variant="outline" size="sm" onClick={onCancel}>
         {t("connect.cancel")}
-      </button>
-      <button type="submit" className={`${buttonBase} bg-primary text-primary-foreground`}>
+      </Button>
+      <Button type="submit" size="sm">
         {t("connect.password.submit")}
-      </button>
-    </div>
+      </Button>
+    </DialogFooter>
   );
 }
 
@@ -68,32 +77,41 @@ function PassphraseQuestion({
 }) {
   const { t } = useTranslation();
   const [passphrase, setPassphrase] = useState("");
+  const inputId = `prompt-${prompt.id}-passphrase`;
   return (
     <form
+      className="grid gap-3.5"
       onSubmit={(event) => {
         event.preventDefault();
         onAnswer({ type: "passphrase", passphrase });
       }}
     >
-      <h2 id={`prompt-${prompt.id}-title`} className="text-base font-semibold">
-        {t("connect.passphrase.title")}
-      </h2>
-      <p className="text-muted-foreground mt-2 font-mono text-xs break-all">{prompt.keyPath}</p>
-      {prompt.retry && (
-        <p role="alert" className="text-destructive mt-2 text-sm">
-          {t("connect.passphrase.retry")}
-        </p>
-      )}
-      <input
-        type="password"
-        autoFocus
-        aria-label={t("connect.passphrase.label")}
-        autoComplete="off"
-        className={`${inputClass} mt-3`}
-        value={passphrase}
-        onChange={(event) => setPassphrase(event.target.value)}
-      />
-      <FormButtons onCancel={() => onAnswer({ type: "passphrase", passphrase: null })} />
+      <DialogHeader>
+        <DialogTitle>{t("connect.passphrase.title")}</DialogTitle>
+        <DialogDescription className="font-mono break-all">{prompt.keyPath}</DialogDescription>
+      </DialogHeader>
+      <div className="grid gap-1.5">
+        <Label htmlFor={inputId} className="text-xs">
+          {t("connect.passphrase.label")}
+        </Label>
+        <Input
+          id={inputId}
+          type="password"
+          autoFocus
+          autoComplete="off"
+          className="h-8"
+          aria-invalid={prompt.retry || undefined}
+          aria-describedby={prompt.retry ? `${inputId}-retry` : undefined}
+          value={passphrase}
+          onChange={(event) => setPassphrase(event.target.value)}
+        />
+        {prompt.retry && (
+          <p id={`${inputId}-retry`} role="alert" className="text-destructive text-xs">
+            {t("connect.passphrase.retry")}
+          </p>
+        )}
+      </div>
+      <FormFooter onCancel={() => onAnswer({ type: "passphrase", passphrase: null })} />
     </form>
   );
 }
@@ -110,36 +128,46 @@ function KeyboardInteractiveQuestion({
   const [answers, setAnswers] = useState(() => prompt.prompts.map(() => ""));
   return (
     <form
+      className="grid gap-3.5"
       onSubmit={(event) => {
         event.preventDefault();
         onAnswer({ type: "keyboardInteractive", answers });
       }}
     >
-      <h2 id={`prompt-${prompt.id}-title`} className="text-base font-semibold">
-        {prompt.name || t("connect.keyboardInteractive.title", { user: prompt.user, host: prompt.host })}
-      </h2>
-      {prompt.instructions && (
-        <p className="text-muted-foreground mt-2 text-sm whitespace-pre-line">{prompt.instructions}</p>
-      )}
-      {prompt.prompts.map((question, index) => (
-        <label key={index} className="mt-3 block text-sm">
-          <span className="whitespace-pre-line">{question.text}</span>
-          <input
-            type={question.echo ? "text" : "password"}
-            autoFocus={index === 0}
-            autoComplete="off"
-            autoCapitalize="off"
-            spellCheck={false}
-            className={inputClass}
-            value={answers[index]}
-            onChange={(event) => {
-              const value = event.target.value;
-              setAnswers((all) => all.map((a, i) => (i === index ? value : a)));
-            }}
-          />
-        </label>
-      ))}
-      <FormButtons onCancel={() => onAnswer({ type: "keyboardInteractive", answers: null })} />
+      <DialogHeader>
+        <DialogTitle>
+          {prompt.name || t("connect.keyboardInteractive.title", { user: prompt.user, host: prompt.host })}
+        </DialogTitle>
+        <DialogDescription className="whitespace-pre-line">
+          {prompt.instructions || t("connect.keyboardInteractive.description")}
+        </DialogDescription>
+      </DialogHeader>
+      {prompt.prompts.map((question, index) => {
+        const inputId = `prompt-${prompt.id}-answer-${index}`;
+        return (
+          <div key={index} className="grid gap-1.5">
+            <Label htmlFor={inputId} className="text-xs whitespace-pre-line">
+              {question.text}
+            </Label>
+            <Input
+              id={inputId}
+              type={question.echo ? "text" : "password"}
+              autoFocus={index === 0}
+              autoComplete="off"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              className="h-8"
+              value={answers[index]}
+              onChange={(event) => {
+                const value = event.target.value;
+                setAnswers((all) => all.map((a, i) => (i === index ? value : a)));
+              }}
+            />
+          </div>
+        );
+      })}
+      <FormFooter onCancel={() => onAnswer({ type: "keyboardInteractive", answers: null })} />
     </form>
   );
 }
@@ -155,28 +183,25 @@ function HostKeyQuestion({
   const target = prompt.port === 22 ? prompt.host : `${prompt.host}:${prompt.port}`;
   return (
     <>
-      <h2 id={`prompt-${prompt.id}-title`} className="text-base font-semibold">
-        {t("connect.hostKey.title")}
-      </h2>
-      <p className="text-muted-foreground mt-2 text-sm">{t("connect.hostKey.body", { host: target })}</p>
-      <dl className="bg-muted mt-3 rounded-md p-3 text-sm">
-        <dt className="text-muted-foreground text-xs">{prompt.algorithm}</dt>
+      <DialogHeader>
+        <DialogTitle>{t("connect.hostKey.title")}</DialogTitle>
+        <DialogDescription>{t("connect.hostKey.body", { host: target })}</DialogDescription>
+      </DialogHeader>
+      <dl className="bg-muted rounded-lg border px-3.5 py-3">
+        <dt className="text-muted-foreground text-xs">
+          {t("connect.hostKey.fingerprintLabel", { algorithm: prompt.algorithm })}
+        </dt>
         <dd className="mt-1 font-mono break-all select-all">{prompt.fingerprint}</dd>
       </dl>
-      <p className="text-muted-foreground mt-3 text-xs">{t("connect.hostKey.hint")}</p>
-      <div className="mt-5 flex justify-end gap-2">
-        <button type="button" className={`${buttonBase} border`} onClick={() => onAnswer({ type: "hostKey", trust: false })}>
+      <p className="text-muted-foreground text-xs">{t("connect.hostKey.hint")}</p>
+      <DialogFooter>
+        <Button variant="outline" size="sm" onClick={() => onAnswer({ type: "hostKey", trust: false })}>
           {t("connect.cancel")}
-        </button>
-        <button
-          type="button"
-          autoFocus
-          className={`${buttonBase} bg-primary text-primary-foreground`}
-          onClick={() => onAnswer({ type: "hostKey", trust: true })}
-        >
+        </Button>
+        <Button size="sm" autoFocus onClick={() => onAnswer({ type: "hostKey", trust: true })}>
           {t("connect.hostKey.trust")}
-        </button>
-      </div>
+        </Button>
+      </DialogFooter>
     </>
   );
 }
@@ -190,42 +215,53 @@ function PasswordQuestion({
 }) {
   const { t } = useTranslation();
   const [password, setPassword] = useState("");
+  const inputId = `prompt-${prompt.id}-password`;
   return (
     <form
+      className="grid gap-3.5"
       onSubmit={(event) => {
         event.preventDefault();
         onAnswer({ type: "password", password });
       }}
     >
-      <h2 id={`prompt-${prompt.id}-title`} className="text-base font-semibold">
-        {t("connect.password.title", { user: prompt.user, host: prompt.host })}
-      </h2>
-      {prompt.retry && (
-        <p role="alert" className="text-destructive mt-2 text-sm">
-          {t("connect.password.retry")}
-        </p>
-      )}
-      <input
-        type="password"
-        autoFocus
-        aria-label={t("connect.password.label")}
-        autoComplete="off"
-        className="bg-background focus-visible:outline-ring mt-3 w-full rounded-md border px-3 py-1.5 text-sm focus-visible:outline-2"
-        value={password}
-        onChange={(event) => setPassword(event.target.value)}
-      />
-      <div className="mt-5 flex justify-end gap-2">
-        <button
+      <DialogHeader>
+        <DialogTitle>{t("connect.password.title", { user: prompt.user, host: prompt.host })}</DialogTitle>
+        <DialogDescription>{t("connect.password.description")}</DialogDescription>
+      </DialogHeader>
+      <div className="grid gap-1.5">
+        <Label htmlFor={inputId} className="text-xs">
+          {t("connect.password.label")}
+        </Label>
+        <Input
+          id={inputId}
+          type="password"
+          autoFocus
+          autoComplete="off"
+          className="h-8"
+          aria-invalid={prompt.retry || undefined}
+          aria-describedby={prompt.retry ? `${inputId}-retry` : undefined}
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+        />
+        {prompt.retry && (
+          <p id={`${inputId}-retry`} role="alert" className="text-destructive text-xs">
+            {t("connect.password.retry")}
+          </p>
+        )}
+      </div>
+      <DialogFooter>
+        <Button
           type="button"
-          className={`${buttonBase} border`}
+          variant="outline"
+          size="sm"
           onClick={() => onAnswer({ type: "password", password: null })}
         >
           {t("connect.cancel")}
-        </button>
-        <button type="submit" className={`${buttonBase} bg-primary text-primary-foreground`}>
+        </Button>
+        <Button type="submit" size="sm">
           {t("connect.password.submit")}
-        </button>
-      </div>
+        </Button>
+      </DialogFooter>
     </form>
   );
 }

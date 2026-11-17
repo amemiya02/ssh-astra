@@ -1,0 +1,26 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "tiny-text",
+        "value": "*",
+        "files": [
+          "docs/design/mockups.html"
+        ],
+        "createdAt": "2026-11-17T03:09:57.534Z",
+        "reason": "agent decision: desktop-density secondary meta at 11.5px, per ticket #3 Termius/Linear reference"
+      },
+      {
+        "rule": "low-contrast",
+        "value": "*",
+        "files": [
+          "docs/design/mockups.html"
+        ],
+        "createdAt": "2026-11-17T03:09:57.571Z",
+        "reason": "agent decision: ANSI dim colour inside synthetic terminal output in a static mockup"
+      }
+    ]
+  }
+}
