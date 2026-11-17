@@ -12,6 +12,8 @@ fn draft(name: &str) -> HostDraft {
         port: 22,
         user: "deploy".into(),
         auth: HostAuth::Password,
+        jump_host: None,
+        terminal_scheme: None,
     }
 }
 

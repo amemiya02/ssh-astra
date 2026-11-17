@@ -9,6 +9,7 @@ const host = (id: string, groupId: string | null = null, extra: Partial<Host> = 
   port: 22,
   user: "deploy",
   auth: { type: "password" },
+  jumpHost: null,
   groupId,
   ...extra,
 });

@@ -71,10 +71,22 @@ pub struct Group {
 
 /// How a Host authenticates. Secrets are asked for (or read from the system
 /// keychain) at connect time, never stored in the Host.
+///
+/// Whatever the variant, a connect tries, as far as the server allows:
+/// ssh-agent, then the private key file (if any), then password, then
+/// keyboard-interactive.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum HostAuth {
+    /// No key file: agent, password, keyboard-interactive.
     Password,
+    /// A private key file (OpenSSH or PEM; ed25519, ECDSA or RSA). A leading
+    /// `~/` means the user's home directory. A passphrase is asked for.
+    Key { identity_file: PathBuf },
 }
 
 /// A saved, named set of connection settings.
@@ -87,6 +99,14 @@ pub struct Host {
     pub port: u16,
     pub user: String,
     pub auth: HostAuth,
+    /// The Jump host this Host is reached through, itself possibly behind
+    /// another one. Absent in files written before Jump hosts existed.
+    #[serde(default)]
+    pub jump_host: Option<HostId>,
+    /// The Terminal colour scheme for this Host (e.g. to mark production),
+    /// overriding the global one. Opaque to the core: the UI owns the names.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_scheme: Option<String>,
     /// The Group the Host sits in; `None` is the top level. Changed only by
     /// moving the Host, never by the Host form.
     #[serde(default)]
@@ -102,6 +122,12 @@ pub struct HostDraft {
     pub port: u16,
     pub user: String,
     pub auth: HostAuth,
+    #[serde(default)]
+    pub jump_host: Option<HostId>,
+    /// The Terminal colour scheme for this Host (e.g. to mark production),
+    /// overriding the global one. Opaque to the core: the UI owns the names.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_scheme: Option<String>,
 }
 
 impl HostDraft {
@@ -117,13 +143,30 @@ impl HostDraft {
         if self.port == 0 {
             return Err(HostStoreError::Invalid("port"));
         }
+        let auth = match self.auth {
+            HostAuth::Key { identity_file } => {
+                let trimmed = identity_file.to_string_lossy().trim().to_owned();
+                if trimmed.is_empty() {
+                    return Err(HostStoreError::Invalid("identityFile"));
+                }
+                HostAuth::Key {
+                    identity_file: PathBuf::from(trimmed),
+                }
+            }
+            other => other,
+        };
         Ok(Host {
             id,
             name: self.name.trim().to_owned(),
             address: self.address.trim().to_owned(),
             port: self.port,
             user: self.user.trim().to_owned(),
-            auth: self.auth,
+            auth,
+            jump_host: self.jump_host,
+            terminal_scheme: self
+                .terminal_scheme
+                .map(|s| s.trim().to_owned())
+                .filter(|s| !s.is_empty()),
             group_id: None,
         })
     }
@@ -149,6 +192,12 @@ pub enum HostStoreError {
     GroupNotFound(GroupId),
     #[error("a group cannot move into itself or a group inside it")]
     InvalidMove,
+    /// Following the Jump hosts leads back to where it started; the names
+    /// along the loop, first and last the same.
+    #[error("the jump hosts form a loop: {}", .0.join(" → "))]
+    JumpHostCycle(Vec<String>),
+    #[error("this host is the jump host of {by}")]
+    InUseAsJumpHost { by: String },
 }
 
 #[derive(Serialize)]
@@ -281,6 +330,12 @@ impl HostStore {
         self.library.hosts.iter().find(|h| &h.id == id)
     }
 
+    /// The hops to reach Host `id`: its outermost Jump host first, the Host
+    /// itself last (just `[host]` without a Jump host).
+    pub fn jump_chain(&self, id: &HostId) -> Result<Vec<Host>, HostStoreError> {
+        chain(&self.library.hosts, id)
+    }
+
     /// Adds a Host (`id: None`) or replaces the one with `id`, then saves.
     pub fn upsert(&mut self, id: Option<HostId>, draft: HostDraft) -> Result<Host, HostStoreError> {
         let mut library = self.library.clone();
@@ -304,11 +359,22 @@ impl HostStore {
                 slot.clone()
             }
         };
+        chain(&library.hosts, &host.id)?;
         self.save(library)?;
         Ok(host)
     }
 
     pub fn delete(&mut self, id: &HostId) -> Result<(), HostStoreError> {
+        if let Some(user) = self
+            .library
+            .hosts
+            .iter()
+            .find(|h| h.jump_host.as_ref() == Some(id))
+        {
+            return Err(HostStoreError::InUseAsJumpHost {
+                by: user.name.clone(),
+            });
+        }
         let mut library = self.library.clone();
         let before = library.hosts.len();
         library.hosts.retain(|h| &h.id != id);
@@ -459,6 +525,27 @@ fn required_name(name: &str) -> Result<String, HostStoreError> {
         return Err(HostStoreError::Invalid("name"));
     }
     Ok(name.to_owned())
+}
+
+/// Follows `id`'s Jump hosts outwards; see [`HostStore::jump_chain`].
+fn chain(hosts: &[Host], id: &HostId) -> Result<Vec<Host>, HostStoreError> {
+    let find = |id: &HostId| {
+        hosts
+            .iter()
+            .find(|h| &h.id == id)
+            .ok_or_else(|| HostStoreError::NotFound(id.clone()))
+    };
+    let mut hops = vec![find(id)?.clone()];
+    while let Some(next) = &hops[hops.len() - 1].jump_host {
+        if let Some(start) = hops.iter().position(|h| &h.id == next) {
+            let mut names: Vec<String> = hops[start..].iter().map(|h| h.name.clone()).collect();
+            names.push(hops[start].name.clone());
+            return Err(HostStoreError::JumpHostCycle(names));
+        }
+        hops.push(find(next)?.clone());
+    }
+    hops.reverse();
+    Ok(hops)
 }
 
 /// Reads any supported file version into the current model.

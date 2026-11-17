@@ -8,6 +8,7 @@ const draft = (name: string): HostDraft => ({
   port: 22,
   user: "deploy",
   auth: { type: "password" },
+  jumpHost: null,
 });
 const host = (id: string, groupId: string | null = null): Host => ({ ...draft(id), id, groupId });
 const group = (id: string, parentId: string | null = null): Group => ({ id, name: id, parentId });

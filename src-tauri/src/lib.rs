@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use sshastra_core::hosts::HostStore;
 use sshastra_core::known_hosts::KnownHosts;
-use sshastra_core::ssh::ConnectionManager;
+use sshastra_core::ssh::{Agent, ConnectionManager};
 use sshastra_core::terminal::TerminalRegistry;
 use tauri::Manager;
 
@@ -20,6 +20,9 @@ use prompts::PendingPrompts;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Terminal links open in the browser; copy on select / paste use the system clipboard.
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
             let hosts = HostStore::open(config_dir.join("hosts.json")).map_err(Into::into);
@@ -28,7 +31,7 @@ pub fn run() {
             let known_hosts = KnownHosts::system_default()
                 .unwrap_or_else(|| KnownHosts::new(config_dir.join("known_hosts")));
             app.manage(HostsState::new(hosts));
-            app.manage(ConnectionManager::new(known_hosts));
+            app.manage(ConnectionManager::new(known_hosts).with_agent(Agent::System));
             Ok(())
         })
         .manage(TerminalRegistry::default())

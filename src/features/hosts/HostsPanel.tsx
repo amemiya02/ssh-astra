@@ -13,9 +13,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { readCommandError } from "@/lib/ipc/connect";
 import type { Group, Host, HostDraft, HostId } from "@/lib/ipc/hosts";
 import { cn } from "@/lib/utils";
+import { TerminalSchemeSelect } from "@/features/terminal/TerminalSchemeSelect";
 import { HostList, type HostListActions } from "./HostList";
 import { HostsSidebar } from "./HostsSidebar";
 import { emptyHostForm, hostFormFrom, parseHostForm, type HostFormField, type HostFormResult, type HostFormValues } from "./hostForm";
@@ -167,6 +169,7 @@ export function HostsPanel({ onOpen, onOpenLocalTerminal }: HostsPanelProps) {
         {editing !== null && (
           <HostFormDialogContent
             host={editing === "new" ? undefined : editing}
+            hosts={editing === "new" ? tree.hosts : tree.hosts.filter((h) => h.id !== editing.id)}
             save={save}
             onCancel={() => setEditing(null)}
             onSaved={(host) => {
@@ -264,14 +267,20 @@ const fields: { field: HostFormField; inputMode?: "numeric" }[] = [
   { field: "user" },
 ];
 
+/** Sentinel for "no Jump host": Radix Select reserves the empty string for clearing. */
+const NO_JUMP_HOST = "none";
+
 /** The Host editor: a new Host (`host` omitted) or edits to `host`. */
 function HostFormDialogContent({
   host,
+  hosts,
   save,
   onSaved,
   onCancel,
 }: {
   host?: Host;
+  /** Hosts that can be picked as the Jump host. */
+  hosts: Host[];
   save: (draft: HostDraft, id?: HostId) => Promise<Host>;
   onSaved: (host: Host) => void;
   onCancel: () => void;
@@ -334,6 +343,83 @@ function HostFormDialogContent({
             </div>
           );
         })}
+        <div className="grid gap-1.5">
+          <Label htmlFor="host-form-auth" className="text-xs">
+            {t("hosts.fields.auth")}
+          </Label>
+          <Select
+            value={values.authType}
+            onValueChange={(value) => setValues((v) => ({ ...v, authType: value === "key" ? "key" : "password" }))}
+          >
+            <SelectTrigger id="host-form-auth" size="sm" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="password">{t("hosts.auth.password")}</SelectItem>
+              <SelectItem value="key">{t("hosts.auth.key")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        {values.authType === "key" && (
+          <div className="grid gap-1.5">
+            <Label htmlFor="host-form-identityFile" className="text-xs">
+              {t("hosts.fields.identityFile")}
+            </Label>
+            <Input
+              id="host-form-identityFile"
+              className="h-8 font-mono"
+              value={values.identityFile}
+              placeholder="~/.ssh/id_ed25519"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              aria-invalid={errors.identityFile ? true : undefined}
+              aria-describedby={errors.identityFile ? "host-form-identityFile-error" : undefined}
+              onChange={(event) => setValues((v) => ({ ...v, identityFile: event.target.value }))}
+            />
+            {errors.identityFile && (
+              <p id="host-form-identityFile-error" className="text-destructive text-xs">
+                {t(`hosts.errors.${errors.identityFile}`)}
+              </p>
+            )}
+          </div>
+        )}
+        <div className="grid gap-1.5">
+          <Label htmlFor="host-form-jumpHost" className="text-xs">
+            {t("hosts.fields.jumpHost")}
+          </Label>
+          <Select
+            value={values.jumpHost || NO_JUMP_HOST}
+            onValueChange={(value) => setValues((v) => ({ ...v, jumpHost: value === NO_JUMP_HOST ? "" : value }))}
+          >
+            <SelectTrigger id="host-form-jumpHost" size="sm" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_JUMP_HOST}>{t("hosts.noJumpHost")}</SelectItem>
+              {hosts.map((host) => (
+                <SelectItem key={host.id} value={host.id}>
+                  {host.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="grid gap-1.5">
+          <Label htmlFor="host-form-terminal-scheme" className="text-xs">
+            {t("hosts.fields.terminalScheme")}
+          </Label>
+          <TerminalSchemeSelect
+            id="host-form-terminal-scheme"
+            aria-describedby="host-form-terminal-scheme-hint"
+            value={values.terminalScheme}
+            inheritLabel={t("hosts.terminalSchemeInherit")}
+            onValueChange={(terminalScheme) => setValues((v) => ({ ...v, terminalScheme }))}
+          />
+          <p id="host-form-terminal-scheme-hint" className="text-muted-foreground text-xs">
+            {t("hosts.terminalSchemeHint")}
+          </p>
+        </div>
         {saveError && (
           <p role="alert" className="text-destructive text-xs">
             {saveError}

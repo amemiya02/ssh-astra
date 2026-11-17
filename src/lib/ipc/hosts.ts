@@ -6,8 +6,12 @@ export type HostId = string;
 /** Mirrors `sshastra_core::hosts::GroupId`. */
 export type GroupId = string;
 
-/** Mirrors `sshastra_core::hosts::HostAuth`. */
-export type HostAuth = { type: "password" };
+/**
+ * Mirrors `sshastra_core::hosts::HostAuth`. Either way a connect tries
+ * ssh-agent, then the key file (if any), then password, then
+ * keyboard-interactive, as far as the server allows.
+ */
+export type HostAuth = { type: "password" } | { type: "key"; identityFile: string };
 
 /** A Host's editable fields (`sshastra_core::hosts::HostDraft`). */
 export interface HostDraft {
@@ -16,6 +20,10 @@ export interface HostDraft {
   port: number;
   user: string;
   auth: HostAuth;
+  /** The Jump host this Host is reached through, or `null` to connect directly. */
+  jumpHost: HostId | null;
+  /** This Host's Terminal colour scheme id, overriding the global one; absent follows it. */
+  terminalScheme?: string | null;
 }
 
 /** A saved Host (`sshastra_core::hosts::Host`). */
