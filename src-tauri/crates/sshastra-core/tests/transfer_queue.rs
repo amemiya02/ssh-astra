@@ -1,6 +1,6 @@
 //! TransferQueue against in-memory local and remote file systems.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -34,6 +34,16 @@ struct MemoryFs {
     reading: Arc<AtomicUsize>,
     max_reading: Arc<AtomicUsize>,
     fail_next_read: Mutex<HashSet<String>>,
+    /// Reads of these files stop after their first chunk.
+    break_reads: Mutex<HashMap<String, Break>>,
+}
+
+/// How a read stops partway through a file.
+#[derive(Debug, Clone, Copy)]
+enum Break {
+    /// Waits forever (until the transfer is cancelled).
+    Stall,
+    Fail,
 }
 
 impl MemoryFs {
@@ -86,6 +96,13 @@ impl MemoryFs {
             .iter()
             .filter_map(|(p, n)| Some((p.strip_prefix(&prefix)?.to_owned(), n.clone())))
             .collect()
+    }
+
+    fn break_reads(&self, path: &str, how: Break) {
+        self.break_reads
+            .lock()
+            .unwrap()
+            .insert(path.to_owned(), how);
     }
 
     fn fail_next_read(&self, path: &str) {
@@ -148,6 +165,7 @@ impl MemoryFs {
         }
         Ok(Box::new(MemoryReader {
             data: io::Cursor::new(data),
+            stop: self.break_reads.lock().unwrap().get(path).copied(),
             _guard: guard,
         }))
     }
@@ -235,6 +253,7 @@ impl Drop for Reading {
 
 struct MemoryReader {
     data: io::Cursor<Vec<u8>>,
+    stop: Option<Break>,
     _guard: Reading,
 }
 
@@ -244,6 +263,13 @@ impl AsyncRead for MemoryReader {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
+        match self.stop {
+            Some(Break::Stall) if self.data.position() > 0 => return Poll::Pending,
+            Some(Break::Fail) if self.data.position() > 0 => {
+                return Poll::Ready(Err(io::Error::other("connection lost")));
+            }
+            _ => {}
+        }
         // A small chunk at a time, like a network read.
         let mut chunk = [0u8; 4096];
         let n = std::io::Read::read(&mut self.data, &mut chunk[..buf.remaining().min(4096)])?;
@@ -298,6 +324,9 @@ impl LocalFs for MemoryFs {
     }
     fn create_dir<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<()>> {
         Box::pin(async move { self.create_dir_path(&local_str(path)) })
+    }
+    fn remove_file<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move { self.remove_path(&local_str(path), false) })
     }
 }
 
@@ -696,6 +725,43 @@ async fn cancelling_a_running_transfer_stops_it_and_frees_its_slot() {
     h.until_state(b, TransferState::Done).await;
 
     assert_eq!(h.local.reading.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn cancelling_deletes_the_file_being_written_but_keeps_finished_ones() {
+    let h = Harness::new();
+    h.local.dir("/up");
+    h.local.file("/up/a", "small");
+    h.local.file("/up/b", vec![7u8; 10_000]);
+    h.local.break_reads("/up/b", Break::Stall);
+    let id = h.upload("/up", "/");
+    h.until("b to be partly written", |_| {
+        h.remote.read("/up/b").is_some_and(|d| !d.is_empty())
+    })
+    .await;
+
+    h.queue.cancel(id);
+    h.until("the partial b to be deleted", |_| {
+        h.remote.read("/up/b").is_none()
+    })
+    .await;
+
+    assert_eq!(h.transfer(id).state, TransferState::Cancelled);
+    assert_eq!(h.remote.read("/up/a").unwrap(), b"small");
+}
+
+#[tokio::test]
+async fn a_failed_download_deletes_its_partial_local_copy() {
+    let h = Harness::new();
+    h.remote.file("/big", vec![7u8; 10_000]);
+    h.remote.break_reads("/big", Break::Fail);
+    h.local.dir("/down");
+
+    let id = h.download("/big", "/down");
+    h.until_settled().await;
+
+    assert!(matches!(h.transfer(id).state, TransferState::Failed { .. }));
+    assert_eq!(h.local.read("/down/big"), None);
 }
 
 #[tokio::test]

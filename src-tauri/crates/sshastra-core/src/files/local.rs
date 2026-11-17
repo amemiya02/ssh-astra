@@ -21,6 +21,8 @@ pub trait LocalFs: Send + Sync {
     fn create_write<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<FileWriter>>;
     /// Creates the directory `path`; its parent must exist.
     fn create_dir<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<()>>;
+    /// Deletes the file `path` (a cancelled or failed transfer's partial copy).
+    fn remove_file<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<()>>;
 }
 
 /// The real local disk.
@@ -93,6 +95,14 @@ impl LocalFs for DiskFs {
     fn create_dir<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<()>> {
         Box::pin(async move {
             tokio::fs::create_dir(path)
+                .await
+                .map_err(|e| error(path, e))
+        })
+    }
+
+    fn remove_file<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move {
+            tokio::fs::remove_file(path)
                 .await
                 .map_err(|e| error(path, e))
         })

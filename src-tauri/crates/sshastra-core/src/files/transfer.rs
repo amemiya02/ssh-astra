@@ -435,10 +435,17 @@ impl Inner {
                 .clone()
                 .expect("a transfer was queued on a runtime");
             runtime.spawn(async move {
+                let partial = Partial::default();
                 let result = tokio::select! {
-                    r = inner.attempt(id, &job) => r,
+                    r = inner.attempt(id, &job, &partial) => r,
                     () = cancelled_by(cancelled) => Err(Stop::Cancelled),
                 };
+                // The attempt (and its open writer) is gone: delete the file
+                // it stopped partway through, so no truncated copy is left.
+                let unfinished = partial.lock().unwrap_or_else(|p| p.into_inner()).take();
+                if let (Err(_), Some((target, rel))) = (&result, unfinished) {
+                    let _ = target.remove_file(&rel).await;
+                }
                 inner.finish(id, result);
             });
         }
@@ -470,7 +477,7 @@ impl Inner {
         self.pump();
     }
 
-    async fn attempt(&self, id: TransferId, job: &Job) -> Result<(), Stop> {
+    async fn attempt(&self, id: TransferId, job: &Job, partial: &Partial) -> Result<(), Stop> {
         let remote = Side::Remote((job.open)().await?, job.remote.clone());
         let local = Side::Local(Arc::clone(&self.local), job.local.clone());
         let (source, target) = match job.direction {
@@ -506,7 +513,7 @@ impl Inner {
                 Err(e) => return Err(e.into()),
             };
             if copy {
-                self.copy(id, &source, &target, &item.rel).await?;
+                self.copy(id, &source, &target, &item.rel, partial).await?;
             } else {
                 self.progress(id, item.size);
             }
@@ -537,9 +544,17 @@ impl Inner {
         ))
     }
 
-    async fn copy(&self, id: TransferId, source: &Side, target: &Side, rel: &str) -> FsResult<()> {
+    async fn copy(
+        &self,
+        id: TransferId,
+        source: &Side,
+        target: &Side,
+        rel: &str,
+        partial: &Partial,
+    ) -> FsResult<()> {
         let mut reader = source.open_read(rel).await?;
         let mut writer = target.create_write(rel).await?;
+        set_partial(partial, Some((target.clone(), rel.to_owned())));
         let mut buf = vec![0; CHUNK];
         loop {
             let n = reader
@@ -558,7 +573,9 @@ impl Inner {
         writer
             .shutdown()
             .await
-            .map_err(|e| io_error(&target.display(rel), e))
+            .map_err(|e| io_error(&target.display(rel), e))?;
+        set_partial(partial, None);
+        Ok(())
     }
 
     /// Counts `bytes` more done; tells the listener at most every
@@ -599,6 +616,14 @@ async fn cancelled_by(mut cancelled: watch::Receiver<bool>) {
     }
 }
 
+/// The destination file an attempt is writing, if any: what to delete when it
+/// is cancelled or fails.
+type Partial = Mutex<Option<(Side, String)>>;
+
+fn set_partial(partial: &Partial, file: Option<(Side, String)>) {
+    *partial.lock().unwrap_or_else(|p| p.into_inner()) = file;
+}
+
 fn io_error(path: &str, e: std::io::Error) -> FsError {
     FsError::Io(format!("{path}: {e}"))
 }
@@ -606,6 +631,7 @@ fn io_error(path: &str, e: std::io::Error) -> FsError {
 /// One side of a transfer: a root path (the file or folder copied) and the
 /// file system it is on. Paths below it are `/`-separated relative paths,
 /// `""` being the root itself.
+#[derive(Clone)]
 enum Side {
     Local(Arc<dyn LocalFs>, PathBuf),
     Remote(Arc<dyn RemoteFs>, String),
@@ -665,6 +691,13 @@ impl Side {
         match self {
             Self::Local(fs, root) => fs.create_dir(&Self::local_path(root, rel)).await,
             Self::Remote(fs, root) => fs.create_dir(&Self::remote_path(root, rel)).await,
+        }
+    }
+
+    async fn remove_file(&self, rel: &str) -> FsResult<()> {
+        match self {
+            Self::Local(fs, root) => fs.remove_file(&Self::local_path(root, rel)).await,
+            Self::Remote(fs, root) => fs.remove_file(&Self::remote_path(root, rel)).await,
         }
     }
 }
