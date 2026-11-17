@@ -22,11 +22,15 @@
 #
 # Add services here (e.g. a TCP echo server for Port forward tests) rather
 # than starting containers from individual tests.
-name: sshastra-it
+#
+# Project and image tag come from SSHASTRA_IT_PROJECT, which the test harness
+# sets per checkout (`sshastra-it-<path hash>`) so parallel worktrees don't
+# share services.
+name: ${SSHASTRA_IT_PROJECT:-sshastra-it}
 
 x-sshd: &sshd
   build: .
-  image: sshastra-it-sshd
+  image: ${SSHASTRA_IT_PROJECT:-sshastra-it}-sshd
 
 services:
   ssh:
