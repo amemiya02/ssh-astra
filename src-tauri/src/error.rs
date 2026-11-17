@@ -54,7 +54,8 @@ impl From<HostStoreError> for CommandError {
                 let field = *field;
                 Self::new("invalid", &err).with_details(json!({ "field": field }))
             }
-            NotFound(_) => Self::new("notFound", &err),
+            NotFound(_) | GroupNotFound(_) => Self::new("notFound", &err),
+            InvalidMove => Self::new("invalidMove", &err),
             JumpHostCycle(names) => {
                 let details = json!({ "hosts": names });
                 Self::new("jumpHostCycle", &err).with_details(details)
