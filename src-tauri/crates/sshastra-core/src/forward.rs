@@ -4,6 +4,10 @@
 //! Only local forwards (`ssh -L`) exist so far; remote (`-R`) and dynamic
 //! SOCKS (`-D`) forwards become further [`ForwardKind`] variants.
 
+mod forwarder;
+
+pub use forwarder::{ForwardError, ForwardEvent, ForwardStatus, PortForwarder};
+
 use std::fmt;
 
 use serde::{Deserialize, Serialize};

@@ -1,14 +1,16 @@
 //! One Connection per Host, counted from the server's side: Terminals share
 //! it, concurrent connects coalesce into it, and it is disconnected once the
-//! last Terminal on it closes. Runs against the `counted` sshd in Docker,
-//! which nothing else connects to (see `support`), and the `jump` sshd, which
-//! no other test connects to while this binary runs.
+//! last Terminal or running Port forward on it closes. Runs against the
+//! `counted` sshd in Docker, which nothing else connects to (see `support`),
+//! and the `jump` sshd, which no other test connects to while this binary
+//! runs.
 
 mod support;
 
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 
+use sshastra_core::forward::{ForwardId, ForwardKind, PortForward, PortForwarder};
 use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::ssh::{
@@ -16,6 +18,7 @@ use sshastra_core::ssh::{
 };
 use sshastra_core::terminal::{Terminal, TerminalEvent, TerminalSize};
 use support::{Service, Sshd};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 
 /// The tests count the server's connections, so they take turns.
@@ -232,4 +235,76 @@ async fn concurrent_connects_through_one_jump_host_share_its_connection() {
     );
     assert_eq!(asked.len(), 3, "{asked:?}");
     fx.server_sees(1).await;
+}
+
+/// A local Port forward from a free loopback port to the echo server.
+fn to_echo(id: &str) -> PortForward {
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let (remote_host, remote_port) = support::ECHO;
+    PortForward {
+        id: ForwardId::from(id.to_owned()),
+        label: String::new(),
+        kind: ForwardKind::Local {
+            bind_address: "127.0.0.1".into(),
+            bind_port: port,
+            remote_host: remote_host.into(),
+            remote_port,
+        },
+    }
+}
+
+/// Whether bytes sent into `rule`'s local port come back from the echo server.
+async fn echoes(rule: &PortForward) -> bool {
+    let ForwardKind::Local { bind_port, .. } = rule.kind;
+    let Ok(mut socket) = tokio::net::TcpStream::connect(("127.0.0.1", bind_port)).await else {
+        return false;
+    };
+    if socket.write_all(b"ping").await.is_err() {
+        return false;
+    }
+    let mut back = [0; 4];
+    let read = tokio::time::timeout(Duration::from_secs(10), socket.read_exact(&mut back)).await;
+    matches!(read, Ok(Ok(_))) && &back == b"ping"
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn running_port_forwards_keep_the_connection_until_the_last_one_stops() {
+    let Some(sshd) = support::sshd(Service::Counted) else {
+        return;
+    };
+    let _turn = SERVER.lock().await;
+    let fx = Fixture::new(sshd);
+    fx.server_sees(0).await;
+    let prompter = CountingPrompter::new(&fx.sshd);
+    let forwarder = PortForwarder::new();
+    let (first, second) = (to_echo("first"), to_echo("second"));
+    let connection = fx.connect(&prompter).await;
+    let mut terminal = open_terminal(&connection).await;
+    forwarder
+        .start(Arc::clone(&connection), &fx.host.id, &first)
+        .unwrap();
+    forwarder
+        .start(Arc::clone(&connection), &fx.host.id, &second)
+        .unwrap();
+    // Only the Terminal and the forwards hold the Connection now.
+    drop(connection);
+
+    terminal.close().unwrap();
+    // Give a wrongly eager disconnect time to happen.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    fx.server_sees(1).await;
+    assert!(echoes(&first).await);
+
+    forwarder.stop(&first.id);
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    fx.server_sees(1).await;
+    assert!(echoes(&second).await);
+
+    forwarder.stop(&second.id);
+    fx.server_sees(0).await;
+    assert_eq!(prompter.passwords_asked(), 1);
 }
