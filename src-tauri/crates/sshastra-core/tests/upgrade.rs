@@ -1,0 +1,184 @@
+//! Upgrading the app keeps the user's Hosts and settings: the files a released
+//! version wrote (frozen copies in `tests/fixtures/<version>/`) still load, and
+//! saving over them loses nothing.
+//!
+//! On every release whose file formats changed, add the previous release's
+//! files as a new fixture folder and a test here; never edit an old fixture.
+
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use serde_json::json;
+use sshastra_core::files::TransferSettings;
+use sshastra_core::forward::ForwardKind;
+use sshastra_core::hosts::{GroupId, HostAuth, HostDraft, HostId, HostStore};
+use sshastra_core::settings::SettingsStore;
+use sshastra_core::ssh::ConnectionSettings;
+use sshastra_core::terminal::TerminalSettings;
+
+/// A config dir holding the files `version` wrote.
+fn config_dir_from(version: &str) -> tempfile::TempDir {
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(version);
+    let dir = tempfile::tempdir().unwrap();
+    for name in ["hosts.json", "settings.json"] {
+        fs::copy(fixtures.join(name), dir.path().join(name)).unwrap();
+    }
+    dir
+}
+
+fn hosts_path(dir: &tempfile::TempDir) -> PathBuf {
+    dir.path().join("hosts.json")
+}
+
+fn settings_path(dir: &tempfile::TempDir) -> PathBuf {
+    dir.path().join("settings.json")
+}
+
+fn id(raw: &str) -> HostId {
+    HostId::from(raw.to_owned())
+}
+
+/// Everything the v0.1.0 hosts fixture holds.
+fn assert_v0_1_0_hosts(store: &HostStore) {
+    let names: Vec<_> = store.groups().iter().map(|g| g.name.as_str()).collect();
+    assert_eq!(names, ["Production", "Databases"]);
+    assert_eq!(
+        store.groups()[1].parent_id,
+        Some(GroupId::from("g-prod".to_owned()))
+    );
+
+    // In their saved order, ahead of any added since.
+    let names: Vec<_> = store.list().iter().map(|h| h.name.as_str()).collect();
+    assert_eq!(names[..3], ["bastion", "db-1", "pi"]);
+
+    let bastion = store.get(&id("h-bastion")).unwrap();
+    assert_eq!(
+        bastion.auth,
+        HostAuth::Key {
+            identity_file: "~/.ssh/id_ed25519".into()
+        }
+    );
+    assert_eq!(bastion.group_id, Some(GroupId::from("g-prod".to_owned())));
+    assert!(bastion.forwards[0].auto_start);
+    assert_eq!(
+        bastion.forwards[0].kind,
+        ForwardKind::Dynamic {
+            bind_address: "127.0.0.1".into(),
+            bind_port: 1080
+        }
+    );
+
+    let db = store.get(&id("h-db")).unwrap();
+    assert_eq!(
+        (db.address.as_str(), db.port, db.user.as_str()),
+        ("10.0.0.12", 2222, "postgres")
+    );
+    assert_eq!(db.jump_host, Some(id("h-bastion")));
+    assert_eq!(db.terminal_scheme.as_deref(), Some("red-alert"));
+    assert_eq!(db.default_directory.as_deref(), Some("/var/lib/postgresql"));
+    assert_eq!(db.forwards.len(), 2);
+    assert_eq!(db.forwards[1].label, "dev server");
+    assert_eq!(
+        db.forwards[1].kind,
+        ForwardKind::Remote {
+            bind_address: "localhost".into(),
+            bind_port: 9000,
+            local_host: "127.0.0.1".into(),
+            local_port: 3000
+        }
+    );
+    let chain: Vec<_> = store
+        .jump_chain(&id("h-db"))
+        .unwrap()
+        .into_iter()
+        .map(|h| h.name)
+        .collect();
+    assert_eq!(chain, ["bastion", "db-1"]);
+}
+
+#[test]
+fn hosts_saved_by_v0_1_0_load_after_upgrading() {
+    let dir = config_dir_from("v0.1.0");
+    let store = HostStore::open(hosts_path(&dir)).unwrap();
+    assert_v0_1_0_hosts(&store);
+}
+
+#[test]
+fn saving_after_upgrading_from_v0_1_0_keeps_every_host() {
+    let dir = config_dir_from("v0.1.0");
+    let mut store = HostStore::open(hosts_path(&dir)).unwrap();
+    store
+        .upsert(
+            None,
+            HostDraft {
+                name: "new".into(),
+                address: "10.0.0.99".into(),
+                port: 22,
+                user: "me".into(),
+                auth: HostAuth::Password,
+                jump_host: None,
+                terminal_scheme: None,
+                default_directory: None,
+            },
+        )
+        .unwrap();
+
+    let reopened = HostStore::open(hosts_path(&dir)).unwrap();
+    assert_eq!(reopened.list().len(), 4);
+    assert_v0_1_0_hosts(&reopened);
+}
+
+#[test]
+fn settings_saved_by_v0_1_0_load_after_upgrading() {
+    let dir = config_dir_from("v0.1.0");
+    let store = SettingsStore::open(settings_path(&dir)).unwrap();
+
+    // Sections only the front end reads come back exactly as saved.
+    let sections = store.sections();
+    assert_eq!(sections["appearance"], json!({ "theme": "dark" }));
+    assert_eq!(sections["general"], json!({ "language": "zh" }));
+    assert_eq!(sections["files"], json!({ "showHidden": true }));
+    assert_eq!(sections["updates"], json!({ "checkOnStartup": false }));
+    assert_eq!(sections["terminal"]["fontSize"], json!(14));
+    // Sections the core reads too.
+    assert_eq!(
+        store
+            .section::<ConnectionSettings>(ConnectionSettings::SECTION)
+            .keepalive_interval(),
+        Some(std::time::Duration::from_secs(60))
+    );
+    assert!(
+        !store
+            .section::<TerminalSettings>(TerminalSettings::SECTION)
+            .shell_integration
+    );
+    assert_eq!(
+        store
+            .section::<TransferSettings>(TransferSettings::SECTION)
+            .concurrency,
+        5
+    );
+}
+
+#[test]
+fn saving_after_upgrading_from_v0_1_0_keeps_every_setting() {
+    let dir = config_dir_from("v0.1.0");
+    let before = SettingsStore::open(settings_path(&dir))
+        .unwrap()
+        .sections()
+        .clone();
+    let mut store = SettingsStore::open(settings_path(&dir)).unwrap();
+    store
+        .set("appearance", json!({ "theme": "light" }))
+        .unwrap();
+
+    let after = SettingsStore::open(settings_path(&dir)).unwrap();
+    for (section, value) in &before {
+        if section != "appearance" {
+            assert_eq!(&after.sections()[section], value, "section {section}");
+        }
+    }
+    assert_eq!(after.sections()["appearance"], json!({ "theme": "light" }));
+}

@@ -13,6 +13,7 @@
     "lint": "eslint .",
     "typecheck": "tsc -b",
     "tauri": "tauri",
+    "release:check": "node scripts/release-check.ts",
     "e2e:build": "VITE_E2E=1 tauri build --debug --no-bundle --features e2e",
     "e2e": "wdio run e2e/wdio.conf.ts",
     "screenshots": "wdio run e2e/wdio.screenshots.conf.ts"
@@ -23,6 +24,8 @@
     "@tauri-apps/plugin-clipboard-manager": "^2.5.0",
     "@tauri-apps/plugin-dialog": "^2.8.4",
     "@tauri-apps/plugin-opener": "^2.7.3",
+    "@tauri-apps/plugin-process": "^2.4.0",
+    "@tauri-apps/plugin-updater": "^2.14.1",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-ligatures": "0.10.0",
     "@xterm/addon-search": "0.16.0",

@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "appearance": { "theme": "dark" },
+  "general": { "language": "zh" },
+  "layout": { "dock": "bottom", "groups": { "main": [25, 75] } },
+  "terminal": {
+    "fontFamily": "\"JetBrains Mono\", monospace",
+    "fontSize": 14,
+    "ligatures": true,
+    "colorScheme": "solarized-dark",
+    "copyOnSelect": true,
+    "rightClickPaste": false,
+    "confirmMultilinePaste": true,
+    "shellIntegration": false
+  },
+  "connection": { "keepaliveSeconds": 60 },
+  "transfers": { "concurrency": 5, "panelCollapsed": true },
+  "files": { "showHidden": true },
+  "updates": { "checkOnStartup": false }
+}

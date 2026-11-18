@@ -1,3 +1,4 @@
+import { isTauri } from "@tauri-apps/api/core";
 import { ArrowDownUp } from "lucide-react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -7,6 +8,9 @@ import { formatSize } from "@/features/files/fileList";
 import { forwardsStore, runningForwards, useForwards } from "@/features/forwards/forwardsStore";
 import { activeConnections, forwardStatusText, runningRules } from "@/features/forwards/status";
 import { useHosts } from "@/features/hosts/hostsStore";
+import { updateSetting } from "@/features/updates/update-settings";
+import { UpdateNotice } from "@/features/updates/UpdateNotice";
+import { checkOnStartup, updatesStore } from "@/features/updates/updatesStore";
 import { HostsPanel } from "@/features/hosts/HostsPanel";
 import { CommandPalette, type PaletteTab } from "@/features/palette/CommandPalette";
 import { usePaletteActions, type PaletteAction } from "@/features/palette/palette-actions";
@@ -35,9 +39,12 @@ import {
 } from "@/features/workspace/tabs";
 import { useWorkspaceShortcuts } from "@/features/workspace/use-workspace-shortcuts";
 import type { Host } from "@/lib/ipc/hosts";
+import { getSetting } from "@/lib/storage";
 
 const platform = currentPlatform();
 const localTerminal: PaneKind = { kind: "local-terminal" };
+/** Updates come from the installed app's updater: not in a plain browser, nor in the E2E build. */
+const updatable = isTauri() && import.meta.env.VITE_E2E !== "1";
 
 function initialTabs(): TabsState {
   return tabsReducer(emptyTabs, { type: "open", tabId: crypto.randomUUID(), pane: newPane(localTerminal) });
@@ -70,6 +77,10 @@ export function App() {
   useEffect(() => {
     void forwardsStore.getState().watch();
     void transfersStore.getState().watch();
+  }, []);
+  // A newer release is offered in the status bar; finding none (or failing) says nothing.
+  useEffect(() => {
+    if (updatable) void checkOnStartup(updatesStore, getSetting(updateSetting));
   }, []);
   const retitle = useCallback((paneId: string, title: string) => dispatch({ type: "retitle", paneId, title }), []);
   const setStatus = useCallback(
@@ -134,6 +145,16 @@ export function App() {
           shortcut: shortcutLabel("settings", platform),
           run: openSettings,
         },
+        ...(updatable
+          ? [
+              {
+                id: "updates.check",
+                title: t("updates.check"),
+                keywords: [t("updates.keywords")],
+                run: () => void updatesStore.getState().check("manual"),
+              },
+            ]
+          : []),
       ],
       [t, openLocalTerminal, openSettings],
     ),
@@ -263,6 +284,7 @@ export function App() {
                   : t("status.transfers", { count: transfers.count })}
               </span>
             )}
+            <UpdateNotice />
           </span>
         }
       />

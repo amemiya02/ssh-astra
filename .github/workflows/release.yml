@@ -1,0 +1,161 @@
+name: Release
+
+# Pushing a tag like v0.2.0 builds the installers on all three platforms and
+# uploads them, their updater signatures and latest.json to a draft GitHub
+# release named "SSH Astra v0.2.0". The owner reviews the draft and publishes
+# it; installed apps see the update once it is the latest published release.
+# See "Releasing" in CLAUDE.md.
+
+on:
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  draft:
+    name: Check versions and create the draft release
+    runs-on: ubuntu-22.04
+    outputs:
+      release-id: ${{ steps.draft.outputs.result }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # Fails before anything is built if the tag differs from a version in
+      # package.json, tauri.conf.json, Cargo.toml or Cargo.lock, or if the
+      # updater public key is still the placeholder.
+      - name: Check the tag against the app versions
+        run: node scripts/release-check.ts "$GITHUB_REF_NAME"
+
+      # One draft for all three builds (each build uploading to "the release
+      # for this tag" would race and create several drafts). A re-run reuses it.
+      - name: Create the draft release
+        id: draft
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = context.ref.replace("refs/tags/", "");
+            const { owner, repo } = context.repo;
+            const releases = await github.paginate(github.rest.repos.listReleases, { owner, repo, per_page: 100 });
+            const existing = releases.find((r) => r.tag_name === tag);
+            if (existing) {
+              if (!existing.draft) core.setFailed(`The release for ${tag} is already published.`);
+              return existing.id;
+            }
+            const { data } = await github.rest.repos.createRelease({
+              owner,
+              repo,
+              tag_name: tag,
+              name: `SSH Astra ${tag}`,
+              body: "Installers for Windows (.msi), macOS (universal .dmg) and Linux (AppImage, .deb). The installers are not code-signed: on macOS right-click the app and choose Open the first time; on Windows choose More info, then Run anyway.",
+              draft: true,
+              prerelease: tag.includes("-"),
+            });
+            return data.id;
+
+  build:
+    name: Build (${{ matrix.name }})
+    needs: draft
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            platform: windows-latest
+            args: --bundles msi
+          - name: macOS universal
+            platform: macos-latest
+            # The updater bundle (.app.tar.gz) is made from the .app.
+            args: --target universal-apple-darwin --bundles app,dmg
+          - name: Linux
+            platform: ubuntu-22.04
+            args: --bundles appimage,deb
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ runner.os == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: release
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: tauri-apps/tauri-action@v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signs the updater bundles. The private key lives only in the repo
+          # secrets and the owner's backup.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          releaseId: ${{ needs.draft.outputs.release-id }}
+          # Makes latest.json point at this tag's assets, not releases/latest.
+          tagName: ${{ github.ref_name }}
+          releaseDraft: true
+          uploadUpdaterJson: true
+          uploadUpdaterSignatures: true
+          args: ${{ matrix.args }}
+
+  verify:
+    name: Check the draft has every installer
+    needs: [draft, build]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: List the release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ needs.draft.outputs.release-id }}
+        run: |
+          assets=$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets" --paginate --jq '.[].name')
+          echo "$assets"
+          missing=0
+          for pattern in '\.msi$' '\.msi\.sig$' '\.dmg$' '\.app\.tar\.gz$' '\.app\.tar\.gz\.sig$' \
+                         '\.AppImage$' '\.AppImage\.sig$' '\.deb$' '^latest\.json$'; do
+            if ! grep -qE "$pattern" <<<"$assets"; then
+              echo "::error::No release asset matches $pattern"
+              missing=1
+            fi
+          done
+          exit $missing
+      - name: Check latest.json lists every platform
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ needs.draft.outputs.release-id }}
+        run: |
+          id=$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets" --paginate \
+            --jq '.[] | select(.name == "latest.json") | .id')
+          gh api -H "Accept: application/octet-stream" "repos/$GITHUB_REPOSITORY/releases/assets/$id" > latest.json
+          jq . latest.json
+          for platform in windows-x86_64 darwin-x86_64 darwin-aarch64 linux-x86_64; do
+            if ! jq -e --arg p "$platform" '.platforms[$p].signature | length > 0' latest.json > /dev/null; then
+              echo "::error::latest.json has no signed $platform entry"
+              exit 1
+            fi
+          done
