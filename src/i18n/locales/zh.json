@@ -492,7 +492,8 @@
       "terminal": "终端",
       "connection": "连接",
       "language": "语言",
-      "transfers": "传输"
+      "transfers": "传输",
+      "updates": "更新"
     },
     "theme": {
       "label": "主题",
@@ -556,6 +557,31 @@
         "label": "同时传输数",
         "description": "同时进行的上传和下载数量，其余的排队等待。文件夹内的文件逐个复制。"
       }
+    },
+    "updates": {
+      "version": {
+        "label": "版本",
+        "description": "SSH Astra {{version}}。更新来自本项目的 GitHub Releases。"
+      },
+      "checkOnStartup": {
+        "label": "启动时检查更新",
+        "description": "有新版本时，状态栏会提示安装。在你选择更新之前不会下载任何内容。"
+      }
     }
+  },
+  "updates": {
+    "check": "检查更新",
+    "keywords": "更新 升级 版本 新版本 update upgrade",
+    "checking": "正在检查更新…",
+    "upToDate": "SSH Astra 已是最新版本",
+    "checkFailed": "无法检查更新：{{reason}}",
+    "available": "SSH Astra {{version}} 已发布",
+    "install": "更新并重启",
+    "downloading": "正在下载更新…",
+    "downloadingPercent": "正在下载更新… {{percent}}%",
+    "restarting": "正在重启到新版本…",
+    "installFailed": "更新失败：{{reason}}",
+    "retry": "重试",
+    "dismiss": "关闭"
   }
 }

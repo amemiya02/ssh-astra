@@ -492,7 +492,8 @@
       "terminal": "Terminal",
       "connection": "Connection",
       "language": "Language",
-      "transfers": "Transfers"
+      "transfers": "Transfers",
+      "updates": "Updates"
     },
     "theme": {
       "label": "Theme",
@@ -556,6 +557,31 @@
         "label": "Simultaneous transfers",
         "description": "How many uploads and downloads run at once; the rest wait their turn. A folder's files copy one after another."
       }
+    },
+    "updates": {
+      "version": {
+        "label": "Version",
+        "description": "SSH Astra {{version}}. Updates come from the project's GitHub releases."
+      },
+      "checkOnStartup": {
+        "label": "Check for updates on startup",
+        "description": "When a newer version is out, the status bar offers to install it. Nothing is downloaded until you choose to."
+      }
     }
+  },
+  "updates": {
+    "check": "Check for updates",
+    "keywords": "update upgrade version new release",
+    "checking": "Checking for updates…",
+    "upToDate": "SSH Astra is up to date",
+    "checkFailed": "Could not check for updates: {{reason}}",
+    "available": "SSH Astra {{version}} is available",
+    "install": "Update and restart",
+    "downloading": "Downloading the update…",
+    "downloadingPercent": "Downloading the update… {{percent}}%",
+    "restarting": "Restarting into the new version…",
+    "installFailed": "The update failed: {{reason}}",
+    "retry": "Try again",
+    "dismiss": "Dismiss"
   }
 }

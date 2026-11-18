@@ -56,6 +56,10 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         // Native pickers: export / import files, upload files, the folder a download goes to.
         .plugin(tauri_plugin_dialog::init())
+        // In-app updates: `latest.json` of the latest GitHub release
+        // (`plugins.updater` in tauri.conf.json), then a relaunch into it.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
             let hosts = HostStore::open(config_dir.join("hosts.json")).map_err(Into::into);

@@ -51,6 +51,9 @@ tauri-plugin-opener = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-window-state = "2"
 tauri-plugin-dialog = "2"
+# In-app updates from GitHub Releases, and the relaunch after installing one.
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 # Test-only: an embedded WebDriver server for the E2E smoke test (`e2e/`).
 # Never in release builds (see the `e2e` feature).
 tauri-plugin-wdio-webdriver = { version = "=1.5.1", optional = true }
