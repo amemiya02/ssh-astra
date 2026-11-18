@@ -104,6 +104,28 @@ describe("fileBrowserStore", () => {
     expect(shown(store)).toEqual({ path: "/home/me", names: ["notes.txt", "src"] });
   });
 
+  it("opens first in the Host's default directory, and stays where it was after a reconnect", async () => {
+    const api = fakeApi();
+    const store = createFileBrowserStore(api, "host-1", "/home/me/src");
+
+    await store.getState().connect();
+    expect(shown(store).path).toBe("/home/me/src");
+
+    await store.getState().navigate("/home");
+    store.getState().disconnect();
+    await store.getState().connect();
+    expect(shown(store).path).toBe("/home");
+  });
+
+  it("opens in the home directory when the default directory is gone", async () => {
+    const store = createFileBrowserStore(fakeApi(), "host-1", "/srv/gone");
+
+    await store.getState().connect();
+
+    expect(shown(store).path).toBe("/home/me");
+    expect(store.getState().error).toBeNull();
+  });
+
   it("goes to a typed path, into a directory and back up", async () => {
     const { store } = await connected();
 

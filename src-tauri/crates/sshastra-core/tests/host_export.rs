@@ -25,6 +25,7 @@ fn draft(name: &str) -> HostDraft {
         auth: HostAuth::Password,
         jump_host: None,
         terminal_scheme: None,
+        default_directory: None,
     }
 }
 
@@ -57,6 +58,7 @@ fn populated() -> (tempfile::TempDir, HostStore) {
                     identity_file: PathBuf::from("~/.ssh/id_ed25519"),
                 },
                 terminal_scheme: Some("ember".into()),
+                default_directory: Some("/srv/www".into()),
                 ..draft("web")
             },
         )
@@ -144,6 +146,22 @@ fn exporting_then_importing_into_an_empty_store_gives_the_same_host_list() {
     assert_eq!(summary.hosts_added, 3);
     assert_eq!(summary.groups_added, 3);
     assert!(summary.skipped_hosts.is_empty());
+}
+
+#[test]
+fn a_hosts_default_directory_travels_with_it() {
+    let (_a, source) = populated();
+    let (_b, mut target) = store();
+
+    target.import(&source.export()).unwrap();
+
+    let web = target
+        .list()
+        .iter()
+        .find(|h| h.name == "web")
+        .cloned()
+        .unwrap();
+    assert_eq!(web.default_directory.as_deref(), Some("/srv/www"));
 }
 
 #[test]

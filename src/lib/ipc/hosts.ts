@@ -25,6 +25,8 @@ export interface HostDraft {
   jumpHost: HostId | null;
   /** This Host's Terminal colour scheme id, overriding the global one; absent follows it. */
   terminalScheme?: string | null;
+  /** Where a File panel on this Host opens the first time (`~/x` allowed); absent is home. */
+  defaultDirectory?: string | null;
 }
 
 /** A saved Host (`sshastra_core::hosts::Host`). */

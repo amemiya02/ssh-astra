@@ -563,6 +563,7 @@ async fn saving_the_temp_file_changes_the_file_on_the_server() {
         jump_host: None,
         group_id: None,
         terminal_scheme: None,
+        default_directory: None,
         forwards: Vec::new(),
     };
     let connection = manager

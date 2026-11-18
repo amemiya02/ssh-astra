@@ -24,11 +24,13 @@
       "jumpHost": "跳板机",
       "auth": "认证方式",
       "identityFile": "私钥文件",
-      "terminalScheme": "终端配色"
+      "terminalScheme": "终端配色",
+      "defaultDirectory": "文件面板目录"
     },
     "noJumpHost": "无（直接连接）",
     "terminalSchemeInherit": "与其他终端相同",
     "terminalSchemeHint": "给生产环境的 Host 单独配色，避免认错。",
+    "defaultDirectoryHint": "文件面板第一次打开时所在的目录。留空则为主目录。",
     "errors": {
       "required": "必填",
       "port": "请输入 1 到 65535 之间的端口"

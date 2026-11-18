@@ -14,10 +14,15 @@ export interface HostFormValues {
   identityFile: string;
   /** The Host's own Terminal colour scheme; absent follows the global one. */
   terminalScheme?: TerminalColorScheme;
+  /** Where the File panel opens first; blank is the home directory. */
+  defaultDirectory?: string;
 }
 
 /** The free-text fields, validated here. */
-export type HostFormField = Exclude<keyof HostFormValues, "jumpHost" | "authType" | "terminalScheme">;
+export type HostFormField = Exclude<
+  keyof HostFormValues,
+  "jumpHost" | "authType" | "terminalScheme" | "defaultDirectory"
+>;
 /** Error codes; the UI maps them to copy under `hosts.errors.*`. */
 export type HostFormError = "required" | "port";
 
@@ -46,6 +51,7 @@ export function hostFormFrom(host: Host): HostFormValues {
     identityFile: host.auth.type === "key" ? host.auth.identityFile : "",
   };
   if (isTerminalColorScheme(host.terminalScheme)) form.terminalScheme = host.terminalScheme;
+  if (host.defaultDirectory) form.defaultDirectory = host.defaultDirectory;
   return form;
 }
 
@@ -70,5 +76,7 @@ export function parseHostForm(values: HostFormValues): HostFormResult {
   const auth: HostAuth = values.authType === "key" ? { type: "key", identityFile } : { type: "password" };
   const draft: HostDraft = { name, address, port, user, auth, jumpHost };
   if (values.terminalScheme) draft.terminalScheme = values.terminalScheme;
+  const defaultDirectory = values.defaultDirectory?.trim();
+  if (defaultDirectory) draft.defaultDirectory = defaultDirectory;
   return { ok: true, draft };
 }

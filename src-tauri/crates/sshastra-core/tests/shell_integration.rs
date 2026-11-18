@@ -59,6 +59,7 @@ impl Shell {
             jump_host: None,
             group_id: None,
             terminal_scheme: None,
+            default_directory: None,
             forwards: Vec::new(),
         };
         let connect = move || {

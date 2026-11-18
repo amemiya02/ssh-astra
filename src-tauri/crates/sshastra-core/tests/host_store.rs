@@ -17,6 +17,7 @@ fn draft(name: &str) -> HostDraft {
         auth: HostAuth::Password,
         jump_host: None,
         terminal_scheme: None,
+        default_directory: None,
     }
 }
 
@@ -36,6 +37,7 @@ fn a_hosts_own_terminal_colour_scheme_is_kept_across_restarts() {
             None,
             HostDraft {
                 terminal_scheme: Some("ember".into()),
+                default_directory: None,
                 ..draft("prod")
             },
         )
@@ -46,6 +48,55 @@ fn a_hosts_own_terminal_colour_scheme_is_kept_across_restarts() {
         reopened.get(&prod.id).unwrap().terminal_scheme.as_deref(),
         Some("ember")
     );
+}
+
+#[test]
+fn a_hosts_default_directory_is_kept_across_restarts_and_blank_means_home() {
+    let (_dir, path) = store_path();
+    let mut store = HostStore::open(&path).unwrap();
+    let web = store
+        .upsert(
+            None,
+            HostDraft {
+                default_directory: Some("  /srv/www ".into()),
+                ..draft("web")
+            },
+        )
+        .unwrap();
+    let db = store
+        .upsert(
+            None,
+            HostDraft {
+                default_directory: Some("   ".into()),
+                ..draft("db")
+            },
+        )
+        .unwrap();
+
+    let reopened = HostStore::open(&path).unwrap();
+    assert_eq!(
+        reopened.get(&web.id).unwrap().default_directory.as_deref(),
+        Some("/srv/www")
+    );
+    assert_eq!(reopened.get(&db.id).unwrap().default_directory, None);
+}
+
+#[test]
+fn a_version_4_file_is_migrated_with_no_default_directories() {
+    let (_dir, path) = store_path();
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        r#"{"version":4,"groups":[],"hosts":[{"id":"h1","name":"old","address":"a","port":22,"user":"u","auth":{"type":"password"},"jumpHost":null,"groupId":null,"forwards":[]}]}"#,
+    )
+    .unwrap();
+
+    let mut store = HostStore::open(&path).unwrap();
+    assert_eq!(store.list()[0].default_directory, None);
+    store.upsert(None, draft("new")).unwrap();
+    let json: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(json["version"], 5);
 }
 
 #[test]
@@ -71,6 +122,7 @@ fn a_blank_terminal_scheme_means_none() {
             None,
             HostDraft {
                 terminal_scheme: Some("  ".into()),
+                default_directory: None,
                 ..draft("x")
             },
         )
@@ -209,7 +261,7 @@ fn the_file_is_versioned_json() {
 
     let json: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(json["version"], 4);
+    assert_eq!(json["version"], 5);
     assert_eq!(json["hosts"][0]["name"], "web");
     assert_eq!(json["hosts"][0]["auth"]["type"], "password");
 }

@@ -85,6 +85,8 @@ fn imported_hosts_are_saved_with_their_settings_jump_hosts_and_forwards() {
             identity_file: PathBuf::from("~/.ssh/id_ed25519")
         }
     );
+    // ssh_config has no default directory: Hosts open in the home directory.
+    assert_eq!(bastion.default_directory, None);
     let app = find(&store, "app");
     assert_eq!(app.auth, HostAuth::Password);
     assert_eq!(app.jump_host.as_ref(), Some(&bastion.id));
@@ -158,6 +160,7 @@ fn a_host_with_a_taken_name_is_skipped_and_its_namesake_used_as_jump_host() {
                 auth: HostAuth::Password,
                 jump_host: None,
                 terminal_scheme: None,
+                default_directory: None,
             },
         )
         .unwrap();

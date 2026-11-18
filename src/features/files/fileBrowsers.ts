@@ -8,8 +8,8 @@ export type FileBrowserStore = StoreApi<FileBrowserState>;
 
 /** Every remote Terminal pane's File panel, by pane id. */
 export interface FileBrowsers {
-  /** The pane's File panel, created (closed) on first use. */
-  get(paneId: string, hostId: HostId): FileBrowserStore;
+  /** The pane's File panel, created (closed) on first use, to open first in `startPath` (else home). */
+  get(paneId: string, hostId: HostId, startPath?: string | null): FileBrowserStore;
   /** The pane's File panel if it has one, e.g. to `navigate` it from its Terminal. */
   find(paneId: string): FileBrowserStore | undefined;
   /** Closes and forgets the File panels (and their remote edits) of every pane not in `paneIds`. */
@@ -19,10 +19,10 @@ export interface FileBrowsers {
 export function createFileBrowsers(api: FilesApi): FileBrowsers {
   const stores = new Map<string, FileBrowserStore>();
   return {
-    get(paneId, hostId) {
+    get(paneId, hostId, startPath) {
       let store = stores.get(paneId);
       if (!store) {
-        store = createFileBrowserStore(api, hostId);
+        store = createFileBrowserStore(api, hostId, startPath);
         stores.set(paneId, store);
       }
       return store;

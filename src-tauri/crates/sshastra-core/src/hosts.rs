@@ -19,7 +19,7 @@ pub use transfer::{ImportSummary, EXPORT_FORMAT};
 /// The file format version this build writes, to the store and to export
 /// files. Bump it together with a migration step in [`migrate`], which reads
 /// both.
-const CURRENT_VERSION: u32 = 4;
+const CURRENT_VERSION: u32 = 5;
 
 /// Identifies a Host across restarts and across the IPC boundary.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -114,6 +114,10 @@ pub struct Host {
     /// overriding the global one. Opaque to the core: the UI owns the names.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub terminal_scheme: Option<String>,
+    /// Where a File panel on this Host opens the first time (a remote path,
+    /// `~/x` allowed); `None` is the home directory. Added in version 5.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_directory: Option<String>,
     /// The Group the Host sits in; `None` is the top level. Changed only by
     /// moving the Host, never by the Host form.
     #[serde(default)]
@@ -140,6 +144,9 @@ pub struct HostDraft {
     /// overriding the global one. Opaque to the core: the UI owns the names.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub terminal_scheme: Option<String>,
+    /// Where a File panel opens first; blank is the home directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_directory: Option<String>,
 }
 
 impl HostDraft {
@@ -177,6 +184,10 @@ impl HostDraft {
             jump_host: self.jump_host,
             terminal_scheme: self
                 .terminal_scheme
+                .map(|s| s.trim().to_owned())
+                .filter(|s| !s.is_empty()),
+            default_directory: self
+                .default_directory
                 .map(|s| s.trim().to_owned())
                 .filter(|s| !s.is_empty()),
             group_id: None,
@@ -235,7 +246,8 @@ struct FileV1 {
     hosts: Vec<Host>,
 }
 
-/// Versions 2 and 4 (3 added `Host::forwards`, 4 `PortForward::auto_start`).
+/// Versions 2, 4 and 5 (3 added `Host::forwards`, 4 `PortForward::auto_start`,
+/// 5 `Host::default_directory`).
 #[derive(Deserialize)]
 struct FileV2 {
     groups: Vec<Group>,
@@ -517,6 +529,7 @@ impl HostStore {
                 auth,
                 jump_host,
                 terminal_scheme: None,
+                default_directory: None,
             }
             .into_host(id)?;
             for draft in entry.forwards {
@@ -729,8 +742,9 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
             let hosts = serde_json::from_value(hosts.into()).map_err(corrupt)?;
             Ok(Library { groups, hosts })
         }
-        // v2 Hosts have no Port forwards, which `Host::forwards` defaults to.
-        2 | 4 => {
+        // v2 Hosts have no Port forwards, which `Host::forwards` defaults to;
+        // v2-v4 Hosts have no default directory (`None`: home).
+        2 | 4 | 5 => {
             let FileV2 { groups, hosts } = serde_json::from_str(text).map_err(corrupt)?;
             Ok(Library { groups, hosts })
         }

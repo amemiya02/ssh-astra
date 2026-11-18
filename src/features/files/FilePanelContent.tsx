@@ -49,7 +49,7 @@ export function FilePanelContent({ pane, remotePaneIds }: { pane?: FilePanelPane
 function RemoteFilePanel({ pane }: { pane: FilePanelPane }) {
   const { t } = useTranslation();
   const { collapsed } = useFilePanelDock();
-  const store = fileBrowsers.get(pane.id, pane.host.id);
+  const store = fileBrowsers.get(pane.id, pane.host.id, pane.host.defaultDirectory);
   const phase = useStore(store, (s) => s.phase);
   const path = useStore(store, (s) => s.path);
   const loading = useStore(store, (s) => s.loading);

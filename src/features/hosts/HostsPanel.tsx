@@ -591,6 +591,25 @@ function HostFormDialogContent({
             {t("hosts.terminalSchemeHint")}
           </p>
         </div>
+        <div className="grid gap-1.5">
+          <Label htmlFor="host-form-default-directory" className="text-xs">
+            {t("hosts.fields.defaultDirectory")}
+          </Label>
+          <Input
+            id="host-form-default-directory"
+            className="h-8 font-mono"
+            value={values.defaultDirectory ?? ""}
+            placeholder="~"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            aria-describedby="host-form-default-directory-hint"
+            onChange={(event) => setValues((v) => ({ ...v, defaultDirectory: event.target.value }))}
+          />
+          <p id="host-form-default-directory-hint" className="text-muted-foreground text-xs">
+            {t("hosts.defaultDirectoryHint")}
+          </p>
+        </div>
         {host && <ClearCredentialsButton hostId={host.id} />}
         {saveError && (
           <p role="alert" className="text-destructive text-xs">

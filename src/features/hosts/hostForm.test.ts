@@ -93,6 +93,29 @@ describe("hostFormFrom", () => {
     expect(parseHostForm(form)).toEqual({ ok: true, draft: { ...host, id: undefined, groupId: undefined, forwards: undefined } });
   });
 
+  it("round-trips a Host's default directory, and a blank one opens the home directory", () => {
+    const host = {
+      id: "1",
+      name: "web",
+      address: "web.local",
+      port: 22,
+      user: "deploy",
+      auth: { type: "password" as const },
+      jumpHost: null,
+      groupId: null,
+      forwards: [],
+      defaultDirectory: "/srv/www",
+    };
+    const form = hostFormFrom(host);
+    expect(form.defaultDirectory).toBe("/srv/www");
+    expect(parseHostForm({ ...form, defaultDirectory: " ~/app " })).toMatchObject({
+      ok: true,
+      draft: { defaultDirectory: "~/app" },
+    });
+    const blank = parseHostForm({ ...form, defaultDirectory: "  " });
+    expect(blank.ok && "defaultDirectory" in blank.draft).toBe(false);
+  });
+
   it("drops a scheme this build does not know, so the Host follows the global scheme", () => {
     const host = { id: "1", name: "a", address: "b", port: 22, user: "c", auth: { type: "password" as const }, jumpHost: null, groupId: null, forwards: [] };
     expect(hostFormFrom({ ...host, terminalScheme: "retired" }).terminalScheme).toBeUndefined();

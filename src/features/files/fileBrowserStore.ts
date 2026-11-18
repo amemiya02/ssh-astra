@@ -102,7 +102,12 @@ const notOpen: CommandError = { kind: "notOpen", message: "the File panel is not
  * One File panel's state: the SFTP session over its Host's Connection, the directory shown
  * and the selection. Actions never reject; failures land in `error`.
  */
-export function createFileBrowserStore(api: FilesApi, hostId: HostId): StoreApi<FileBrowserState> {
+/** `startPath` is where it opens the first time (the Host's default directory); home if absent or gone. */
+export function createFileBrowserStore(
+  api: FilesApi,
+  hostId: HostId,
+  startPath?: string | null,
+): StoreApi<FileBrowserState> {
   let fsId: FsId | null = null;
   let opening: Promise<void> | null = null;
   /** Bumped by `disconnect`, so an open that finishes afterwards is closed again. */
@@ -221,7 +226,9 @@ export function createFileBrowserStore(api: FilesApi, hostId: HostId): StoreApi<
             }
             fsId = id;
             set({ phase: "open" });
-            await list(get().path ?? "", true);
+            const first = get().path === null;
+            await list(get().path ?? startPath ?? "", true);
+            if (first && startPath && get().path === null) await list("", true);
           } catch (e) {
             if (mine === openGeneration) set({ phase: "closed", error: readCommandError(e) });
           } finally {
