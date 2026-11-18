@@ -104,7 +104,7 @@
 
 | 平台 | 安装包 |
 | --- | --- |
-| Windows 10 / 11 | `SSH.Astra_<版本>_x64-setup.exe` 或 `.msi` |
+| Windows 10 / 11 | `SSH.Astra_<版本>_x64_en-US.msi` |
 | macOS 11+（Intel 与 Apple Silicon） | `SSH.Astra_<版本>_universal.dmg` |
 | Linux | `.AppImage`（通用）或 `.deb`（Debian / Ubuntu） |
 
