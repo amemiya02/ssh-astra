@@ -1,4 +1,4 @@
-# sshastra
+# SSH Astra
 
 A modern desktop SSH/SFTP client: saved hosts, terminals and a file panel in one window.
 
@@ -41,5 +41,9 @@ The SFTP file browser beside a Terminal, browsing the same Host over the same Co
 _Avoid_: SFTP browser, file manager, explorer
 
 **Port forward**:
-A saved rule on a Host that tunnels traffic through its Connection: local, remote, or dynamic (SOCKS).
+A saved rule on a Host that tunnels traffic through its Connection: local, remote, or dynamic (SOCKS). One marked "start when connected" (auto-start) runs whenever its Host connects.
 _Avoid_: Tunnel, port mapping
+
+**Connect only**:
+Connecting to a Host without opening a Terminal: the Connection stays open (with its auto-start Port forwards) until the user disconnects it.
+_Avoid_: Background connection, headless session

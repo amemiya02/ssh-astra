@@ -1,0 +1,43 @@
+# The demo servers for the README screenshots (`pnpm screenshots`), which
+# starts them and takes them down again. Only `bastion` is published; the
+# others sit on a private network and are reached through it as a Jump host,
+# under the names the Host list shows.
+#
+#   bastion   the Jump host; throttled ($THROTTLE) so transfers show progress
+#   web-01    Production web server: the Terminal and File panel shots
+#   api-01    Production API server: the Port forwards shot
+#   nas.lan   Homelab NAS, never trusted: the Known host trust dialog
+name: ${SSHASTRA_SHOTS_PROJECT:-sshastra-screenshots}
+
+x-sshd: &sshd
+  build: ./sshd
+  image: ${SSHASTRA_SHOTS_PROJECT:-sshastra-screenshots}-sshd
+
+services:
+  bastion:
+    <<: *sshd
+    hostname: bastion
+    ports: ["127.0.0.1::22"]
+    networks: [public, private]
+    cap_add: [NET_ADMIN]
+    environment:
+      THROTTLE: 32mbit
+  web-01:
+    <<: *sshd
+    hostname: web-01
+    networks: [private]
+  api-01:
+    <<: *sshd
+    hostname: api-01
+    networks: [private]
+  nas:
+    <<: *sshd
+    hostname: nas
+    networks:
+      private:
+        aliases: [nas.lan]
+
+networks:
+  public: {}
+  private:
+    internal: true

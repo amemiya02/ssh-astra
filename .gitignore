@@ -1,0 +1,21 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+*.log
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# impeccable local caches
+.impeccable/hook.cache.json
+.impeccable/config.local.json
+
+# E2E smoke test screenshots and logs
+e2e/artifacts/

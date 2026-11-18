@@ -1,0 +1,587 @@
+{
+  "app": {
+    "name": "SSH Astra"
+  },
+  "shell": {
+    "workspace": "Terminals",
+    "showSidebar": "Show Host list",
+    "hideSidebar": "Hide Host list"
+  },
+  "hosts": {
+    "title": "Hosts",
+    "emptyTitle": "No Hosts yet",
+    "emptyBody": "Hosts you add appear here. Double-click one to open a Terminal.",
+    "new": "New Host",
+    "newDescription": "Keys in ssh-agent are tried first, then the private key file, then the password or the server's own questions (such as a one-time code). When asked for a password or passphrase, you can save it in the system keychain.",
+    "openHint": "Double-click to connect",
+    "clearCredentials": "Clear saved credentials",
+    "credentialsCleared": "Saved credentials cleared. The next connect asks again.",
+    "fields": {
+      "name": "Name",
+      "address": "Address",
+      "port": "Port",
+      "user": "User",
+      "jumpHost": "Jump host",
+      "auth": "Authentication",
+      "identityFile": "Private key file",
+      "terminalScheme": "Terminal colours",
+      "defaultDirectory": "File panel folder"
+    },
+    "noJumpHost": "None (connect directly)",
+    "terminalSchemeInherit": "Same as other Terminals",
+    "terminalSchemeHint": "Give production Hosts their own colours so they are hard to mistake.",
+    "defaultDirectoryHint": "Where the File panel opens the first time. Leave blank for the home folder.",
+    "errors": {
+      "required": "Required",
+      "port": "Enter a port from 1 to 65535"
+    },
+    "save": "Save",
+    "cancel": "Cancel",
+    "edit": "Edit Host",
+    "editDescription": "Change how SSH Astra connects to this Host.",
+    "open": "Open Terminal",
+    "duplicate": "Duplicate",
+    "copyName": "{{name}} copy",
+    "delete": "Delete",
+    "deleteHostTitle": "Delete {{name}}?",
+    "deleteHostBody": "The Host is removed from the list. Terminals already open on it keep running.",
+    "newGroup": "New Group",
+    "newGroupName": "New Group",
+    "groupName": "Group name",
+    "rename": "Rename",
+    "deleteGroupTitle": "Delete the Group {{name}}?",
+    "deleteGroupBody": "Its Hosts and Groups move up one level. Nothing inside is deleted.",
+    "moveTo": "Move to",
+    "topLevel": "Top level",
+    "moreActions": "More actions",
+    "search": "Search Hosts",
+    "clearSearch": "Clear search",
+    "noResultsTitle": "No matching Hosts",
+    "noResultsBody": "Search looks at names, addresses and users.",
+    "emptyGroup": "Drag Hosts here",
+    "actionFailed": "Could not save the change: {{message}}",
+    "auth": {
+      "password": "Password",
+      "key": "Private key"
+    },
+    "portForwards": "Port forwards",
+    "connectOnly": "Connect only",
+    "disconnect": "Disconnect",
+    "connectFailed": "Could not connect to {{name}}: {{message}}",
+    "import": {
+      "action": "Import ~/.ssh/config",
+      "keywords": "ssh config openssh import",
+      "title": "Imported ~/.ssh/config",
+      "summary": "Imported {{imported}}, skipped {{skipped}}, could not import {{failed}}.",
+      "nothing": "~/.ssh/config has no Hosts to import.",
+      "imported": "Imported",
+      "skipped": "Skipped: a Host with this name already exists",
+      "failed": "Not imported",
+      "partial": "Imported without some settings",
+      "error": "Could not import ~/.ssh/config: {{message}}",
+      "close": "Close",
+      "problems": {
+        "invalidValue": "{{directive}} {{value}} is not understood",
+        "unsupported": "{{directive}} is not supported",
+        "includeFailed": "Could not read it: {{reason}}",
+        "jumpChainConflict": "Its ProxyJump chain reaches {{hop}} differently from {{hop}}'s own settings",
+        "jumpHostLoop": "Its Jump hosts lead back to itself",
+        "jumpHostUnavailable": "Its Jump host {{hop}} was not imported"
+      }
+    },
+    "transfer": {
+      "import": "Import Host list…",
+      "export": "Export Host list…",
+      "fileType": "SSH Astra Host list",
+      "exported": "Host list exported. Passwords and passphrases are never included.",
+      "imported": "Import done. Hosts added: {{hosts}}. Groups added: {{groups}}.",
+      "skipped": "Skipped because a Host with the same name exists: {{names}}.",
+      "exportFailed": "Could not export the Host list: {{message}}",
+      "importFailed": "Could not import the file: {{message}}"
+    }
+  },
+  "tabs": {
+    "listLabel": "Open tabs",
+    "localTerminal": "Local terminal",
+    "newLocalTerminal": "New Local terminal",
+    "close": "Close {{title}}",
+    "splitRight": "Split right",
+    "splitDown": "Split down",
+    "pane": "Pane {{index}} of {{count}}",
+    "status": {
+      "connecting": "Connecting",
+      "connected": "Connected",
+      "disconnected": "Disconnected"
+    },
+    "settings": "Settings",
+    "portForwards": "Port forwards"
+  },
+  "workspace": {
+    "emptyTitle": "No open Terminals",
+    "emptyBody": "Open a Host from the list, or start a Local terminal on this computer."
+  },
+  "palette": {
+    "title": "Command palette",
+    "description": "Open a Host, switch tabs or run an action.",
+    "placeholder": "Search Hosts, tabs and actions",
+    "empty": "Nothing matches",
+    "groups": {
+      "recent": "Recent Hosts",
+      "hosts": "Hosts",
+      "tabs": "Tabs",
+      "actions": "Actions"
+    },
+    "actions": {
+      "openSettings": "Open Settings",
+      "disconnectHost": "Disconnect {{name}}"
+    },
+    "keywords": {
+      "preferences": "preferences"
+    }
+  },
+  "files": {
+    "title": "Files",
+    "empty": "Open a Terminal on a Host to browse its files here.",
+    "show": "Show File panel",
+    "hide": "Hide File panel",
+    "dockRight": "Dock File panel on the right",
+    "dockBottom": "Dock File panel at the bottom",
+    "dockGroup": "File panel position",
+    "up": "Up one folder",
+    "refresh": "Refresh",
+    "syncToTerminal": "Sync to Terminal folder",
+    "path": "Path",
+    "copyPath": "Copy path",
+    "showHidden": "Show hidden files",
+    "open": "Open",
+    "listLabel": "Files in {{path}}",
+    "columns": {
+      "name": "Name",
+      "size": "Size",
+      "modified": "Modified",
+      "permissions": "Permissions"
+    },
+    "emptyFolder": "This folder is empty.",
+    "connecting": "Connecting…",
+    "disconnected": "The Connection to {{host}} was lost.",
+    "retry": "Try again",
+    "openInEditor": "Open in editor",
+    "edit": {
+      "title": "Open in editor",
+      "opening": "Downloading…",
+      "editing": "Open in your editor. Saves upload automatically.",
+      "uploading": "Uploading…",
+      "uploaded": "Saved to {{host}}",
+      "uploadFailed": "Upload failed: {{message}}",
+      "openFailed": "Could not open the file: {{message}}",
+      "noApplication": "No application on this computer opens this file.",
+      "notFound": "The file no longer exists.",
+      "notAFile": "Only regular files open in the editor.",
+      "question": {
+        "tooLarge": {
+          "title": "Too large to edit",
+          "body": "{{name}} is larger than 10 MB, the most that opens in the editor. Download it instead?"
+        },
+        "binary": {
+          "title": "Not a text file",
+          "body": "{{name}} does not look like text. Editing it may damage it. Download it, or open it anyway?"
+        },
+        "download": "Download",
+        "openAnyway": "Open anyway",
+        "cancel": "Cancel"
+      },
+      "retry": "Retry",
+      "close": "Stop editing {{name}}"
+    },
+    "errors": {
+      "notConnected": "{{host}} is not connected.",
+      "notFound": "No such folder: {{path}}",
+      "permissionDenied": "Permission denied: {{path}}",
+      "notADirectory": "Not a folder: {{path}}",
+      "timedOut": "The server did not answer in time.",
+      "other": "Could not list the folder: {{message}}"
+    },
+    "newFolder": "New folder",
+    "create": "Create",
+    "cancel": "Cancel",
+    "name": "Name",
+    "renameAction": "Rename…",
+    "permissionsAction": "Permissions…",
+    "deleteAction": "Delete…",
+    "newFolderAction": "New folder…",
+    "rename": {
+      "title": "Rename “{{name}}”",
+      "confirm": "Rename"
+    },
+    "nameProblem": {
+      "slash": "A name cannot contain “/”.",
+      "dots": "“{{name}}” cannot be used as a name.",
+      "taken": "“{{name}}” already exists in this folder."
+    },
+    "delete": {
+      "titleOne": "Delete “{{name}}”?",
+      "titleMany": "Delete {{count}} items?",
+      "counting": "Counting what will be deleted…",
+      "count_one": "{{count}} item will be deleted. This cannot be undone.",
+      "count_other": "{{count}} items will be deleted, including everything inside folders. This cannot be undone.",
+      "confirm": "Delete"
+    },
+    "permissions": {
+      "title": "Permissions of “{{name}}”",
+      "owner": "Owner",
+      "group": "Group",
+      "others": "Others",
+      "read": "Read",
+      "write": "Write",
+      "execute": "Execute",
+      "octal": "Octal",
+      "apply": "Apply"
+    },
+    "operationErrors": {
+      "notFound": "No such file or folder: {{path}}",
+      "permissionDenied": "Permission denied: {{path}}",
+      "alreadyExists": "Already exists: {{path}}",
+      "notOpen": "The File panel is not connected.",
+      "other": "The server refused: {{message}}"
+    },
+    "upload": "Upload files",
+    "uploadTitle": "Upload to {{path}}",
+    "download": "Download…",
+    "downloadTitle": "Download to…",
+    "dropHere": "Drop to upload to {{path}}"
+  },
+  "transfers": {
+    "title": "Transfers",
+    "expand": "Show transfers",
+    "collapse": "Hide transfers",
+    "active": "Active {{count}}",
+    "done": "Done {{count}}",
+    "noneActive": "Nothing in progress.",
+    "noneDone": "No finished transfers.",
+    "clearDone": "Clear finished",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "dismiss": "Remove",
+    "progress": "{{done}} of {{total}}",
+    "files": "{{done}} of {{total}} files",
+    "timeLeft": "{{time}} left",
+    "direction": {
+      "upload": "Upload",
+      "download": "Download"
+    },
+    "state": {
+      "queued": "Waiting",
+      "conflict": "Waiting for your answer",
+      "cancelled": "Cancelled",
+      "done": "Done"
+    },
+    "failed": "Could not start the transfer: {{message}}",
+    "conflict": {
+      "title": "This file already exists",
+      "body": "A file with the same name is already at the destination. Replace it?",
+      "overwrite": "Replace",
+      "skip": "Skip",
+      "overwriteAll": "Replace all",
+      "skipAll": "Skip all"
+    }
+  },
+  "forwards": {
+    "title": "Port forwards",
+    "lead": "Forward traffic through {{host}}'s Connection: reach its network from here, expose a port of this machine on it, or use it as a SOCKS proxy. A running Port forward keeps the Connection open, even with no Terminal.",
+    "emptyTitle": "No Port forwards yet",
+    "emptyBody": "Add a Port forward to reach a service behind this Host (such as a database), expose a local port on it, or browse through it as a SOCKS proxy.",
+    "add": "Add Port forward",
+    "newTitle": "New Port forward",
+    "editTitle": "Edit Port forward",
+    "fields": {
+      "label": "Name",
+      "type": "Kind",
+      "autoStart": "Start when connected"
+    },
+    "labelPlaceholder": "Optional",
+    "errors": {
+      "required": "Required",
+      "port": "Enter a port from 1 to 65535"
+    },
+    "save": "Save",
+    "cancel": "Cancel",
+    "edit": "Edit",
+    "delete": "Delete",
+    "start": "Start",
+    "stop": "Stop",
+    "dismiss": "Clear error",
+    "moreActions": "More actions for {{name}}",
+    "listLabel": "Port forwards on {{host}}",
+    "status": {
+      "stopped": "Stopped",
+      "starting": "Starting",
+      "running": "Running",
+      "failed": "Failed"
+    },
+    "restartHint": "Changes apply the next time it starts.",
+    "actionFailed": "Could not save the Port forward: {{message}}",
+    "startErrors": {
+      "portInUse": "Port {{port}} on {{address}} is already in use. Choose another local port, or stop the program using it.",
+      "permissionDenied": "Not allowed to listen on port {{port}}. Ports below 1024 usually need administrator rights; choose a higher one.",
+      "remoteRefused": "The server would not listen on port {{port}} ({{address}}). It may be in use there, or the server's AllowTcpForwarding / GatewayPorts settings forbid it."
+    },
+    "fieldsByType": {
+      "local": {
+        "bindPort": "Local port",
+        "targetHost": "Remote host",
+        "targetPort": "Remote port",
+        "bindAddress": "Listen address"
+      },
+      "remote": {
+        "bindPort": "Port on the Host",
+        "targetHost": "Local host",
+        "targetPort": "Local port",
+        "bindAddress": "Listen address on the Host"
+      },
+      "dynamic": {
+        "bindPort": "Local port",
+        "bindAddress": "Listen address"
+      }
+    },
+    "hints": {
+      "local": {
+        "targetHost": "As the Host sees it, for example localhost or db.internal.",
+        "bindAddress": "Leave blank to accept connections from this machine only (127.0.0.1)."
+      },
+      "remote": {
+        "targetHost": "As this machine sees it, for example 127.0.0.1.",
+        "bindAddress": "Leave blank to accept connections from the Host itself only (localhost)."
+      },
+      "dynamic": {
+        "bindAddress": "Leave blank to accept connections from this machine only (127.0.0.1)."
+      }
+    },
+    "kinds": {
+      "local": "Local",
+      "remote": "Remote",
+      "dynamic": "SOCKS"
+    },
+    "kindHints": {
+      "local": "A port on this machine that reaches an address on the Host's side (ssh -L).",
+      "remote": "A port on the Host that reaches an address on this machine's side (ssh -R).",
+      "dynamic": "A SOCKS5 proxy on this machine; the Host opens each connection (ssh -D)."
+    },
+    "ends": {
+      "local": "Local",
+      "remote": "Host",
+      "dynamic": "SOCKS5"
+    },
+    "autoStartHint": "Runs whenever this Host connects: opening a Terminal, starting another Port forward, or Connect only.",
+    "autoStartBadge": "Auto"
+  },
+  "status": {
+    "noConnections": "No Connections",
+    "connectedTo": "Connected to {{hosts}}",
+    "reconnecting": "Reconnecting to {{host}} ({{attempt}}/{{attempts}})",
+    "forwards": "Port forwards: {{list}}",
+    "forwardsLocal": "{{from}} → {{to}}",
+    "forwardsRemote": "on the Host {{from}} → {{to}}",
+    "forwardsDynamic": "SOCKS {{from}}",
+    "transfers": "Transfers: {{count}}",
+    "transfersSpeed": "Transfers: {{count}} · {{speed}}/s"
+  },
+  "theme": {
+    "title": "Appearance",
+    "menuLabel": "Appearance: {{current}}",
+    "system": "System",
+    "light": "Light",
+    "dark": "Dark"
+  },
+  "terminal": {
+    "starting": "Starting shell…",
+    "exited": "Process exited with code {{code}}",
+    "exitedUnknown": "Process exited",
+    "failedToStart": "The shell could not start.",
+    "failureDetail": "Details: {{message}}",
+    "pressEnterToRestart": "Press Enter to start a new shell.",
+    "search": {
+      "label": "Find in Terminal",
+      "placeholder": "Find",
+      "results": "{{current}} of {{count}}",
+      "noResults": "No results",
+      "previous": "Previous match",
+      "next": "Next match",
+      "close": "Close find"
+    },
+    "paste": {
+      "title": "Paste {{count}} lines?",
+      "body": "The shell may run each line as soon as it arrives. Check the text before pasting.",
+      "confirm": "Paste",
+      "cancel": "Cancel"
+    },
+    "schemes": {
+      "app": "Match app theme",
+      "light": "Light",
+      "dark": "Dark",
+      "solarizedLight": "Solarized Light",
+      "solarizedDark": "Solarized Dark",
+      "nord": "Nord",
+      "ember": "Ember (for production)"
+    }
+  },
+  "connect": {
+    "cancel": "Cancel",
+    "hostKey": {
+      "title": "Unknown host key",
+      "body": "This is the first Connection to {{host}}. Check that this fingerprint is the server's before trusting it.",
+      "fingerprintLabel": "{{algorithm}} key fingerprint",
+      "hint": "Trusting adds the key to ~/.ssh/known_hosts, shared with the ssh command.",
+      "trust": "Trust and connect"
+    },
+    "password": {
+      "title": "Password for {{user}}@{{host}}",
+      "description": "Used to sign in to this Host.",
+      "label": "Password",
+      "retry": "Wrong password. Try again.",
+      "submit": "Connect"
+    },
+    "mismatch": {
+      "title": "Host key has changed. Connection blocked",
+      "body": "{{host}} presented a different key than the one recorded. Someone may be intercepting the Connection, or the server was reinstalled.",
+      "presented": "Received",
+      "recorded": "Expected (known_hosts, line {{line}})",
+      "fix": "If you are sure the change is legitimate, remove line {{line}} of {{path}} yourself, then connect again."
+    },
+    "errors": {
+      "unreachable": "Could not reach the Host.",
+      "timedOut": "The Host did not respond in time.",
+      "hostKeyDeclined": "The host key was not trusted. Not connected.",
+      "hostKeyRevoked": "The host key is revoked. Connection blocked.",
+      "authenticationFailed": "Authentication failed.",
+      "cancelled": "Connection cancelled.",
+      "generic": "Could not connect.",
+      "keyUnreadable": "Could not use the private key {{keyPath}}: {{reason}}",
+      "keyPassphraseIncorrect": "Wrong passphrase for the private key {{keyPath}}.",
+      "keyRejected": "The server rejected the private key {{keyPath}}.",
+      "agentKeysRejected": "The server rejected every key in ssh-agent.",
+      "noSupportedMethod": "No usable sign-in method. The server accepts: {{methods}}."
+    },
+    "atJumpHost": "At jump host {{name}}:",
+    "save": {
+      "label": "Save in the system keychain",
+      "unavailable": "No system keychain is available, so this is asked for each time."
+    },
+    "passphrase": {
+      "title": "Passphrase for the private key",
+      "label": "Passphrase",
+      "retry": "Wrong passphrase. Try again."
+    },
+    "keyboardInteractive": {
+      "title": "{{user}}@{{host}} asks",
+      "description": "The server asks for more information to sign in."
+    },
+    "lost": {
+      "title": "Disconnected",
+      "reconnecting": "Reconnecting… try {{attempt}} of {{attempts}}",
+      "failed": "Could not reconnect.",
+      "reconnect": "Reconnect",
+      "newShell": "Reconnecting starts a new shell; programs running before are gone."
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "lead": "Changes apply right away and are kept after a restart.",
+    "open": "Settings",
+    "sections": {
+      "appearance": "Appearance",
+      "terminal": "Terminal",
+      "connection": "Connection",
+      "language": "Language",
+      "transfers": "Transfers",
+      "updates": "Updates"
+    },
+    "theme": {
+      "label": "Theme",
+      "description": "System follows your computer's light or dark setting."
+    },
+    "language": {
+      "label": "Interface language",
+      "description": "System uses your computer's language when SSH Astra has it, otherwise English.",
+      "options": {
+        "system": "System",
+        "en": "English",
+        "zh": "中文"
+      }
+    },
+    "on": "On",
+    "off": "Off",
+    "terminal": {
+      "font": {
+        "label": "Font",
+        "description": "A CSS font list; the first font installed on this computer is used."
+      },
+      "fontSize": {
+        "label": "Font size",
+        "description": "In pixels, from {{min}} to {{max}}."
+      },
+      "ligatures": {
+        "label": "Ligatures",
+        "description": "Joins character pairs such as -> and != when the font supports it."
+      },
+      "colorScheme": {
+        "label": "Colour scheme",
+        "description": "Used by every Terminal unless its Host sets its own."
+      },
+      "copyOnSelect": {
+        "label": "Copy on select",
+        "description": "Selecting text in a Terminal copies it to the clipboard."
+      },
+      "rightClickPaste": {
+        "label": "Right-click paste",
+        "description": "Right-clicking in a Terminal pastes the clipboard."
+      },
+      "confirmMultilinePaste": {
+        "label": "Confirm multi-line paste",
+        "description": "Ask before pasting more than one line, since the shell runs each line as it arrives."
+      },
+      "shellIntegration": {
+        "label": "Shell integration",
+        "description": "Remote bash and zsh Terminals opened from now on tell the File panel when you cd, so it follows. Turning it off stops every File panel following at once and types nothing into new shells; Sync to Terminal folder still works."
+      }
+    },
+    "connection": {
+      "keepalive": {
+        "label": "Keepalive interval",
+        "description": "How often an idle Connection checks the server is still there. A dropped Connection is noticed after three missed checks. Applies to new Connections.",
+        "off": "Off",
+        "seconds": "{{count}} s"
+      }
+    },
+    "transfers": {
+      "concurrency": {
+        "label": "Simultaneous transfers",
+        "description": "How many uploads and downloads run at once; the rest wait their turn. A folder's files copy one after another."
+      }
+    },
+    "updates": {
+      "version": {
+        "label": "Version",
+        "description": "SSH Astra {{version}}. Updates come from the project's GitHub releases."
+      },
+      "checkOnStartup": {
+        "label": "Check for updates on startup",
+        "description": "When a newer version is out, the status bar offers to install it. Nothing is downloaded until you choose to."
+      }
+    }
+  },
+  "updates": {
+    "check": "Check for updates",
+    "keywords": "update upgrade version new release",
+    "checking": "Checking for updates…",
+    "upToDate": "SSH Astra is up to date",
+    "checkFailed": "Could not check for updates: {{reason}}",
+    "available": "SSH Astra {{version}} is available",
+    "install": "Update and restart",
+    "downloading": "Downloading the update…",
+    "downloadingPercent": "Downloading the update… {{percent}}%",
+    "restarting": "Restarting into the new version…",
+    "installFailed": "The update failed: {{reason}}",
+    "retry": "Try again",
+    "dismiss": "Dismiss"
+  }
+}

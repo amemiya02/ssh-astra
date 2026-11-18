@@ -1,0 +1,587 @@
+{
+  "app": {
+    "name": "SSH Astra"
+  },
+  "shell": {
+    "workspace": "终端",
+    "showSidebar": "显示 Host 列表",
+    "hideSidebar": "隐藏 Host 列表"
+  },
+  "hosts": {
+    "title": "Hosts",
+    "emptyTitle": "还没有 Host",
+    "emptyBody": "添加的 Host 会显示在这里，双击即可打开终端。",
+    "new": "新建 Host",
+    "newDescription": "依次尝试 ssh-agent 中的密钥、私钥文件、密码或服务器的问题（例如一次性验证码）。输入密码或私钥口令时可以选择保存到系统钥匙串。",
+    "openHint": "双击连接",
+    "clearCredentials": "清除已保存的凭据",
+    "credentialsCleared": "已清除保存的凭据，下次连接会重新询问。",
+    "fields": {
+      "name": "名称",
+      "address": "地址",
+      "port": "端口",
+      "user": "用户名",
+      "jumpHost": "跳板机",
+      "auth": "认证方式",
+      "identityFile": "私钥文件",
+      "terminalScheme": "终端配色",
+      "defaultDirectory": "文件面板目录"
+    },
+    "noJumpHost": "无（直接连接）",
+    "terminalSchemeInherit": "与其他终端相同",
+    "terminalSchemeHint": "给生产环境的 Host 单独配色，避免认错。",
+    "defaultDirectoryHint": "文件面板第一次打开时所在的目录。留空则为主目录。",
+    "errors": {
+      "required": "必填",
+      "port": "请输入 1 到 65535 之间的端口"
+    },
+    "save": "保存",
+    "cancel": "取消",
+    "edit": "编辑 Host",
+    "editDescription": "修改 SSH Astra 连接这个 Host 的方式。",
+    "open": "打开终端",
+    "duplicate": "复制",
+    "copyName": "{{name}} 副本",
+    "delete": "删除",
+    "deleteHostTitle": "删除 {{name}}？",
+    "deleteHostBody": "这个 Host 会从列表中移除。已经打开的终端不受影响。",
+    "newGroup": "新建分组",
+    "newGroupName": "新分组",
+    "groupName": "分组名称",
+    "rename": "重命名",
+    "deleteGroupTitle": "删除分组 {{name}}？",
+    "deleteGroupBody": "其中的 Host 和分组会上移一级，不会被删除。",
+    "moveTo": "移动到",
+    "topLevel": "顶层",
+    "moreActions": "更多操作",
+    "search": "搜索 Host",
+    "clearSearch": "清除搜索",
+    "noResultsTitle": "没有匹配的 Host",
+    "noResultsBody": "按名称、地址和用户名搜索。",
+    "emptyGroup": "把 Host 拖到这里",
+    "actionFailed": "无法保存更改：{{message}}",
+    "auth": {
+      "password": "密码",
+      "key": "私钥"
+    },
+    "portForwards": "端口转发",
+    "connectOnly": "仅连接",
+    "disconnect": "断开连接",
+    "connectFailed": "无法连接到 {{name}}：{{message}}",
+    "import": {
+      "action": "导入 ~/.ssh/config",
+      "keywords": "ssh config openssh 导入",
+      "title": "已导入 ~/.ssh/config",
+      "summary": "导入 {{imported}} 个，跳过 {{skipped}} 个，无法导入 {{failed}} 个。",
+      "nothing": "~/.ssh/config 中没有可导入的 Host。",
+      "imported": "已导入",
+      "skipped": "已跳过：已有同名 Host",
+      "failed": "未导入",
+      "partial": "已导入，但缺少部分设置",
+      "error": "无法导入 ~/.ssh/config：{{message}}",
+      "close": "关闭",
+      "problems": {
+        "invalidValue": "无法识别 {{directive}} {{value}}",
+        "unsupported": "不支持 {{directive}}",
+        "includeFailed": "无法读取：{{reason}}",
+        "jumpChainConflict": "它的 ProxyJump 链经过 {{hop}} 的方式与 {{hop}} 自己的设置不同",
+        "jumpHostLoop": "它的跳板机最终又指回自己",
+        "jumpHostUnavailable": "它的跳板机 {{hop}} 没有导入"
+      }
+    },
+    "transfer": {
+      "import": "导入 Host 列表…",
+      "export": "导出 Host 列表…",
+      "fileType": "SSH Astra Host 列表",
+      "exported": "Host 列表已导出。导出文件从不包含密码和密钥口令。",
+      "imported": "导入完成。新增 Host：{{hosts}} 个，新增 Group：{{groups}} 个。",
+      "skipped": "已存在同名 Host，已跳过：{{names}}。",
+      "exportFailed": "无法导出 Host 列表：{{message}}",
+      "importFailed": "无法导入该文件：{{message}}"
+    }
+  },
+  "tabs": {
+    "listLabel": "已打开的标签页",
+    "localTerminal": "本地终端",
+    "newLocalTerminal": "新建本地终端",
+    "close": "关闭 {{title}}",
+    "splitRight": "向右分屏",
+    "splitDown": "向下分屏",
+    "pane": "第 {{index}} 个窗格，共 {{count}} 个",
+    "status": {
+      "connecting": "连接中",
+      "connected": "已连接",
+      "disconnected": "已断开"
+    },
+    "settings": "设置",
+    "portForwards": "端口转发"
+  },
+  "workspace": {
+    "emptyTitle": "没有打开的终端",
+    "emptyBody": "从列表中打开一个 Host，或在这台电脑上启动本地终端。"
+  },
+  "palette": {
+    "title": "命令面板",
+    "description": "打开 Host、切换标签页或执行操作。",
+    "placeholder": "搜索 Host、标签页和操作",
+    "empty": "没有匹配的结果",
+    "groups": {
+      "recent": "最近使用的 Host",
+      "hosts": "Host",
+      "tabs": "标签页",
+      "actions": "操作"
+    },
+    "actions": {
+      "openSettings": "打开设置",
+      "disconnectHost": "断开 {{name}}"
+    },
+    "keywords": {
+      "preferences": "偏好设置 preferences"
+    }
+  },
+  "files": {
+    "title": "文件",
+    "empty": "在某个 Host 上打开终端后，可以在这里浏览它的文件。",
+    "show": "显示文件面板",
+    "hide": "隐藏文件面板",
+    "dockRight": "将文件面板停靠在右侧",
+    "dockBottom": "将文件面板停靠在下方",
+    "dockGroup": "文件面板位置",
+    "up": "上一级文件夹",
+    "refresh": "刷新",
+    "syncToTerminal": "同步到终端目录",
+    "path": "路径",
+    "copyPath": "复制路径",
+    "showHidden": "显示隐藏文件",
+    "open": "打开",
+    "listLabel": "{{path}} 中的文件",
+    "columns": {
+      "name": "名称",
+      "size": "大小",
+      "modified": "修改时间",
+      "permissions": "权限"
+    },
+    "emptyFolder": "这个文件夹是空的。",
+    "connecting": "正在连接…",
+    "disconnected": "与 {{host}} 的连接已断开。",
+    "retry": "重试",
+    "openInEditor": "在编辑器中打开",
+    "edit": {
+      "title": "在编辑器中打开",
+      "opening": "正在下载…",
+      "editing": "已在编辑器中打开，保存后自动上传。",
+      "uploading": "正在上传…",
+      "uploaded": "已保存到 {{host}}",
+      "uploadFailed": "上传失败：{{message}}",
+      "openFailed": "无法打开文件：{{message}}",
+      "noApplication": "这台电脑上没有能打开此文件的应用。",
+      "notFound": "文件已不存在。",
+      "notAFile": "只有普通文件可以在编辑器中打开。",
+      "question": {
+        "tooLarge": {
+          "title": "文件太大，无法编辑",
+          "body": "{{name}} 超过 10 MB，超出编辑器可打开的上限。改为下载吗？"
+        },
+        "binary": {
+          "title": "不是文本文件",
+          "body": "{{name}} 看起来不是文本，编辑可能会损坏它。下载它，还是仍然打开？"
+        },
+        "download": "下载",
+        "openAnyway": "仍然打开",
+        "cancel": "取消"
+      },
+      "retry": "重试",
+      "close": "停止编辑 {{name}}"
+    },
+    "errors": {
+      "notConnected": "{{host}} 未连接。",
+      "notFound": "文件夹不存在：{{path}}",
+      "permissionDenied": "没有权限：{{path}}",
+      "notADirectory": "不是文件夹：{{path}}",
+      "timedOut": "服务器没有及时响应。",
+      "other": "无法列出文件夹：{{message}}"
+    },
+    "newFolder": "新建文件夹",
+    "create": "创建",
+    "cancel": "取消",
+    "name": "名称",
+    "renameAction": "重命名…",
+    "permissionsAction": "权限…",
+    "deleteAction": "删除…",
+    "newFolderAction": "新建文件夹…",
+    "rename": {
+      "title": "重命名“{{name}}”",
+      "confirm": "重命名"
+    },
+    "nameProblem": {
+      "slash": "名称不能包含“/”。",
+      "dots": "不能使用“{{name}}”作为名称。",
+      "taken": "此文件夹中已有“{{name}}”。"
+    },
+    "delete": {
+      "titleOne": "删除“{{name}}”？",
+      "titleMany": "删除 {{count}} 项？",
+      "counting": "正在统计将被删除的条目…",
+      "count_one": "将删除 {{count}} 个条目。此操作无法撤销。",
+      "count_other": "将删除 {{count}} 个条目（包括文件夹中的全部内容）。此操作无法撤销。",
+      "confirm": "删除"
+    },
+    "permissions": {
+      "title": "“{{name}}”的权限",
+      "owner": "所有者",
+      "group": "组",
+      "others": "其他人",
+      "read": "读",
+      "write": "写",
+      "execute": "执行",
+      "octal": "八进制",
+      "apply": "应用"
+    },
+    "operationErrors": {
+      "notFound": "文件或文件夹不存在：{{path}}",
+      "permissionDenied": "权限不足：{{path}}",
+      "alreadyExists": "已存在：{{path}}",
+      "notOpen": "File panel 未连接。",
+      "other": "服务器拒绝了操作：{{message}}"
+    },
+    "upload": "上传文件",
+    "uploadTitle": "上传到 {{path}}",
+    "download": "下载…",
+    "downloadTitle": "下载到…",
+    "dropHere": "松开即可上传到 {{path}}"
+  },
+  "transfers": {
+    "title": "传输",
+    "expand": "显示传输",
+    "collapse": "隐藏传输",
+    "active": "进行中 {{count}}",
+    "done": "已完成 {{count}}",
+    "noneActive": "没有进行中的传输。",
+    "noneDone": "没有已完成的传输。",
+    "clearDone": "清除已完成",
+    "retry": "重试",
+    "cancel": "取消",
+    "dismiss": "移除",
+    "progress": "{{done}} / {{total}}",
+    "files": "{{done}} / {{total}} 个文件",
+    "timeLeft": "剩余 {{time}}",
+    "direction": {
+      "upload": "上传",
+      "download": "下载"
+    },
+    "state": {
+      "queued": "等待中",
+      "conflict": "等待你的选择",
+      "cancelled": "已取消",
+      "done": "已完成"
+    },
+    "failed": "无法开始传输：{{message}}",
+    "conflict": {
+      "title": "文件已存在",
+      "body": "目标位置已有同名文件。要替换它吗？",
+      "overwrite": "替换",
+      "skip": "跳过",
+      "overwriteAll": "全部替换",
+      "skipAll": "全部跳过"
+    }
+  },
+  "forwards": {
+    "title": "端口转发",
+    "lead": "通过 {{host}} 的连接转发流量：从这里访问它所在的网络、把本机端口暴露到它上面，或把它当作 SOCKS 代理。运行中的端口转发会让连接保持，即使没有打开终端。",
+    "emptyTitle": "还没有端口转发",
+    "emptyBody": "添加端口转发，访问这个 Host 后面的服务（例如数据库）、把本机端口暴露到它上面，或通过它以 SOCKS 代理上网。",
+    "add": "添加端口转发",
+    "newTitle": "新建端口转发",
+    "editTitle": "编辑端口转发",
+    "fields": {
+      "label": "名称",
+      "type": "类型",
+      "autoStart": "连接时自动启动"
+    },
+    "labelPlaceholder": "可选",
+    "errors": {
+      "required": "必填",
+      "port": "请输入 1 到 65535 之间的端口"
+    },
+    "save": "保存",
+    "cancel": "取消",
+    "edit": "编辑",
+    "delete": "删除",
+    "start": "启动",
+    "stop": "停止",
+    "dismiss": "清除错误",
+    "moreActions": "{{name}} 的更多操作",
+    "listLabel": "{{host}} 上的端口转发",
+    "status": {
+      "stopped": "已停止",
+      "starting": "启动中",
+      "running": "运行中",
+      "failed": "出错"
+    },
+    "restartHint": "修改将在下次启动时生效。",
+    "actionFailed": "无法保存端口转发：{{message}}",
+    "startErrors": {
+      "portInUse": "{{address}} 上的端口 {{port}} 已被占用。请换一个本地端口，或关闭占用它的程序。",
+      "permissionDenied": "没有权限监听端口 {{port}}。1024 以下的端口通常需要管理员权限，请换一个更大的端口。",
+      "remoteRefused": "服务器拒绝监听端口 {{port}}（{{address}}）。端口可能已被占用，或服务器的 AllowTcpForwarding / GatewayPorts 设置不允许。"
+    },
+    "fieldsByType": {
+      "local": {
+        "bindPort": "本地端口",
+        "targetHost": "远端主机",
+        "targetPort": "远端端口",
+        "bindAddress": "监听地址"
+      },
+      "remote": {
+        "bindPort": "Host 上的端口",
+        "targetHost": "本地主机",
+        "targetPort": "本地端口",
+        "bindAddress": "Host 上的监听地址"
+      },
+      "dynamic": {
+        "bindPort": "本地端口",
+        "bindAddress": "监听地址"
+      }
+    },
+    "hints": {
+      "local": {
+        "targetHost": "按 Host 看到的地址填写，例如 localhost 或 db.internal。",
+        "bindAddress": "留空则只接受本机的连接（127.0.0.1）。"
+      },
+      "remote": {
+        "targetHost": "按本机看到的地址填写，例如 127.0.0.1。",
+        "bindAddress": "留空则只接受 Host 本机的连接（localhost）。"
+      },
+      "dynamic": {
+        "bindAddress": "留空则只接受本机的连接（127.0.0.1）。"
+      }
+    },
+    "kinds": {
+      "local": "本地",
+      "remote": "远程",
+      "dynamic": "SOCKS"
+    },
+    "kindHints": {
+      "local": "本机的端口，连到 Host 一侧的地址（ssh -L）。",
+      "remote": "Host 上的端口，连到本机一侧的地址（ssh -R）。",
+      "dynamic": "本机上的 SOCKS5 代理，每个连接由 Host 发起（ssh -D）。"
+    },
+    "ends": {
+      "local": "本地",
+      "remote": "Host",
+      "dynamic": "SOCKS5"
+    },
+    "autoStartHint": "每当这个 Host 连接时运行：打开终端、启动其他端口转发或「仅连接」。",
+    "autoStartBadge": "自动"
+  },
+  "status": {
+    "noConnections": "没有连接",
+    "connectedTo": "已连接：{{hosts}}",
+    "reconnecting": "正在重新连接 {{host}}（{{attempt}}/{{attempts}}）",
+    "forwards": "端口转发：{{list}}",
+    "forwardsLocal": "{{from}} → {{to}}",
+    "forwardsRemote": "Host 上 {{from}} → {{to}}",
+    "forwardsDynamic": "SOCKS {{from}}",
+    "transfers": "传输：{{count}}",
+    "transfersSpeed": "传输：{{count}} · {{speed}}/s"
+  },
+  "theme": {
+    "title": "外观",
+    "menuLabel": "外观：{{current}}",
+    "system": "跟随系统",
+    "light": "浅色",
+    "dark": "深色"
+  },
+  "terminal": {
+    "starting": "正在启动 shell…",
+    "exited": "进程已退出，退出码 {{code}}",
+    "exitedUnknown": "进程已退出",
+    "failedToStart": "shell 无法启动。",
+    "failureDetail": "详情：{{message}}",
+    "pressEnterToRestart": "按 Enter 启动新的 shell。",
+    "search": {
+      "label": "在终端中查找",
+      "placeholder": "查找",
+      "results": "第 {{current}} 个，共 {{count}} 个",
+      "noResults": "无结果",
+      "previous": "上一个匹配",
+      "next": "下一个匹配",
+      "close": "关闭查找"
+    },
+    "paste": {
+      "title": "粘贴 {{count}} 行？",
+      "body": "shell 可能会在每一行到达时立即执行。粘贴前请检查内容。",
+      "confirm": "粘贴",
+      "cancel": "取消"
+    },
+    "schemes": {
+      "app": "跟随应用主题",
+      "light": "浅色",
+      "dark": "深色",
+      "solarizedLight": "Solarized 浅色",
+      "solarizedDark": "Solarized 深色",
+      "nord": "Nord",
+      "ember": "Ember（用于生产环境）"
+    }
+  },
+  "connect": {
+    "cancel": "取消",
+    "hostKey": {
+      "title": "未知的主机密钥",
+      "body": "这是第一次连接 {{host}}。信任之前，请确认这个指纹确实属于该服务器。",
+      "fingerprintLabel": "{{algorithm}} 密钥指纹",
+      "hint": "信任后会写入 ~/.ssh/known_hosts，与 ssh 命令共用。",
+      "trust": "信任并连接"
+    },
+    "password": {
+      "title": "{{user}}@{{host}} 的密码",
+      "description": "用于登录此 Host。",
+      "label": "密码",
+      "retry": "密码错误，请重试。",
+      "submit": "连接"
+    },
+    "mismatch": {
+      "title": "主机密钥已变化，连接已阻断",
+      "body": "{{host}} 提供的密钥与记录不一致。可能有人在拦截连接，也可能服务器重装过。",
+      "presented": "收到的密钥",
+      "recorded": "记录的密钥（known_hosts 第 {{line}} 行）",
+      "fix": "如果确认变化是正常的，请手动删除 {{path}} 第 {{line}} 行，然后重新连接。"
+    },
+    "errors": {
+      "unreachable": "无法连接到 Host。",
+      "timedOut": "Host 响应超时。",
+      "hostKeyDeclined": "未信任主机密钥，已取消连接。",
+      "hostKeyRevoked": "主机密钥已被吊销，连接已阻断。",
+      "authenticationFailed": "认证失败。",
+      "cancelled": "已取消连接。",
+      "generic": "连接失败。",
+      "keyUnreadable": "无法使用私钥 {{keyPath}}：{{reason}}",
+      "keyPassphraseIncorrect": "私钥口令错误（{{keyPath}}）。",
+      "keyRejected": "服务器拒绝了该私钥（{{keyPath}}）。",
+      "agentKeysRejected": "服务器拒绝了 ssh-agent 中的所有密钥。",
+      "noSupportedMethod": "没有可用的认证方式。服务器只接受：{{methods}}。"
+    },
+    "atJumpHost": "跳板机 {{name}}：",
+    "save": {
+      "label": "保存到系统钥匙串",
+      "unavailable": "没有可用的系统钥匙串，每次都需要输入。"
+    },
+    "passphrase": {
+      "title": "私钥口令",
+      "label": "口令",
+      "retry": "私钥口令错误，请重试。"
+    },
+    "keyboardInteractive": {
+      "title": "{{user}}@{{host}} 需要验证",
+      "description": "服务器需要更多信息才能登录。"
+    },
+    "lost": {
+      "title": "已断开",
+      "reconnecting": "正在重新连接…第 {{attempt}} 次，共 {{attempts}} 次",
+      "failed": "无法重新连接。",
+      "reconnect": "重新连接",
+      "newShell": "重新连接会启动新的 shell，之前运行的程序已无法恢复。"
+    }
+  },
+  "settings": {
+    "title": "设置",
+    "lead": "修改立即生效，重启后保持不变。",
+    "open": "设置",
+    "sections": {
+      "appearance": "外观",
+      "terminal": "终端",
+      "connection": "连接",
+      "language": "语言",
+      "transfers": "传输",
+      "updates": "更新"
+    },
+    "theme": {
+      "label": "主题",
+      "description": "跟随系统会随电脑的浅色或深色设置切换。"
+    },
+    "language": {
+      "label": "界面语言",
+      "description": "跟随系统时使用电脑的语言；SSH Astra 不支持该语言时使用英文。",
+      "options": {
+        "system": "跟随系统",
+        "en": "English",
+        "zh": "中文"
+      }
+    },
+    "on": "开",
+    "off": "关",
+    "terminal": {
+      "font": {
+        "label": "字体",
+        "description": "CSS 字体列表，使用其中第一个已安装在这台电脑上的字体。"
+      },
+      "fontSize": {
+        "label": "字号",
+        "description": "单位为像素，范围 {{min}} 到 {{max}}。"
+      },
+      "ligatures": {
+        "label": "连字",
+        "description": "字体支持时，将 -> 和 != 等字符组合显示为连字。"
+      },
+      "colorScheme": {
+        "label": "配色",
+        "description": "所有终端都使用此配色，除非其 Host 单独设置了配色。"
+      },
+      "copyOnSelect": {
+        "label": "选中即复制",
+        "description": "在终端中选中文本时自动复制到剪贴板。"
+      },
+      "rightClickPaste": {
+        "label": "右键粘贴",
+        "description": "在终端中右键单击时粘贴剪贴板内容。"
+      },
+      "confirmMultilinePaste": {
+        "label": "多行粘贴前确认",
+        "description": "粘贴多于一行的内容前先询问，因为 shell 会逐行立即执行。"
+      },
+      "shellIntegration": {
+        "label": "Shell 集成",
+        "description": "此后新开的远程 bash、zsh 终端在你 cd 时通知文件面板，让它跟着切换目录。关闭后所有文件面板立即停止跟随，也不会向新的 shell 输入任何内容；「同步到终端目录」仍然可用。"
+      }
+    },
+    "connection": {
+      "keepalive": {
+        "label": "Keepalive 间隔",
+        "description": "空闲的 Connection 多久确认一次服务器仍在。连续三次没有回应即视为掉线。对新的 Connection 生效。",
+        "off": "关",
+        "seconds": "{{count}} 秒"
+      }
+    },
+    "transfers": {
+      "concurrency": {
+        "label": "同时传输数",
+        "description": "同时进行的上传和下载数量，其余的排队等待。文件夹内的文件逐个复制。"
+      }
+    },
+    "updates": {
+      "version": {
+        "label": "版本",
+        "description": "SSH Astra {{version}}。更新来自本项目的 GitHub Releases。"
+      },
+      "checkOnStartup": {
+        "label": "启动时检查更新",
+        "description": "有新版本时，状态栏会提示安装。在你选择更新之前不会下载任何内容。"
+      }
+    }
+  },
+  "updates": {
+    "check": "检查更新",
+    "keywords": "更新 升级 版本 新版本 update upgrade",
+    "checking": "正在检查更新…",
+    "upToDate": "SSH Astra 已是最新版本",
+    "checkFailed": "无法检查更新：{{reason}}",
+    "available": "SSH Astra {{version}} 已发布",
+    "install": "更新并重启",
+    "downloading": "正在下载更新…",
+    "downloadingPercent": "正在下载更新… {{percent}}%",
+    "restarting": "正在重启到新版本…",
+    "installFailed": "更新失败：{{reason}}",
+    "retry": "重试",
+    "dismiss": "关闭"
+  }
+}

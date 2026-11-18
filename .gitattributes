@@ -1,0 +1,2 @@
+# Copied into a Linux container: must keep LF line endings on every OS.
+src-tauri/crates/sshastra-core/tests/sshd/** text eol=lf

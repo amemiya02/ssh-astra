@@ -1,0 +1,127 @@
+# OpenSSH servers for sshastra's integration tests. Started on demand by
+# `tests/support/mod.rs`; see CLAUDE.md ("Integration tests").
+#
+#   ssh       reachable from the test process (published on a random
+#             loopback port): the plain target.
+#   jump      reachable from the test process and from the private network:
+#             a Jump host.
+#   internal  on the private network only: reachable only through `jump`
+#             (as `internal:22`).
+#   jump2     on the private and the deep network: a second Jump host,
+#             reached through `jump` (as `jump2:22`).
+#   deep      on the deep network only: reachable only through `jump` then
+#             `jump2` (as `deep:22`).
+#   keyonly   published: accepts public keys only (no password, no
+#             keyboard-interactive).
+#   kbdint    published: keyboard-interactive (PAM asks for the password)
+#             instead of the password method, either alone or as the second
+#             step after a public key ("partial success").
+#   counted   reachable from the test process like `ssh`, but only the
+#             Connection lifecycle tests use it, so they can count the TCP
+#             connections it sees (`Sshd::established_connections`).
+#   flaky     published: only the reconnect tests use it; they kill its
+#             connections (`Sshd::drop_connections`) and freeze it
+#             (`Sshd::pause`) to make Connections drop.
+#   silent    published: accepts TCP connections on port 22 but never says
+#             anything (no SSH banner), for the handshake timeout test.
+#   echo      on the public network only, not published: a TCP echo server
+#             on port 7777 (`support::ECHO`), the target of Port forward
+#             tests, reached through an sshd as `echo:7777`.
+#
+# Each server's hostname is its service name, so a test can tell where a
+# shell landed.
+#
+# Add services here rather than starting containers from individual tests.
+#
+# Project and image tag come from SSHASTRA_IT_PROJECT, which the test harness
+# sets per checkout (`sshastra-it-<path hash>`) so parallel worktrees don't
+# share services.
+name: ${SSHASTRA_IT_PROJECT:-sshastra-it}
+
+x-sshd: &sshd
+  build: .
+  image: ${SSHASTRA_IT_PROJECT:-sshastra-it}-sshd
+
+services:
+  ssh:
+    <<: *sshd
+    hostname: ssh
+    ports: ["127.0.0.1::22"]
+    networks: [public]
+  jump:
+    <<: *sshd
+    hostname: jump
+    ports: ["127.0.0.1::22"]
+    networks: [public, private]
+  internal:
+    <<: *sshd
+    hostname: internal
+    networks: [private]
+  jump2:
+    <<: *sshd
+    hostname: jump2
+    networks: [private, deep]
+  deep:
+    <<: *sshd
+    hostname: deep
+    networks: [deep]
+  keyonly:
+    <<: *sshd
+    hostname: keyonly
+    ports: ["127.0.0.1::22"]
+    networks: [public]
+    command: [/usr/sbin/sshd, -D, -e, -o, PasswordAuthentication=no, -o, KbdInteractiveAuthentication=no]
+  kbdint:
+    <<: *sshd
+    hostname: kbdint
+    ports: ["127.0.0.1::22"]
+    networks: [public]
+    command:
+      - /usr/sbin/sshd
+      - -D
+      - -e
+      - -o
+      - PasswordAuthentication=no
+      - -o
+      - KbdInteractiveAuthentication=yes
+      - -o
+      - AuthenticationMethods=publickey,keyboard-interactive keyboard-interactive
+  counted:
+    <<: *sshd
+    hostname: counted
+    ports: ["127.0.0.1::22"]
+    networks: [public]
+  echo:
+    <<: *sshd
+    hostname: echo
+    networks: [public]
+    command: [socat, "TCP-LISTEN:7777,fork,reuseaddr", "EXEC:cat"]
+    healthcheck:
+      test: [CMD, bash, -c, "exec 3<>/dev/tcp/127.0.0.1/7777"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
+
+  flaky:
+    <<: *sshd
+    hostname: flaky
+    ports: ["127.0.0.1::22"]
+    networks: [public]
+  silent:
+    <<: *sshd
+    hostname: silent
+    ports: ["127.0.0.1::22"]
+    networks: [public]
+    command: [socat, "TCP-LISTEN:22,fork,reuseaddr", "SYSTEM:sleep 3600"]
+    healthcheck:
+      test: [CMD, bash, -c, "exec 3<>/dev/tcp/127.0.0.1/22"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
+
+networks:
+  public: {}
+  private:
+    internal: true
+  deep:
+    internal: true

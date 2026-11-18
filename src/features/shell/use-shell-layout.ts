@@ -1,0 +1,21 @@
+import { useCallback } from "react";
+import { getSetting, setSetting, useSetting } from "@/lib/storage";
+import { layoutSetting, type FilePanelDock, type GroupLayout } from "./shell-layout";
+
+/** The persisted main window layout, saved whenever it changes. */
+export function useShellLayout() {
+  const [layout] = useSetting(layoutSetting);
+
+  // Read the latest value at call time: resize events can arrive in bursts between renders.
+  const saveGroup = useCallback((groupId: string, groupLayout: GroupLayout) => {
+    const prev = getSetting(layoutSetting);
+    setSetting(layoutSetting, { ...prev, groups: { ...prev.groups, [groupId]: groupLayout } });
+  }, []);
+
+  const setDock = useCallback((dock: FilePanelDock) => {
+    const prev = getSetting(layoutSetting);
+    if (prev.dock !== dock) setSetting(layoutSetting, { ...prev, dock });
+  }, []);
+
+  return { layout, saveGroup, setDock };
+}

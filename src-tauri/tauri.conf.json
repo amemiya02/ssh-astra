@@ -1,0 +1,47 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "SSH Astra",
+  "mainBinaryName": "sshastra",
+  "version": "0.1.0",
+  "identifier": "dev.sshastra.app",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "SSH Astra",
+        "width": 1200,
+        "height": 760,
+        "minWidth": 640,
+        "minHeight": 400
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRBRUQxN0EzQzYyQjM4QjkKUldTNU9DdkdveGZ0U2xra0dnT04rdGEvenYvM2hkTVBMS3V0UUgzdnUyUERlV2pqTE5UV0g5a3oK",
+      "endpoints": [
+        "https://github.com/amemiya02/ssh-astra/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}

@@ -1,0 +1,338 @@
+<!doctype html>
+<!--
+  sshastra design mockups (ticket #3). Static, synthetic data. Rendered to PNG with:
+    docs/design/render-mockups.sh
+  Screens: ?screen=main|bottom|editor|known|mismatch  &theme=light|dark
+  Tokens mirror src/index.css; DESIGN.md is the source of truth.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>sshastra mockups</title>
+<style>
+:root {
+  --radius: 10px;
+  --background: oklch(0.972 0.003 255);
+  --foreground: oklch(0.22 0.012 255);
+  --surface: oklch(0.995 0.001 255);
+  --popover: oklch(1 0 0);
+  --primary: oklch(0.55 0.17 258);
+  --primary-foreground: oklch(0.99 0 0);
+  --muted: oklch(0.945 0.004 255);
+  --muted-foreground: oklch(0.5 0.012 255);
+  --accent: oklch(0.93 0.006 255);
+  --selected: oklch(0.55 0.17 258 / 0.1);
+  --border: oklch(0.905 0.005 255);
+  --input: oklch(0.875 0.006 255);
+  --destructive: oklch(0.55 0.2 25);
+  --destructive-soft: oklch(0.55 0.2 25 / 0.08);
+  --success: oklch(0.6 0.14 155);
+  --warning: oklch(0.7 0.15 70);
+  --terminal-background: #ffffff;
+  --terminal-foreground: #2b2f37;
+  --shadow-panel: 0 1px 2px oklch(0.2 0.02 255 / 0.05), 0 2px 8px oklch(0.2 0.02 255 / 0.04);
+  --shadow-overlay: 0 12px 32px oklch(0.2 0.02 255 / 0.16), 0 2px 6px oklch(0.2 0.02 255 / 0.06);
+  --overlay: oklch(0.2 0.01 255 / 0.28);
+  --t-green: #1f8a4c; --t-blue: #2f5fd0; --t-dim: #8a8f99; --t-yellow: #9a6a00; --t-magenta: #a33ea1;
+}
+.dark {
+  --background: oklch(0.175 0.006 255);
+  --foreground: oklch(0.93 0.005 255);
+  --surface: oklch(0.205 0.007 255);
+  --popover: oklch(0.225 0.008 255);
+  --primary: oklch(0.7 0.14 258);
+  --primary-foreground: oklch(0.17 0.02 258);
+  --muted: oklch(0.245 0.008 255);
+  --muted-foreground: oklch(0.7 0.01 255);
+  --accent: oklch(0.255 0.008 255);
+  --selected: oklch(0.7 0.14 258 / 0.14);
+  --border: oklch(1 0 0 / 0.08);
+  --input: oklch(1 0 0 / 0.13);
+  --destructive: oklch(0.68 0.18 25);
+  --destructive-soft: oklch(0.68 0.18 25 / 0.12);
+  --success: oklch(0.72 0.14 155);
+  --warning: oklch(0.8 0.14 75);
+  --terminal-background: #131519;
+  --terminal-foreground: #d9dce3;
+  --shadow-panel: 0 1px 2px oklch(0 0 0 / 0.3);
+  --shadow-overlay: 0 16px 40px oklch(0 0 0 / 0.5), 0 0 0 1px oklch(1 0 0 / 0.06);
+  --overlay: oklch(0 0 0 / 0.5);
+  --t-green: #6fcf8f; --t-blue: #7aa2f7; --t-dim: #6b7280; --t-yellow: #e0b45a; --t-magenta: #d08bd8;
+}
+* { box-sizing: border-box; margin: 0; }
+html, body { height: 100%; }
+body {
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  background: var(--background); color: var(--foreground);
+  -webkit-font-smoothing: antialiased; overflow: hidden;
+}
+.mono { font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
+svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.window { height: 100vh; display: grid; grid-template-rows: 1fr 26px; }
+.body { display: grid; grid-template-columns: 248px 1fr; min-height: 0; }
+.sidebar { display: flex; flex-direction: column; padding: 10px 8px 8px 10px; min-height: 0; }
+.side-head { display: flex; align-items: center; gap: 8px; padding: 4px 4px 10px; }
+.side-head b { font-size: 13px; font-weight: 600; flex: 1; }
+.icon-btn { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: var(--muted-foreground); }
+.icon-btn.hover { background: var(--accent); color: var(--foreground); }
+.search { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--muted-foreground); margin-bottom: 12px; }
+.search span { flex: 1; } kbd { font: 11px/1 inherit; padding: 2px 5px; border-radius: 4px; border: 1px solid var(--border); color: var(--muted-foreground); }
+.group { font-size: 11px; font-weight: 600; color: var(--muted-foreground); padding: 8px 8px 4px; display: flex; align-items: center; gap: 4px; }
+.group svg { width: 12px; height: 12px; }
+.host { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 7px; }
+.host .avatar { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; background: var(--muted); color: var(--muted-foreground); font-weight: 600; font-size: 11px; position: relative; }
+.host .dot { position: absolute; right: -2px; bottom: -2px; width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--background); }
+.host .meta { min-width: 0; flex: 1; }
+.host .name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.host .addr { font-size: 11.5px; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.host.sel { background: var(--selected); }
+.host.sel .avatar { background: var(--primary); color: var(--primary-foreground); }
+.side-foot { margin-top: auto; display: flex; gap: 6px; padding-top: 8px; }
+.btn { height: 30px; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; border-radius: 8px; font-weight: 500; border: 1px solid var(--border); background: var(--surface); color: var(--foreground); box-shadow: 0 1px 1px oklch(0 0 0 / 0.03); }
+.btn.primary { background: var(--primary); color: var(--primary-foreground); border-color: transparent; }
+.btn.danger { background: var(--destructive); color: #fff; border-color: transparent; }
+.btn.ghost { background: transparent; border-color: transparent; box-shadow: none; }
+.btn.grow { flex: 1; justify-content: center; }
+.main { display: grid; grid-template-rows: 38px 1fr; min-width: 0; min-height: 0; padding: 0 8px 0 0; }
+.tabbar { display: flex; align-items: flex-end; gap: 2px; min-width: 0; }
+.tab { height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 12px; border-radius: 8px 8px 0 0; color: var(--muted-foreground); max-width: 210px; position: relative; }
+.tab .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab .x { width: 18px; height: 18px; border-radius: 5px; display: grid; place-items: center; opacity: .0; }
+.tab .x svg { width: 12px; height: 12px; }
+.tab.active { background: var(--terminal-background); color: var(--foreground); border: 1px solid var(--border); border-bottom: 0; height: 33px; margin-bottom: -1px; z-index: 2; }
+.tab.active .x { opacity: 1; color: var(--muted-foreground); }
+.tab .sdot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.tabbar .spacer { flex: 1; }
+.tabbar .tools { display: flex; gap: 2px; align-self: center; }
+.work { display: grid; gap: 6px; min-height: 0; padding-bottom: 6px; }
+.work.right { grid-template-columns: 1fr 6px 340px; }
+.work.bottom { grid-template-rows: 1fr 6px 250px; }
+.gutter { display: grid; place-items: center; }
+.gutter::after { content: ""; background: var(--border); border-radius: 2px; }
+.work.right .gutter::after { width: 2px; height: 28px; }
+.work.bottom .gutter::after { height: 2px; width: 28px; }
+.panel { border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-panel); min-height: 0; min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
+.terminal { background: var(--terminal-background); color: var(--terminal-foreground); border-top-left-radius: 0; padding: 12px 14px; display: block; overflow: hidden; font-size: 12.5px; line-height: 1.55; white-space: pre; }
+.g { color: var(--t-green); } .b { color: var(--t-blue); } .d { color: var(--t-dim); } .y { color: var(--t-yellow); } .m { color: var(--t-magenta); }
+.cursor { background: var(--terminal-foreground); color: var(--terminal-background); }
+.files { background: var(--surface); }
+.fhead { display: flex; align-items: center; gap: 4px; padding: 8px 8px 8px 12px; border-bottom: 1px solid var(--border); }
+.fhead b { font-weight: 600; flex: 1; }
+.path { display: flex; align-items: center; gap: 6px; margin: 8px; height: 28px; padding: 0 8px; border-radius: 7px; background: var(--muted); font-size: 12px; }
+.path span { flex: 1; }
+table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+th { text-align: left; font-weight: 500; font-size: 11.5px; color: var(--muted-foreground); padding: 4px 12px; }
+th.r, td.r { text-align: right; } td { padding: 5px 12px; white-space: nowrap; }
+td.n { display: flex; align-items: center; gap: 8px; }
+td.n svg { color: var(--muted-foreground); width: 15px; height: 15px; }
+td.n svg.dir { color: var(--primary); }
+td.q { color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+tr.sel td { background: var(--selected); }
+tr.sel td:first-child { border-radius: 6px 0 0 6px; } tr.sel td:last-child { border-radius: 0 6px 6px 0; }
+.status { display: flex; align-items: center; gap: 14px; padding: 0 12px; font-size: 11.5px; color: var(--muted-foreground); border-top: 1px solid var(--border); }
+.status .item { display: flex; align-items: center; gap: 6px; }
+.status svg { width: 13px; height: 13px; }
+.status .spacer { flex: 1; }
+.split { display: grid; grid-template-columns: 1fr; flex: 1; min-height: 0; }
+.split > .sep { background: var(--border); }
+.transfers { padding: 4px 0; }
+.xfer { display: grid; grid-template-columns: 18px 1fr auto; gap: 4px 10px; align-items: center; padding: 7px 12px; }
+.xfer .fn { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xfer .sub { grid-column: 2 / 4; font-size: 11.5px; color: var(--muted-foreground); display: flex; gap: 10px; font-variant-numeric: tabular-nums; }
+.bar { grid-column: 2 / 4; height: 4px; border-radius: 4px; background: var(--muted); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--primary); border-radius: 4px; }
+.xfer.err .bar i { background: var(--destructive); } .xfer.err .sub { color: var(--destructive); }
+.ok { color: var(--success); }
+.seg { display: inline-flex; padding: 2px; border-radius: 8px; background: var(--muted); gap: 2px; }
+.seg span { padding: 3px 10px; border-radius: 6px; font-size: 12px; color: var(--muted-foreground); }
+.seg span.on { background: var(--surface); color: var(--foreground); box-shadow: 0 1px 2px oklch(0 0 0 / 0.08); }
+.scrim { position: fixed; inset: 0; background: var(--overlay); display: grid; place-items: center; z-index: 10; }
+.dialog { background: var(--popover); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow-overlay); width: 520px; }
+.dialog header { padding: 18px 20px 4px; }
+.dialog h2 { font-size: 15px; font-weight: 600; }
+.dialog p.lead { color: var(--muted-foreground); margin-top: 4px; }
+.dialog .body2 { padding: 14px 20px; display: grid; gap: 14px; }
+.dialog footer { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 20px 16px; }
+.dialog footer .left { margin-right: auto; }
+.field { display: grid; gap: 6px; }
+.field label { font-size: 12px; font-weight: 500; }
+.field .hint { font-size: 11.5px; color: var(--muted-foreground); }
+.input { height: 32px; border: 1px solid var(--input); border-radius: 8px; padding: 0 10px; display: flex; align-items: center; background: var(--surface); }
+.input.focus { border-color: var(--primary); box-shadow: 0 0 0 3px oklch(0.55 0.17 258 / 0.2); }
+.input .ph { color: var(--muted-foreground); }
+.row { display: grid; grid-template-columns: 1fr 96px; gap: 12px; }
+.row3 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.navtabs { display: flex; gap: 2px; padding: 12px 20px 0; border-bottom: 1px solid var(--border); }
+.navtabs span { padding: 6px 10px 9px; color: var(--muted-foreground); font-weight: 500; position: relative; }
+.navtabs span.on { color: var(--foreground); }
+.navtabs span.on::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; border-radius: 2px; background: var(--primary); }
+.fp { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--muted); display: grid; gap: 6px; }
+.fp .k { font-size: 11.5px; color: var(--muted-foreground); }
+.fp .v { font-size: 12.5px; word-break: break-all; }
+.alert { border-radius: 10px; padding: 12px 14px; display: flex; gap: 10px; background: var(--destructive-soft); color: var(--destructive); border: 1px solid color-mix(in oklch, var(--destructive) 30%, transparent); }
+.alert b { display: block; margin-bottom: 2px; }
+.alert p { color: var(--foreground); }
+.icon-badge { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--muted); color: var(--foreground); margin-bottom: 12px; }
+.icon-badge.danger { background: var(--destructive-soft); color: var(--destructive); }
+.icon-badge svg { width: 18px; height: 18px; }
+</style>
+</head>
+<body>
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-term" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="m7 9 3 3-3 3M13 15h4"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M5 12l7 7 7-7"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></symbol>
+  <symbol id="i-dock-r" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M15 4v16"/></symbol>
+  <symbol id="i-dock-b" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 14h18"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 2v6M15 2v6M6 8h12v3a6 6 0 0 1-12 0zM12 17v5"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/></symbol>
+  <symbol id="i-sync" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5.3L20 9M20 12a8 8 0 0 1-14 5.3L4 15"/><path d="M20 4v5h-5M4 20v-5h5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 5 5L20 7"/></symbol>
+</svg>
+
+<div class="window">
+  <div class="body">
+    <aside class="sidebar">
+      <div class="side-head"><b>Hosts</b><span class="icon-btn"><svg><use href="#i-plus"/></svg></span><span class="icon-btn"><svg><use href="#i-panel"/></svg></span></div>
+      <div class="search"><svg><use href="#i-search"/></svg><span>Search Hosts</span><kbd>⌘K</kbd></div>
+      <div class="group"><svg><use href="#i-chev"/></svg>Production</div>
+      <div class="host sel"><span class="avatar">AP<i class="dot" style="background:var(--success)"></i></span><div class="meta"><div class="name">api-prod-1</div><div class="addr">deploy@10.0.4.21</div></div></div>
+      <div class="host"><span class="avatar">AP</span><div class="meta"><div class="name">api-prod-2</div><div class="addr">deploy@10.0.4.22</div></div></div>
+      <div class="host"><span class="avatar">DB<i class="dot" style="background:var(--warning)"></i></span><div class="meta"><div class="name">postgres-primary</div><div class="addr">ops@db1.internal · via bastion</div></div></div>
+      <div class="group"><svg><use href="#i-chev"/></svg>Staging</div>
+      <div class="host"><span class="avatar">ST</span><div class="meta"><div class="name">staging-web</div><div class="addr">ubuntu@staging.example.dev</div></div></div>
+      <div class="host"><span class="avatar">CI</span><div class="meta"><div class="name">ci-runner-03</div><div class="addr">runner@172.16.8.3:2222</div></div></div>
+      <div class="group"><svg><use href="#i-chev"/></svg>Home lab</div>
+      <div class="host"><span class="avatar">NS</span><div class="meta"><div class="name">nas</div><div class="addr">admin@nas.lan</div></div></div>
+      <div class="host"><span class="avatar">PI</span><div class="meta"><div class="name">raspberry-pi</div><div class="addr">pi@192.168.1.40</div></div></div>
+      <div class="side-foot"><span class="btn grow"><svg><use href="#i-term"/></svg>Local terminal</span></div>
+    </aside>
+
+    <section class="main">
+      <div class="tabbar">
+        <span class="tab active"><i class="sdot" style="background:var(--success)"></i><span class="t">api-prod-1</span><span class="x"><svg><use href="#i-x"/></svg></span></span>
+        <span class="tab"><i class="sdot" style="background:var(--warning)"></i><span class="t">postgres-primary</span><span class="x"></span></span>
+        <span class="tab"><svg style="width:14px;height:14px"><use href="#i-term"/></svg><span class="t">Local terminal</span><span class="x"></span></span>
+        <span class="icon-btn" style="align-self:center;margin-left:2px"><svg><use href="#i-plus"/></svg></span>
+        <span class="spacer"></span>
+        <span class="tools"><span class="icon-btn" id="dock-btn"><svg><use href="#i-dock-b"/></svg></span><span class="icon-btn hover"><svg><use href="#i-dock-r"/></svg></span></span>
+      </div>
+      <div class="work right" id="work">
+        <div class="panel terminal mono" id="term"><span class="d">Last login: Tue Nov 17 09:12:44 2026 from 10.0.1.5</span>
+<span class="g">deploy@api-prod-1</span>:<span class="b">~/app</span>$ git log --oneline -3
+<span class="y">9c1e2fa</span> fix: retry upstream on 502
+<span class="y">47ab0d3</span> feat: rate limit per token
+<span class="y">e03b911</span> chore: bump runtime to 22.11
+<span class="g">deploy@api-prod-1</span>:<span class="b">~/app</span>$ systemctl status api --no-pager | head -4
+<span class="g">●</span> api.service - API server
+     Loaded: loaded (/etc/systemd/system/api.service; enabled)
+     Active: <span class="g">active (running)</span> since Mon 2026-11-16 22:40:03 UTC; 10h ago
+   Main PID: 48211 (node)
+<span class="g">deploy@api-prod-1</span>:<span class="b">~/app</span>$ tail -n 3 logs/access.log
+10.0.2.14 - - [17/Nov/2026:09:14:02] "GET /v2/health HTTP/1.1" 200 17
+10.0.2.14 - - [17/Nov/2026:09:14:05] "POST /v2/orders HTTP/1.1" 201 412
+10.0.2.31 - - [17/Nov/2026:09:14:05] "GET /v2/orders/8812 HTTP/1.1" <span class="m">404</span> 58
+<span class="g">deploy@api-prod-1</span>:<span class="b">~/app</span>$ <span class="cursor"> </span></div>
+        <div class="gutter"></div>
+        <div class="panel files" id="files">
+          <div class="fhead"><b>Files</b><span class="icon-btn"><svg><use href="#i-sync"/></svg></span><span class="icon-btn"><svg><use href="#i-refresh"/></svg></span><span class="icon-btn"><svg><use href="#i-x"/></svg></span></div>
+          <div class="path mono"><svg style="width:14px;height:14px;color:var(--muted-foreground)"><use href="#i-up"/></svg><span>/home/deploy/app</span></div>
+          <div class="split" id="split">
+          <div style="overflow:hidden">
+          <table>
+            <thead><tr><th>Name</th><th class="r">Size</th><th>Modified</th></tr></thead>
+            <tbody>
+              <tr><td class="n"><svg class="dir"><use href="#i-folder"/></svg>config</td><td class="q r">—</td><td class="q">Nov 12</td></tr>
+              <tr><td class="n"><svg class="dir"><use href="#i-folder"/></svg>dist</td><td class="q r">—</td><td class="q">09:01</td></tr>
+              <tr class="sel"><td class="n"><svg class="dir"><use href="#i-folder"/></svg>logs</td><td class="q r">—</td><td class="q">09:14</td></tr>
+              <tr><td class="n"><svg class="dir"><use href="#i-folder"/></svg>node_modules</td><td class="q r">—</td><td class="q">Nov 16</td></tr>
+              <tr><td class="n"><svg><use href="#i-file"/></svg>.env</td><td class="q r">1.2 KB</td><td class="q">Oct 30</td></tr>
+              <tr><td class="n"><svg><use href="#i-file"/></svg>package.json</td><td class="q r">2.4 KB</td><td class="q">Nov 16</td></tr>
+              <tr><td class="n"><svg><use href="#i-file"/></svg>pnpm-lock.yaml</td><td class="q r">318 KB</td><td class="q">Nov 16</td></tr>
+              <tr><td class="n"><svg><use href="#i-file"/></svg>README.md</td><td class="q r">6.8 KB</td><td class="q">Sep 02</td></tr>
+              <tr><td class="n"><svg><use href="#i-file"/></svg>server.js</td><td class="q r">14.1 KB</td><td class="q">Nov 16</td></tr>
+            </tbody>
+          </table>
+          </div>
+          <div class="sep" id="split-sep" style="display:none"></div>
+          <div class="transfers" id="transfers" style="display:none">
+            <div class="fhead" style="border:0;padding-top:4px"><b>Transfers</b><span class="seg"><span class="on">Active 2</span><span>Done 5</span></span></div>
+            <div class="xfer"><svg style="color:var(--primary)"><use href="#i-down"/></svg><span class="fn">access-2026-11-16.log.gz</span><span class="q" style="font-size:11.5px">62%</span><span class="bar"><i style="width:62%"></i></span><span class="sub"><span>118 MB of 190 MB</span><span>24.6 MB/s</span><span>3 s left</span></span></div>
+            <div class="xfer"><svg style="color:var(--primary)"><use href="#i-up"/></svg><span class="fn">release-1.8.2.tar.zst</span><span class="q" style="font-size:11.5px">18%</span><span class="bar"><i style="width:18%"></i></span><span class="sub"><span>9 MB of 51 MB</span><span>4.1 MB/s</span><span>11 s left</span></span></div>
+            <div class="xfer err"><svg style="color:var(--destructive)"><use href="#i-alert"/></svg><span class="fn">dump.sql</span><span class="btn ghost" style="height:24px;padding:0 8px;font-size:12px">Retry</span><span class="sub">Permission denied: /var/backups</span></div>
+            <div class="xfer"><svg class="ok"><use href="#i-check"/></svg><span class="fn">nginx.conf</span><span class="q" style="font-size:11.5px">Done</span><span class="sub"><span>4.3 KB · uploaded to /etc/nginx</span></span></div>
+          </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+  <footer class="status">
+    <span class="item"><svg style="color:var(--success)"><use href="#i-plug"/></svg>2 Connections</span>
+    <span class="item">Port forwards: 1 running</span>
+    <span class="spacer"></span>
+    <span class="item" id="xfer-status"><svg><use href="#i-down"/></svg>2 transfers · 28.7 MB/s</span>
+    <span class="item"><svg><use href="#i-sun"/></svg>System</span>
+  </footer>
+</div>
+
+<template id="t-editor">
+  <div class="scrim"><div class="dialog">
+    <header><h2>New Host</h2><p class="lead">Saved on this computer. Passwords go to the system keychain.</p></header>
+    <div class="navtabs"><span class="on">General</span><span>Authentication</span><span>Jump host</span><span>Port forwards</span></div>
+    <div class="body2">
+      <div class="field"><label>Name</label><div class="input">api-prod-3</div></div>
+      <div class="row"><div class="field"><label>Address</label><div class="input focus mono">10.0.4.23</div></div><div class="field"><label>Port</label><div class="input mono">22</div></div></div>
+      <div class="row3"><div class="field"><label>User</label><div class="input mono">deploy</div></div><div class="field"><label>Group</label><div class="input" style="justify-content:space-between">Production<svg style="color:var(--muted-foreground)"><use href="#i-chev"/></svg></div></div></div>
+      <div class="field"><label>Authentication</label><div><span class="seg"><span class="on">Password</span><span>Private key</span><span>ssh-agent</span></span></div><span class="hint">You will be asked for the password when you connect.</span></div>
+    </div>
+    <footer><span class="btn ghost left">Cancel</span><span class="btn">Save</span><span class="btn primary">Save and connect</span></footer>
+  </div></div>
+</template>
+
+<template id="t-known">
+  <div class="scrim"><div class="dialog" style="width:480px">
+    <header><span class="icon-badge"><svg><use href="#i-shield"/></svg></span><h2>Trust this host?</h2><p class="lead">This is the first connection to <b style="color:var(--foreground)">api-prod-3</b> (10.0.4.23:22). Check the fingerprint with the server’s administrator before trusting it.</p></header>
+    <div class="body2"><div class="fp"><span class="k">ED25519 key fingerprint</span><span class="v mono">SHA256:p8Yb0Qm3vF2kXh7R1tLwZ9sA4eNcU6dJ0gH5iKo2yTE</span></div></div>
+    <footer><span class="btn ghost left">Cancel</span><span class="btn primary">Trust and connect</span></footer>
+  </div></div>
+</template>
+
+<template id="t-mismatch">
+  <div class="scrim"><div class="dialog" style="width:500px">
+    <header><span class="icon-badge danger"><svg><use href="#i-alert"/></svg></span><h2>Host key changed. Connection blocked</h2><p class="lead">The key api-prod-1 (10.0.4.21:22) sent does not match the one in ~/.ssh/known_hosts.</p></header>
+    <div class="body2">
+      <div class="alert"><svg style="margin-top:1px"><use href="#i-alert"/></svg><div><b>Someone may be intercepting this connection.</b><p>It is also possible the server was reinstalled. Confirm with its administrator, then remove the old entry with <span class="mono">ssh-keygen -R</span>.</p></div></div>
+      <div class="fp"><span class="k">Expected (known_hosts, line 14)</span><span class="v mono">SHA256:Jd2kq0Pz9Lm4Xb7cYt1Wf8Hs5Nr3Ae6Vg0Ui2Ko4BQ</span><span class="k" style="margin-top:6px">Received</span><span class="v mono" style="color:var(--destructive)">SHA256:Z81mW4q0aT6sYc3Lp9Ex2Rv7Hk5Nb1Dg8Uf0Jo3Ci6M</span></div>
+    </div>
+    <footer><span class="btn primary">Close</span></footer>
+  </div></div>
+</template>
+
+<script>
+const q = new URLSearchParams(location.search);
+if (q.get("theme") === "dark") document.documentElement.classList.add("dark");
+const screen = q.get("screen") || "main";
+if (screen === "bottom") {
+  document.getElementById("work").className = "work bottom";
+  document.getElementById("term").style.borderBottomLeftRadius = "var(--radius)";
+  document.getElementById("split-sep").style.display = ""; document.getElementById("split").style.gridTemplateColumns = "1fr 1px 1fr";
+  document.getElementById("transfers").style.display = "";
+  document.querySelector(".tools .hover").classList.remove("hover");
+  document.getElementById("dock-btn").classList.add("hover");
+}
+const tpl = { editor: "t-editor", known: "t-known", mismatch: "t-mismatch" }[screen];
+if (tpl) document.body.append(document.getElementById(tpl).content.cloneNode(true));
+</script>
+</body>
+</html>

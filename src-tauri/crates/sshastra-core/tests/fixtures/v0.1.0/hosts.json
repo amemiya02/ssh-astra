@@ -1,0 +1,74 @@
+{
+  "version": 5,
+  "groups": [
+    { "id": "g-prod", "name": "Production", "parentId": null },
+    { "id": "g-db", "name": "Databases", "parentId": "g-prod" }
+  ],
+  "hosts": [
+    {
+      "id": "h-bastion",
+      "name": "bastion",
+      "address": "bastion.example.com",
+      "port": 22,
+      "user": "ops",
+      "auth": { "type": "key", "identityFile": "~/.ssh/id_ed25519" },
+      "jumpHost": null,
+      "groupId": "g-prod",
+      "forwards": [
+        {
+          "id": "f-socks",
+          "label": "SOCKS",
+          "autoStart": true,
+          "type": "dynamic",
+          "bindAddress": "127.0.0.1",
+          "bindPort": 1080
+        }
+      ]
+    },
+    {
+      "id": "h-db",
+      "name": "db-1",
+      "address": "10.0.0.12",
+      "port": 2222,
+      "user": "postgres",
+      "auth": { "type": "password" },
+      "jumpHost": "h-bastion",
+      "terminalScheme": "red-alert",
+      "defaultDirectory": "/var/lib/postgresql",
+      "groupId": "g-db",
+      "forwards": [
+        {
+          "id": "f-pg",
+          "label": "",
+          "autoStart": false,
+          "type": "local",
+          "bindAddress": "127.0.0.1",
+          "bindPort": 15432,
+          "remoteHost": "localhost",
+          "remotePort": 5432
+        },
+        {
+          "id": "f-web",
+          "label": "dev server",
+          "autoStart": false,
+          "type": "remote",
+          "bindAddress": "localhost",
+          "bindPort": 9000,
+          "localHost": "127.0.0.1",
+          "localPort": 3000
+        }
+      ]
+    },
+    {
+      "id": "h-pi",
+      "name": "pi",
+      "address": "raspberrypi.local",
+      "port": 22,
+      "user": "pi",
+      "auth": { "type": "password" },
+      "jumpHost": null,
+      "groupId": null,
+      "forwards": []
+    }
+  ]
+}
