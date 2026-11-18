@@ -9,7 +9,7 @@ import { LocalTerminalView } from "@/features/terminal/LocalTerminalView";
 import { terminalCwds } from "@/features/files/terminalCwds";
 import { RemoteTerminalView } from "@/features/terminal/RemoteTerminalView";
 import { cn } from "@/lib/utils";
-import { tabId, tabPanelId, type ConnectionStatus, type Pane, type Tab } from "./tabs";
+import { tabId, tabPanelId, type ConnectionStatus, type Pane, type ReconnectProgress, type Tab } from "./tabs";
 
 interface TabPanelsProps {
   tabs: Tab[];
@@ -18,7 +18,7 @@ interface TabPanelsProps {
   onFocusPane(paneId: string): void;
   /** A program in the pane set its title (empty string clears it). */
   onTitleChange(paneId: string, title: string): void;
-  onStatusChange(paneId: string, status: ConnectionStatus): void;
+  onStatusChange(paneId: string, status: ConnectionStatus, reconnecting?: ReconnectProgress): void;
 }
 
 /**
@@ -110,7 +110,7 @@ function PaneContent({
           host={pane.host}
           active={active}
           onTitleChange={(title) => onTitleChange(pane.id, title)}
-          onStatusChange={(status) => onStatusChange(pane.id, status)}
+          onStatusChange={(status, reconnecting) => onStatusChange(pane.id, status, reconnecting)}
           onCwd={(path) => terminalCwds.report(pane.id, path)}
           onTerminal={(id) => terminalCwds.attach(pane.id, id)}
         />

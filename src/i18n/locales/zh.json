@@ -377,6 +377,7 @@
   "status": {
     "noConnections": "没有连接",
     "connectedTo": "已连接：{{hosts}}",
+    "reconnecting": "正在重新连接 {{host}}（{{attempt}}/{{attempts}}）",
     "forwards": "端口转发：{{list}}",
     "forwardsLocal": "{{from}} → {{to}}",
     "forwardsRemote": "Host 上 {{from}} → {{to}}",

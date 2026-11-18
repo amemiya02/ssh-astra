@@ -377,6 +377,7 @@
   "status": {
     "noConnections": "No Connections",
     "connectedTo": "Connected to {{hosts}}",
+    "reconnecting": "Reconnecting to {{host}} ({{attempt}}/{{attempts}})",
     "forwards": "Port forwards: {{list}}",
     "forwardsLocal": "{{from}} → {{to}}",
     "forwardsRemote": "on the Host {{from}} → {{to}}",

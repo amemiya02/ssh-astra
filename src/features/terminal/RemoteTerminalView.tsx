@@ -12,7 +12,7 @@ import {
 } from "@/lib/ipc/connect";
 import type { Host } from "@/lib/ipc/hosts";
 import { reconnectTerminal, type ConnectionState, type TerminalId } from "@/lib/ipc/terminal";
-import type { ConnectionStatus } from "@/features/workspace/tabs";
+import type { ConnectionStatus, ReconnectProgress } from "@/features/workspace/tabs";
 import { isTerminalColorScheme } from "@/theme/terminal-themes";
 import { TerminalSurface, type OpenTerminal } from "./TerminalSurface";
 
@@ -37,7 +37,7 @@ interface RemoteTerminalViewProps {
    * Connecting until the shell runs, then connected; disconnected once it ends or the connect fails.
    * After the Connection drops: connecting while it reconnects, disconnected once the tries give up.
    */
-  onStatusChange?(status: ConnectionStatus): void;
+  onStatusChange?(status: ConnectionStatus, reconnecting?: ReconnectProgress): void;
   /** Its shell reported its directory (ShellIntegration, or when asked with `reportTerminalCwd`). */
   onCwd?(path: string): void;
   /** Its Terminal opened (`null`: it ended). */
@@ -96,7 +96,10 @@ export function RemoteTerminalView({
           if (event.type !== "connection") return onEvent(event);
           const state = event.state;
           setLost(state.state === "connected" ? null : state);
-          onStatusChangeRef.current?.(statusAfterDrop[state.state]);
+          onStatusChangeRef.current?.(
+            statusAfterDrop[state.state],
+            state.state === "reconnecting" ? { attempt: state.attempt, attempts: state.attempts } : undefined,
+          );
         },
         (prompt) => new Promise((resolve) => show({ prompt, resolve })),
       );

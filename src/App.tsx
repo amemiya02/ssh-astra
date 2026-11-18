@@ -23,11 +23,13 @@ import {
   connectedHosts,
   emptyTabs,
   newPane,
+  reconnectingHosts,
   remoteTerminalPaneIds,
   tabTitle,
   tabsReducer,
   type ConnectionStatus,
   type PaneKind,
+  type ReconnectProgress,
   type SplitOrientation,
   type TabsState,
 } from "@/features/workspace/tabs";
@@ -71,7 +73,8 @@ export function App() {
   }, []);
   const retitle = useCallback((paneId: string, title: string) => dispatch({ type: "retitle", paneId, title }), []);
   const setStatus = useCallback(
-    (paneId: string, status: ConnectionStatus) => dispatch({ type: "status", paneId, status }),
+    (paneId: string, status: ConnectionStatus, reconnecting?: ReconnectProgress) =>
+      dispatch({ type: "status", paneId, status, reconnecting }),
     [],
   );
 
@@ -171,6 +174,7 @@ export function App() {
   const running = runningForwards({ states: forwardStates });
   const connected = activeConnections(connectedHosts(state), running, hosts, held);
   const forwards = runningRules(running, hosts).map(({ rule }) => forwardStatusText(rule, t));
+  const reconnecting = reconnectingHosts(state);
   // "Connect only" Hosts can be disconnected from the palette.
   const heldHosts = useMemo(() => hosts.filter((host) => held.includes(host.id)), [hosts, held]);
   usePaletteActions(
@@ -236,6 +240,15 @@ export function App() {
                 ? t("status.noConnections")
                 : t("status.connectedTo", { hosts: connected.map((host) => host.name).join(", ") })}
             </span>
+            {reconnecting.length > 0 && (
+              <span className="truncate">
+                {reconnecting
+                  .map(({ host, attempt, attempts }) =>
+                    t("status.reconnecting", { host: host.name, attempt, attempts }),
+                  )
+                  .join(", ")}
+              </span>
+            )}
             {forwards.length > 0 && (
               <span className="truncate">{t("status.forwards", { list: forwards.join(", ") })}</span>
             )}

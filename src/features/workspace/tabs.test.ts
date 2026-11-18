@@ -3,6 +3,7 @@ import type { Host } from "@/lib/ipc/hosts";
 import {
   connectedHosts,
   emptyTabs,
+  reconnectingHosts,
   newPane,
   tabsReducer,
   tabStatus,
@@ -240,6 +241,38 @@ describe("connectedHosts", () => {
     };
     expect(connectedHosts(state).map((h) => h.name)).toEqual(["web-1", "db-1"]);
     expect(connectedHosts(emptyTabs)).toEqual([]);
+  });
+});
+
+describe("reconnectingHosts", () => {
+  it("lists each Host whose Terminal is retrying its Connection once, with how far the retries are", () => {
+    const web = host("web", "web-1");
+    const db = host("db", "db-1");
+    let state: TabsState = {
+      tabs: [
+        tab("a", [remote("a.1", web, "connected"), remote("a.2", web, "connected")]),
+        tab("b", [remote("b.1", db, "connected")]),
+      ],
+      activeId: "a",
+    };
+    expect(reconnectingHosts(state)).toEqual([]);
+
+    state = tabsReducer(state, { type: "status", paneId: "a.1", status: "connecting", reconnecting: { attempt: 1, attempts: 3 } });
+    state = tabsReducer(state, { type: "status", paneId: "a.2", status: "connecting", reconnecting: { attempt: 2, attempts: 3 } });
+    expect(reconnectingHosts(state)).toEqual([{ host: web, attempt: 2, attempts: 3 }]);
+
+    // Back up: no longer listed.
+    state = tabsReducer(state, { type: "status", paneId: "a.1", status: "connected" });
+    state = tabsReducer(state, { type: "status", paneId: "a.2", status: "connected" });
+    expect(reconnectingHosts(state)).toEqual([]);
+  });
+
+  it("drops a Host once its retries give up", () => {
+    const web = host("web", "web-1");
+    let state: TabsState = { tabs: [tab("a", [remote("a.1", web, "connected")])], activeId: "a" };
+    state = tabsReducer(state, { type: "status", paneId: "a.1", status: "connecting", reconnecting: { attempt: 3, attempts: 3 } });
+    state = tabsReducer(state, { type: "status", paneId: "a.1", status: "disconnected" });
+    expect(reconnectingHosts(state)).toEqual([]);
   });
 });
 

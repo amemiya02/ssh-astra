@@ -36,7 +36,14 @@ export type Pane = {
   title?: string;
   /** Remote Terminals only. */
   status?: ConnectionStatus;
+  /** While a dropped Connection is retried: which try this is, of how many. */
+  reconnecting?: ReconnectProgress;
 } & PaneKind;
+
+export interface ReconnectProgress {
+  attempt: number;
+  attempts: number;
+}
 
 /** `horizontal` lays panes out left to right, `vertical` top to bottom. */
 export type SplitOrientation = "horizontal" | "vertical";
@@ -66,7 +73,7 @@ export type TabsAction =
   | { type: "cyclePane"; step: 1 | -1 }
   | { type: "closePane"; paneId: string }
   | { type: "retitle"; paneId: string; title: string }
-  | { type: "status"; paneId: string; status: ConnectionStatus };
+  | { type: "status"; paneId: string; status: ConnectionStatus; reconnecting?: ReconnectProgress };
 
 export const emptyTabs: TabsState = { tabs: [], activeId: null };
 
@@ -99,6 +106,17 @@ export function connectedHosts(state: TabsState): Host[] {
     if (pane.kind === "remote-terminal" && pane.status === "connected" && !hosts.has(pane.host.id)) {
       hosts.set(pane.host.id, pane.host);
     }
+  }
+  return [...hosts.values()];
+}
+
+/** Hosts whose Terminals are retrying a dropped Connection, each once with its furthest try, in tab order. */
+export function reconnectingHosts(state: TabsState): ({ host: Host } & ReconnectProgress)[] {
+  const hosts = new Map<string, { host: Host } & ReconnectProgress>();
+  for (const pane of state.tabs.flatMap((tab) => tab.panes)) {
+    if (pane.kind !== "remote-terminal" || !pane.reconnecting) continue;
+    const seen = hosts.get(pane.host.id);
+    if (!seen || pane.reconnecting.attempt > seen.attempt) hosts.set(pane.host.id, { host: pane.host, ...pane.reconnecting });
   }
   return [...hosts.values()];
 }
@@ -206,7 +224,11 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
       return updatePane(state, action.paneId, (pane) => ({ ...pane, title }));
     }
     case "status":
-      return updatePane(state, action.paneId, (pane) => ({ ...pane, status: action.status }));
+      return updatePane(state, action.paneId, (pane) => ({
+        ...pane,
+        status: action.status,
+        reconnecting: action.reconnecting,
+      }));
   }
 }
 
