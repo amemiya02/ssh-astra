@@ -71,14 +71,15 @@ export function FileBrowser({
   const [operation, setOperation] = useState<FileOperation | null>(null);
   return (
     <div className="@container flex h-full flex-col">
-      <PathBar key={path ?? ""} store={store} onOperation={setOperation} />
+      {/* Sibling keys must differ: PathBar and FileTable sharing the path as key made React keep the old path bar. */}
+      <PathBar key={`path:${path ?? ""}`} store={store} onOperation={setOperation} />
       {error && path !== null && (
         <p role="alert" className="text-destructive px-3 pb-1.5 text-xs">
           {errorText(t, error, hostName)}
         </p>
       )}
       {/* Keyed by path: a new directory starts scrolled to the top with nothing focused. */}
-      {path !== null && <FileTable key={path} store={store} path={path} onOperation={setOperation} onDownload={onDownload} />}
+      {path !== null && <FileTable key={`table:${path}`} store={store} path={path} onOperation={setOperation} onDownload={onDownload} />}
       {operation && <FileOperationDialog store={store} operation={operation} onClose={() => setOperation(null)} />}
     </div>
   );

@@ -9,17 +9,23 @@ import { emptyTabs, newPane, remoteTerminalPaneIds, tabsReducer, type TabsState 
 import { FilePanelDockContext } from "@/features/shell/file-panel-dock";
 import { FilePanelContent } from "./FilePanelContent";
 import { fileBrowsers } from "./fileBrowsers";
+import { terminalCwds } from "./terminalCwds";
 
 // The real File panels (`fileBrowsers`) over fake SFTP and remote edit commands.
 vi.mock("@/lib/ipc/files", () => ({
   openFiles: vi.fn(() => Promise.resolve(1)),
-  listFiles: vi.fn(() => Promise.resolve({ path: "/etc", entries: [] })),
+  listFiles: vi.fn((_id: number, path: string) => Promise.resolve({ path: path || "/etc", entries: [] })),
   closeFiles: vi.fn(() => Promise.resolve()),
   createDir: vi.fn(),
   renameFile: vi.fn(),
   countFiles: vi.fn(),
   deleteFiles: vi.fn(),
   chmodFile: vi.fn(),
+}));
+// No native window to drop files on.
+vi.mock("@/lib/ipc/transfers", async (original) => ({
+  ...(await original<typeof import("@/lib/ipc/transfers")>()),
+  onOsFileDrag: vi.fn(() => Promise.resolve(() => {})),
 }));
 vi.mock("@/lib/ipc/edit", () => ({
   maxEditSize: 10 * 1024 * 1024,
@@ -44,6 +50,11 @@ let root: Root | null = null;
 
 beforeAll(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  globalThis.ResizeObserver ??= class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
   startI18n();
 });
 
@@ -106,5 +117,30 @@ describe("closing a Terminal", () => {
 
     expect(closeRemoteEdit).toHaveBeenCalledWith(2);
     expect(fileBrowsers.find(b.id)).toBeUndefined();
+  });
+});
+
+describe("a File panel following its Terminal's cd", () => {
+  it("shows one path bar, for the new folder", async () => {
+    const pane = newPane({ kind: "remote-terminal", host });
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () =>
+      root!.render(
+        <FilePanelDockContext value={{ dock: "right", collapsed: false, collapse() {} }}>
+          <TooltipProvider>
+            <FilePanelContent pane={{ id: pane.id, host, status: "connected" }} remotePaneIds={[pane.id]} />
+          </TooltipProvider>
+        </FilePanelDockContext>,
+      ),
+    );
+    const pathBars = () => [...container.querySelectorAll<HTMLInputElement>('input[aria-label="Path"]')];
+    expect(pathBars().map((input) => input.value)).toEqual(["/etc"]);
+
+    await act(async () => terminalCwds.report(pane.id, "/srv/www"));
+
+    expect(pathBars().map((input) => input.value)).toEqual(["/srv/www"]);
+    container.remove();
   });
 });
