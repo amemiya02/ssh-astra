@@ -22,6 +22,7 @@
 //! reconnects and starts a new shell.
 
 mod auth;
+mod handshake;
 mod held;
 mod remote_listen;
 mod remote_terminal;
@@ -55,6 +56,11 @@ use crate::terminal::{TerminalEvent, TerminalSize};
 use shell::ShellEvent;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+/// How long the SSH handshake and authentication may wait on the server, not
+/// counting time the user spends answering prompts.
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(20);
+/// Unanswered keepalives in a row that drop a Connection.
+const KEEPALIVE_MAX: usize = 3;
 const DEFAULT_KEEPALIVE_SECONDS: u32 = 30;
 
 /// The `connection` section of the settings file, as the core reads it.
@@ -267,6 +273,7 @@ pub struct ConnectionManager {
     vault: Arc<dyn CredentialVault>,
     /// Read when a Connection opens; changing it leaves open ones as they are.
     keepalive_interval: Mutex<Option<Duration>>,
+    handshake_timeout: Duration,
     slots: Mutex<HashMap<HostId, Arc<Slot>>>,
     /// Each Host's shared SFTP session ([`Self::live_sftp`]), kept only while
     /// something holds it and tied to the Connection it was opened on.
@@ -288,6 +295,7 @@ impl ConnectionManager {
             agent: Agent::None,
             vault: Arc::new(NoVault),
             keepalive_interval: Mutex::new(ConnectionSettings::default().keepalive_interval()),
+            handshake_timeout: HANDSHAKE_TIMEOUT,
             slots: Mutex::default(),
             sftp: tokio::sync::Mutex::default(),
         }
@@ -308,6 +316,14 @@ impl ConnectionManager {
         self
     }
 
+    /// How long the SSH handshake and authentication of each hop may wait on
+    /// the server (20 s by default); time spent in prompts does not count.
+    /// Running out fails the connect with [`ConnectError::TimedOut`].
+    pub fn with_handshake_timeout(mut self, timeout: Duration) -> Self {
+        self.handshake_timeout = timeout;
+        self
+    }
+
     /// How often Connections opened from now on send a keepalive when
     /// nothing else arrives (`None`: never). Three unanswered keepalives in a
     /// row drop the Connection.
@@ -325,8 +341,11 @@ impl ConnectionManager {
             .unwrap_or_else(|p| p.into_inner());
         Arc::new(client::Config {
             keepalive_interval,
-            keepalive_max: 3,
-            inactivity_timeout: None,
+            keepalive_max: KEEPALIVE_MAX,
+            // A backstop behind the keepalives (which a live server answers):
+            // nothing at all received for this long drops the Connection.
+            // Off with keepalives off, so an idle Connection stays.
+            inactivity_timeout: keepalive_interval.map(|k| k * (KEEPALIVE_MAX as u32 + 2)),
             nodelay: true,
             ..Default::default()
         })
@@ -460,13 +479,36 @@ impl ConnectionManager {
         Arc::clone(slots.entry(id.clone()).or_default())
     }
 
-    /// Runs SSH to `host` over `stream`: host key check, then authentication.
+    /// Runs SSH to `host` over `stream`: host key check, then authentication,
+    /// within the handshake timeout (which stops while a prompt is open).
     async fn establish<S>(
         &self,
         host: &Host,
         stream: S,
         prompter: Arc<dyn Prompter>,
         via: Option<Arc<Connection>>,
+    ) -> Result<Connection, ConnectError>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
+        let deadline = handshake::Deadline::new(self.handshake_timeout);
+        let prompter: Arc<dyn Prompter> = Arc::new(handshake::Paused {
+            inner: prompter,
+            deadline: Arc::clone(&deadline),
+        });
+        let work = self.handshake(host, stream, prompter, via, Arc::clone(&deadline));
+        handshake::within(&deadline, work)
+            .await
+            .unwrap_or(Err(ConnectError::TimedOut))
+    }
+
+    async fn handshake<S>(
+        &self,
+        host: &Host,
+        stream: S,
+        prompter: Arc<dyn Prompter>,
+        via: Option<Arc<Connection>>,
+        deadline: Arc<handshake::Deadline>,
     ) -> Result<Connection, ConnectError>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -495,6 +537,7 @@ impl ConnectionManager {
             &self.agent,
             &self.vault,
             prompter.as_ref(),
+            deadline,
         )
         .await?;
         Ok(Connection {

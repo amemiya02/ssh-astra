@@ -19,6 +19,7 @@ use russh::keys::agent::AgentIdentity;
 use russh::keys::{HashAlg, PrivateKey, PrivateKeyWithHashAlg};
 use russh::{AgentAuthError, MethodKind, MethodSet};
 
+use super::handshake::Deadline;
 use super::{
     ConnectError, KeyboardInteractivePrompt, KeyboardInteractiveQuestion, PassphrasePrompt,
     PasswordPrompt, Prompter,
@@ -92,6 +93,8 @@ enum Step {
 struct Saved {
     vault: Arc<dyn CredentialVault>,
     host: HostId,
+    /// Stopped while the vault is asked: a keychain dialog is a prompt too.
+    deadline: Arc<Deadline>,
 }
 
 impl Saved {
@@ -105,6 +108,7 @@ impl Saved {
     ) -> Option<T> {
         let vault = Arc::clone(&self.vault);
         let host = self.host.clone();
+        let _pause = self.deadline.pause();
         tokio::task::spawn_blocking(move || f(vault.as_ref(), &host))
             .await
             .ok()
@@ -142,6 +146,7 @@ pub(super) async fn authenticate<H: client::Handler>(
     agent: &Agent,
     vault: &Arc<dyn CredentialVault>,
     prompter: &dyn Prompter,
+    deadline: Arc<Deadline>,
 ) -> Result<(), ConnectError> {
     let allowed = match handle.authenticate_none(&host.user).await? {
         AuthResult::Success => return Ok(()),
@@ -156,6 +161,7 @@ pub(super) async fn authenticate<H: client::Handler>(
         saved: Saved {
             vault: Arc::clone(vault),
             host: host.id.clone(),
+            deadline,
         },
         allowed,
     };

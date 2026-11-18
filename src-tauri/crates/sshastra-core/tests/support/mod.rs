@@ -52,6 +52,8 @@ pub enum Service {
     /// A target only `tests/reconnect.rs` uses: it kills and freezes the
     /// server to drop Connections. Tests using it must not run concurrently.
     Flaky,
+    /// Accepts TCP but never speaks SSH (no banner).
+    Silent,
 }
 
 impl Service {
@@ -63,6 +65,7 @@ impl Service {
             Service::KbdInt => "kbdint",
             Service::Counted => "counted",
             Service::Flaky => "flaky",
+            Service::Silent => "silent",
         }
     }
 }

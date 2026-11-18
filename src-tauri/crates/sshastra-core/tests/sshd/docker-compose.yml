@@ -22,6 +22,8 @@
 #   flaky     published: only the reconnect tests use it; they kill its
 #             connections (`Sshd::drop_connections`) and freeze it
 #             (`Sshd::pause`) to make Connections drop.
+#   silent    published: accepts TCP connections on port 22 but never says
+#             anything (no SSH banner), for the handshake timeout test.
 #   echo      on the public network only, not published: a TCP echo server
 #             on port 7777 (`support::ECHO`), the target of Port forward
 #             tests, reached through an sshd as `echo:7777`.
@@ -105,6 +107,17 @@ services:
     hostname: flaky
     ports: ["127.0.0.1::22"]
     networks: [public]
+  silent:
+    <<: *sshd
+    hostname: silent
+    ports: ["127.0.0.1::22"]
+    networks: [public]
+    command: [socat, "TCP-LISTEN:22,fork,reuseaddr", "SYSTEM:sleep 3600"]
+    healthcheck:
+      test: [CMD, bash, -c, "exec 3<>/dev/tcp/127.0.0.1/22"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
 
 networks:
   public: {}
