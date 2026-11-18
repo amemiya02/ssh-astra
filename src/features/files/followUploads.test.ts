@@ -17,7 +17,7 @@ const upload = (id: number, target: string, state: Transfer["state"]): Transfer 
   filesTotal: 0,
 });
 
-async function setup() {
+async function setup(direction?: Transfer["direction"]) {
   const listFiles = vi.fn<FilesApi["listFiles"]>((_id, path) =>
     Promise.resolve({ path: path === "" ? "/home/me" : path, entries: [] }),
   );
@@ -29,7 +29,7 @@ async function setup() {
   const panel = createFileBrowserStore(api, "host-1");
   await panel.getState().connect();
   const transfers = createStore<{ transfers: Transfer[] }>()(() => ({ transfers: [] }));
-  const stop = followUploads(panel, transfers);
+  const stop = followUploads(panel, transfers, direction);
   listFiles.mockClear();
   const push = (...list: Transfer[]) => transfers.setState({ transfers: list });
   return { listFiles, push, stop };
@@ -60,6 +60,12 @@ describe("followUploads", () => {
     });
 
     expect(listFiles).not.toHaveBeenCalled();
+  });
+
+  it("can refresh the local listing when a download into its current folder finishes", async () => {
+    const { listFiles, push } = await setup("download");
+    push({ ...upload(1, "/home/me/a.txt", { type: "done" }), direction: "download" });
+    expect(listFiles).toHaveBeenCalledExactlyOnceWith(1, "/home/me");
   });
 
   it("stops following when asked", async () => {

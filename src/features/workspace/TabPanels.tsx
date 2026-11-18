@@ -6,6 +6,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/componen
 import { PortForwardsPanel } from "@/features/forwards/PortForwardsPanel";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { LocalTerminalView } from "@/features/terminal/LocalTerminalView";
+import { SftpWorkspace } from "@/features/files/SftpWorkspace";
 import { terminalCwds } from "@/features/files/terminalCwds";
 import { RemoteTerminalView } from "@/features/terminal/RemoteTerminalView";
 import { cn } from "@/lib/utils";
@@ -115,6 +116,8 @@ function PaneContent({
           onTerminal={(id) => terminalCwds.attach(pane.id, id)}
         />
       );
+    case "sftp":
+      return <SftpWorkspace id={pane.id} host={pane.host} active={active} onStatusChange={onStatusChange} />;
     case "settings":
       return <SettingsPage />;
     case "port-forwards":

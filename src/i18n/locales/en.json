@@ -100,7 +100,22 @@
       "importFailed": "Could not import the file: {{message}}"
     }
   },
+  "sftp": {
+    "open": "Open SFTP workspace",
+    "chooseHost": "Choose a host for SFTP",
+    "noHosts": "Add a host to open an SFTP workspace.",
+    "local": "Local files",
+    "loadingLocal": "Opening local files…",
+    "home": "Home directory",
+    "filter": "Filter this folder",
+    "noMatches": "No matching files",
+    "uploadSelection": "Upload to host",
+    "downloadSelection": "Download here",
+    "localUnavailable": "Open a local folder to download the file.",
+    "invalidName": "This name is reserved or contains characters Windows does not allow."
+  },
   "tabs": {
+    "sftp": "SFTP",
     "listLabel": "Open tabs",
     "localTerminal": "Local terminal",
     "newLocalTerminal": "New Local terminal",
@@ -150,6 +165,7 @@
     "up": "Up one folder",
     "refresh": "Refresh",
     "syncToTerminal": "Sync to Terminal folder",
+    "goToPath": "Go to path",
     "path": "Path",
     "copyPath": "Copy path",
     "showHidden": "Show hidden files",

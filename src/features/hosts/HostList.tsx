@@ -24,6 +24,7 @@ import { RowContextMenu, RowMoreMenu, type MenuEntry } from "./RowMenu";
 /** What the user can do to rows; HostsPanel owns the dialogs and the store calls. */
 export interface HostListActions {
   open(host: Host): void;
+  openSftp(host: Host): void;
   openForwards(host: Host): void;
   /** "Connect only": a Connection with no Terminal (and its auto-start Port forwards). */
   connectOnly(host: Host): void;
@@ -154,6 +155,7 @@ export function HostList({ tree, nodes, searching, selected, onSelect, renamingG
         const host = node.host;
         const entries: MenuEntry[] = [
           { type: "item", label: t("hosts.open"), icon: <SquareTerminal />, onSelect: () => actions.open(host) },
+          { type: "item", label: t("sftp.open"), icon: <ArrowRightLeft />, onSelect: () => actions.openSftp(host) },
           actions.isHeld(host)
             ? { type: "item", label: t("hosts.disconnect"), icon: <Unplug />, onSelect: () => actions.disconnect(host) }
             : { type: "item", label: t("hosts.connectOnly"), icon: <PlugZap />, onSelect: () => actions.connectOnly(host) },

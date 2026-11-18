@@ -1,12 +1,22 @@
 //! File panel commands: an SFTP session per File panel, over the Host's
-//! existing Connection (the one its Terminal opened). These never connect.
+//! existing Connection or a connection opened by the SFTP workspace.
 
 use std::sync::Arc;
 
-use sshastra_core::files::{self, FsId, FsRegistry, Listing, OpenRemote, RemoteFs};
+use sshastra_core::edit::Opener;
+use sshastra_core::files::{
+    self, DiskBrowser, FsError, FsId, FsRegistry, Listing, OpenRemote, RemoteFs,
+};
 use sshastra_core::hosts::HostId;
 use sshastra_core::ssh::ConnectionManager;
+use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
+
+use crate::prompts::{ChannelPrompter, PendingPrompts, PromptRequest};
+
+use super::connections::connect_host;
+use super::edit::SystemOpener;
+use super::hosts::HostsState;
 
 use crate::error::{CommandError, CommandResult};
 
@@ -20,6 +30,54 @@ pub async fn files_open(
 ) -> CommandResult<FsId> {
     let fs = connections.open_sftp(&host_id).await?;
     Ok(registry.insert(Arc::new(fs)))
+}
+
+/// Opens the workspace's own SFTP session. It holds the connection without a terminal.
+#[tauri::command]
+pub async fn files_connect(
+    app: AppHandle,
+    hosts: State<'_, HostsState>,
+    pending: State<'_, Arc<PendingPrompts>>,
+    registry: State<'_, FsRegistry>,
+    host_id: HostId,
+    on_prompt: Channel<PromptRequest>,
+) -> CommandResult<FsId> {
+    let mut hops = hosts.with(|store| Ok(store.jump_chain(&host_id)?))?;
+    let host = hops.pop().expect("a jump chain ends with the Host itself");
+    let prompter = Arc::new(ChannelPrompter {
+        pending: Arc::clone(&pending),
+        channel: on_prompt,
+    });
+    let connection = connect_host(&app, &hops, &host, prompter).await?;
+    Ok(registry.insert(Arc::new(connection.open_sftp().await?)))
+}
+
+#[tauri::command]
+pub fn files_local_open(app: AppHandle, registry: State<'_, FsRegistry>) -> CommandResult<FsId> {
+    let home = app
+        .path()
+        .home_dir()
+        .map_err(|e| FsError::Io(e.to_string()))?;
+    Ok(registry.insert(Arc::new(DiskBrowser::new(home))))
+}
+
+#[tauri::command]
+pub async fn files_local_delete(app: AppHandle, paths: Vec<String>) -> CommandResult<()> {
+    let home = app
+        .path()
+        .home_dir()
+        .map_err(|e| FsError::Io(e.to_string()))?;
+    let disk = DiskBrowser::new(home);
+    for path in paths {
+        disk.remove(&path).await?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn files_local_open_path(path: std::path::PathBuf) -> CommandResult<()> {
+    // Pass a native filesystem path to the system's default application.
+    Ok(SystemOpener.open(&path).map_err(FsError::Io)?)
 }
 
 /// The Host's shared SFTP session on its live Connection

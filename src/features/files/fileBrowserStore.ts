@@ -107,6 +107,7 @@ export function createFileBrowserStore(
   api: FilesApi,
   hostId: HostId,
   startPath?: string | null,
+  local?: { openPath(path: string): Promise<void>; windows: boolean },
 ): StoreApi<FileBrowserState> {
   let fsId: FsId | null = null;
   let opening: Promise<void> | null = null;
@@ -203,6 +204,15 @@ export function createFileBrowserStore(
       return failure;
     };
 
+    const invalidName = (name: string): CommandError | null =>
+      local?.windows && (
+        /[\\:<>|?*"]/.test(name) ||
+        /[. ]$/.test(name) ||
+        /^(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?: *\.|$)/i.test(name)
+      )
+        ? { kind: "invalidName", message: name }
+        : null;
+
     return {
       phase: "closed",
       edits: [],
@@ -228,25 +238,37 @@ export function createFileBrowserStore(
             set({ phase: "open" });
             const first = get().path === null;
             await list(get().path ?? startPath ?? "", true);
-            if (first && startPath && get().path === null) await list("", true);
+            const missing = get().error?.kind === "notFound" || get().error?.kind === "notADirectory";
+            if (mine === openGeneration && ((first && startPath && get().path === null) || (!first && missing))) {
+              await list("", true);
+            }
           } catch (e) {
             if (mine === openGeneration) set({ phase: "closed", error: readCommandError(e) });
           } finally {
-            opening = null;
+            if (mine === openGeneration) opening = null;
           }
         })();
         return opening;
       },
 
       navigate: (path) => list(path, false),
-      up: () => list(parentPath(get().path ?? "/"), false),
+      up: () => {
+        const path = get().path ?? "/";
+        return list(local ? childPath(path, "..") : parentPath(path), false);
+      },
       refresh: () => list(get().path ?? "", true),
       async open(entry) {
         const dir = get().path;
         if (dir === null) return;
         const path = childPath(dir, entry.name);
         if (isDirLike(entry)) await list(path, false);
-        else if (entry.kind === "file" && entry.size > maxEditSize && !get().edits.some((e) => e.path === path)) {
+        else if (local && isFileLike(entry)) {
+          try {
+            await local.openPath(path);
+          } catch (e) {
+            if (get().path === dir) set({ error: readCommandError(e) });
+          }
+        } else if (entry.kind === "file" && entry.size > maxEditSize && !get().edits.some((e) => e.path === path)) {
           set({ editQuestion: { path, name: entry.name, reason: "tooLarge" } });
         } else if (isFileLike(entry)) await startEdit(path);
       },
@@ -301,9 +323,9 @@ export function createFileBrowserStore(
         set({ selection: new Set([name]) });
       },
 
-      createFolder: (name) => operate((id, dir) => api.createDir(id, childPath(dir, name)), name),
-      rename: (name, newName) =>
-        operate((id, dir) => api.renameFile(id, childPath(dir, name), childPath(dir, newName)), newName),
+      createFolder: async (name) => invalidName(name) ?? operate((id, dir) => api.createDir(id, childPath(dir, name)), name),
+      rename: async (name, newName) =>
+        invalidName(newName) ?? operate((id, dir) => api.renameFile(id, childPath(dir, name), childPath(dir, newName)), newName),
       async countForDelete(names) {
         const dir = get().path;
         if (fsId === null || dir === null) return { error: notOpen };

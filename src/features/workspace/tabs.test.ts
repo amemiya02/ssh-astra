@@ -277,7 +277,7 @@ describe("reconnectingHosts", () => {
 });
 
 describe("tabTitle", () => {
-  const names = { "tabs.localTerminal": "Local terminal", "tabs.settings": "Settings", "tabs.portForwards": "Port forwards" };
+  const names = { "tabs.localTerminal": "Local terminal", "tabs.settings": "Settings", "tabs.portForwards": "Port forwards", "tabs.sftp": "SFTP" };
   const t = (key: keyof typeof names) => names[key];
 
   it("names the Settings tab", () => {
@@ -299,6 +299,19 @@ describe("tabTitle", () => {
     expect(tabTitle(tab("f", [{ id: "f.1", kind: "port-forwards", host: host("h", "web-1") }]), t, 1)).toBe(
       "Port forwards · web-1",
     );
+  });
+
+  it("reuses the standalone SFTP tab for a Host and keeps it separate from its Terminal", () => {
+    const web = host("web", "web-1");
+    const terminal = remote("r.1", web, "connected");
+    const files = newPane({ kind: "sftp", host: web }, "f.1");
+    let state = tabsReducer(emptyTabs, { type: "open", tabId: "terminal", pane: terminal });
+    state = tabsReducer(state, { type: "open", tabId: "files", pane: files });
+    state = tabsReducer(state, { type: "activate", id: "terminal" });
+    state = tabsReducer(state, { type: "open", tabId: "duplicate", pane: newPane({ kind: "sftp", host: web }) });
+    expect(state.tabs.map(({ id }) => id)).toEqual(["terminal", "files"]);
+    expect(state.activeId).toBe("files");
+    expect(tabTitle(state.tabs[1]!, t, 1)).toBe("SFTP · web-1");
   });
 
   it("names a remote Terminal after its Host", () => {

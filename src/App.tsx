@@ -1,9 +1,11 @@
 import { isTauri } from "@tauri-apps/api/core";
-import { ArrowDownUp } from "lucide-react";
+import { ArrowDownUp, Server } from "lucide-react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { connectionsStore, useConnections } from "@/features/connect/connectionsStore";
+import { CommandDialog, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { FilePanelContent, type FilePanelPane } from "@/features/files/FilePanelContent";
+import { useRetainRemoteFilePanels } from "@/features/files/use-retain-remote-file-panels";
 import { formatSize } from "@/features/files/fileList";
 import { forwardsStore, runningForwards, useForwards } from "@/features/forwards/forwardsStore";
 import { activeConnections, forwardStatusText, runningRules } from "@/features/forwards/status";
@@ -71,6 +73,12 @@ export function App() {
     },
     [openTab],
   );
+  const openSftp = useCallback((host: Host) => {
+    rememberHostOpened(host.id);
+    openTab({ kind: "sftp", host });
+  }, [openTab]);
+  const [sftpPickerOpen, setSftpPickerOpen] = useState(false);
+  const pickSftpHost = useCallback(() => setSftpPickerOpen(true), []);
   const openSettings = useCallback(() => openTab({ kind: "settings" }), [openTab]);
   const openForwards = useCallback((host: Host) => openTab({ kind: "port-forwards", host }), [openTab]);
   // Port forward states and transfers are pushed by the backend for the app's lifetime.
@@ -95,7 +103,7 @@ export function App() {
    */
   const split = (orientation: SplitOrientation) => {
     const tab = activeTab(state);
-    if (!tab) return;
+    if (!tab || activePane(tab).kind === "sftp") return;
     const pane = activePane(tab);
     const kind: PaneKind = pane.kind === "remote-terminal" ? { kind: pane.kind, host: pane.host } : localTerminal;
     dispatch({ type: "split", orientation, pane: newPane(kind) });
@@ -126,6 +134,7 @@ export function App() {
           shortcut: shortcutLabel("newTab", platform),
           run: openLocalTerminal,
         },
+        { id: "files.openSftp", title: t("sftp.open"), run: pickSftpHost },
         {
           id: "workspace.splitRight",
           title: t("tabs.splitRight"),
@@ -156,7 +165,7 @@ export function App() {
             ]
           : []),
       ],
-      [t, openLocalTerminal, openSettings],
+      [t, openLocalTerminal, openSettings, pickSftpHost],
     ),
   );
 
@@ -218,7 +227,7 @@ export function App() {
     focusedPane?.kind === "remote-terminal"
       ? { id: focusedPane.id, host: focusedPane.host, status: focusedPane.status ?? "connecting" }
       : undefined;
-  const remotePaneIds = remoteTerminalPaneIds(state);
+  useRetainRemoteFilePanels(remoteTerminalPaneIds(state));
 
   return (
     <>
@@ -226,6 +235,7 @@ export function App() {
         sidebar={
           <HostsPanel
             onOpen={openRemoteTerminal}
+            onOpenSftp={openSftp}
             onOpenForwards={openForwards}
             onOpenLocalTerminal={openLocalTerminal}
           />
@@ -239,6 +249,7 @@ export function App() {
             onClose={(id) => dispatch({ type: "close", id })}
             onMove={(id, to) => dispatch({ type: "move", id, to })}
             onNewLocalTerminal={openLocalTerminal}
+            onOpenSftp={pickSftpHost}
             onSplit={split}
           />
         }
@@ -252,7 +263,8 @@ export function App() {
             onStatusChange={setStatus}
           />
         }
-        filePanel={<FilePanelContent pane={filePanelPane} remotePaneIds={remotePaneIds} />}
+        fullWorkspace={focusedPane?.kind === "sftp"}
+        filePanel={<FilePanelContent pane={filePanelPane} onOpenSftp={openSftp} />}
         onOpenSettings={openSettings}
         status={
           <span role="status" className="flex min-w-0 items-center gap-3.5">
@@ -289,6 +301,35 @@ export function App() {
         }
       />
       <ConflictDialog />
+      <CommandDialog
+        open={sftpPickerOpen}
+        onOpenChange={setSftpPickerOpen}
+        title={t("sftp.open")}
+        description={t("sftp.chooseHost")}
+        showCloseButton={false}
+      >
+        <CommandInput placeholder={t("sftp.chooseHost")} aria-label={t("sftp.chooseHost")} />
+        <CommandList>
+          <CommandEmpty>{t(hosts.length ? "hosts.noResultsTitle" : "sftp.noHosts")}</CommandEmpty>
+          {hosts.map((host) => (
+            <CommandItem
+              key={host.id}
+              value={host.id}
+              keywords={[host.name, host.address, host.user]}
+              onSelect={() => {
+                setSftpPickerOpen(false);
+                openSftp(host);
+              }}
+            >
+              <Server aria-hidden />
+              <span className="min-w-0">
+                <span className="block truncate font-medium">{host.name}</span>
+                <span className="text-muted-foreground block truncate text-xs">{host.user}@{host.address}</span>
+              </span>
+            </CommandItem>
+          ))}
+        </CommandList>
+      </CommandDialog>
       <CommandPalette
         open={paletteOpen}
         onOpenChange={setPaletteOpen}

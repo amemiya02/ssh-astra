@@ -96,7 +96,13 @@ impl RemoteFs for SftpFs {
             let mut entries = Vec::new();
             let mut links = JoinSet::new();
             for item in dir {
-                let entry = entry(item.file_name(), &item.metadata());
+                let name = item.file_name();
+                if name.is_empty() || name.contains(['/', '\0']) {
+                    return Err(FsError::Protocol(
+                        "SFTP returned an invalid directory entry name".into(),
+                    ));
+                }
+                let entry = entry(name, &item.metadata());
                 if entry.kind == FileKind::Symlink {
                     // Followed concurrently: a directory may hold many links.
                     let session = Arc::clone(&self.session);

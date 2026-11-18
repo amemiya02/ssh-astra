@@ -1,4 +1,4 @@
-import { Columns2, Plus, Rows2, Settings, SquareTerminal, X } from "lucide-react";
+import { ArrowRightLeft, Columns2, Plus, Rows2, Settings, SquareTerminal, X } from "lucide-react";
 import {
   DndContext,
   PointerSensor,
@@ -27,6 +27,7 @@ interface TabStripProps {
   /** Drop the dragged tab `id` at index `to`. */
   onMove(id: string, to: number): void;
   onNewLocalTerminal(): void;
+  onOpenSftp?(): void;
   onSplit(orientation: SplitOrientation): void;
 }
 
@@ -55,9 +56,11 @@ export function TabStrip({
   onClose,
   onMove,
   onNewLocalTerminal,
+  onOpenSftp,
   onSplit,
 }: TabStripProps) {
   const { t } = useTranslation();
+  const selected = tabs.find((tab) => tab.id === activeId);
   const listRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [drop, setDrop] = useState<DropTarget | null>(null);
@@ -176,6 +179,7 @@ export function TabStrip({
                   className="focus-visible:ring-ring/50 flex h-full min-w-0 flex-1 items-center gap-2 rounded-t-lg pr-1 pl-3 outline-none focus-visible:ring-[3px]"
                   onClick={() => onActivate(tab.id)}
                 >
+                  {kind === "sftp" && <ArrowRightLeft className="size-3.5 shrink-0 opacity-70" aria-hidden />}
                   {status ? (
                     <span className="grid size-3.5 shrink-0 place-items-center" aria-hidden>
                       <span
@@ -213,7 +217,12 @@ export function TabStrip({
       >
         <Plus />
       </IconButton>
-      {tabs.length > 0 && (
+      {onOpenSftp && (
+        <IconButton label={t("sftp.open")} className="mb-1.5" onClick={onOpenSftp}>
+          <ArrowRightLeft />
+        </IconButton>
+      )}
+      {selected && activePane(selected).kind !== "sftp" && (
         <>
           <IconButton
             label={t("tabs.splitRight")}

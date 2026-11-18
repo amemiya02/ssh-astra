@@ -10,6 +10,7 @@ import { FilePanelDockContext } from "@/features/shell/file-panel-dock";
 import { FilePanelContent } from "./FilePanelContent";
 import { fileBrowsers } from "./fileBrowsers";
 import { terminalCwds } from "./terminalCwds";
+import { useRetainRemoteFilePanels } from "./use-retain-remote-file-panels";
 
 // The real File panels (`fileBrowsers`) over fake SFTP and remote edit commands.
 vi.mock("@/lib/ipc/files", () => ({
@@ -63,6 +64,11 @@ afterEach(() => {
   root = null;
 });
 
+function DockForTabs({ state }: { state: TabsState }) {
+  useRetainRemoteFilePanels(remoteTerminalPaneIds(state));
+  return <FilePanelContent />;
+}
+
 function render(state: TabsState) {
   const container = document.createElement("div");
   root = createRoot(container);
@@ -71,7 +77,7 @@ function render(state: TabsState) {
       root!.render(
         <FilePanelDockContext value={{ dock: "right", collapsed: false, collapse() {} }}>
           <TooltipProvider>
-            <FilePanelContent remotePaneIds={remoteTerminalPaneIds(s)} />
+            <DockForTabs state={s} />
           </TooltipProvider>
         </FilePanelDockContext>,
       ),
@@ -130,7 +136,7 @@ describe("a File panel following its Terminal's cd", () => {
       root!.render(
         <FilePanelDockContext value={{ dock: "right", collapsed: false, collapse() {} }}>
           <TooltipProvider>
-            <FilePanelContent pane={{ id: pane.id, host, status: "connected" }} remotePaneIds={[pane.id]} />
+            <FilePanelContent pane={{ id: pane.id, host, status: "connected" }} />
           </TooltipProvider>
         </FilePanelDockContext>,
       ),

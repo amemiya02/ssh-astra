@@ -100,7 +100,22 @@
       "importFailed": "无法导入该文件：{{message}}"
     }
   },
+  "sftp": {
+    "open": "打开 SFTP 工作区",
+    "chooseHost": "选择要连接的 Host",
+    "noHosts": "添加 Host 后即可打开 SFTP 工作区。",
+    "local": "本地文件",
+    "loadingLocal": "正在打开本地文件…",
+    "home": "主目录",
+    "filter": "筛选当前目录",
+    "noMatches": "没有匹配的文件",
+    "uploadSelection": "上传到 Host",
+    "downloadSelection": "下载到本地目录",
+    "localUnavailable": "请先打开一个本地目录，再下载文件。",
+    "invalidName": "这是 Windows 保留的名称，或名称中含有 Windows 不允许的字符。"
+  },
   "tabs": {
+    "sftp": "SFTP",
     "listLabel": "已打开的标签页",
     "localTerminal": "本地终端",
     "newLocalTerminal": "新建本地终端",
@@ -150,6 +165,7 @@
     "up": "上一级文件夹",
     "refresh": "刷新",
     "syncToTerminal": "同步到终端目录",
+    "goToPath": "前往此路径",
     "path": "路径",
     "copyPath": "复制路径",
     "showHidden": "显示隐藏文件",
