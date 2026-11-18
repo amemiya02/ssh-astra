@@ -38,12 +38,15 @@ export function LocalTerminalView({ active = true, onTitleChange }: LocalTermina
   const attach = useCallback((xterm: XTerm) => {
     let id: TerminalId | undefined;
     let disposed = false;
+    // ConPTY can ask xterm for its cursor position before the open call returns an id.
+    let pendingInput = "";
     /** No shell attached: the next Enter starts one. */
     let waitingForRestart = false;
     const size = () => ({ cols: xterm.cols, rows: xterm.rows });
 
     const offerRestart = () => {
       id = undefined;
+      pendingInput = "";
       waitingForRestart = true;
       xterm.options.cursorBlink = false;
       xterm.write(`${dim(tRef.current("terminal.pressEnterToRestart"))}\r\n`);
@@ -56,6 +59,7 @@ export function LocalTerminalView({ active = true, onTitleChange }: LocalTermina
       // The exit message can arrive before the open call resolves; this shell must not be adopted then.
       let exited = false;
       openLocalTerminal(size(), (event) => {
+        if (disposed || exited) return;
         if (event.type === "output") {
           xterm.write(event.data);
           return;
@@ -76,10 +80,15 @@ export function LocalTerminalView({ active = true, onTitleChange }: LocalTermina
             return;
           }
           id = opened;
+          if (pendingInput) {
+            void writeTerminal(opened, pendingInput);
+            pendingInput = "";
+          }
           // Catch up on any resize that happened while the shell was starting.
           void resizeTerminal(opened, size());
         },
         (error: unknown) => {
+          if (disposed || exited) return;
           const detail =
             typeof error === "object" && error && "message" in error ? String(error.message) : String(error);
           xterm.write(`\x1b[31m${tRef.current("terminal.failedToStart")}\x1b[0m\r\n`);
@@ -88,11 +97,11 @@ export function LocalTerminalView({ active = true, onTitleChange }: LocalTermina
         },
       );
     };
-    start();
 
     const onData = xterm.onData((data) => {
       if (id !== undefined) void writeTerminal(id, data);
-      else if (waitingForRestart && data === "\r") {
+      else if (!waitingForRestart) pendingInput += data;
+      else if (data === "\r") {
         xterm.write("\r\n");
         start();
       }
@@ -100,9 +109,11 @@ export function LocalTerminalView({ active = true, onTitleChange }: LocalTermina
     const onResize = xterm.onResize((next) => {
       if (id !== undefined) void resizeTerminal(id, next);
     });
+    start();
 
     return () => {
       disposed = true;
+      pendingInput = "";
       onData.dispose();
       onResize.dispose();
       if (id !== undefined) void closeTerminal(id);
