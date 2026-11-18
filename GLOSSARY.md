@@ -1,4 +1,4 @@
-# sshastra
+# SSH Astra
 
 A modern desktop SSH/SFTP client: saved hosts, terminals and a file panel in one window.
 

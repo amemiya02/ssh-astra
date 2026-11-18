@@ -1,5 +1,7 @@
 # ssh-astra
 
+The app is shown to users as **SSH Astra**: window title, `productName`, the HTML title and every UI string (`app.name` in the locales). Code identifiers keep the lowercase id `sshastra`: crates, the executable (`mainBinaryName`), the bundle identifier `dev.sshastra.app`, the keychain service, temp folders, storage keys and export file names. Renaming them would orphan users' saved data.
+
 ## Agent skills
 
 ### Issue tracker

@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "sshastra"
+    "name": "SSH Astra"
   },
   "shell": {
     "workspace": "终端",
@@ -38,7 +38,7 @@
     "save": "保存",
     "cancel": "取消",
     "edit": "编辑 Host",
-    "editDescription": "修改 sshastra 连接这个 Host 的方式。",
+    "editDescription": "修改 SSH Astra 连接这个 Host 的方式。",
     "open": "打开终端",
     "duplicate": "复制",
     "copyName": "{{name}} 副本",
@@ -92,7 +92,7 @@
     "transfer": {
       "import": "导入 Host 列表…",
       "export": "导出 Host 列表…",
-      "fileType": "sshastra Host 列表",
+      "fileType": "SSH Astra Host 列表",
       "exported": "Host 列表已导出。导出文件从不包含密码和密钥口令。",
       "imported": "导入完成。新增 Host：{{hosts}} 个，新增 Group：{{groups}} 个。",
       "skipped": "已存在同名 Host，已跳过：{{names}}。",
@@ -500,7 +500,7 @@
     },
     "language": {
       "label": "界面语言",
-      "description": "跟随系统时使用电脑的语言；sshastra 不支持该语言时使用英文。",
+      "description": "跟随系统时使用电脑的语言；SSH Astra 不支持该语言时使用英文。",
       "options": {
         "system": "跟随系统",
         "en": "English",

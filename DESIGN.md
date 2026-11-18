@@ -1,5 +1,5 @@
 ---
-name: sshastra
+name: SSH Astra
 description: A quiet desktop SSH/SFTP client where the Terminal is a lit sheet laid on a tinted desk.
 colors:
   background: "oklch(0.972 0.003 255)"
@@ -147,7 +147,7 @@ components:
     width: "520px"
 ---
 
-# Design System: sshastra
+# Design System: SSH Astra
 
 ## Overview
 

@@ -16,7 +16,7 @@ Developers and operators who log in to remote machines every day: run commands, 
 
 ## Product Purpose
 
-sshastra is a cross-platform SSH/SFTP desktop client: saved Hosts on the left, tabbed and split Terminals in the middle, and a File panel docked beside the Terminal that follows the shell's directory. It replaces MobaXterm (Windows-only, dated, cluttered) and heavier Electron clients. Success: open a Host, work, and move files without leaving the window or typing paths.
+SSH Astra is a cross-platform SSH/SFTP desktop client: saved Hosts on the left, tabbed and split Terminals in the middle, and a File panel docked beside the Terminal that follows the shell's directory. It replaces MobaXterm (Windows-only, dated, cluttered) and heavier Electron clients. Success: open a Host, work, and move files without leaving the window or typing paths.
 
 ## Positioning
 
@@ -35,7 +35,7 @@ Long sessions at a desk, light or dark system appearance, often next to an edito
 
 ## Brand Commitments
 
-- Name: sshastra (lowercase).
+- Name: SSH Astra (shown to users). Code, crates, the binary, the keychain service and file names keep the lowercase id `sshastra`.
 - Visual reference pinned by the owner: the restraint of Termius and Linear: large radii, thin borders, soft shadows, moderate density, one consistent look across screens.
 
 ## Evidence on Hand

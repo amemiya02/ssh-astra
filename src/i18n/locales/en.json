@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "sshastra"
+    "name": "SSH Astra"
   },
   "shell": {
     "workspace": "Terminals",
@@ -38,7 +38,7 @@
     "save": "Save",
     "cancel": "Cancel",
     "edit": "Edit Host",
-    "editDescription": "Change how sshastra connects to this Host.",
+    "editDescription": "Change how SSH Astra connects to this Host.",
     "open": "Open Terminal",
     "duplicate": "Duplicate",
     "copyName": "{{name}} copy",
@@ -92,7 +92,7 @@
     "transfer": {
       "import": "Import Host list…",
       "export": "Export Host list…",
-      "fileType": "sshastra Host list",
+      "fileType": "SSH Astra Host list",
       "exported": "Host list exported. Passwords and passphrases are never included.",
       "imported": "Import done. Hosts added: {{hosts}}. Groups added: {{groups}}.",
       "skipped": "Skipped because a Host with the same name exists: {{names}}.",
@@ -500,7 +500,7 @@
     },
     "language": {
       "label": "Interface language",
-      "description": "System uses your computer's language when sshastra has it, otherwise English.",
+      "description": "System uses your computer's language when SSH Astra has it, otherwise English.",
       "options": {
         "system": "System",
         "en": "English",
