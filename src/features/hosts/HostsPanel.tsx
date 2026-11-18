@@ -34,6 +34,7 @@ import { hostsStore, useHosts } from "./hostsStore";
 interface HostsPanelProps {
   /** Open a remote Terminal on the Host. */
   onOpen(host: Host): void;
+  onOpenSftp(host: Host): void;
   /** Opens the Host's Port forwards. */
   onOpenForwards(host: Host): void;
   onOpenLocalTerminal(): void;
@@ -45,7 +46,7 @@ type Removal = { kind: "host"; host: Host } | { kind: "group"; group: Group };
  * The Host list in the sidebar: search, nested Groups, drag and drop, and the
  * Host editor. Double-click (or Enter on) a Host to open it.
  */
-export function HostsPanel({ onOpen, onOpenForwards, onOpenLocalTerminal }: HostsPanelProps) {
+export function HostsPanel({ onOpen, onOpenSftp, onOpenForwards, onOpenLocalTerminal }: HostsPanelProps) {
   const { t } = useTranslation();
   const tree = useHosts((s) => s.tree);
   const status = useHosts((s) => s.status);
@@ -180,6 +181,7 @@ export function HostsPanel({ onOpen, onOpenForwards, onOpenLocalTerminal }: Host
 
   const actions: HostListActions = {
     open: onOpen,
+    openSftp: onOpenSftp,
     openForwards: onOpenForwards,
     connectOnly: (host) => {
       setActionError(null);

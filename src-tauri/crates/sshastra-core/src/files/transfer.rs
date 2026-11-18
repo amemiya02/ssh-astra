@@ -478,13 +478,17 @@ impl Inner {
     }
 
     async fn attempt(&self, id: TransferId, job: &Job, partial: &Partial) -> Result<(), Stop> {
+        let downloading = job.direction == TransferDirection::Download;
+        if downloading {
+            check_download_name(&job.name)?;
+        }
         let remote = Side::Remote((job.open)().await?, job.remote.clone());
         let local = Side::Local(Arc::clone(&self.local), job.local.clone());
         let (source, target) = match job.direction {
             TransferDirection::Upload => (local, remote),
             TransferDirection::Download => (remote, local),
         };
-        let items = walk(&source).await?;
+        let items = walk(&source, downloading).await?;
 
         self.update(id, |entry| {
             let files = items.iter().filter(|i| !i.is_dir);
@@ -709,10 +713,42 @@ struct Item {
     size: u64,
 }
 
+/// Accepts only a single filename representable on the receiving filesystem.
+fn check_download_name(name: &str) -> FsResult<()> {
+    let invalid = matches!(name, "" | "." | "..") || name.contains(['/', '\0']);
+    #[cfg(windows)]
+    let invalid = invalid || {
+        let stem = name
+            .split('.')
+            .next()
+            .unwrap_or("")
+            .trim_end_matches(' ')
+            .to_ascii_uppercase();
+        let reserved_port = stem
+            .strip_prefix("COM")
+            .or_else(|| stem.strip_prefix("LPT"))
+            .is_some_and(|num| {
+                matches!(
+                    num,
+                    "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+                )
+            });
+        name.contains(['\\', ':', '<', '>', '"', '|', '?', '*'])
+            || name.chars().any(|ch| ch <= '\u{1f}')
+            || name.ends_with(['.', ' '])
+            || matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+            || reserved_port
+    };
+    if invalid {
+        return Err(FsError::Io(format!("invalid local filename: {name:?}")));
+    }
+    Ok(())
+}
+
 /// The source's folders (each before its contents) and files. Symlinks to
 /// files are copied as files; symlinks to folders are not followed (they
 /// could loop), nor are sockets, devices and FIFOs.
-async fn walk(source: &Side) -> FsResult<Vec<Item>> {
+async fn walk(source: &Side, downloading: bool) -> FsResult<Vec<Item>> {
     let root = source.stat("").await?;
     match root.kind {
         FileKind::File => {
@@ -741,6 +777,9 @@ async fn walk(source: &Side) -> FsResult<Vec<Item>> {
             size: 0,
         });
         for entry in entries {
+            if downloading {
+                check_download_name(&entry.name)?;
+            }
             let rel = if dir.is_empty() {
                 entry.name.clone()
             } else {

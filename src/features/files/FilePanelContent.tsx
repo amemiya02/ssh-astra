@@ -1,4 +1,4 @@
-import { Download, Eye, EyeOff, FolderSync, LoaderCircle, RefreshCw, Unplug, Upload } from "lucide-react";
+import { ArrowRightLeft, Download, Eye, EyeOff, FolderSync, LoaderCircle, RefreshCw, Unplug, Upload } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
@@ -31,23 +31,13 @@ export interface FilePanelPane {
   status: ConnectionStatus;
 }
 
-/**
- * The File panel slot: the focused remote Terminal's File panel (each pane keeps its own,
- * with its own directory), or the empty state. `remotePaneIds` lists every open remote
- * Terminal pane; File panels of the others are closed.
- */
-export function FilePanelContent({ pane, remotePaneIds }: { pane?: FilePanelPane; remotePaneIds: string[] }) {
-  const key = remotePaneIds.join("\n");
-  useEffect(() => {
-    const ids = new Set(key ? key.split("\n") : []);
-    fileBrowsers.retain(ids);
-    terminalCwds.retain(ids);
-  }, [key]);
+/** The dock for the focused remote Terminal. */
+export function FilePanelContent({ pane, onOpenSftp }: { pane?: FilePanelPane; onOpenSftp?(host: Host): void }) {
   if (!pane) return <FilePanel />;
-  return <RemoteFilePanel key={pane.id} pane={pane} />;
+  return <RemoteFilePanel key={pane.id} pane={pane} onOpenSftp={onOpenSftp} />;
 }
 
-function RemoteFilePanel({ pane }: { pane: FilePanelPane }) {
+function RemoteFilePanel({ pane, onOpenSftp }: { pane: FilePanelPane; onOpenSftp?(host: Host): void }) {
   const { t } = useTranslation();
   const { collapsed } = useFilePanelDock();
   const store = fileBrowsers.get(pane.id, pane.host.id, pane.host.defaultDirectory);
@@ -91,6 +81,11 @@ function RemoteFilePanel({ pane }: { pane: FilePanelPane }) {
 
   const actions = (
     <>
+      {onOpenSftp && (
+        <IconButton label={t("sftp.open")} onClick={() => onOpenSftp(pane.host)}>
+          <ArrowRightLeft />
+        </IconButton>
+      )}
       <IconButton label={t("files.upload")} disabled={!ready} onClick={() => void pickAndUpload()}>
         <Upload />
       </IconButton>

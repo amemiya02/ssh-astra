@@ -23,6 +23,8 @@ export interface AppShellProps {
    * It can read the dock and collapse itself with `useFilePanelDock()`.
    */
   filePanel: ReactNode;
+  /** The standalone SFTP tab fills the workspace. */
+  fullWorkspace?: boolean;
   /** Items on the left of the status bar (Connections, Port forwards, transfers). */
   status?: ReactNode;
   /** Opens the Settings tab (status bar button). */
@@ -38,7 +40,7 @@ const defaultFilesSize: Record<FilePanelDock, string> = { right: "340px", bottom
  * The main window: Host list | (tab strip / Terminal workspace + File panel dock) | status bar.
  * Panel sizes, collapsed panels and the dock position persist across restarts.
  */
-export function AppShell({ sidebar, tabs, workspace, filePanel, status, onOpenSettings }: AppShellProps) {
+export function AppShell({ sidebar, tabs, workspace, filePanel, fullWorkspace, status, onOpenSettings }: AppShellProps) {
   const { t } = useTranslation();
   const { layout, saveGroup, setDock } = useShellLayout();
   const { dock } = layout;
@@ -94,14 +96,14 @@ export function AppShell({ sidebar, tabs, workspace, filePanel, status, onOpenSe
   });
   usePaletteActions(
     useMemo(
-      (): PaletteAction[] => [
+      (): PaletteAction[] => fullWorkspace ? [] : [
         {
           id: "files.togglePanel",
           title: filesCollapsed ? t("files.show") : t("files.hide"),
           run: () => toggleFilesRef.current(),
         },
       ],
-      [filesCollapsed, t],
+      [filesCollapsed, fullWorkspace, t],
     ),
   );
 
@@ -141,10 +143,12 @@ export function AppShell({ sidebar, tabs, workspace, filePanel, status, onOpenSe
                 <PanelLeft />
               </IconButton>
               <div className="flex min-w-0 flex-1 items-end">{tabs}</div>
-              <div className="mb-1.5 flex items-center gap-0.5" role="group" aria-label={t("files.dockGroup")}>
-                <DockButton current={dock} dock="bottom" collapsed={filesCollapsed} onSelect={selectDock} />
-                <DockButton current={dock} dock="right" collapsed={filesCollapsed} onSelect={selectDock} />
-              </div>
+              {!fullWorkspace && (
+                <div className="mb-1.5 flex items-center gap-0.5" role="group" aria-label={t("files.dockGroup")}>
+                  <DockButton current={dock} dock="bottom" collapsed={filesCollapsed} onSelect={selectDock} />
+                  <DockButton current={dock} dock="right" collapsed={filesCollapsed} onSelect={selectDock} />
+                </div>
+              )}
             </div>
             <ResizablePanelGroup
               id="workspace"
@@ -152,8 +156,12 @@ export function AppShell({ sidebar, tabs, workspace, filePanel, status, onOpenSe
               orientation={dock === "right" ? "horizontal" : "vertical"}
               className="min-h-0 flex-1 pb-1.5"
               defaultLayout={layout.groups[workspaceGroup(dock)]}
-              onLayoutChange={(next) => setFilesCollapsed(isPanelCollapsed(next, "files"))}
-              onLayoutChanged={(next, meta) => saveGroup(workspaceGroup(dock), meta.requestedLayout ?? next)}
+              onLayoutChange={(next) => {
+                if ("files" in next) setFilesCollapsed(isPanelCollapsed(next, "files"));
+              }}
+              onLayoutChanged={(next, meta) => {
+                if ("files" in next) saveGroup(workspaceGroup(dock), meta.requestedLayout ?? next);
+              }}
             >
               <ResizablePanel id="terminal" minSize="200px">
                 <section
@@ -163,22 +171,24 @@ export function AppShell({ sidebar, tabs, workspace, filePanel, status, onOpenSe
                   {workspace}
                 </section>
               </ResizablePanel>
-              <PanelGutter />
-              <ResizablePanel
-                id="files"
-                panelRef={filesRef}
-                defaultSize={defaultFilesSize[dock]}
-                minSize={dock === "right" ? "240px" : "140px"}
-                groupResizeBehavior="preserve-pixel-size"
-                collapsible
-              >
-                <section
-                  aria-label={t("files.title")}
-                  className="bg-surface shadow-panel flex h-full flex-col overflow-hidden rounded-lg border"
+              {!fullWorkspace && <PanelGutter />}
+              {!fullWorkspace && (
+                <ResizablePanel
+                  id="files"
+                  panelRef={filesRef}
+                  defaultSize={defaultFilesSize[dock]}
+                  minSize={dock === "right" ? "240px" : "140px"}
+                  groupResizeBehavior="preserve-pixel-size"
+                  collapsible
                 >
-                  <FilePanelDockContext value={filePanelDock}>{filePanel}</FilePanelDockContext>
-                </section>
-              </ResizablePanel>
+                  <section
+                    aria-label={t("files.title")}
+                    className="bg-surface shadow-panel flex h-full flex-col overflow-hidden rounded-lg border"
+                  >
+                    <FilePanelDockContext value={filePanelDock}>{filePanel}</FilePanelDockContext>
+                  </section>
+                </ResizablePanel>
+              )}
             </ResizablePanelGroup>
           </div>
         </ResizablePanel>

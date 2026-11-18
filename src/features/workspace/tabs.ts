@@ -10,6 +10,7 @@ export type ConnectionStatus = "connecting" | "connected" | "disconnected";
 export type PaneKind =
   | { kind: "local-terminal" }
   | { kind: "remote-terminal"; host: Host }
+  | { kind: "sftp"; host: Host }
   | { kind: "settings" }
   /** A Host's Port forward rules; the panel reads the live Host by `host.id`. */
   | { kind: "port-forwards"; host: Host };
@@ -22,6 +23,8 @@ function singletonKey(pane: PaneKind): string | undefined {
   switch (pane.kind) {
     case "settings":
       return "settings";
+    case "sftp":
+      return `sftp:${pane.host.id}`;
     case "port-forwards":
       return `port-forwards:${pane.host.id}`;
     default:
@@ -83,7 +86,7 @@ export const tabPanelId = (id: string) => `tabpanel-${id}`;
 
 /** A pane for `kind`; a remote Terminal starts out connecting. */
 export function newPane(kind: PaneKind, id: string = crypto.randomUUID()): Pane {
-  return kind.kind === "remote-terminal" ? { id, ...kind, status: "connecting" } : { id, ...kind };
+  return kind.kind === "remote-terminal" || kind.kind === "sftp" ? { id, ...kind, status: "connecting" } : { id, ...kind };
 }
 
 export function activePane(tab: Tab): Pane {
@@ -103,7 +106,7 @@ export function tabStatus(tab: Tab): ConnectionStatus | undefined {
 export function connectedHosts(state: TabsState): Host[] {
   const hosts = new Map<string, Host>();
   for (const pane of state.tabs.flatMap((tab) => tab.panes)) {
-    if (pane.kind === "remote-terminal" && pane.status === "connected" && !hosts.has(pane.host.id)) {
+    if ((pane.kind === "remote-terminal" || pane.kind === "sftp") && pane.status === "connected" && !hosts.has(pane.host.id)) {
       hosts.set(pane.host.id, pane.host);
     }
   }
@@ -133,7 +136,7 @@ export function remoteTerminalPaneIds(state: TabsState): string[] {
  */
 export function tabTitle(
   tab: Tab,
-  t: (key: "tabs.localTerminal" | "tabs.settings" | "tabs.portForwards") => string,
+  t: (key: "tabs.localTerminal" | "tabs.settings" | "tabs.portForwards" | "tabs.sftp") => string,
   ordinal: number,
 ): string {
   const pane = activePane(tab);
@@ -145,6 +148,8 @@ export function tabTitle(
     }
     case "remote-terminal":
       return pane.host.name;
+    case "sftp":
+      return `${t("tabs.sftp")} · ${pane.host.name}`;
     case "settings":
       return t("tabs.settings");
     case "port-forwards":
@@ -191,7 +196,7 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
     }
     case "split": {
       const tab = activeTab(state);
-      if (!tab) return state;
+      if (!tab || activePane(tab).kind === "sftp") return state;
       const at = tab.panes.findIndex((pane) => pane.id === tab.activePaneId) + 1;
       const panes = [...tab.panes.slice(0, at), action.pane, ...tab.panes.slice(at)];
       return replaceTab(state, { ...tab, panes, activePaneId: action.pane.id, orientation: action.orientation });

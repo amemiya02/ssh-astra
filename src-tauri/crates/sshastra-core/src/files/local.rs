@@ -2,10 +2,10 @@
 //! [`DiskFs`] the real disk, and tests swap in an in-memory fake.
 
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use super::{FileEntry, FileKind, FileReader, FileStat, FileWriter, FsError, FsResult};
+use super::{FileEntry, FileKind, FileReader, FileStat, FileWriter, FsError, FsResult, RemoteFs};
 use crate::ssh::BoxFuture;
 
 /// The local side of a transfer. Mirrors the streaming part of
@@ -62,7 +62,12 @@ impl LocalFs for DiskFs {
                     None
                 };
                 entries.push(FileEntry {
-                    name: item.file_name().to_string_lossy().into_owned(),
+                    name: item.file_name().into_string().map_err(|_| {
+                        FsError::Io(format!(
+                            "{}: filename is not valid Unicode",
+                            item.path().display()
+                        ))
+                    })?,
                     kind,
                     size,
                     modified,
@@ -155,6 +160,195 @@ fn error(path: &Path, e: io::Error) -> FsError {
         io::ErrorKind::NotFound => FsError::NotFound(path),
         io::ErrorKind::PermissionDenied => FsError::PermissionDenied(path),
         io::ErrorKind::NotADirectory => FsError::NotADirectory(path),
+        io::ErrorKind::AlreadyExists => FsError::AlreadyExists(path),
         _ => FsError::Io(format!("{path}: {e}")),
     }
+}
+
+/// Adapts the local disk to the file browser's operations. Paths returned to the
+/// browser use forward slashes on Windows; native separators are restored at the disk.
+pub struct DiskBrowser {
+    home: PathBuf,
+}
+
+impl DiskBrowser {
+    pub fn new(home: PathBuf) -> Self {
+        Self { home }
+    }
+
+    /// Uses the platform's recursive removal, which does not traverse symlinks.
+    pub async fn remove(&self, path: &str) -> FsResult<()> {
+        let path = native_path(path);
+        let meta = tokio::fs::symlink_metadata(&path)
+            .await
+            .map_err(|e| error(&path, e))?;
+        if meta.is_dir() {
+            tokio::fs::remove_dir_all(&path).await
+        } else {
+            return self.remove_file(&display_path(&path)?).await;
+        }
+        .map_err(|e| error(&path, e))
+    }
+}
+
+fn native_path(path: &str) -> PathBuf {
+    #[cfg(windows)]
+    return PathBuf::from(path.replace('/', "\\"));
+    #[cfg(not(windows))]
+    return PathBuf::from(path);
+}
+
+fn display_path(path: &Path) -> FsResult<String> {
+    let text = path
+        .to_str()
+        .ok_or_else(|| FsError::Io(format!("{}: path is not valid Unicode", path.display())))?;
+    #[cfg(windows)]
+    return Ok(dunce::simplified(path)
+        .to_str()
+        .unwrap_or(text)
+        .replace('\\', "/"));
+    #[cfg(not(windows))]
+    return Ok(text.to_owned());
+}
+
+impl RemoteFs for DiskBrowser {
+    fn home(&self) -> BoxFuture<'_, FsResult<String>> {
+        Box::pin(async { display_path(&self.home) })
+    }
+
+    fn canonicalize<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<String>> {
+        Box::pin(async move {
+            let path = self.home.join(native_path(path));
+            let resolved = tokio::fs::canonicalize(&path)
+                .await
+                .map_err(|e| error(&path, e))?;
+            display_path(&resolved)
+        })
+    }
+
+    fn list_dir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<Vec<FileEntry>>> {
+        Box::pin(async move { DiskFs.list_dir(&native_path(path)).await })
+    }
+
+    fn stat<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileStat>> {
+        Box::pin(async move { DiskFs.stat(&native_path(path)).await })
+    }
+
+    fn lstat<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileStat>> {
+        Box::pin(async move {
+            let path = native_path(path);
+            tokio::fs::symlink_metadata(&path)
+                .await
+                .map(|meta| stat(&meta))
+                .map_err(|e| error(&path, e))
+        })
+    }
+
+    fn create_dir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move { DiskFs.create_dir(&native_path(path)).await })
+    }
+
+    fn rename<'a>(&'a self, from: &'a str, to: &'a str) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move {
+            let (from, to) = (native_path(from), native_path(to));
+            tokio::task::spawn_blocking(move || {
+                rename_without_replace(&from, &to).map_err(|e| error(&to, e))
+            })
+            .await
+            .map_err(|e| FsError::Io(e.to_string()))?
+        })
+    }
+
+    fn remove_file<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move {
+            let path = native_path(path);
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::FileTypeExt;
+                let meta = tokio::fs::symlink_metadata(&path)
+                    .await
+                    .map_err(|e| error(&path, e))?;
+                if meta.file_type().is_symlink_dir() {
+                    return tokio::fs::remove_dir(&path)
+                        .await
+                        .map_err(|e| error(&path, e));
+                }
+            }
+            DiskFs.remove_file(&path).await
+        })
+    }
+
+    fn remove_dir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move {
+            let path = native_path(path);
+            tokio::fs::remove_dir(&path)
+                .await
+                .map_err(|e| error(&path, e))
+        })
+    }
+
+    fn set_permissions<'a>(&'a self, path: &'a str, mode: u32) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let path = native_path(path);
+                tokio::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode))
+                    .await
+                    .map_err(|e| error(&path, e))
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = (path, mode);
+                Err(FsError::Io(
+                    "POSIX permissions are unavailable on this platform".into(),
+                ))
+            }
+        })
+    }
+
+    fn open_read<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileReader>> {
+        Box::pin(async move { DiskFs.open_read(&native_path(path)).await })
+    }
+
+    fn create_write<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileWriter>> {
+        Box::pin(async move { DiskFs.create_write(&native_path(path)).await })
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn rename_without_replace(from: &Path, to: &Path) -> io::Result<()> {
+    use rustix::fs::{renameat_with, RenameFlags, CWD};
+    Ok(renameat_with(CWD, from, CWD, to, RenameFlags::NOREPLACE)?)
+}
+
+#[cfg(windows)]
+fn rename_without_replace(from: &Path, to: &Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::MoveFileExW;
+    let wide = |path: &Path| -> io::Result<Vec<u16>> {
+        let mut path: Vec<_> = path.as_os_str().encode_wide().collect();
+        if path.contains(&0) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "path contains a null character",
+            ));
+        }
+        path.push(0);
+        Ok(path)
+    };
+    let (from, to) = (wide(from)?, wide(to)?);
+    // Valid, null-terminated strings. No replace flag, so an existing target is safe.
+    if unsafe { MoveFileExW(from.as_ptr(), to.as_ptr(), 0) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+fn rename_without_replace(_: &Path, _: &Path) -> io::Result<()> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "rename without replacement is unavailable",
+    ))
 }

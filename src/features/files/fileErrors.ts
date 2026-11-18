@@ -32,6 +32,8 @@ export function operationErrorText(t: TFunction, error: CommandError): string {
       return t("files.operationErrors.notFound", { path });
     case "permissionDenied":
       return t("files.operationErrors.permissionDenied", { path });
+    case "invalidName":
+      return t("sftp.invalidName");
     case "alreadyExists":
       return t("files.operationErrors.alreadyExists", { path });
     case "notConnected":

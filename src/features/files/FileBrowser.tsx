@@ -1,4 +1,6 @@
+import { useDraggable } from "@dnd-kit/core";
 import {
+  ArrowRight,
   ArrowUp,
   ChevronDown,
   ChevronUp,
@@ -13,10 +15,13 @@ import {
   KeyRound,
   Pencil,
   Trash2,
+  Upload,
+  Search,
 } from "lucide-react";
 import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
+import { Input } from "@/components/ui/input";
 import { IconButton } from "@/components/IconButton";
 import {
   ContextMenu,
@@ -52,6 +57,11 @@ const overscan = 8;
 const columns =
   "grid grid-cols-[minmax(0,1fr)_4.5rem] @sm:grid-cols-[minmax(0,1fr)_4.5rem_8.5rem] @md:grid-cols-[minmax(0,1fr)_4.5rem_8.5rem_6rem]";
 
+export interface FileExchange {
+  side: "local" | "remote";
+  copy?(paths: string[]): void;
+}
+
 /**
  * The path bar and the file table of one File panel. `onDownload` downloads the named
  * entries of the current folder (the row's context menu offers it for the selection).
@@ -60,10 +70,12 @@ export function FileBrowser({
   store,
   hostName,
   onDownload,
+  exchange,
 }: {
   store: FileBrowserStore;
   hostName: string;
   onDownload?(names: string[]): void;
+  exchange?: FileExchange;
 }) {
   const { t } = useTranslation();
   const path = useStore(store, (s) => s.path);
@@ -79,7 +91,10 @@ export function FileBrowser({
         </p>
       )}
       {/* Keyed by path: a new directory starts scrolled to the top with nothing focused. */}
-      {path !== null && <FileTable key={`table:${path}`} store={store} path={path} onOperation={setOperation} onDownload={onDownload} />}
+      {path !== null && (
+        <FileTable key={`table:${path}`} store={store} path={path}
+          onOperation={setOperation} onDownload={onDownload} exchange={exchange} />
+      )}
       {operation && <FileOperationDialog store={store} operation={operation} onClose={() => setOperation(null)} />}
     </div>
   );
@@ -95,6 +110,9 @@ function PathBar({ store, onOperation }: { store: FileBrowserStore; onOperation(
   return (
     <form
       className="flex shrink-0 items-center gap-1 p-2"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setDraft(path ?? "");
+      }}
       onSubmit={(event) => {
         event.preventDefault();
         if (draft.trim()) void store.getState().navigate(draft);
@@ -120,9 +138,18 @@ function PathBar({ store, onOperation }: { store: FileBrowserStore; onOperation(
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Escape") setDraft(path ?? "");
+            if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
+            }
           }}
-          onBlur={() => setDraft(path ?? "")}
         />
+        {draft !== (path ?? "") && (
+          <IconButton type="submit" label={t("files.goToPath")} className="size-6"
+            disabled={!draft.trim()} onPointerDown={(event) => event.preventDefault()}>
+            <ArrowRight />
+          </IconButton>
+        )}
       </div>
       <IconButton
         type="button"
@@ -149,18 +176,25 @@ function FileTable({
   path,
   onOperation,
   onDownload,
+  exchange,
 }: {
   store: FileBrowserStore;
   path: string;
   onOperation(operation: FileOperation): void;
   onDownload?(names: string[]): void;
+  exchange?: FileExchange;
 }) {
   const { t, i18n } = useTranslation();
   const entries = useStore(store, (s) => s.entries);
   const selection = useStore(store, (s) => s.selection);
   const loading = useStore(store, (s) => s.loading);
   const [prefs, setPrefs] = useSetting(filesSetting);
-  const rows = useMemo(() => shownEntries(entries, prefs.sort, prefs.showHidden), [entries, prefs]);
+  const [filter, setFilter] = useState("");
+  const rows = useMemo(() => {
+    const query = filter.trim().toLocaleLowerCase();
+    const shown = shownEntries(entries, prefs.sort, prefs.showHidden);
+    return query ? shown.filter((entry) => entry.name.toLocaleLowerCase().includes(query)) : shown;
+  }, [entries, prefs, filter]);
   const order = useMemo(() => rows.map((r) => r.name), [rows]);
   const dateFormat = useMemo(
     () => new Intl.DateTimeFormat(i18n.language, { dateStyle: "short", timeStyle: "short" }),
@@ -202,9 +236,9 @@ function FileTable({
   };
 
   /** The selection in display order, for a delete. */
-  const selected = () => order.filter((name) => selection.has(name));
+  const selected = useMemo(() => order.filter((name) => selection.has(name)), [order, selection]);
   const askDelete = () => {
-    const names = selected();
+    const names = selected;
     if (names.length > 0) onOperation({ kind: "delete", names });
   };
 
@@ -261,78 +295,93 @@ function FileTable({
   };
 
   return (
-    <div
-      role="grid"
-      aria-label={t("files.listLabel", { path })}
-      aria-rowcount={rows.length + 1}
-      aria-multiselectable
-      aria-busy={loading}
-      aria-activedescendant={focusIndex >= 0 ? rowId(focusIndex) : undefined}
-      tabIndex={0}
-      onKeyDown={onKeyDown}
-      className="focus-visible:ring-ring/50 flex min-h-0 flex-1 flex-col text-[12.5px] outline-none focus-visible:ring-[3px] focus-visible:ring-inset"
-    >
-      <div role="row" aria-rowindex={1} className={cn(columns, "shrink-0 px-2 pb-1")}>
-        <HeaderCell label={t("files.columns.name")} sortKey="name" sort={prefs.sort} onSort={sortBy} />
-        <HeaderCell label={t("files.columns.size")} sortKey="size" sort={prefs.sort} onSort={sortBy} end />
-        <HeaderCell
-          label={t("files.columns.modified")}
-          sortKey="modified"
-          sort={prefs.sort}
-          onSort={sortBy}
-          className="hidden @sm:flex"
-        />
-        <HeaderCell
-          label={t("files.columns.permissions")}
-          sortKey="permissions"
-          sort={prefs.sort}
-          onSort={sortBy}
-          className="hidden @md:flex"
-        />
-      </div>
+    <>
+      {exchange && (
+        <div className="relative mx-2 mb-2">
+          <Search className="text-muted-foreground pointer-events-none absolute top-2 left-2 size-3.5" aria-hidden />
+          <Input type="search" aria-label={t("sftp.filter")} placeholder={t("sftp.filter")}
+            value={filter} className="h-7 pl-7 text-xs" onChange={(event) => {
+              setFilter(event.target.value);
+              setScrollTop(0);
+              if (scroller.current) scroller.current.scrollTop = 0;
+            }} />
+        </div>
+      )}
       <div
-        ref={scroller}
-        className={cn("min-h-0 flex-1 overflow-auto px-2 pb-2", loading && "opacity-70")}
-        onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+        role="grid"
+        aria-label={t("files.listLabel", { path })}
+        aria-rowcount={rows.length + 1}
+        aria-multiselectable
+        aria-busy={loading}
+        aria-activedescendant={focusIndex >= 0 ? rowId(focusIndex) : undefined}
+        tabIndex={0}
+        onKeyDown={onKeyDown}
+        className="focus-visible:ring-ring/50 flex min-h-0 flex-1 flex-col text-[12.5px] outline-none focus-visible:ring-[3px] focus-visible:ring-inset"
       >
-        {rows.length === 0 ? (
-          <p className="text-muted-foreground p-6 text-center">{t("files.emptyFolder")}</p>
-        ) : (
-          <div role="rowgroup" className="relative" style={{ height: rows.length * rowHeight }}>
-            {rows.slice(start, end).map((entry, offset) => {
-              const index = start + offset;
-              return (
-                <FileRow
-                  key={entry.name}
-                  id={rowId(index)}
-                  index={index}
-                  entry={entry}
-                  path={path}
-                  selected={selection.has(entry.name)}
-                  focused={index === focusIndex}
-                  modified={entry.modified === null ? "" : dateFormat.format(entry.modified * 1000)}
-                  onClick={(event) => select(entry.name, clickMode(event))}
-                  onOpen={() => void store.getState().open(entry)}
-                  onContextMenu={() => {
-                    if (!selection.has(entry.name)) select(entry.name, "only");
-                  }}
-                  onOperation={(kind) => {
-                    if (kind === "rename") onOperation({ kind, name: entry.name });
-                    else if (kind === "permissions") onOperation({ kind, entry });
-                    else if (kind === "newFolder") onOperation({ kind });
-                    else onOperation({ kind, names: selection.has(entry.name) ? selected() : [entry.name] });
-                  }}
-                  onDownload={
-                    onDownload &&
-                    (() => onDownload(selection.has(entry.name) ? order.filter((n) => selection.has(n)) : [entry.name]))
-                  }
-                />
-              );
-            })}
-          </div>
-        )}
+        <div role="row" aria-rowindex={1} className={cn(columns, "shrink-0 px-2 pb-1")}>
+          <HeaderCell label={t("files.columns.name")} sortKey="name" sort={prefs.sort} onSort={sortBy} />
+          <HeaderCell label={t("files.columns.size")} sortKey="size" sort={prefs.sort} onSort={sortBy} end />
+          <HeaderCell
+            label={t("files.columns.modified")}
+            sortKey="modified"
+            sort={prefs.sort}
+            onSort={sortBy}
+            className="hidden @sm:flex"
+          />
+          <HeaderCell
+            label={t("files.columns.permissions")}
+            sortKey="permissions"
+            sort={prefs.sort}
+            onSort={sortBy}
+            className="hidden @md:flex"
+          />
+        </div>
+        <div
+          ref={scroller}
+          className={cn("min-h-0 flex-1 overflow-auto px-2 pb-2", loading && "opacity-70")}
+          onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+        >
+          {rows.length === 0 ? (
+            <p className="text-muted-foreground p-6 text-center">{filter.trim() ? t("sftp.noMatches") : t("files.emptyFolder")}</p>
+          ) : (
+            <div role="rowgroup" className="relative" style={{ height: rows.length * rowHeight }}>
+              {rows.slice(start, end).map((entry, offset) => {
+                const index = start + offset;
+                const names = selection.has(entry.name) ? selected : [entry.name];
+                const paths = exchange?.copy ? names.map((name) => childPath(path, name)) : undefined;
+                return (
+                  <FileRow
+                    key={entry.name}
+                    id={rowId(index)}
+                    index={index}
+                    entry={entry}
+                    path={path}
+                    exchange={exchange}
+                    dragPaths={paths}
+                    onCopy={paths && (() => exchange?.copy?.(paths))}
+                    selected={selection.has(entry.name)}
+                    focused={index === focusIndex}
+                    modified={entry.modified === null ? "" : dateFormat.format(entry.modified * 1000)}
+                    onClick={(event) => select(entry.name, clickMode(event))}
+                    onOpen={() => void store.getState().open(entry)}
+                    onContextMenu={() => {
+                      if (!selection.has(entry.name)) select(entry.name, "only");
+                    }}
+                    onOperation={(kind) => {
+                      if (kind === "rename") onOperation({ kind, name: entry.name });
+                      else if (kind === "permissions") onOperation({ kind, entry });
+                      else if (kind === "newFolder") onOperation({ kind });
+                      else onOperation({ kind, names });
+                    }}
+                    onDownload={onDownload && (() => onDownload(names))}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -393,6 +442,9 @@ function FileRow({
   onContextMenu,
   onOperation,
   onDownload,
+  exchange,
+  dragPaths,
+  onCopy,
 }: {
   id: string;
   index: number;
@@ -406,14 +458,20 @@ function FileRow({
   onContextMenu(): void;
   onOperation(kind: FileOperation["kind"]): void;
   onDownload?: () => void;
+  exchange?: FileExchange;
+  dragPaths?: string[];
+  onCopy?: () => void;
 }) {
   const { t } = useTranslation();
+  const { setNodeRef, listeners, isDragging } = useDraggable({ id, disabled: !dragPaths, data: { side: exchange?.side, paths: dragPaths } });
   const dir = isDirLike(entry);
   const Icon = entry.kind === "symlink" ? (dir ? FolderSymlink : FileSymlink) : dir ? Folder : File;
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <div
+          ref={setNodeRef}
+          {...listeners}
           id={id}
           role="row"
           aria-rowindex={index + 2}
@@ -422,6 +480,7 @@ function FileRow({
             columns,
             "absolute inset-x-0 items-center rounded-sm px-1 select-none",
             selected ? "bg-selected" : "hover:bg-accent/60",
+            isDragging && "opacity-50",
             focused && "ring-ring/40 ring-1 ring-inset",
           )}
           style={{ top: index * rowHeight, height: rowHeight }}
@@ -452,7 +511,13 @@ function FileRow({
         {isFileLike(entry) && (
           <ContextMenuItem onSelect={onOpen}>
             <FilePen />
-            {t("files.openInEditor")}
+            {t(exchange?.side === "local" ? "files.open" : "files.openInEditor")}
+          </ContextMenuItem>
+        )}
+        {onCopy && (
+          <ContextMenuItem onSelect={onCopy}>
+            {exchange?.side === "local" ? <Upload /> : <Download />}
+            {t(exchange?.side === "local" ? "sftp.uploadSelection" : "sftp.downloadSelection")}
           </ContextMenuItem>
         )}
         {onDownload && (
@@ -470,10 +535,12 @@ function FileRow({
           <Pencil />
           {t("files.renameAction")}
         </ContextMenuItem>
-        <ContextMenuItem onSelect={() => onOperation("permissions")}>
-          <KeyRound />
-          {t("files.permissionsAction")}
-        </ContextMenuItem>
+        {!(exchange?.side === "local" && entry.permissions === null) && (
+          <ContextMenuItem onSelect={() => onOperation("permissions")}>
+            <KeyRound />
+            {t("files.permissionsAction")}
+          </ContextMenuItem>
+        )}
         <ContextMenuItem onSelect={() => onOperation("newFolder")}>
           <FolderPlus />
           {t("files.newFolderAction")}

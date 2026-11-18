@@ -5409,7 +5409,7 @@ dependencies = [
 
 [[package]]
 name = "sshastra"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -5429,15 +5429,17 @@ dependencies = [
 
 [[package]]
 name = "sshastra-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
+ "dunce",
  "hmac",
  "keyring",
  "notify",
  "portable-pty",
  "russh",
  "russh-sftp",
+ "rustix",
  "serde",
  "serde_json",
  "sha1",
@@ -5446,6 +5448,7 @@ dependencies = [
  "tokio",
  "uuid",
  "vt100",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

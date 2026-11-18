@@ -12,7 +12,7 @@ mod sftp;
 mod transfer;
 
 pub use live::LiveHostFs;
-pub use local::{DiskFs, LocalFs};
+pub use local::{DiskBrowser, DiskFs, LocalFs};
 pub use registry::{FsId, FsRegistry};
 pub use sftp::SftpFs;
 pub use transfer::{
