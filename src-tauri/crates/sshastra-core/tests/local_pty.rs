@@ -18,14 +18,32 @@ fn spawn(command: ShellCommand) -> (LocalPty, Receiver<TerminalEvent>) {
     (pty, rx)
 }
 
+/// Device Status Report: "where is the cursor?". Windows ConPTY sends it on
+/// start-up and prints nothing more until it gets an answer. In the app
+/// xterm.js answers it; in these tests nobody does, so answer it here.
+const CURSOR_POSITION_QUERY: &[u8] = b"\x1b[6n";
+
+/// Plays the part of the terminal emulator for start-up queries.
+fn answer_queries(pty: &mut LocalPty, bytes: &[u8]) {
+    let asked = bytes
+        .windows(CURSOR_POSITION_QUERY.len())
+        .filter(|window| *window == CURSOR_POSITION_QUERY)
+        .count();
+    for _ in 0..asked {
+        pty.write(b"\x1b[1;1R")
+            .expect("answer the cursor position query");
+    }
+}
+
 /// Collects output until `needle` appears; panics on timeout or early exit.
-fn read_until(rx: &Receiver<TerminalEvent>, needle: &str) -> String {
+fn read_until(pty: &mut LocalPty, rx: &Receiver<TerminalEvent>, needle: &str) -> String {
     let deadline = Instant::now() + TIMEOUT;
     let mut seen = Vec::new();
     loop {
         let left = deadline.saturating_duration_since(Instant::now());
         match rx.recv_timeout(left) {
             Ok(TerminalEvent::Output(bytes)) => {
+                answer_queries(pty, &bytes);
                 seen.extend_from_slice(&bytes);
                 let text = String::from_utf8_lossy(&seen).into_owned();
                 if text.contains(needle) {
@@ -48,11 +66,14 @@ fn read_until(rx: &Receiver<TerminalEvent>, needle: &str) -> String {
 }
 
 /// Drains events until Exit; returns (all output, exit code).
-fn read_to_exit(rx: &Receiver<TerminalEvent>) -> (String, Option<u32>) {
+fn read_to_exit(pty: &mut LocalPty, rx: &Receiver<TerminalEvent>) -> (String, Option<u32>) {
     let mut seen = Vec::new();
     loop {
         match rx.recv_timeout(TIMEOUT).expect("exit event before timeout") {
-            TerminalEvent::Output(bytes) => seen.extend_from_slice(&bytes),
+            TerminalEvent::Output(bytes) => {
+                answer_queries(pty, &bytes);
+                seen.extend_from_slice(&bytes);
+            }
             event @ (TerminalEvent::Connection(_) | TerminalEvent::Cwd(_)) => {
                 panic!("a Local terminal sent {event:?}")
             }
@@ -71,8 +92,8 @@ fn sh(script: &str) -> ShellCommand {
 #[cfg(unix)]
 #[test]
 fn streams_output_then_reports_exit_code() {
-    let (_pty, rx) = spawn(sh("printf 'hello from pty'; exit 3"));
-    let (output, code) = read_to_exit(&rx);
+    let (mut pty, rx) = spawn(sh("printf 'hello from pty'; exit 3"));
+    let (output, code) = read_to_exit(&mut pty, &rx);
     assert!(output.contains("hello from pty"), "output: {output:?}");
     assert_eq!(code, Some(3));
 }
@@ -81,8 +102,8 @@ fn streams_output_then_reports_exit_code() {
 #[test]
 fn delivers_large_output_completely_before_exit() {
     // 200k lines ≈ 1.3 MB: every byte must arrive, and Exit must come last.
-    let (_pty, rx) = spawn(sh("seq 1 200000; exit 0"));
-    let (output, code) = read_to_exit(&rx);
+    let (mut pty, rx) = spawn(sh("seq 1 200000; exit 0"));
+    let (output, code) = read_to_exit(&mut pty, &rx);
     assert_eq!(code, Some(0));
     assert!(
         output.trim_end().ends_with("200000"),
@@ -96,7 +117,7 @@ fn delivers_large_output_completely_before_exit() {
 fn forwards_written_input_to_the_shell() {
     let (mut pty, rx) = spawn(sh("read line; echo \"got:$line\""));
     pty.write(b"ping\r").unwrap();
-    read_until(&rx, "got:ping");
+    read_until(&mut pty, &rx, "got:ping");
 }
 
 #[cfg(unix)]
@@ -109,14 +130,14 @@ fn resize_is_seen_by_the_program() {
     })
     .unwrap();
     pty.write(b"\r").unwrap();
-    read_until(&rx, "43 132");
+    read_until(&mut pty, &rx, "43 132");
 }
 
 #[cfg(unix)]
 #[test]
 fn starts_with_the_requested_size() {
-    let (_pty, rx) = spawn(sh("stty size"));
-    read_until(&rx, "24 80");
+    let (mut pty, rx) = spawn(sh("stty size"));
+    read_until(&mut pty, &rx, "24 80");
 }
 
 #[cfg(unix)]
@@ -124,14 +145,14 @@ fn starts_with_the_requested_size() {
 fn close_ends_a_running_program() {
     let (mut pty, rx) = spawn(sh("sleep 30"));
     pty.close().unwrap();
-    let (_output, _code) = read_to_exit(&rx);
+    let (_output, _code) = read_to_exit(&mut pty, &rx);
 }
 
 #[cfg(unix)]
 #[test]
 fn passes_extra_environment_to_the_program() {
-    let (_pty, rx) = spawn(sh("echo \"term=$TERM\"").env("TERM", "xterm-256color"));
-    read_until(&rx, "term=xterm-256color");
+    let (mut pty, rx) = spawn(sh("echo \"term=$TERM\"").env("TERM", "xterm-256color"));
+    read_until(&mut pty, &rx, "term=xterm-256color");
 }
 
 #[test]
@@ -144,14 +165,14 @@ fn default_shell_starts_and_runs_a_command() {
     #[cfg(windows)]
     let (input, expected) = (&b"echo sshastra-%OS%\r"[..], "sshastra-Windows_NT");
     pty.write(input).unwrap();
-    read_until(&rx, expected);
+    read_until(&mut pty, &rx, expected);
 }
 
 #[cfg(windows)]
 #[test]
 fn windows_command_streams_output_and_exits() {
-    let (_pty, rx) = spawn(ShellCommand::new("cmd.exe").args(["/C", "echo hello from pty"]));
-    let (output, code) = read_to_exit(&rx);
+    let (mut pty, rx) = spawn(ShellCommand::new("cmd.exe").args(["/C", "echo hello from pty"]));
+    let (output, code) = read_to_exit(&mut pty, &rx);
     assert!(output.contains("hello from pty"), "output: {output:?}");
     assert_eq!(code, Some(0));
 }
