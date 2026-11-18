@@ -1,0 +1,12 @@
+# Demo sshd for the README screenshots: public keys only, forwarding allowed
+# (Port forwards and Jump hosts), no banners.
+PermitRootLogin no
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+UsePAM no
+AllowTcpForwarding yes
+PrintMotd no
+PrintLastLog no
+AcceptEnv LANG LC_*
+Subsystem sftp /usr/lib/openssh/sftp-server
