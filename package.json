@@ -15,7 +15,8 @@
     "tauri": "tauri",
     "release:check": "node scripts/release-check.ts",
     "e2e:build": "VITE_E2E=1 tauri build --debug --no-bundle --features e2e",
-    "e2e": "wdio run e2e/wdio.conf.ts"
+    "e2e": "wdio run e2e/wdio.conf.ts",
+    "screenshots": "wdio run e2e/wdio.screenshots.conf.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
