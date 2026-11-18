@@ -17,6 +17,7 @@ import { childPath } from "./fileList";
 import { EditQuestionDialog } from "./EditQuestionDialog";
 import { errorText } from "./fileErrors";
 import { followConnection } from "./fileBrowserStore";
+import { followUploads } from "./followUploads";
 import { fileBrowsers } from "./fileBrowsers";
 import { filesSetting } from "./file-prefs";
 import { FilePanel } from "./FilePanel";
@@ -59,6 +60,8 @@ function RemoteFilePanel({ pane }: { pane: FilePanelPane }) {
   // SFTP opens on the Terminal's Connection once it is up and the panel is shown, and closes
   // while it is down (dropped, reconnecting), reopening on the new Connection after a reconnect.
   useEffect(() => followConnection(store, pane.status, !collapsed), [pane.status, collapsed, store]);
+  // An upload into the folder shown appears in the listing once it is done.
+  useEffect(() => followUploads(store, transfersStore), [store]);
 
   const ready = phase === "open" && path !== null;
   const hasSelection = useStore(store, (s) => s.selection.size > 0);

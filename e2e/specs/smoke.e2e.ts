@@ -128,8 +128,7 @@ describe("sshastra", () => {
     await browser.waitUntil(() => sshd.runAsTester(`cat '${scratch}/${uploadName}' 2>/dev/null || true`) === uploadContent, {
       timeoutMsg: "the uploaded file never matched on the server",
     });
-    // The listing does not reload by itself after an upload; Refresh shows the file.
-    await $('button[aria-label="Refresh"]').click();
+    // The listing reloads by itself once the upload into the folder shown is done.
     await listing.$(`span=${uploadName}`).waitForDisplayed();
   });
 });
