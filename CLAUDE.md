@@ -2,6 +2,8 @@
 
 The app is shown to users as **SSH Astra**: window title, `productName`, the HTML title and every UI string (`app.name` in the locales). Code identifiers keep the lowercase id `sshastra`: crates, the executable (`mainBinaryName`), the bundle identifier `dev.sshastra.app`, the keychain service, temp folders, storage keys and export file names. Renaming them would orphan users' saved data.
 
+The app icon is a three-star constellation forming `>` followed by an underscore, giving `>_` ("Astra" means stars). Its 1024 px master is `src-tauri/icons/icon-source.png`. To regenerate every icon from it, run `pnpm tauri icon src-tauri/icons/icon-source.png -o <tmp>` and copy back only the files already in `src-tauri/icons/`; this is a desktop-only app, so leave out the android/ios output.
+
 ## Agent skills
 
 ### Issue tracker
