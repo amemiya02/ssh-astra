@@ -42,6 +42,18 @@ describe("forwards store", () => {
     expect(statusOf(store.getState(), "never-started")).toEqual({ state: "stopped" });
   });
 
+  it("keeps a rule stopped when its event arrives before an older running snapshot", async () => {
+    const { api } = fakeApi({
+      watchForwards: async (receive) => {
+        receive({ ...running("a"), status: { state: "stopped" } });
+        return [running("a")];
+      },
+    });
+    const store = createForwardsStore(api);
+    await store.getState().watch();
+    expect(runningForwards(store.getState())).toEqual([]);
+  });
+
   it("lists the running forwards for the status bar", async () => {
     const { api, push } = fakeApi();
     const store = createForwardsStore(api);

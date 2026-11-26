@@ -2,8 +2,9 @@
 //! and stopping them (PortForwarder). State changes are pushed to the single
 //! channel registered with `forwards_watch`.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
+use super::watch::Watcher;
 use sshastra_core::forward::{ForwardDraft, ForwardEvent, ForwardId, PortForward, PortForwarder};
 use sshastra_core::hosts::HostId;
 use tauri::ipc::Channel;
@@ -17,18 +18,15 @@ use crate::prompts::{ChannelPrompter, PendingPrompts, PromptRequest};
 /// The app's PortForwarder and the channel its state changes go to.
 pub struct ForwardsState {
     pub forwarder: PortForwarder,
-    watcher: Arc<Mutex<Option<Channel<ForwardEvent>>>>,
+    watcher: Arc<Watcher<ForwardEvent>>,
 }
 
 impl Default for ForwardsState {
     fn default() -> Self {
-        let watcher: Arc<Mutex<Option<Channel<ForwardEvent>>>> = Arc::default();
+        let watcher: Arc<Watcher<ForwardEvent>> = Arc::default();
         let sink = Arc::clone(&watcher);
         let forwarder = PortForwarder::with_listener(move |event| {
-            if let Some(channel) = sink.lock().unwrap_or_else(|p| p.into_inner()).as_ref() {
-                // Fails only once the webview is gone.
-                let _ = channel.send(event);
-            }
+            sink.send(event);
         });
         Self { forwarder, watcher }
     }
@@ -41,8 +39,9 @@ pub fn forwards_watch(
     forwards: State<'_, ForwardsState>,
     on_event: Channel<ForwardEvent>,
 ) -> Vec<ForwardEvent> {
-    *forwards.watcher.lock().unwrap_or_else(|p| p.into_inner()) = Some(on_event);
-    forwards.forwarder.list()
+    forwards
+        .watcher
+        .subscribe(on_event, || forwards.forwarder.list())
 }
 
 /// Adds a rule to Host `host_id` (`id` omitted) or replaces its rule `id`.

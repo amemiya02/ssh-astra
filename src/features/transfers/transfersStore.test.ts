@@ -84,6 +84,22 @@ describe("transfers store", () => {
     expect(store.getState().speeds[1]).toBeUndefined();
   });
 
+  it("keeps early completion and replaces removed transfers and speed samples on rewatch", async () => {
+    const { store, api, push, advance } = setup([transfer(1)]);
+    await store.getState().watch();
+    advance(100);
+    push(transfer(1, { bytesDone: 500 }));
+    expect(store.getState().speeds[1]).toBeGreaterThan(0);
+    vi.mocked(api.watchTransfers).mockImplementationOnce(async receive => {
+      receive(transfer(2, { state: { type: "done" } }));
+      return [transfer(2)];
+    });
+
+    await store.getState().watch();
+    expect(store.getState().transfers).toEqual([transfer(2, { state: { type: "done" } })]);
+    expect(store.getState().speeds).toEqual({});
+  });
+
   it("asks the backend to upload, download, cancel, retry and answer", async () => {
     const { api, store } = setup();
     const s = store.getState();

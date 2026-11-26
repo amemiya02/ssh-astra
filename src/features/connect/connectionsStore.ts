@@ -1,3 +1,4 @@
+import { createSnapshotWatch } from "@/lib/ipc/watchSnapshot";
 import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import { readCommandError, type ConnectPrompt, type PromptAnswer } from "@/lib/ipc/connect";
@@ -34,10 +35,11 @@ export function createConnectionsStore(api: ConnectionsApi): StoreApi<Connection
       held: [],
       connecting: [],
 
-      async watch() {
-        const now = await api.watchConnections(apply);
-        for (const hostId of now) apply({ hostId, held: true });
-      },
+      watch: createSnapshotWatch(
+        api.watchConnections,
+        (held) => set({ held }),
+        apply,
+      ),
 
       async connect(hostId, ask) {
         set({ connecting: [...without(get().connecting, hostId), hostId] });

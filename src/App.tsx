@@ -6,6 +6,7 @@ import { connectionsStore, useConnections } from "@/features/connect/connections
 import { CommandDialog, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { FilePanelContent, type FilePanelPane } from "@/features/files/FilePanelContent";
 import { useRetainRemoteFilePanels } from "@/features/files/use-retain-remote-file-panels";
+import { fileBrowsers } from "@/features/files/fileBrowsers";
 import { formatSize } from "@/features/files/fileList";
 import { forwardsStore, runningForwards, useForwards } from "@/features/forwards/forwardsStore";
 import { activeConnections, forwardStatusText, runningRules } from "@/features/forwards/status";
@@ -92,8 +93,10 @@ export function App() {
   }, []);
   const retitle = useCallback((paneId: string, title: string) => dispatch({ type: "retitle", paneId, title }), []);
   const setStatus = useCallback(
-    (paneId: string, status: ConnectionStatus, reconnecting?: ReconnectProgress) =>
-      dispatch({ type: "status", paneId, status, reconnecting }),
+    (paneId: string, status: ConnectionStatus, reconnecting?: ReconnectProgress) => {
+      fileBrowsers.connectionChanged(paneId, status);
+      dispatch({ type: "status", paneId, status, reconnecting });
+    },
     [],
   );
 

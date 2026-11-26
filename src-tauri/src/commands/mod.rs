@@ -10,3 +10,4 @@ pub mod hosts;
 pub mod settings;
 pub mod terminal;
 pub mod transfers;
+mod watch;

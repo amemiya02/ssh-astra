@@ -6,8 +6,9 @@
 //! `transfers_watch`.
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
+use super::watch::Watcher;
 use sshastra_core::files::{
     ConflictAnswer, DiskFs, Transfer, TransferId, TransferQueue, TransferSettings,
 };
@@ -20,18 +21,15 @@ use super::files::live_sftp;
 /// The TransferQueue and the channel its changes go to.
 pub struct TransfersState {
     queue: TransferQueue,
-    watcher: Arc<Mutex<Option<Channel<Transfer>>>>,
+    watcher: Arc<Watcher<Transfer>>,
 }
 
 impl Default for TransfersState {
     fn default() -> Self {
-        let watcher: Arc<Mutex<Option<Channel<Transfer>>>> = Arc::default();
+        let watcher: Arc<Watcher<Transfer>> = Arc::default();
         let sink = Arc::clone(&watcher);
         let queue = TransferQueue::new(Arc::new(DiskFs), move |transfer| {
-            if let Some(channel) = sink.lock().unwrap_or_else(|p| p.into_inner()).as_ref() {
-                // Fails only once the webview is gone.
-                let _ = channel.send(transfer.clone());
-            }
+            sink.send(transfer.clone());
         });
         Self { queue, watcher }
     }
@@ -51,8 +49,9 @@ pub fn transfers_watch(
     transfers: State<'_, TransfersState>,
     on_event: Channel<Transfer>,
 ) -> Vec<Transfer> {
-    *transfers.watcher.lock().unwrap_or_else(|p| p.into_inner()) = Some(on_event);
-    transfers.queue.list()
+    transfers
+        .watcher
+        .subscribe(on_event, || transfers.queue.list())
 }
 
 /// Queues uploading each local file or folder in `paths` into the remote

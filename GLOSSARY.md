@@ -40,6 +40,10 @@ _Avoid_: Local session
 The SFTP file browser beside a Terminal, browsing the same Host over the same Connection.
 _Avoid_: SFTP browser, file manager, explorer
 
+**Remote edit**:
+A file from a Host opened in the local editor with automatic upload on save. File panels editing the same path on that Host share the Remote edit until the last one closes it.
+_Avoid_: Download, transfer
+
 **Port forward**:
 A saved rule on a Host that tunnels traffic through its Connection: local, remote, or dynamic (SOCKS). One marked "start when connected" (auto-start) runs whenever its Host connects.
 _Avoid_: Tunnel, port mapping

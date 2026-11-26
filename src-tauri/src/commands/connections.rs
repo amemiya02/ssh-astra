@@ -4,8 +4,9 @@
 //! Terminal (`HeldConnections`); holds are pushed to the single channel
 //! registered with `connections_watch`.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
+use super::watch::Watcher;
 use sshastra_core::hosts::{Host, HostId};
 use sshastra_core::ssh::{
     ConnectError, Connection, ConnectionManager, ConnectionSettings, HeldConnections, HeldEvent,
@@ -56,18 +57,15 @@ pub async fn connect_host(
 /// go to.
 pub struct ConnectionsState {
     held: HeldConnections,
-    watcher: Arc<Mutex<Option<Channel<HeldEvent>>>>,
+    watcher: Arc<Watcher<HeldEvent>>,
 }
 
 impl Default for ConnectionsState {
     fn default() -> Self {
-        let watcher: Arc<Mutex<Option<Channel<HeldEvent>>>> = Arc::default();
+        let watcher: Arc<Watcher<HeldEvent>> = Arc::default();
         let sink = Arc::clone(&watcher);
         let held = HeldConnections::with_listener(move |event| {
-            if let Some(channel) = sink.lock().unwrap_or_else(|p| p.into_inner()).as_ref() {
-                // Fails only once the webview is gone.
-                let _ = channel.send(event);
-            }
+            sink.send(event);
         });
         Self { held, watcher }
     }
@@ -87,11 +85,9 @@ pub fn connections_watch(
     connections: State<'_, ConnectionsState>,
     on_event: Channel<HeldEvent>,
 ) -> Vec<HostId> {
-    *connections
+    connections
         .watcher
-        .lock()
-        .unwrap_or_else(|p| p.into_inner()) = Some(on_event);
-    connections.held.list()
+        .subscribe(on_event, || connections.held.list())
 }
 
 /// "Connect only": connects to Host `host_id` (through its Jump hosts),

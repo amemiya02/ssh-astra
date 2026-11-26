@@ -5,7 +5,8 @@ import type { StoreApi } from "zustand/vanilla";
 import { IconButton } from "@/components/IconButton";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { FileBrowserState, RemoteEditItem } from "./fileBrowserStore";
+import type { RemoteEditItem } from "./sharedRemoteEdits";
+import type { FileBrowserState } from "./fileBrowserStore";
 import { errorText } from "./fileErrors";
 
 /**

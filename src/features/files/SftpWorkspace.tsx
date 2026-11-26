@@ -26,6 +26,7 @@ import { filesSetting } from "./file-prefs";
 import { errorText } from "./fileErrors";
 import { childPath } from "./fileList";
 import { followUploads } from "./followUploads";
+import { sharedRemoteEdits } from "./sharedRemoteEdits";
 import { RemoteEdits } from "./RemoteEdits";
 
 type Side = FileExchange["side"];
@@ -75,7 +76,7 @@ export function SftpWorkspace({ id, host, active, onStatusChange }: {
         ...files,
         ...edit,
         openFiles: (hostId) => files.connectFiles(hostId, ask),
-      }, host.id, host.defaultDirectory),
+      }, host.id, host.defaultDirectory, undefined, sharedRemoteEdits),
       listenForPrompts() {
         listening = true;
         return () => {

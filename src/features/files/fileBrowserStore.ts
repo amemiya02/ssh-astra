@@ -1,35 +1,18 @@
 import { createStore, type StoreApi } from "zustand/vanilla";
 import type { ConnectionStatus } from "@/features/workspace/tabs";
 import { readCommandError, type CommandError } from "@/lib/ipc/connect";
-import * as editIpc from "@/lib/ipc/edit";
-import { maxEditSize, type EditEvent, type EditId } from "@/lib/ipc/edit";
+import { maxEditSize } from "@/lib/ipc/edit";
 import * as ipc from "@/lib/ipc/files";
 import type { FileEntry, FsId } from "@/lib/ipc/files";
 import type { HostId } from "@/lib/ipc/hosts";
+import { createSharedRemoteEdits, type EditCommands, type RemoteEditItem } from "./sharedRemoteEdits";
 import { childPath, isDirLike, isFileLike, parentPath } from "./fileList";
 
 /** The SFTP, file operation and remote edit commands a File panel uses (`@/lib/ipc/files`, `@/lib/ipc/edit`); a fake in tests. */
 export type FilesApi = Pick<
   typeof ipc,
   "openFiles" | "listFiles" | "closeFiles" | "createDir" | "renameFile" | "countFiles" | "deleteFiles" | "chmodFile"
-> &
-  Pick<typeof editIpc, "openRemoteEdit" | "retryRemoteEdit" | "closeRemoteEdit">;
-
-/**
- * A remote file opened in the user's editor from this File panel: `opening` (downloading),
- * `editing` (no save yet), then `uploading` / `uploaded` / `uploadFailed` per save;
- * `openFailed` if it could not be downloaded or opened.
- */
-export interface RemoteEditItem {
-  /** Absolute remote path; identifies the item. */
-  path: string;
-  name: string;
-  /** `null` until it opened. */
-  id: EditId | null;
-  status: "opening" | "editing" | "uploading" | "uploaded" | "uploadFailed" | "openFailed";
-  /** Why it could not be opened or uploaded (`kind: "uploadFailed"` for uploads). */
-  error: CommandError | null;
-}
+> & EditCommands;
 
 /**
  * A file `open` did not open in the editor without asking: over the size limit (offer a download)
@@ -74,7 +57,7 @@ export interface FileBrowserState {
   answerEditQuestion(answer: "open" | "cancel"): Promise<void>;
   /** Uploads a failed edit again, or opens again one that could not be opened. */
   retryEdit(path: string): Promise<void>;
-  /** Stops uploading the file and deletes its temp copy. */
+  /** Releases this pane’s edit. Its last pane stops uploads and deletes the temp copy. */
   closeEdit(path: string): void;
   /** `order` is the names as displayed, for Shift-click ranges. */
   select(name: string, mode: SelectMode, order: readonly string[]): void;
@@ -108,6 +91,7 @@ export function createFileBrowserStore(
   hostId: HostId,
   startPath?: string | null,
   local?: { openPath(path: string): Promise<void>; windows: boolean },
+  editsForPanel = createSharedRemoteEdits(api),
 ): StoreApi<FileBrowserState> {
   let fsId: FsId | null = null;
   let opening: Promise<void> | null = null;
@@ -137,50 +121,20 @@ export function createFileBrowserStore(
       }
     };
 
-    const updateEdit = (path: string, change: Partial<RemoteEditItem>) =>
-      set({ edits: get().edits.map((e) => (e.path === path ? { ...e, ...change } : e)) });
-
-    const onEditEvent = (path: string) => (event: EditEvent) => {
-      if (event.state === "uploadFailed") {
-        updateEdit(path, { status: "uploadFailed", error: { kind: "uploadFailed", message: event.reason } });
+    const remoteEdits = editsForPanel(hostId, (item) => {
+      const { path, name, error } = item;
+      const edits = get().edits;
+      if (item.status === "openFailed" && (error?.kind === "tooLarge" || error?.kind === "binary")) {
+        remoteEdits.release(path);
+        set({ edits: edits.filter((e) => e.path !== path), editQuestion: { path, name, reason: error.kind } });
       } else {
-        updateEdit(path, { status: event.state, error: null });
+        const next = edits.slice();
+        const index = next.findIndex((edit) => edit.path === path);
+        if (index === -1) next.push(item);
+        else next[index] = item;
+        set({ edits: next });
       }
-    };
-
-    const nameOf = (path: string) => path.slice(path.lastIndexOf("/") + 1);
-
-    const startEdit = async (path: string, allowBinary = false) => {
-      const existing = get().edits.find((e) => e.path === path);
-      if (existing) {
-        if (existing.status === "openFailed") updateEdit(path, { status: "opening", error: null });
-      } else {
-        set({ edits: [...get().edits, { path, name: nameOf(path), id: null, status: "opening", error: null }] });
-      }
-      try {
-        const id = await api.openRemoteEdit(hostId, path, onEditEvent(path), { allowBinary });
-        const current = get().edits.find((e) => e.path === path);
-        if (!current) {
-          // Closed while it was opening.
-          void api.closeRemoteEdit(id).catch(() => {});
-          return;
-        }
-        updateEdit(path, current.status === "opening" ? { id, status: "editing" } : { id });
-      } catch (e) {
-        const current = get().edits.find((x) => x.path === path);
-        const error = readCommandError(e);
-        // Opening again an edit that is already open only failed to show it.
-        if (!current || current.id !== null) return;
-        if (error.kind === "tooLarge" || error.kind === "binary") {
-          set({
-            edits: get().edits.filter((x) => x.path !== path),
-            editQuestion: { path, name: nameOf(path), reason: error.kind },
-          });
-        } else {
-          updateEdit(path, { status: "openFailed", error });
-        }
-      }
-    };
+    });
 
     /** Runs an operation on the open session, then refreshes (also after a partial failure). */
     const operate = async (
@@ -268,37 +222,21 @@ export function createFileBrowserStore(
           } catch (e) {
             if (get().path === dir) set({ error: readCommandError(e) });
           }
-        } else if (entry.kind === "file" && entry.size > maxEditSize && !get().edits.some((e) => e.path === path)) {
+        } else if (entry.kind === "file" && entry.size > maxEditSize && !remoteEdits.isOpen(path)) {
           set({ editQuestion: { path, name: entry.name, reason: "tooLarge" } });
-        } else if (isFileLike(entry)) await startEdit(path);
+        } else if (isFileLike(entry)) await remoteEdits.open(path);
       },
 
       async answerEditQuestion(answer) {
         const question = get().editQuestion;
         set({ editQuestion: null });
-        if (answer === "open" && question?.reason === "binary") await startEdit(question.path, true);
+        if (answer === "open" && question?.reason === "binary") await remoteEdits.open(question.path, true);
       },
 
-      async retryEdit(path) {
-        const edit = get().edits.find((e) => e.path === path);
-        if (!edit) return;
-        if (edit.id === null) {
-          await startEdit(path);
-          return;
-        }
-        updateEdit(path, { status: "uploading", error: null });
-        try {
-          await api.retryRemoteEdit(edit.id);
-        } catch (e) {
-          updateEdit(path, { status: "uploadFailed", error: readCommandError(e) });
-        }
-      },
-
+      retryEdit: remoteEdits.retry,
       closeEdit(path) {
-        const edit = get().edits.find((e) => e.path === path);
-        if (!edit) return;
+        remoteEdits.release(path);
         set({ edits: get().edits.filter((e) => e.path !== path) });
-        if (edit.id !== null) void api.closeRemoteEdit(edit.id).catch(() => {});
       },
 
       select(name, mode, order) {

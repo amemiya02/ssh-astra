@@ -1,3 +1,4 @@
+import { createSnapshotWatch } from "@/lib/ipc/watchSnapshot";
 import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import type { HostId } from "@/lib/ipc/hosts";
@@ -75,10 +76,18 @@ export function createTransfersStore(
       transfers: [],
       speeds: {},
 
-      async watch() {
-        const current = await api.watchTransfers(apply);
-        for (const transfer of current) apply(transfer);
-      },
+      watch: createSnapshotWatch(
+        api.watchTransfers,
+        (snapshot) => {
+          samples.clear();
+          const at = now();
+          for (const t of snapshot) {
+            if (t.state.type === "running") samples.set(t.id, { at, bytes: t.bytesDone });
+          }
+          set({ transfers: [...snapshot].sort((a, b) => a.id - b.id), speeds: {} });
+        },
+        apply,
+      ),
 
       async upload(hostId, paths, remoteDir) {
         await api.uploadFiles(hostId, paths, remoteDir);

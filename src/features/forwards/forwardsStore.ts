@@ -1,3 +1,4 @@
+import { createSnapshotWatch } from "@/lib/ipc/watchSnapshot";
 import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import { readCommandError, type ConnectPrompt, type PromptAnswer } from "@/lib/ipc/connect";
@@ -36,10 +37,11 @@ export function createForwardsStore(api: ForwardsApi): StoreApi<ForwardsState> {
     return {
       states: {},
 
-      async watch() {
-        const now = await api.watchForwards(apply);
-        for (const event of now) apply(event);
-      },
+      watch: createSnapshotWatch(
+        api.watchForwards,
+        (events) => set({ states: Object.fromEntries(events.map((event) => [event.forwardId, event])) }),
+        apply,
+      ),
 
       async start(hostId, id, ask) {
         try {

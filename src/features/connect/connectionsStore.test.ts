@@ -32,6 +32,40 @@ describe("connections store", () => {
     expect(store.getState().held).toEqual(["h2"]);
   });
 
+  it("replaces the held Hosts and ignores late events from the old channel", async () => {
+    const channels: Array<(event: HeldEvent) => void> = [];
+    const { api } = fakeApi({
+      watchConnections: async receive => {
+        channels.push(receive);
+        if (channels.length === 1) return ["old"];
+        receive({ hostId: "released", held: false });
+        return ["new", "released"];
+      },
+    });
+    const store = createConnectionsStore(api);
+    await store.getState().watch();
+    await Promise.all([store.getState().watch(), store.getState().watch()]);
+    expect(channels).toHaveLength(2);
+    channels[0]!({ hostId: "old", held: true });
+    channels[1]!({ hostId: "live", held: true });
+    expect(store.getState().held).toEqual(["new", "live"]);
+  });
+
+  it("drops buffered events from a failed registration and can register again", async () => {
+    const { api } = fakeApi();
+    let abandoned!: (event: HeldEvent) => void;
+    vi.mocked(api.watchConnections).mockImplementationOnce(async receive => {
+      abandoned = receive;
+      receive({ hostId: "early", held: true });
+      throw new Error("watch failed");
+    });
+    const store = createConnectionsStore(api);
+    await expect(store.getState().watch()).rejects.toThrow("watch failed");
+    await store.getState().watch();
+    abandoned({ hostId: "late", held: true });
+    expect(store.getState().held).toEqual(["h1"]);
+  });
+
   it("connects only, passing questions through, and marks the Host as connecting meanwhile", async () => {
     let finish = () => {};
     const connectHost = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
