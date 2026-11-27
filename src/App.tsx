@@ -26,6 +26,7 @@ import { DiagnosticsPaletteActions } from "@/features/settings/diagnostics-secti
 import { AppShell } from "@/features/shell/AppShell";
 import { zoomTerminalFont } from "@/features/terminal/terminal-prefs";
 import { useTerminalPrefs } from "@/features/terminal/terminal-prefs-context";
+import { terminalLogs } from "@/features/terminal/terminal-logs";
 import { createBroadcast, type BroadcastScope } from "@/features/workspace/broadcast";
 import { paneNeighbors } from "@/features/workspace/pane-layout";
 import { privacyModeSetting, togglePrivacyMode } from "@/features/workspace/privacy-mode";
@@ -93,6 +94,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
   const focusedPaneId = focused?.activePaneId;
   const paneMaximized = focused?.paneMaximized;
   const focusedPane = focused && activePane(focused);
+  const focusedLog = useStore(terminalLogs.store, (snapshot) => focusedPaneId ? snapshot.get(focusedPaneId) : undefined);
   const hasFocusedTerminal = focusedPane?.kind === "local-terminal" || focusedPane?.kind === "remote-terminal";
   const [broadcast] = useState(createBroadcast);
   const [tabActivity] = useState(createTabActivity);
@@ -229,6 +231,11 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
           shortcut: shortcutLabel("newTab", shortcuts),
           run: openLocalTerminal,
         },
+        ...(focusedLog && focusedPaneId ? [{
+          id: "terminal.log",
+          title: t(focusedLog.active ? "terminal.log.stop" : "terminal.log.start"),
+          run: () => void terminalLogs.toggle(focusedPaneId),
+        }] : []),
         { id: "home.open", title: t("palette.actions.goHome"), keywords: [t("palette.keywords.hosts")], run: openHome },
         { id: "files.openSftp", title: t("sftp.open"), run: pickSftpHost },
         { id: "transfers.open", title: t("transfers.open"), run: openTransfers },
@@ -269,7 +276,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
             ]
           : []),
       ],
-      [t, openLocalTerminal, openHome, openSettings, openTransfers, pickSftpHost, canSplitFocused, privacyMode, shortcuts],
+      [t, openLocalTerminal, openHome, openSettings, openTransfers, pickSftpHost, canSplitFocused, privacyMode, shortcuts, focusedLog, focusedPaneId],
     ),
   );
 

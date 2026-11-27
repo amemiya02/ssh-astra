@@ -46,6 +46,10 @@ _Avoid_: Session, console, shell tab
 A Terminal running a shell on the user's own machine, with no Connection.
 _Avoid_: Local session
 
+**Terminal log**:
+A local plain-text file of a Terminal's output while logging is active. The same file continues across a remote Terminal's reconnections.
+_Avoid_: Session log
+
 **Broadcast**:
 Sending the focused Terminal's keyboard input or paste to every running Terminal in the selected tab or window.
 _Avoid_: Sync input, multi-exec

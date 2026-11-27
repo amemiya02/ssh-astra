@@ -53,6 +53,12 @@ A modern, good-looking SSH & SFTP client for Windows, macOS and Linux.
 
 Zoom changes the saved font size for all Terminals within 8–32 px. The increase shortcut also accepts the `=` key.
 
+### Terminal logs
+
+Start or stop a Terminal log from its tab menu or the command palette. An active log is marked on the tab, including when a split is unfocused. In **Settings → Terminal**, choose a save folder and optionally turn on logging for every new Terminal. The default is off.
+
+Each UTF-8 file is named using the Host name (or `Local`) and start time in UTC. Remote Terminals keep writing to the same file when they reconnect. Logs contain plain-text shell output, including any commands the shell echoes. When the save folder is left at its default, files go into `terminal-logs` in SSH Astra's data directory.
+
 ### Terminal protocol support
 
 SSH Astra uses xterm.js 6.0.0.
@@ -90,7 +96,7 @@ Open **Settings → Diagnostics** or use **Open log folder** in the command pale
 
 SSH Astra keeps four application log files of up to 1 MiB each and the five most recent Rust panic reports. The logs cover startup and app version, SSH connection and authentication steps, reconnects, Port forwards, transfers, Remote edit uploads, Host and settings file errors, update checks, and uncaught interface errors. Panic reports include the error category and source location. Host names, addresses, and SSH usernames appear in the local logs.
 
-SSH Astra never logs Terminal input or output, passwords, key passphrases, private key contents, clipboard contents, or raw frontend error messages and stacks. **Copy diagnostic information** copies the app version, operating system, architecture, and redacted logs. It replaces Host names, addresses and usernames, Jump host references, Port forward destinations, key file paths, the local home directory and username, and IP addresses. All logs are stored locally. SSH Astra never uploads them.
+Diagnostic logs omit Terminal input and output, passwords, key passphrases, private key contents, clipboard contents, and raw frontend error messages and stacks. **Copy diagnostic information** copies the app version, operating system, architecture, and redacted logs. It replaces Host names, addresses and usernames, Jump host references, Port forward destinations, key file paths, the local home directory and username, and IP addresses. All logs are stored locally. SSH Astra never uploads them.
 
 ## Contributing
 

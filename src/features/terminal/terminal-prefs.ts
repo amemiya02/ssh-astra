@@ -33,13 +33,17 @@ export interface TerminalPrefs {
   highlighting: TerminalHighlighting;
   /** Selecting text copies it to the clipboard. */
   copyOnSelect: boolean;
-  /** Right-click pastes instead of doing nothing. */
+  /** Right-click pastes instead of opening the Terminal menu. */
   rightClickPaste: boolean;
   /**
    * Type the ShellIntegration hook into new remote bash/zsh shells so the File panel follows `cd`.
    * Read by the core too (`TerminalSettings`); applies to Terminals opened afterwards.
    */
   shellIntegration: boolean;
+  /** Log output from newly opened Terminals. Read by the core. */
+  autoLog: boolean;
+  /** A user-selected directory for Terminal logs. Null uses the app directory. */
+  logDirectory: string | null;
   /** Ask before pasting more than one line (`PasteConfirmDialog`), since a shell runs each as it arrives. */
   confirmMultilinePaste: boolean;
 }
@@ -75,6 +79,8 @@ export const defaultTerminalPrefs: TerminalPrefs = {
   copyOnSelect: true,
   rightClickPaste: true,
   shellIntegration: true,
+  autoLog: false,
+  logDirectory: null,
   confirmMultilinePaste: true,
 };
 
@@ -121,6 +127,8 @@ export function normalizeTerminalPrefs(raw: Partial<Record<keyof TerminalPrefs, 
     copyOnSelect: bool(raw.copyOnSelect, d.copyOnSelect),
     rightClickPaste: bool(raw.rightClickPaste, d.rightClickPaste),
     shellIntegration: bool(raw.shellIntegration, d.shellIntegration),
+    autoLog: bool(raw.autoLog, d.autoLog),
+    logDirectory: typeof raw.logDirectory === "string" && raw.logDirectory.trim() ? raw.logDirectory : null,
     confirmMultilinePaste: bool(raw.confirmMultilinePaste, d.confirmMultilinePaste),
   };
 }
