@@ -4,12 +4,14 @@ import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { quickConnectLabel } from "@/features/connect/quick-connect";
 import { hostsStore } from "@/features/hosts/hostsStore";
 import { currentPlatform } from "@/features/workspace/shortcuts";
 import { emptyTabs, newPane, tabsReducer, type TabsAction, type TabsState } from "@/features/workspace/tabs";
 import { restoreWorkspaceLayout, workspaceLayoutSetting } from "@/features/workspace/workspace-layout";
 import i18n, { startI18n } from "@/i18n";
-import type { Host } from "@/lib/ipc/hosts";
+import type { ConnectPrompt } from "@/lib/ipc/connect";
+import type { Host, QuickConnectTarget } from "@/lib/ipc/hosts";
 import type { TerminalMessage } from "@/lib/ipc/terminal";
 import { getSetting, startSettings, type SettingsBackend } from "@/lib/storage";
 import { ThemeProvider } from "@/theme/ThemeProvider";
@@ -17,18 +19,29 @@ import { App } from "./App";
 
 vi.mock("@tauri-apps/api/core", async (importOriginal) => {
   let nextTerminalId = 0;
+  let nextTemporaryId = 0;
   return {
     ...await importOriginal<typeof import("@tauri-apps/api/core")>(),
     Channel: class<T> {
       constructor(public onmessage: (message: T) => void) {}
     },
-    invoke: vi.fn(async (command: string) => {
+    invoke: vi.fn(async (command: string, args?: { target?: QuickConnectTarget }) => {
       if (command === "remote_terminal_open" || command === "local_terminal_open") return ++nextTerminalId;
+      if (command === "temporary_host_create") {
+        const target = { ...args!.target!, user: args!.target!.user ?? "local-user" };
+        return { ...host, ...target, id: `temporary-${++nextTemporaryId}`, name: quickConnectLabel(target), auth: { type: "auto" } };
+      }
+      if (command === "files_open" || command === "files_connect" || command === "files_local_open") return command;
+      if (command === "files_list") return { path: "/", entries: [] };
       if (command === "transfers_watch" || command === "forwards_watch" || command === "connections_watch") return [];
       if (command === "host_tree") return { hosts: savedHosts, groups: [] };
     }),
   };
 });
+
+vi.mock("@tauri-apps/api/webview", () => ({
+  getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }),
+}));
 
 // Exercise the real app and Terminal lifecycle without a renderer or native backend.
 const testTerminals = new Set<Terminal>();
@@ -501,6 +514,100 @@ async function openPalette() {
   })));
 }
 
+async function search(input: HTMLInputElement, query: string) {
+  expect(input).not.toBeNull();
+  const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+  await act(async () => {
+    setValue.call(input, query);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+async function enter(input: HTMLElement) {
+  await act(async () => input.dispatchEvent(new KeyboardEvent("keydown", {
+    key: "Enter", code: "Enter", bubbles: true, cancelable: true,
+  })));
+}
+
+const homeSearch = () => document.querySelector<HTMLInputElement>('input[aria-label="Search Hosts by name, address or user"]')!;
+const paletteSearch = () => dialog()!.querySelector<HTMLInputElement>('input[placeholder="Search Hosts, tabs and actions"]')!;
+const paletteOptions = () => [...dialog()!.querySelectorAll<HTMLElement>('[role="option"]')];
+
+it("opens a Temporary Host from an empty Home and discards it when its last tab closes", async () => {
+  await render(emptyTabs);
+  const target = "deploy@[2001:db8::1]:2222";
+  await search(homeSearch(), target);
+  expect(document.body.textContent).toContain(`Connect to ${target}`);
+  await enter(homeSearch());
+
+  const opens = () => vi.mocked(invoke).mock.calls
+    .filter(([command]) => command === "remote_terminal_open").map(([, args]) => args as {
+      hostId: string;
+      onPrompt: { onmessage(message: ConnectPrompt): void };
+    });
+  expect(opens()).toHaveLength(1);
+  const { hostId: id, onPrompt } = opens()[0]!;
+  expect(vi.mocked(invoke)).toHaveBeenCalledWith("temporary_host_create", {
+    target: { address: "2001:db8::1", user: "deploy", port: 2222 },
+  });
+  expect(JSON.stringify(settingsFile)).not.toContain(id);
+
+  await act(async () => onPrompt.onmessage({
+    type: "password", id: 1, host: "2001:db8::1", user: "deploy", retry: false, canSave: false,
+  }));
+  expect(dialog()?.querySelector('[role="checkbox"]')).toBeNull();
+  expect(dialog()?.textContent).not.toContain("keychain");
+  await clickButton("Cancel", dialog()!);
+
+  expect(vi.mocked(invoke)).toHaveBeenCalledWith("files_open", { hostId: id });
+  await clickButton("Open SFTP workspace", document.getElementById("files")!);
+  expect(vi.mocked(invoke)).toHaveBeenCalledWith("files_connect", expect.objectContaining({ hostId: id }));
+  expect(JSON.stringify(settingsFile)).not.toContain(id);
+  expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "host_save")).toBe(false);
+
+  await clickButton("Privacy mode");
+  expect(container?.innerHTML).not.toContain("2001:db8::1");
+  expect(container?.innerHTML).not.toContain("deploy@");
+  await clickButton("Close Temporary Host");
+  await clickButton("Close", dialog()!);
+  expect(vi.mocked(invoke)).not.toHaveBeenCalledWith("temporary_host_forget", { hostId: id });
+  await clickButton("Close SFTP · Temporary Host");
+  expect(vi.mocked(invoke)).toHaveBeenCalledWith("temporary_host_forget", { hostId: id });
+  expect(document.body.textContent).toContain("No Hosts yet");
+
+  await search(homeSearch(), target);
+  await enter(homeSearch());
+  expect(opens()).toHaveLength(2);
+  expect(opens()[1]?.hostId).not.toBe(id);
+});
+
+it("puts an exact saved Host ahead of Quick connect in Home and the palette", async () => {
+  const saved = { ...host, name: "lab" };
+  savedHosts = [{ ...host, id: "prefix", name: "lab-old" }, saved];
+  await hostsStore.getState().load();
+  await render(workspace({ type: "open", tabId: "home", pane: newPane({ kind: "home" }) }));
+
+  await search(homeSearch(), "LAB");
+  expect(document.body.textContent).not.toContain("Connect to LAB");
+  await enter(homeSearch());
+  expect(vi.mocked(invoke)).toHaveBeenCalledWith("remote_terminal_open", expect.objectContaining({ hostId: saved.id }));
+
+  await openPalette();
+  await search(paletteSearch(), "LAB");
+  expect(paletteOptions()[0]?.textContent).toContain("lab");
+  await enter(paletteSearch());
+  expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === "remote_terminal_open")
+    .map(([, args]) => (args as { hostId: string }).hostId)).toEqual([saved.id, saved.id]);
+
+  await openPalette();
+  await search(paletteSearch(), "testing@lab:2200");
+  expect(paletteOptions()[0]?.textContent).toBe("Connect to testing@lab:2200");
+  await enter(paletteSearch());
+  expect(vi.mocked(invoke)).toHaveBeenCalledWith("temporary_host_create", {
+    target: { address: "lab", port: 2200, user: "testing" },
+  });
+});
+
 async function paletteAction(title: string) {
   await openPalette();
   const item = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((option) => option.textContent?.startsWith(title));
@@ -531,16 +638,8 @@ it("masks Host details and tab titles while raw address searches still find the 
     expect(tab.title).toContain(host.name);
   }
 
-  async function search(input: HTMLInputElement) {
-    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
-    await act(async () => {
-      setValue.call(input, host.address);
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-  }
-
   for (const label of ["Search Hosts", "Search Hosts by name, address or user"]) {
-    await search(document.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!);
+    await search(document.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!, host.address);
   }
   expect(document.querySelector('[title="Double-click to connect"]')?.textContent).toContain(host.name);
   expect(document.querySelector("#tabpanel-home")?.textContent).toContain(host.name);
@@ -548,12 +647,15 @@ it("masks Host details and tab titles while raw address searches still find the 
   expect(container?.textContent).not.toContain(host.address);
 
   await openPalette();
-  await search(document.querySelector<HTMLInputElement>('input[placeholder="Search Hosts, tabs and actions"]')!);
-  const results = [...dialog()!.querySelectorAll('[role="option"]')];
-  expect(results).toHaveLength(1);
-  expect(results[0]?.textContent).toContain(host.name);
-  expect(results[0]?.outerHTML).not.toContain(host.address);
-  expect(results[0]?.outerHTML).not.toContain(host.user);
+  await search(paletteSearch(), host.address);
+  const results = paletteOptions();
+  expect(results).toHaveLength(2);
+  expect(results[0]?.textContent).toBe("Quick connect");
+  expect(results[1]?.textContent).toContain(host.name);
+  for (const result of results) {
+    expect(result.outerHTML).not.toContain(host.address);
+    expect(result.outerHTML).not.toContain(host.user);
+  }
 });
 
 it("persists privacy mode and lets the status bar and palette toggle it", async () => {

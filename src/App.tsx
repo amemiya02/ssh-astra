@@ -58,7 +58,7 @@ import {
 import { useWorkspaceShortcuts } from "@/features/workspace/use-workspace-shortcuts";
 import { serializeWorkspaceLayout, workspaceLayoutSetting } from "@/features/workspace/workspace-layout";
 import { workspaceSetting } from "@/features/workspace/workspace-prefs";
-import type { Host } from "@/lib/ipc/hosts";
+import { createTemporaryHost, forgetTemporaryHost, isTemporaryHost, type Host, type HostId, type QuickConnectTarget } from "@/lib/ipc/hosts";
 import { getSetting, setSetting, useSetting } from "@/lib/storage";
 
 const platform = currentPlatform();
@@ -145,13 +145,22 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
   const openLocalTerminal = useCallback(() => openTab(localTerminal), [openTab]);
   const openRemoteTerminal = useCallback(
     (host: Host) => {
-      rememberHostOpened(host.id);
+      if (!isTemporaryHost(host)) rememberHostOpened(host.id);
       openTab({ kind: "remote-terminal", host });
     },
     [openTab],
   );
+  const [quickConnectFailed, setQuickConnectFailed] = useState(false);
+  const openQuickConnect = useCallback(async (target: QuickConnectTarget) => {
+    setQuickConnectFailed(false);
+    try {
+      openRemoteTerminal(await createTemporaryHost(target));
+    } catch {
+      setQuickConnectFailed(true);
+    }
+  }, [openRemoteTerminal]);
   const openSftp = useCallback((host: Host) => {
-    rememberHostOpened(host.id);
+    if (!isTemporaryHost(host)) rememberHostOpened(host.id);
     openTab({ kind: "sftp", host });
   }, [openTab]);
   const [sftpPickerOpen, setSftpPickerOpen] = useState(false);
@@ -346,7 +355,22 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
   const transferSpeeds = useTransfers((s) => s.speeds);
   const transfers = transferSummary(transferList, transferSpeeds);
   const connections = useMemo(() => hostConnections(connected, state, connectingHeld), [connected, state, connectingHeld]);
-  useRecordHostConnections(connections);
+  const temporaryHosts = useMemo(() => {
+    const ids = new Set<HostId>();
+    for (const pane of tabs.flatMap(tabPanes)) {
+      if ("host" in pane && isTemporaryHost(pane.host)) ids.add(pane.host.id);
+    }
+    return ids;
+  }, [tabs]);
+  const previousTemporaryHosts = useRef(temporaryHosts);
+  useEffect(() => {
+    for (const id of previousTemporaryHosts.current) {
+      if (!temporaryHosts.has(id)) void forgetTemporaryHost(id);
+    }
+    previousTemporaryHosts.current = temporaryHosts;
+  }, [temporaryHosts]);
+  const savedConnections = useMemo(() => new Map([...connections].filter(([id]) => !temporaryHosts.has(id))), [connections, temporaryHosts]);
+  useRecordHostConnections(savedConnections);
   const filePanelPane: FilePanelPane | undefined =
     focusedPane?.kind === "remote-terminal"
       ? { id: focusedPane.id, host: focusedPane.host, status: focusedPane.status ?? "connecting" }
@@ -404,6 +428,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
                 controller={hostsController}
                 connections={connections}
                 onOpenLocalTerminal={openLocalTerminal}
+                onQuickConnect={openQuickConnect}
               />
             )}
             onFocusPane={(paneId) => dispatch({ type: "focusPane", paneId })}
@@ -433,6 +458,11 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
           },
         }}
       />
+      {quickConnectFailed && (
+        <p role="alert" className="bg-popover text-destructive fixed inset-x-4 bottom-8 z-10 mx-auto w-fit rounded-md border px-3 py-2 text-sm">
+          {t("quickConnect.failed")}
+        </p>
+      )}
       {hostsController.dialogs}
       <ConflictDialog />
       {pendingClose && (
@@ -484,6 +514,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
         onOpenChange={setPaletteOpen}
         tabs={paletteTabs}
         onOpenHost={openRemoteTerminal}
+        onQuickConnect={openQuickConnect}
         onActivateTab={activateTab}
       />
     </>

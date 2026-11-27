@@ -1,5 +1,5 @@
 import { defineSection } from "@/lib/storage";
-import type { Host } from "@/lib/ipc/hosts";
+import { isTemporaryHost, type Host } from "@/lib/ipc/hosts";
 import { ansiHues } from "@/theme/monogram-ink";
 import { layoutPanes, maxPanesPerTab, startupTabs, type Pane, type PaneLayout, type Tab, type TabsState } from "./tabs";
 import type { RestoreTabs } from "./workspace-prefs";
@@ -19,20 +19,28 @@ export interface WorkspaceLayout {
 
 /** Persists layout, pane identities, and Local terminal directories. */
 export function serializeWorkspaceLayout(state: TabsState): WorkspaceLayout {
-  return {
-    activeId: state.activeId,
-    tabs: state.tabs.map(({ id, activePaneId, layout, customTitle, color, locked }) => ({
-      id, activePaneId, layout: serializeLayout(layout), customTitle, color, locked,
-    })),
-  };
+  const tabs = state.tabs.flatMap(({ id, activePaneId, layout, customTitle, color, locked }) => {
+    const saved = serializeLayout(layout);
+    if (!saved) return [];
+    const panes = layoutPanes(saved);
+    const active = panes.find((pane) => pane.id === activePaneId) ?? panes[0]!;
+    return [{ id, activePaneId: active.id, layout: saved, customTitle, color, locked }];
+  });
+  const activeId = tabs.some((tab) => tab.id === state.activeId) ? state.activeId : tabs[0]?.id ?? null;
+  return { tabs, activeId };
 }
 
-function serializeLayout(layout: PaneLayout): PaneLayout<SavedPane> {
+function serializeLayout(layout: PaneLayout): PaneLayout<SavedPane> | undefined {
   if (layout.type === "split") {
-    return { ...layout, children: layout.children.map(({ ratio, layout }) => ({ ratio, layout: serializeLayout(layout) })) };
+    const children = layout.children.flatMap(({ ratio, layout }) => {
+      const saved = serializeLayout(layout);
+      return saved ? [{ ratio, layout: saved }] : [];
+    });
+    return children.length === layout.children.length ? { ...layout, children } : repairSplit(layout.orientation, children);
   }
   const { pane } = layout;
   const { id } = pane;
+  if ("host" in pane && isTemporaryHost(pane.host)) return undefined;
   if (pane.kind === "local-terminal" && pane.cwd !== undefined) {
     return { type: "pane", pane: { id, kind: pane.kind, cwd: pane.cwd } };
   }

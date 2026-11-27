@@ -53,6 +53,30 @@ export interface Host extends HostDraft {
   forwards: PortForward[];
 }
 
+/** The address parsed from Home or the command palette. The app supplies the local user. */
+export interface QuickConnectTarget {
+  address: string;
+  port: number;
+  user?: string;
+}
+
+export interface TemporaryHost extends Host {
+  temporary: true;
+}
+
+export function isTemporaryHost(host: Host): host is TemporaryHost {
+  return "temporary" in host && host.temporary === true;
+}
+
+export async function createTemporaryHost(target: QuickConnectTarget): Promise<TemporaryHost> {
+  const host = await invoke<Host>("temporary_host_create", { target });
+  return { ...host, temporary: true };
+}
+
+export function forgetTemporaryHost(hostId: HostId): Promise<void> {
+  return invoke("temporary_host_forget", { hostId });
+}
+
 /** A folder in the Host list (`sshastra_core::hosts::Group`). */
 export interface Group {
   id: GroupId;

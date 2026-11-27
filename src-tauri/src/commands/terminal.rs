@@ -24,8 +24,7 @@ use sshastra_core::terminal::{
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, State};
 
-use super::connections::connect_host;
-use super::hosts::HostsState;
+use super::connections::HostRoute;
 use super::settings::SettingsState;
 use crate::error::CommandResult;
 use crate::prompts::{ChannelPrompter, PendingPrompts, PromptAnswer, PromptRequest};
@@ -109,7 +108,7 @@ pub async fn local_terminal_open(
     Ok(registry.insert(Box::new(pty)))
 }
 
-/// Opens a Terminal on a saved Host, connecting first (through its Jump
+/// Opens a Terminal on a Host, connecting first (through its Jump
 /// hosts, if any) if needed. Progress and questions for the user arrive on
 /// `on_prompt`. Answer questions with `prompt_answer`. If the Connection drops later, the Terminal
 /// reconnects on its own, sending attempt states alongside progress and questions on `on_prompt`.
@@ -120,7 +119,6 @@ pub async fn local_terminal_open(
 pub async fn remote_terminal_open(
     app: AppHandle,
     registry: State<'_, TerminalRegistry>,
-    hosts: State<'_, HostsState>,
     settings: State<'_, SettingsState>,
     pending: State<'_, Arc<PendingPrompts>>,
     host_id: HostId,
@@ -129,18 +127,16 @@ pub async fn remote_terminal_open(
     on_prompt: Channel<PromptRequest>,
     cwd: Option<String>,
 ) -> CommandResult<TerminalId> {
-    // The Host last, after its Jump hosts (outermost first).
-    let mut hops = hosts.with(|store| Ok(store.jump_chain(&host_id)?))?;
-    let host = hops.pop().expect("a jump chain ends with the Host itself");
+    let route = Arc::new(HostRoute::lookup(&app, &host_id)?);
+    let host = route.host().clone();
     let prompter = Arc::new(ChannelPrompter {
         pending: Arc::clone(&pending),
         channel: on_prompt.clone(),
     });
-    let (target, prompts) = (host.clone(), prompter.clone());
+    let prompts = prompter.clone();
     let connect = move || {
-        let (app, hops, host, prompter) =
-            (app.clone(), hops.clone(), target.clone(), prompts.clone());
-        async move { connect_host(&app, &hops, &host, prompter).await }
+        let (app, route, prompter) = (app.clone(), Arc::clone(&route), prompts.clone());
+        async move { route.connect(&app, prompter).await }
     };
     let shell_integration = settings
         .with(|store| Ok(store.section::<TerminalSettings>(TerminalSettings::SECTION)))

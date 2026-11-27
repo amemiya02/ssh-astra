@@ -4,13 +4,14 @@
 //! Terminal (`HeldConnections`); holds are pushed to the single channel
 //! registered with `connections_watch`.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use super::watch::Watcher;
 use sshastra_core::hosts::{Host, HostDraft, HostId};
 use sshastra_core::ssh::{
     ConnectError, Connection, ConnectionManager, ConnectionSettings, HeldConnections, HeldEvent,
-    Prompter,
+    Prompter, QuickConnectTarget, TemporaryHost,
 };
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
@@ -56,6 +57,82 @@ fn configured_connections(app: &AppHandle) -> State<'_, ConnectionManager> {
         .unwrap_or_default();
     connections.set_keepalive_interval(settings.keepalive_interval());
     connections
+}
+
+#[derive(Default)]
+pub struct TemporaryHosts(Mutex<HashMap<HostId, Arc<TemporaryHost>>>);
+
+impl TemporaryHosts {
+    fn with<T>(&self, f: impl FnOnce(&mut HashMap<HostId, Arc<TemporaryHost>>) -> T) -> T {
+        f(&mut self.0.lock().unwrap_or_else(|p| p.into_inner()))
+    }
+}
+
+#[tauri::command]
+pub fn temporary_host_create(
+    connections: State<'_, ConnectionManager>,
+    temporary: State<'_, TemporaryHosts>,
+    target: QuickConnectTarget,
+) -> CommandResult<Host> {
+    let local_user = if target.user.is_none() {
+        whoami::username().map_err(std::io::Error::other)?
+    } else {
+        String::new()
+    };
+    let entry = connections.temporary_host(target, &local_user)?;
+    let host = entry.host().clone();
+    temporary.with(|entries| entries.insert(host.id.clone(), Arc::new(entry)));
+    Ok(host)
+}
+
+#[tauri::command]
+pub fn temporary_host_forget(temporary: State<'_, TemporaryHosts>, host_id: HostId) {
+    temporary.with(|entries| entries.remove(&host_id));
+}
+
+/// A Terminal or standalone File panel can open either a saved route or a Temporary Host.
+pub enum HostRoute {
+    /// The target is last, following any Jump hosts.
+    Saved(Vec<Host>),
+    Temporary(Arc<TemporaryHost>),
+}
+
+impl HostRoute {
+    pub fn lookup(app: &AppHandle, id: &HostId) -> CommandResult<Self> {
+        if let Some(entry) = app
+            .state::<TemporaryHosts>()
+            .with(|entries| entries.get(id).cloned())
+        {
+            return Ok(Self::Temporary(entry));
+        }
+        app.state::<HostsState>()
+            .with(|store| Ok(Self::Saved(store.jump_chain(id)?)))
+    }
+
+    pub fn host(&self) -> &Host {
+        match self {
+            Self::Saved(hops) => hops.last().expect("a saved route has a target"),
+            Self::Temporary(entry) => entry.host(),
+        }
+    }
+
+    pub async fn connect(
+        &self,
+        app: &AppHandle,
+        prompter: Arc<dyn Prompter>,
+    ) -> Result<Arc<Connection>, ConnectError> {
+        match self {
+            Self::Saved(hops) => {
+                let (host, jumps) = hops.split_last().expect("a saved route has a target");
+                connect_host(app, jumps, host, prompter).await
+            }
+            Self::Temporary(entry) => {
+                configured_connections(app)
+                    .connect_temporary(entry, prompter)
+                    .await
+            }
+        }
+    }
 }
 
 /// The app's held ("connect only") Connections and the channel their changes

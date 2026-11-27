@@ -2,10 +2,11 @@ import { ArrowDownUp, Eye, EyeOff, Radio, Settings, Waypoints } from "lucide-rea
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
+import { quickConnectLabel } from "@/features/connect/quick-connect";
 import { formatSize } from "@/features/files/fileList";
 import { UpdateNotice } from "@/features/updates/UpdateNotice";
 import type { BroadcastScope } from "@/features/workspace/broadcast";
-import { privacyModeSetting, togglePrivacyMode } from "@/features/workspace/privacy-mode";
+import { privacyModeSetting, togglePrivacyMode, workspaceHostName } from "@/features/workspace/privacy-mode";
 import type { ReconnectProgress } from "@/features/workspace/tabs";
 import type { Host } from "@/lib/ipc/hosts";
 import { useSetting } from "@/lib/storage";
@@ -37,8 +38,6 @@ const emptyStatus: StatusInfo = {
   activeRemote: null,
 };
 
-const address = (host: Host) => `${host.user}@${host.address}${host.port === 22 ? "" : `:${host.port}`}`;
-
 /** The 24px bottom bar: Connections, Port forwards and transfers on the left; the focused Host, theme and Settings on the right. */
 export function StatusBar({
   info = emptyStatus,
@@ -53,7 +52,7 @@ export function StatusBar({
   const { t } = useTranslation();
   const [privacyMode] = useSetting(privacyModeSetting);
   const { connected, reconnecting, forwards, transfers, activeRemote, broadcast } = info;
-  const activeRemoteLabel = activeRemote && (privacyMode ? activeRemote.name : address(activeRemote));
+  const activeRemoteLabel = activeRemote && (privacyMode ? workspaceHostName(activeRemote, t, true) : quickConnectLabel(activeRemote));
   const broadcastStatus = broadcast?.tabTitle
     ? t("broadcast.namedTabStatus", { title: broadcast.tabTitle })
     : t(broadcast?.scope === "tab" ? "broadcast.tabStatus" : "broadcast.windowStatus");
@@ -73,16 +72,21 @@ export function StatusBar({
       )}
       <div role="status" className="flex min-w-0 flex-1 items-stretch overflow-hidden">
         {connected.length === 0 && reconnecting.length === 0 && <Segment>{t("status.noConnections")}</Segment>}
-        {connected.map((host) => (
-          <Segment key={host.id} title={t("status.connectedTo", { hosts: host.name })}>
-            <span aria-hidden className="bg-success size-1.5 shrink-0 rounded-full" />
-            <span className="truncate">{host.name}</span>
-          </Segment>
-        ))}
+        {connected.map((host) => {
+          const name = workspaceHostName(host, t, privacyMode);
+          return (
+            <Segment key={host.id} title={t("status.connectedTo", { hosts: name })}>
+              <span aria-hidden className="bg-success size-1.5 shrink-0 rounded-full" />
+              <span className="truncate">{name}</span>
+            </Segment>
+          );
+        })}
         {reconnecting.map(({ host, attempt, attempts }) => (
           <Segment key={host.id}>
             <span aria-hidden className="bg-warning size-1.5 shrink-0 animate-pulse rounded-full" />
-            <span className="truncate tabular-nums">{t("status.reconnecting", { host: host.name, attempt, attempts })}</span>
+            <span className="truncate tabular-nums">{t("status.reconnecting", {
+              host: workspaceHostName(host, t, privacyMode), attempt, attempts,
+            })}</span>
           </Segment>
         ))}
         {forwards.length > 0 && (

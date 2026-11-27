@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ConnectionDot } from "@/features/connect/ConnectionDot";
 import type { HostConnection } from "@/features/connect/hostConnection";
+import { exactHostMatch, parseQuickConnect, quickConnectLabel } from "@/features/connect/quick-connect";
 import { HostMonogram } from "@/features/hosts/HostMonogram";
 import { Highlighted } from "@/features/hosts/HostList";
 import { HostSortMenu } from "@/features/hosts/HostSortMenu";
@@ -17,9 +18,8 @@ import { useHosts } from "@/features/hosts/hostsStore";
 import type { HostsController } from "@/features/hosts/useHostsController";
 import { privacyModeSetting } from "@/features/workspace/privacy-mode";
 import { reportHomeFirstPaint } from "@/lib/ipc/home";
-import type { Host, HostId } from "@/lib/ipc/hosts";
+import type { Host, HostId, QuickConnectTarget } from "@/lib/ipc/hosts";
 import { useSetting } from "@/lib/storage";
-import { cn } from "@/lib/utils";
 import { firstHost, homeSections, recentHostsOf } from "./homeSections";
 
 const recentLimit = 4;
@@ -32,13 +32,14 @@ interface HomeViewProps {
   /** Each Host's Connection (a Terminal, "Connect only" or a Port forward). */
   connections: ReadonlyMap<HostId, HostConnection>;
   onOpenLocalTerminal(): void;
+  onQuickConnect(target: QuickConnectTarget): void;
 }
 
 /**
  * The Host vault: search, the actions for getting Hosts in, Hosts opened lately, and every Host
  * as a card, by Group. A card opens a Terminal; its menu offers what the Host list's row menu does.
  */
-export function HomeView({ active, controller, connections, onOpenLocalTerminal }: HomeViewProps) {
+export function HomeView({ active, controller, connections, onOpenLocalTerminal, onQuickConnect }: HomeViewProps) {
   const { t } = useTranslation();
   const tree = useHosts((s) => s.tree);
   const status = useHosts((s) => s.status);
@@ -66,58 +67,67 @@ export function HomeView({ active, controller, connections, onOpenLocalTerminal 
   }, [active]);
 
   const empty = tree.hosts.length === 0;
-  // The field only exists once there are Hosts, which load after the first render.
   useEffect(() => {
     if (active) search.current?.focus({ preventScroll: true });
-  }, [active, empty]);
+  }, [active]);
 
   const searching = query.trim() !== "";
+  const exact = exactHostMatch(tree.hosts, query);
+  const quick = exact ? undefined : parseQuickConnect(query);
   const sortHistory = sort === "recent" ? recent : undefined;
   const sortedTree = useMemo(() => sortHostTree(tree, sort, sortHistory), [tree, sort, sortHistory]);
-  const sections = useMemo(() => homeSections(sortedTree, query), [sortedTree, query]);
+  const sections = useMemo(() => homeSections(exact
+    ? { ...sortedTree, hosts: sortedTree.hosts.filter((host) => host.id !== exact.id) }
+    : sortedTree, query), [sortedTree, query, exact]);
   const recents = useMemo(() => recentHostsOf(tree.hosts, recentHostIds(recent), recentLimit), [tree.hosts, recent]);
   const { actions, messages } = controller;
+  const runQuickConnect = (target: QuickConnectTarget) => {
+    setQuery("");
+    onQuickConnect(target);
+  };
 
   return (
     <div className="bg-surface h-full overflow-y-auto">
       <div className="mx-auto flex max-w-6xl flex-col gap-5 px-6 py-5">
         <div className="flex flex-wrap items-center gap-2">
-          {!empty && (
-            <div className="relative min-w-56 flex-1">
-              <Search aria-hidden className="text-muted-foreground pointer-events-none absolute top-2.5 left-3 size-4" />
-              <Input
-                ref={search}
-                type="search"
-                aria-label={t("home.search")}
-                placeholder={t("home.search")}
-                className="bg-background h-9 pr-9 pl-9 [&::-webkit-search-cancel-button]:hidden"
-                value={query}
-                autoCapitalize="off"
-                autoCorrect="off"
-                spellCheck={false}
-                onChange={(event) => setQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape" && query) {
+          <div className="relative min-w-56 flex-1">
+            <Search aria-hidden className="text-muted-foreground pointer-events-none absolute top-2.5 left-3 size-4" />
+            <Input
+              ref={search}
+              type="search"
+              aria-label={t("home.search")}
+              placeholder={t("home.search")}
+              className="bg-background h-9 pr-9 pl-9 [&::-webkit-search-cancel-button]:hidden"
+              value={query}
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing) return;
+                if (event.key === "Escape" && query) {
+                  event.preventDefault();
+                  setQuery("");
+                } else if (event.key === "Enter" && searching) {
+                  const first = exact ?? firstHost(sections);
+                  if (quick) {
                     event.preventDefault();
-                    setQuery("");
-                  } else if (event.key === "Enter") {
-                    const first = firstHost(sections);
-                    if (first && searching) {
-                      event.preventDefault();
-                      actions.open(first);
-                    }
+                    runQuickConnect(quick);
+                  } else if (first) {
+                    event.preventDefault();
+                    actions.open(first);
                   }
-                }}
-              />
-              {query && (
-                <IconButton label={t("hosts.clearSearch")} className="absolute top-1.5 right-1.5" onClick={() => setQuery("")}>
-                  <X />
-                </IconButton>
-              )}
-            </div>
-          )}
+                }
+              }}
+            />
+            {query && (
+              <IconButton label={t("hosts.clearSearch")} className="absolute top-1.5 right-1.5" onClick={() => setQuery("")}>
+                <X />
+              </IconButton>
+            )}
+          </div>
           {!empty && <HostSortMenu order={sort} onChange={setSort} />}
-          <div className={cn("flex flex-wrap items-center gap-2", empty && "flex-1")}>
+          <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" onClick={controller.newHost}>
               <Plus aria-hidden />
               {t("hosts.new")}
@@ -133,11 +143,22 @@ export function HomeView({ active, controller, connections, onOpenLocalTerminal 
           </div>
         </div>
         {messages}
+        {quick && (
+          <Button variant="outline" className="w-fit" onClick={() => runQuickConnect(quick)}>
+            <SquareTerminal aria-hidden />
+            {privacyMode ? t("quickConnect.action") : t("quickConnect.connectTo", { target: quickConnectLabel(quick) })}
+          </Button>
+        )}
+        {exact && (
+          <div className={cardGrid}>
+            <HostCard host={exact} privacyMode={privacyMode} controller={controller} connection={connections.get(exact.id)} />
+          </div>
+        )}
         {status === "error" ? (
           <p role="alert" className="text-destructive text-xs">
             {loadError}
           </p>
-        ) : empty ? (
+        ) : empty && !searching ? (
           status === "ready" && (
             <div className="flex flex-col items-start gap-2 py-8">
               <Server className="text-muted-foreground size-6" aria-hidden />
@@ -145,7 +166,7 @@ export function HomeView({ active, controller, connections, onOpenLocalTerminal 
               <p className="text-muted-foreground max-w-prose text-pretty">{t("home.emptyBody")}</p>
             </div>
           )
-        ) : sections.length === 0 ? (
+        ) : sections.length === 0 && !quick && !exact ? (
           <div className="flex flex-col items-start gap-2 py-8">
             <Search className="text-muted-foreground size-5" aria-hidden />
             <h2 className="font-semibold">{t("hosts.noResultsTitle")}</h2>

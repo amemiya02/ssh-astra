@@ -40,7 +40,7 @@ export function ConnectionSteps({ host, steps }: { host: Pick<Host, "id" | "name
   for (const step of steps) {
     let hop = hops.get(step.hostId);
     if (!hop) {
-      hop = { name: step.hostName, jumpHost: step.jumpHost, steps: new Map() };
+      hop = { name: step.hostId === host.id ? host.name : step.hostName, jumpHost: step.jumpHost, steps: new Map() };
       hops.set(step.hostId, hop);
     }
     hop.steps.set(step.stage, step);
@@ -87,7 +87,7 @@ export function ConnectionSteps({ host, steps }: { host: Pick<Host, "id" | "name
       })}
       <span className="sr-only" role="status">
         {running && t("connect.progress.announcement", {
-          host: running.hostName,
+          host: running.hostId === host.id ? host.name : running.hostName,
           stage: t(`connect.progress.stage.${running.stage}`),
         })}
       </span>
@@ -96,11 +96,11 @@ export function ConnectionSteps({ host, steps }: { host: Pick<Host, "id" | "name
 }
 
 interface Props {
-  host: Host;
+  host: Pick<Host, "id" | "name">;
   steps: ObservedProgress[];
   error: CommandError | null;
   onRetry(): void;
-  onEditHost(): void;
+  onEditHost?(): void;
   onClose(): void;
 }
 
@@ -118,7 +118,7 @@ export function ConnectionView({ host, steps, error, onRetry, onEditHost, onClos
             </div>
             <div className="flex flex-wrap gap-2">
               <Button size="sm" onClick={onRetry}>{t("connect.progress.retry")}</Button>
-              <Button size="sm" variant="outline" onClick={onEditHost}>{t("hosts.edit")}</Button>
+              {onEditHost && <Button size="sm" variant="outline" onClick={onEditHost}>{t("hosts.edit")}</Button>}
               <Button size="sm" variant="ghost" onClick={onClose}>{t("connect.progress.close")}</Button>
             </div>
           </>
