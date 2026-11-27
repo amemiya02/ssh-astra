@@ -19,7 +19,7 @@ pub use transfer::{ImportSummary, EXPORT_FORMAT};
 /// The file format version this build writes, to the store and to export
 /// files. Bump it together with a migration step in [`migrate`], which reads
 /// both.
-const CURRENT_VERSION: u32 = 7;
+const CURRENT_VERSION: u32 = 8;
 
 /// Identifies a Host across restarts and across the IPC boundary.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -110,6 +110,9 @@ pub struct Host {
     /// With a selected identity, offer only its matching key from ssh-agent.
     #[serde(default)]
     pub identities_only: bool,
+    /// Allow shells on this Host to forward the local SSH agent.
+    #[serde(default)]
+    pub forward_agent: bool,
     /// The Jump host this Host is reached through, itself possibly behind
     /// another one. Absent in files written before Jump hosts existed.
     #[serde(default)]
@@ -145,6 +148,9 @@ pub struct HostDraft {
     /// With a selected identity, offer only its matching key from ssh-agent.
     #[serde(default)]
     pub identities_only: bool,
+    /// Allow shells on this Host to forward the local SSH agent.
+    #[serde(default)]
+    pub forward_agent: bool,
     #[serde(default)]
     pub jump_host: Option<HostId>,
     /// The Terminal colour scheme for this Host (e.g. to mark production),
@@ -189,6 +195,7 @@ impl HostDraft {
             user: self.user.trim().to_owned(),
             auth,
             identities_only: self.identities_only,
+            forward_agent: self.forward_agent,
             jump_host: self.jump_host,
             terminal_scheme: self
                 .terminal_scheme
@@ -555,6 +562,7 @@ impl HostStore {
                 user: entry.user,
                 auth,
                 identities_only: entry.identities_only,
+                forward_agent: entry.forward_agent,
                 jump_host,
                 terminal_scheme: None,
                 default_directory: None,
@@ -753,7 +761,7 @@ fn chain(hosts: &[Host], id: &HostId) -> Result<Vec<Host>, HostStoreError> {
 fn migrate(text: &str) -> Result<Library, HostStoreError> {
     let corrupt = |e: serde_json::Error| HostStoreError::Corrupt(e.to_string());
     let FileVersion { version } = serde_json::from_str(text).map_err(corrupt)?;
-    match version {
+    let mut library = match version {
         // v1 had no Groups: every Host sits at the top level.
         1 => Ok(Library {
             groups: Vec::new(),
@@ -776,11 +784,19 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
         // v2 Hosts have no Port forwards, which `Host::forwards` defaults to.
         // v2-v4 have no default directory (`None`: home). v6 adds `Auto`
         // without changing how older authentication choices are read. v7
-        // adds IdentitiesOnly, which defaults to off in older files.
-        2 | 4 | 5 | 6 | CURRENT_VERSION => {
+        // adds IdentitiesOnly, which defaults to off in older files. v8
+        // adds ForwardAgent.
+        2 | 4 | 5 | 6 | 7 | CURRENT_VERSION => {
             let FileV2 { groups, hosts } = serde_json::from_str(text).map_err(corrupt)?;
             Ok(Library { groups, hosts })
         }
         other => Err(HostStoreError::UnsupportedVersion(other)),
+    }?;
+    if version < 8 {
+        // An extra field in an older file did not authorize forwarding.
+        for host in &mut library.hosts {
+            host.forward_agent = false;
+        }
     }
+    Ok(library)
 }

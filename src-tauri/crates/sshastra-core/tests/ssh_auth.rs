@@ -120,6 +120,7 @@ fn host(sshd: &Sshd, auth: HostAuth) -> Host {
         jump_host: None,
         terminal_scheme: None,
         identities_only: false,
+        forward_agent: false,
         default_directory: None,
         forwards: Vec::new(),
         group_id: None,
@@ -523,6 +524,73 @@ async fn agent_keys_are_tried_before_named_and_default_key_files() {
             .await
             .unwrap();
         assert!(prompter.asked().is_empty(), "{:?}", prompter.asked());
+    }
+}
+
+/// Run a command in the real application shell. An exit status comes from
+/// the command itself, and the fingerprint is absent from its input.
+#[cfg(unix)]
+#[tokio::test]
+async fn agent_forwarding_lists_the_test_key_only_for_opted_in_hosts() {
+    use sshastra_core::terminal::{Terminal, TerminalEvent, TerminalSize};
+
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let test_public_key = russh::keys::load_public_key(support::key("id_ed25519.pub")).unwrap();
+    let fingerprint = test_public_key.fingerprint(russh::keys::HashAlg::Sha256);
+    let agent = TestAgent::holding(&["id_ed25519"]);
+    let fixture = Fixture::new();
+    let manager = agent.manager(&fixture);
+
+    for forward in [false, true] {
+        let mut target = serde_json::to_value(host(&sshd, HostAuth::Password)).unwrap();
+        target["forwardAgent"] = forward.into();
+        target["id"] = format!("forward-agent-{forward}").into();
+        let (status, output) = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+            let connection = manager
+                .connect(
+                    &serde_json::from_value(target).unwrap(),
+                    ScriptedPrompter::silent(),
+                )
+                .await
+                .unwrap();
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            let mut shell = connection
+                .open_shell(
+                    TerminalSize {
+                        cols: 100,
+                        rows: 24,
+                    },
+                    move |event| {
+                        let _ = tx.send(event);
+                    },
+                )
+                .await
+                .unwrap();
+            shell.write(b"LC_ALL=C ssh-add -l; exit $?\n").unwrap();
+            let mut output = Vec::new();
+            while let Some(event) = rx.recv().await {
+                match event {
+                    TerminalEvent::Output(bytes) => output.extend(bytes),
+                    TerminalEvent::Exit { code } => {
+                        return (code.unwrap(), String::from_utf8_lossy(&output).into_owned());
+                    }
+                    _ => {}
+                }
+            }
+            panic!("no shell exit status");
+        })
+        .await
+        .expect("ssh-add -l timed out");
+
+        if forward {
+            assert_eq!(status, 0, "{output}");
+            assert!(output.contains(&fingerprint.to_string()), "{output}");
+        } else {
+            assert_eq!(status, 2, "{output}");
+            assert!(!output.contains(&fingerprint.to_string()), "{output}");
+        }
     }
 }
 

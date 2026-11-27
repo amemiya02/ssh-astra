@@ -26,6 +26,7 @@ fn draft(name: &str) -> HostDraft {
         jump_host: None,
         terminal_scheme: None,
         identities_only: false,
+        forward_agent: false,
         default_directory: None,
     }
 }
@@ -60,6 +61,7 @@ fn populated() -> (tempfile::TempDir, HostStore) {
                 },
                 terminal_scheme: Some("ember".into()),
                 identities_only: true,
+                forward_agent: false,
                 default_directory: Some("/srv/www".into()),
                 ..draft("web")
             },

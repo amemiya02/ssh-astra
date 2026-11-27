@@ -81,6 +81,27 @@ describe("matchShortcut on every platform", () => {
   });
 });
 
+describe("pane layout shortcuts", () => {
+  it.each([
+    ["mac", { metaKey: true }, "⇧⌘Enter", "⌥⌘"],
+    ["other", { ctrlKey: true }, "Ctrl+Shift+Enter", "Ctrl+Alt+Shift+"],
+  ] as const)("maximizes and swaps panes from a focused Terminal on %s", (platform, mod, maximizeLabel, swapPrefix) => {
+    expect(matchShortcut(chord("Enter", { ...mod, shiftKey: true }), platform)).toEqual({ type: "toggleMaximizePane" });
+    expect(shortcutLabel("toggleMaximizePane", platform)).toBe(maximizeLabel);
+
+    const swapMods = { ...mod, altKey: true, shiftKey: platform === "other" };
+    for (const [code, direction, name, label] of [
+      ["ArrowLeft", "left", "swapPaneLeft", "←"],
+      ["ArrowRight", "right", "swapPaneRight", "→"],
+      ["ArrowUp", "up", "swapPaneUp", "↑"],
+      ["ArrowDown", "down", "swapPaneDown", "↓"],
+    ] as const) {
+      expect(matchShortcut(chord(code, swapMods), platform)).toEqual({ type: "swapPane", direction });
+      expect(shortcutLabel(name, platform)).toBe(swapPrefix + label);
+    }
+  });
+});
+
 describe("shortcutLabel", () => {
   it("shows each platform's own notation", () => {
     expect(shortcutLabel("newTab", "mac")).toBe("⌘T");

@@ -23,6 +23,8 @@ export interface HostDraft {
   auth: HostAuth;
   /** With a selected key, restrict ssh-agent to its matching identity. */
   identitiesOnly?: boolean;
+  /** Allow the remote host to use the local SSH agent during a Connection. */
+  forwardAgent?: boolean;
   /** The Jump host this Host is reached through, or `null` to connect directly. */
   jumpHost: HostId | null;
   /** This Host's Terminal colour scheme id, overriding the global one; absent follows it. */

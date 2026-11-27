@@ -1,3 +1,4 @@
+import type { PaneDirection } from "./pane-layout";
 import type { SplitOrientation } from "./tabs";
 
 /**
@@ -12,6 +13,8 @@ export type WorkspaceCommand =
   | { type: "split"; orientation: SplitOrientation }
   | { type: "cycleTab"; step: 1 | -1 }
   | { type: "cyclePane"; step: 1 | -1 }
+  | { type: "toggleMaximizePane" }
+  | { type: "swapPane"; direction: PaneDirection }
   | { type: "moveTab"; step: 1 | -1 }
   /** 0-based; -1 is the last tab. */
   | { type: "goToTab"; index: number }
@@ -35,12 +38,21 @@ export interface KeyChord {
 type Modifier = "meta" | "ctrl" | "alt" | "shift";
 type FileHistoryShortcut = "fileBack" | "fileForward";
 
+export const paneSwapShortcuts = [
+  { name: "swapPaneLeft", code: "ArrowLeft", direction: "left" },
+  { name: "swapPaneRight", code: "ArrowRight", direction: "right" },
+  { name: "swapPaneUp", code: "ArrowUp", direction: "up" },
+  { name: "swapPaneDown", code: "ArrowDown", direction: "down" },
+] as const;
+
 /** Shortcuts shown in tooltips, by name. */
 export type ShortcutName =
   | "newTab"
   | "closePane"
   | "splitRight"
   | "splitDown"
+  | "toggleMaximizePane"
+  | (typeof paneSwapShortcuts)[number]["name"]
   | "nextTab"
   | "previousTab"
   | "commandPalette"
@@ -66,6 +78,9 @@ const goToTab = (mod: Modifier): Binding[] =>
     command: { type: "goToTab", index: n === 9 ? -1 : n - 1 },
   }));
 
+const paneSwapBindings = (mods: Modifier[]): Binding[] =>
+  paneSwapShortcuts.map(({ name, code, direction }) => ({ name, code, mods, command: { type: "swapPane", direction } }));
+
 const shared: Binding[] = [
   { code: "Tab", mods: ["ctrl"], command: { type: "cycleTab", step: 1 } },
   { code: "Tab", mods: ["ctrl", "shift"], command: { type: "cycleTab", step: -1 } },
@@ -79,6 +94,8 @@ const bindings: Record<Platform, Binding[]> = {
     { name: "closePane", code: "KeyW", mods: ["meta"], command: { type: "closePane" } },
     { name: "splitRight", code: "KeyD", mods: ["meta"], command: split("horizontal") },
     { name: "splitDown", code: "KeyD", mods: ["meta", "shift"], command: split("vertical") },
+    { name: "toggleMaximizePane", code: "Enter", mods: ["meta", "shift"], command: { type: "toggleMaximizePane" } },
+    ...paneSwapBindings(["meta", "alt"]),
     { name: "nextTab", code: "BracketRight", mods: ["meta", "shift"], command: { type: "cycleTab", step: 1 } },
     { name: "previousTab", code: "BracketLeft", mods: ["meta", "shift"], command: { type: "cycleTab", step: -1 } },
     { code: "BracketRight", mods: ["meta"], command: { type: "cyclePane", step: 1 } },
@@ -93,6 +110,8 @@ const bindings: Record<Platform, Binding[]> = {
     { name: "closePane", code: "KeyW", mods: ["ctrl", "shift"], command: { type: "closePane" } },
     { name: "splitRight", code: "KeyE", mods: ["ctrl", "shift"], command: split("horizontal") },
     { name: "splitDown", code: "KeyO", mods: ["ctrl", "shift"], command: split("vertical") },
+    { name: "toggleMaximizePane", code: "Enter", mods: ["ctrl", "shift"], command: { type: "toggleMaximizePane" } },
+    ...paneSwapBindings(["ctrl", "alt", "shift"]),
     { name: "nextTab", code: "PageDown", mods: ["ctrl"], command: { type: "cycleTab", step: 1 } },
     { name: "previousTab", code: "PageUp", mods: ["ctrl"], command: { type: "cycleTab", step: -1 } },
     { code: "KeyN", mods: ["ctrl", "shift"], command: { type: "cyclePane", step: 1 } },
@@ -163,7 +182,10 @@ const pcNames: Record<Modifier, string> = { ctrl: "Ctrl", alt: "Alt", shift: "Sh
 function keyName(code: string): string {
   if (code.startsWith("Key")) return code.slice(3);
   if (code.startsWith("Digit")) return code.slice(5);
-  return { BracketRight: "]", BracketLeft: "[", PageDown: "PgDn", PageUp: "PgUp", Comma: ",", ArrowLeft: "←", ArrowRight: "→" }[code] ?? code;
+  return {
+    BracketRight: "]", BracketLeft: "[", PageDown: "PgDn", PageUp: "PgUp", Comma: ",",
+    ArrowLeft: "←", ArrowRight: "→", ArrowUp: "↑", ArrowDown: "↓",
+  }[code] ?? code;
 }
 
 /** How a named shortcut is written on `platform`, for tooltips: `⇧⌘D`, `Ctrl+Shift+T`. */

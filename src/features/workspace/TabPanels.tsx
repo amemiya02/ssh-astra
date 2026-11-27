@@ -64,8 +64,11 @@ function SplitPanes({ tab, active, nextConnection, onResizeSplit, ...callbacks }
 } & Omit<TabPanelsProps, "tabs" | "activeId">) {
   const { t } = useTranslation();
   const [preview, setPreview] = useState<{ id: string; fraction: number } | null>(null);
+  const maximized = tab.paneMaximized;
   const saved = positionPanes(tab.layout);
-  const previewDivider = preview && saved.dividers.find((divider) => divider.id === preview.id);
+  const previewDivider = !maximized && preview && saved.dividers.find((divider) => divider.id === preview.id);
+  // The drag ends when its divider disappears.
+  if (preview && !previewDivider) setPreview(null);
   const { panes, dividers } = preview && previewDivider
     ? positionPanes(resizePaneLayout(tab.layout, { ...previewDivider, fraction: preview.fraction }))
     : saved;
@@ -80,7 +83,8 @@ function SplitPanes({ tab, active, nextConnection, onResizeSplit, ...callbacks }
             id={`pane-${pane.id}`}
             role={split ? "group" : undefined}
             aria-label={split ? t("tabs.pane", { index: index + 1, count: panes.length }) : undefined}
-            style={paneStyle(bounds)}
+            hidden={maximized && !focused}
+            style={paneStyle(maximized && focused ? { left: 0, top: 0, width: 1, height: 1 } : bounds)}
             className={cn("absolute overflow-hidden transition-opacity", split && !focused && "opacity-70")}
             onFocusCapture={(event) => {
               // A startup sign-in dialog can belong to a pane in a different tab.
@@ -92,13 +96,13 @@ function SplitPanes({ tab, active, nextConnection, onResizeSplit, ...callbacks }
           >
             <PaneContent pane={pane} active={active && focused} autoConnect={pane.id === nextConnection} {...callbacks} />
             {/* A Terminal canvas can paint over the pane's inset shadow. Draw the focus ring on top. */}
-            {split && focused && (
+            {split && focused && !maximized && (
               <span aria-hidden data-pane-focus className="ring-primary/50 pointer-events-none absolute inset-0 z-10 ring-1 ring-inset" />
             )}
           </div>
         );
       })}
-      {dividers.map((divider) => (
+      {!maximized && dividers.map((divider) => (
         <PaneDivider
           key={divider.id}
           divider={divider}

@@ -108,6 +108,22 @@ describe("Host editor", () => {
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ identitiesOnly: !enabled }), "prod");
   });
 
+  it.each([undefined, true])("shows the agent-forwarding risk in Advanced and saves when toggled from %s", async (enabled) => {
+    const save = vi.fn<EditorProps["save"]>().mockResolvedValue(host);
+    await renderEditor({ host: { ...host, forwardAgent: enabled }, save });
+
+    act(() => button("Advanced").click());
+    const forwardAgent = field("Agent forwarding");
+    expect(forwardAgent.closest("[hidden]")).toBeNull();
+    expect(forwardAgent.getAttribute("aria-checked")).toBe(String(enabled ?? false));
+    expect(document.getElementById(forwardAgent.getAttribute("aria-describedby")!)?.textContent)
+      .toBe("While connected, the remote host can use your SSH keys through your local agent. Reconnect to apply changes.");
+
+    act(() => forwardAgent.click());
+    await act(async () => button("Save").click());
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ forwardAgent: !enabled }), "prod");
+  });
+
   it.each([
     ["defaultDirectory", "File panel folder"],
     ["terminalScheme", "Terminal colours"],
@@ -158,6 +174,7 @@ describe("Host editor", () => {
       terminalScheme: "dark",
       defaultDirectory: "~/release",
       identitiesOnly: false,
+      forwardAgent: false,
     }, "prod");
   });
 });
