@@ -658,7 +658,7 @@ async fn the_saved_agent_path_authenticates_and_a_missing_socket_falls_back_to_p
     assert!(Arc::ptr_eq(&connected, &shared));
 
     let mut another = target;
-    another.id = HostId::from("auth-fallback-after-agent-path-change");
+    another.id = HostId::generate();
     let password = ScriptedPrompter::answering(&[Some(&[sshd.password])]);
     manager.connect(&another, password.clone()).await.unwrap();
     assert_eq!(password.asked(), ["password retry=false"]);
