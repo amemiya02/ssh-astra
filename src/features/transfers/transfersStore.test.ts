@@ -37,6 +37,8 @@ function setup(initial: Transfer[] = []) {
     copyRemoteFiles: vi.fn(async () => []),
     downloadFiles: vi.fn(() => Promise.resolve([1])),
     cancelTransfer: vi.fn(() => Promise.resolve()),
+    pauseTransfer: vi.fn(() => Promise.resolve()),
+    resumeTransfer: vi.fn(() => Promise.resolve()),
     retryTransfer: vi.fn(() => Promise.resolve()),
     answerConflict: vi.fn(() => Promise.resolve()),
     removeTransfers: vi.fn(() => Promise.resolve()),
@@ -117,6 +119,28 @@ describe("transfers store", () => {
     expect(api.cancelTransfer).toHaveBeenCalledWith(3);
     expect(api.retryTransfer).toHaveBeenCalledWith(4);
     expect(api.answerConflict).toHaveBeenCalledWith(5, "skipAll");
+  });
+
+  it("keeps a paused transfer available to resume and clears its speed", async () => {
+    const { api, store, push, advance } = setup([transfer(1)]);
+    await store.getState().watch();
+    advance(100);
+    push(transfer(1, { bytesDone: 200 }));
+    expect(store.getState().speeds[1]).toBe(2000);
+
+    await store.getState().pause(1);
+    const paused = transfer(1, { bytesDone: 200, state: { type: "paused" } });
+    push(paused);
+    const { transfers, speeds } = store.getState();
+    expect(activeTransfers(transfers)).toEqual([paused]);
+    expect(transferSummary(transfers, speeds)).toEqual({ count: 0, bytesPerSecond: 0 });
+    expect(speeds).toEqual({});
+
+    await store.getState().dismiss([1]);
+    expect(store.getState().transfers).toEqual([paused]);
+    await store.getState().resume(1);
+    expect(api.pauseTransfer).toHaveBeenCalledWith(1);
+    expect(api.resumeTransfer).toHaveBeenCalledWith(1);
   });
 
   it("dismisses only finished transfers", async () => {

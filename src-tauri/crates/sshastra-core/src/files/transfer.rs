@@ -74,7 +74,9 @@ pub enum TransferState {
     /// Waiting for a free slot.
     Queued,
     Running,
-    /// Paused until [`TransferQueue::answer`] says what to do with `path`,
+    /// Stopped at a resumable point and waiting for the user to continue it.
+    Paused,
+    /// Waiting until [`TransferQueue::answer`] says what to do with `path`,
     /// which already exists at the destination.
     Conflict {
         path: String,
@@ -173,6 +175,8 @@ struct State {
     entries: BTreeMap<TransferId, Entry>,
     /// An `OverwriteAll` (`true`) or `SkipAll` (`false`) answer.
     answer_all: Option<bool>,
+    events: VecDeque<Transfer>,
+    publishing: bool,
 }
 
 struct Entry {
@@ -182,7 +186,7 @@ struct Entry {
     done: HashSet<String>,
     completed_bytes: u64,
     partials: Vec<StageLease>,
-    cancel: Option<watch::Sender<bool>>,
+    control: Option<watch::Sender<Control>>,
     answer: Option<oneshot::Sender<ConflictAnswer>>,
     last_progress: Option<Instant>,
 }
@@ -261,6 +265,8 @@ impl TransferQueue {
                     pending: VecDeque::new(),
                     entries: BTreeMap::new(),
                     answer_all: None,
+                    events: VecDeque::new(),
+                    publishing: false,
                 }),
                 asking: tokio::sync::Mutex::new(()),
                 stages: StageSlots::default(),
@@ -352,52 +358,103 @@ impl TransferQueue {
             return;
         };
         match entry.info.state {
-            TransferState::Queued | TransferState::Failed { .. } => {
+            TransferState::Queued | TransferState::Paused | TransferState::Failed { .. } => {
                 entry.info.state = TransferState::Cancelled;
                 let snapshot = entry.info.clone();
                 let partials = std::mem::take(&mut entry.partials);
                 st.pending.retain(|p| *p != id);
+                st.events.push_back(snapshot);
                 drop(st);
                 self.inner.schedule_cleanup(partials);
-                self.inner.emit(&snapshot);
+                self.inner.publish();
             }
             TransferState::Running | TransferState::Conflict { .. } => {
-                if let Some(cancel) = &entry.cancel {
-                    let _ = cancel.send(true);
+                if let Some(control) = &entry.control {
+                    control.send_replace(Control::Cancel);
                 }
             }
             _ => {}
         }
     }
 
-    /// Queues a failed or cancelled transfer again. Files it already copied
-    /// are not copied again.
-    pub fn retry(&self, id: TransferId) {
+    /// Stops this transfer, keeping staged bytes for a later resume.
+    /// A running attempt releases its slot once its writes have settled.
+    pub fn pause(&self, id: TransferId) {
         let mut st = self.inner.lock();
         let Some(entry) = st.entries.get_mut(&id) else {
             return;
         };
-        if !matches!(
-            entry.info.state,
-            TransferState::Failed { .. } | TransferState::Cancelled
-        ) {
+        match entry.info.state {
+            TransferState::Queued => {
+                entry.info.state = TransferState::Paused;
+                let snapshot = entry.info.clone();
+                st.pending.retain(|p| *p != id);
+                st.events.push_back(snapshot);
+                drop(st);
+                self.inner.publish();
+            }
+            TransferState::Running | TransferState::Conflict { .. } => {
+                if let Some(control) = &entry.control {
+                    control.send_if_modified(|request| {
+                        if *request != Control::Run {
+                            return false;
+                        }
+                        *request = Control::Pause;
+                        true
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Queues a paused transfer to continue from its staged bytes.
+    pub fn resume(&self, id: TransferId) {
+        self.requeue(id, |state| matches!(state, TransferState::Paused));
+    }
+
+    /// Queues a failed or cancelled transfer again. Files it already copied
+    /// are not copied again.
+    pub fn retry(&self, id: TransferId) {
+        self.requeue(id, |state| {
+            matches!(
+                state,
+                TransferState::Failed { .. } | TransferState::Cancelled
+            )
+        });
+    }
+
+    fn requeue(&self, id: TransferId, can_requeue: impl FnOnce(&TransferState) -> bool) {
+        let mut st = self.inner.lock();
+        let Some(entry) = st.entries.get_mut(&id) else {
+            return;
+        };
+        if !can_requeue(&entry.info.state) {
             return;
         }
         entry.info.state = TransferState::Queued;
         let snapshot = entry.info.clone();
         st.pending.push_back(id);
+        st.events.push_back(snapshot);
         drop(st);
-        self.inner.emit(&snapshot);
+        self.inner.publish();
         self.inner.pump();
     }
 
     /// Answers transfer `id`'s open conflict question.
     pub fn answer(&self, id: TransferId, answer: ConflictAnswer) {
-        let snapshot = {
+        {
             let mut st = self.inner.lock();
             let Some(entry) = st.entries.get_mut(&id) else {
                 return;
             };
+            if entry
+                .control
+                .as_ref()
+                .is_some_and(|control| *control.borrow() != Control::Run)
+            {
+                return;
+            }
             let Some(sender) = entry.answer.take() else {
                 return;
             };
@@ -409,9 +466,9 @@ impl TransferQueue {
                 ConflictAnswer::SkipAll => st.answer_all = Some(false),
                 ConflictAnswer::Overwrite | ConflictAnswer::Skip => {}
             }
-            snapshot
-        };
-        self.inner.emit(&snapshot);
+            st.events.push_back(snapshot);
+        }
+        self.inner.publish();
     }
 
     /// Forgets finished transfers among `ids` and schedules cleanup of
@@ -475,21 +532,40 @@ impl TransferQueue {
                 done: HashSet::new(),
                 completed_bytes: 0,
                 partials: Vec::new(),
-                cancel: None,
+                control: None,
                 answer: None,
                 last_progress: None,
             },
         );
         st.pending.push_back(id);
+        st.events.push_back(info);
         drop(st);
-        self.inner.emit(&info);
+        self.inner.publish();
         self.inner.pump();
         id
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Control {
+    Run,
+    Pause,
+    Cancel,
+}
+
+impl Control {
+    fn check(self) -> Result<(), Stop> {
+        match self {
+            Self::Run => Ok(()),
+            Self::Pause => Err(Stop::Paused),
+            Self::Cancel => Err(Stop::Cancelled),
+        }
+    }
+}
+
 /// Why an attempt stopped early.
 enum Stop {
+    Paused,
     Cancelled,
     Failed(FsError),
 }
@@ -505,27 +581,40 @@ impl Inner {
         self.state.lock().unwrap_or_else(|p| p.into_inner())
     }
 
-    fn emit(&self, transfer: &Transfer) {
-        (self.listener)(transfer);
+    /// Keep notifications in mutation order, including a cancel racing with
+    /// pause. The listener runs outside the state lock.
+    fn publish(&self) {
+        let mut st = self.lock();
+        if st.publishing {
+            return;
+        }
+        st.publishing = true;
+        while let Some(snapshot) = st.events.pop_front() {
+            drop(st);
+            (self.listener)(&snapshot);
+            st = self.lock();
+        }
+        st.publishing = false;
     }
 
     /// Changes transfer `id` and tells the listener.
     fn update(&self, id: TransferId, change: impl FnOnce(&mut Entry)) {
-        let snapshot = {
+        {
             let mut st = self.lock();
             let Some(entry) = st.entries.get_mut(&id) else {
                 return;
             };
             change(entry);
-            entry.info.clone()
-        };
-        self.emit(&snapshot);
+            let snapshot = entry.info.clone();
+            st.events.push_back(snapshot);
+        }
+        self.publish();
     }
 
     /// Starts waiting transfers while there are free slots.
     fn pump(self: &Arc<Self>) {
         loop {
-            let (id, job, cancelled, snapshot) = {
+            let (id, job, control) = {
                 let mut st = self.lock();
                 if st.running >= st.concurrency {
                     return;
@@ -538,21 +627,23 @@ impl Inner {
                     .entries
                     .get_mut(&id)
                     .expect("a pending transfer is listed");
-                let (cancel, cancelled) = watch::channel(false);
-                entry.cancel = Some(cancel);
+                let (request, control) = watch::channel(Control::Run);
+                entry.control = Some(request);
                 entry.last_progress = None;
                 entry.info.state = TransferState::Running;
-                (id, entry.job.clone(), cancelled, entry.info.clone())
+                let (job, snapshot) = (entry.job.clone(), entry.info.clone());
+                st.events.push_back(snapshot);
+                (id, job, control)
             };
             log::info!(
                 "transfer id={} direction={:?} state=running",
                 id.0,
-                snapshot.direction
+                job.direction
             );
-            self.emit(&snapshot);
+            self.publish();
             let inner = Arc::clone(self);
             self.runtime().spawn(async move {
-                inner.run(id, &job, cancelled).await;
+                inner.run(id, &job, control).await;
             });
         }
     }
@@ -561,9 +652,9 @@ impl Inner {
         self: &Arc<Self>,
         id: TransferId,
         job: &Job,
-        mut cancelled: watch::Receiver<bool>,
+        mut control: watch::Receiver<Control>,
     ) {
-        let sides = cancellable(&mut cancelled, async {
+        let sides = interruptible(&mut control, true, async {
             match job.direction {
                 TransferDirection::Download => check_download_name(&job.name)?,
                 TransferDirection::Copy => {
@@ -588,14 +679,12 @@ impl Inner {
         .await;
         let (target, mut result) = match sides {
             Ok((source, target)) => {
-                let result = self
-                    .attempt(id, job, &source, &target, &mut cancelled)
-                    .await;
+                let result = self.attempt(id, job, &source, &target, &mut control).await;
                 (Some(target), result)
             }
             Err(e) => (None, Err(e)),
         };
-        if result.is_err() && *cancelled.borrow() {
+        if result.is_err() && *control.borrow() == Control::Cancel {
             result = Err(Stop::Cancelled);
         }
         if matches!(result, Ok(()) | Err(Stop::Cancelled)) {
@@ -654,18 +743,7 @@ impl Inner {
     }
 
     fn finish(self: &Arc<Self>, id: TransferId, result: Result<(), Stop>) {
-        match &result {
-            Ok(()) => log::info!("transfer id={} state=done", id.0),
-            Err(Stop::Cancelled) => log::info!("transfer id={} state=cancelled", id.0),
-            Err(Stop::Failed(error)) => {
-                log::warn!(
-                    "transfer id={} state=failed error={}",
-                    id.0,
-                    error.log_kind()
-                );
-            }
-        }
-        let snapshot = {
+        let (result, late_cleanup) = {
             let mut st = self.lock();
             st.running -= 1;
             if st.running == 0 && st.pending.is_empty() {
@@ -675,18 +753,41 @@ impl Inner {
                 .entries
                 .get_mut(&id)
                 .expect("a running transfer is listed");
-            entry.cancel = None;
+            let mut late_cleanup = Vec::new();
+            let result = match (result, entry.control.take()) {
+                (Err(_), Some(control)) if *control.borrow() == Control::Cancel => {
+                    late_cleanup = std::mem::take(&mut entry.partials);
+                    Err(Stop::Cancelled)
+                }
+                (result, _) => result,
+            };
             entry.answer = None;
-            entry.info.state = match result {
+            entry.info.state = match &result {
                 Ok(()) => TransferState::Done,
+                Err(Stop::Paused) => TransferState::Paused,
                 Err(Stop::Cancelled) => TransferState::Cancelled,
                 Err(Stop::Failed(e)) => TransferState::Failed {
                     message: e.to_string(),
                 },
             };
-            entry.info.clone()
+            let snapshot = entry.info.clone();
+            st.events.push_back(snapshot);
+            (result, late_cleanup)
         };
-        self.emit(&snapshot);
+        self.schedule_cleanup(late_cleanup);
+        match &result {
+            Ok(()) => log::info!("transfer id={} state=done", id.0),
+            Err(Stop::Paused) => log::info!("transfer id={} state=paused", id.0),
+            Err(Stop::Cancelled) => log::info!("transfer id={} state=cancelled", id.0),
+            Err(Stop::Failed(error)) => {
+                log::warn!(
+                    "transfer id={} state=failed error={}",
+                    id.0,
+                    error.log_kind()
+                );
+            }
+        }
+        self.publish();
         self.pump();
     }
 
@@ -696,9 +797,9 @@ impl Inner {
         job: &Job,
         source: &Side,
         target: &Side,
-        cancelled: &mut watch::Receiver<bool>,
+        control: &mut watch::Receiver<Control>,
     ) -> Result<(), Stop> {
-        let items = cancellable(cancelled, walk(source, job.direction)).await?;
+        let items = interruptible(control, true, walk(source, job.direction)).await?;
 
         self.update(id, |entry| {
             let files = items
@@ -723,9 +824,11 @@ impl Inner {
 
         let mut directories = HashMap::new();
         for item in &items {
+            control.borrow().check()?;
             let destination = target.at(&item.rel);
             let Some(source_stat) = &item.stat else {
-                let directory = cancellable(cancelled, async {
+                // Let destination creation finish before acknowledging a pause.
+                let directory = interruptible(control, false, async {
                     ensure_dir(&destination).await?;
                     destination.canonicalize().await
                 })
@@ -737,7 +840,7 @@ impl Inner {
                 continue;
             }
             let file = if item.rel.is_empty() {
-                cancellable(cancelled, destination.canonicalize_parent()).await?
+                interruptible(control, true, destination.canonicalize_parent()).await?
             } else {
                 let (parent, name) = item.rel.rsplit_once('/').unwrap_or(("", &item.rel));
                 directories[parent].at(name)
@@ -745,8 +848,8 @@ impl Inner {
             let parked = file.sibling()?;
             let slot = self.stages.for_path(&parked);
             let mut partial =
-                cancellable(cancelled, async { Ok::<_, FsError>(slot.lock().await) }).await?;
-            let (original, copy) = cancellable(cancelled, async {
+                interruptible(control, true, async { Ok::<_, FsError>(slot.lock().await) }).await?;
+            let (original, copy) = interruptible(control, true, async {
                 match file.stat().await {
                     Ok(stat) if stat.kind == FileKind::Dir => {
                         Err(FsError::NotADirectory(destination.display()).into())
@@ -760,30 +863,35 @@ impl Inner {
             if copy {
                 let source = source.at(&item.rel);
                 let mut stage = StagedWrite::new(&file, parked, original);
+                let reserved = self.lock().entries[&id]
+                    .partials
+                    .iter()
+                    .find(|lease| lease.reserved && Arc::ptr_eq(&lease.slot, &slot))
+                    .map(|lease| lease.partial.clone());
+                let previous = reserved.as_deref().or(partial.as_deref());
                 let result = self
-                    .copy(
-                        id,
-                        &source,
-                        source_stat,
-                        &mut stage,
-                        partial.as_deref(),
-                        cancelled,
-                    )
+                    .copy(id, &source, source_stat, &mut stage, previous, control)
                     .await;
                 if result.is_ok() {
-                    *partial = None;
+                    if reserved.is_none() {
+                        *partial = None;
+                    }
                 } else {
-                    if !*cancelled.borrow() {
+                    // Keep a paused transfer's unique stage available to that
+                    // transfer when another job uses the same destination.
+                    let reserve = matches!(result, Err(Stop::Paused))
+                        || (reserved.is_some()
+                            && (partial.is_some() || *control.borrow() == Control::Cancel));
+                    if !reserve && *control.borrow() != Control::Cancel {
                         stage.park().await;
                     }
-                    if let Some(retained) = stage.partial(
-                        &source,
-                        source_stat,
-                        job.target.opener(),
-                        partial.as_deref(),
-                    ) {
+                    if let Some(retained) =
+                        stage.partial(&source, source_stat, job.target.opener(), previous)
+                    {
                         let retained = Arc::new(retained);
-                        *partial = Some(retained.clone());
+                        if !reserve || reserved.is_none() {
+                            *partial = (!reserve).then(|| retained.clone());
+                        }
                         let mut st = self.lock();
                         let leases = &mut st
                             .entries
@@ -794,6 +902,7 @@ impl Inner {
                         leases.push(StageLease {
                             slot: slot.clone(),
                             partial: retained,
+                            reserved: reserve,
                         });
                     }
                 }
@@ -836,58 +945,69 @@ impl Inner {
         source_stat: &FileStat,
         stage: &mut StagedWrite<'_>,
         previous: Option<&Partial>,
-        cancelled: &mut watch::Receiver<bool>,
+        control: &mut watch::Receiver<Control>,
     ) -> Result<(), Stop> {
-        if *cancelled.borrow() {
-            return Err(Stop::Cancelled);
-        }
-        // Let the claim and the open below finish even if cancellation comes
-        // in. A server can move or create the file before sending its reply.
+        control.borrow().check()?;
+        // Let the claim and the open below finish. A server can move or
+        // create the file before sending its reply.
         stage.claim(previous).await?;
-        let plan = cancellable(cancelled, stage.plan(source, source_stat, previous)).await?;
+        let plan = interruptible(control, true, stage.plan(source, source_stat, previous)).await?;
         let (mut reader, mut writer, unprotected) = match stage.begin(source, plan).await? {
             OpenedWrite::Staged(reader, writer, offset) => {
                 self.set_file_offset(id, offset);
                 (reader, writer, false)
             }
             OpenedWrite::NeedsInPlace(reader) => {
-                if *cancelled.borrow() {
-                    return Err(Stop::Cancelled);
-                }
+                control.borrow().check()?;
                 self.set_file_offset(id, 0);
                 if !self.lock().entries[&id].info.unprotected {
                     self.update(id, |entry| entry.info.unprotected = true);
                 }
-                // Publishing the warning can itself let the user cancel.
-                if *cancelled.borrow() {
-                    return Err(Stop::Cancelled);
-                }
+                // Publishing the warning can itself let the user interrupt.
+                control.borrow().check()?;
                 (reader, stage.begin_in_place().await?, true)
             }
         };
-        let copied = cancellable(cancelled, async {
+        let mut copied = async {
             let mut buf = vec![0; CHUNK];
             loop {
-                let n = reader
-                    .read(&mut buf)
-                    .await
-                    .map_err(|e| io_error(&source.display(), e))?;
+                // An in-place overwrite has no staging file. Once started,
+                // finish that file before honoring a pause.
+                let n = interruptible(control, !unprotected, async {
+                    reader
+                        .read(&mut buf)
+                        .await
+                        .map_err(|e| io_error(&source.display(), e))
+                })
+                .await?;
                 if n == 0 {
                     break;
                 }
-                writer
-                    .write_all(&buf[..n])
-                    .await
-                    .map_err(|e| io_error(&stage.target().display(), e))?;
+                interruptible(control, false, async {
+                    writer
+                        .write_all(&buf[..n])
+                        .await
+                        .map_err(|e| io_error(&stage.target().display(), e))
+                })
+                .await?;
                 self.progress(id, n as u64);
             }
-            writer
-                .shutdown()
-                .await
-                .map_err(|e| io_error(&stage.target().display(), e))
-        })
+            interruptible(control, false, async {
+                writer
+                    .shutdown()
+                    .await
+                    .map_err(|e| io_error(&stage.target().display(), e))
+            })
+            .await
+        }
         .await;
-        if copied.is_err() && matches!(stage.target(), Side::Local(..)) {
+        drop(reader);
+        if matches!(copied, Err(Stop::Paused)) {
+            // Close the writer before exposing the partial or releasing the slot.
+            if let Err(e) = writer.shutdown().await {
+                copied = Err(io_error(&stage.target().display(), e).into());
+            }
+        } else if copied.is_err() && matches!(stage.target(), Side::Local(..)) {
             // A local write may still be running in Tokio's blocking pool.
             // Settle it before cleanup or another copy can use the same path.
             let _ = writer.shutdown().await;
@@ -897,13 +1017,14 @@ impl Inner {
         let result = async {
             copied?;
             if !unprotected {
+                control.borrow().check()?;
                 stage.prepare().await?;
             }
-            if *cancelled.borrow() {
+            if *control.borrow() == Control::Cancel {
                 return Err(Stop::Cancelled);
             }
-            // Once publication starts, finish it. A remote replacement can
-            // take two requests, and an interrupted rename may have succeeded.
+            // Once preparation starts, finish publication. The staged file
+            // may become read-only, and remote replacement can take two requests.
             if !unprotected {
                 stage.commit().await?;
             }
@@ -917,7 +1038,7 @@ impl Inner {
     }
 
     fn set_file_offset(&self, id: TransferId, offset: u64) {
-        let snapshot = {
+        {
             let mut st = self.lock();
             let entry = st
                 .entries
@@ -929,15 +1050,16 @@ impl Inner {
             }
             entry.info.bytes_done = bytes_done;
             entry.last_progress = Some(Instant::now());
-            entry.info.clone()
-        };
-        self.emit(&snapshot);
+            let snapshot = entry.info.clone();
+            st.events.push_back(snapshot);
+        }
+        self.publish();
     }
 
     /// Counts `bytes` more done; tells the listener at most every
     /// [`PROGRESS_INTERVAL`].
     fn progress(&self, id: TransferId, bytes: u64) {
-        let snapshot = {
+        {
             let mut st = self.lock();
             let Some(entry) = st.entries.get_mut(&id) else {
                 return;
@@ -951,9 +1073,10 @@ impl Inner {
                 return;
             }
             entry.last_progress = Some(now);
-            entry.info.clone()
-        };
-        self.emit(&snapshot);
+            let snapshot = entry.info.clone();
+            st.events.push_back(snapshot);
+        }
+        self.publish();
     }
 
     fn file_done(&self, id: TransferId, rel: &str, size: u64) {
@@ -966,8 +1089,9 @@ impl Inner {
     }
 }
 
-async fn cancellable<T, E>(
-    cancelled: &mut watch::Receiver<bool>,
+async fn interruptible<T, E>(
+    control: &mut watch::Receiver<Control>,
+    pausable: bool,
     operation: impl Future<Output = Result<T, E>>,
 ) -> Result<T, Stop>
 where
@@ -975,7 +1099,15 @@ where
 {
     tokio::select! {
         biased;
-        _ = cancelled.wait_for(|c| *c) => Err(Stop::Cancelled),
+        request = control.wait_for(|request| {
+            *request == Control::Cancel || (pausable && *request == Control::Pause)
+        }) => {
+            if request.is_ok_and(|request| *request == Control::Pause) {
+                Err(Stop::Paused)
+            } else {
+                Err(Stop::Cancelled)
+            }
+        }
         result = operation => result.map_err(Stop::from),
     }
 }

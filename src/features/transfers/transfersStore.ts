@@ -13,6 +13,8 @@ export type TransfersApi = Pick<
   | "downloadFiles"
   | "copyRemoteFiles"
   | "cancelTransfer"
+  | "pauseTransfer"
+  | "resumeTransfer"
   | "retryTransfer"
   | "answerConflict"
   | "removeTransfers"
@@ -29,6 +31,8 @@ export interface TransfersState {
   download(hostId: HostId, paths: string[], localDir: string): Promise<void>;
   copyRemote(source: TransferHost, paths: string[], target: TransferHost, remoteDir: string): Promise<void>;
   cancel(id: TransferId): Promise<void>;
+  pause(id: TransferId): Promise<void>;
+  resume(id: TransferId): Promise<void>;
   retry(id: TransferId): Promise<void>;
   answer(id: TransferId, answer: ConflictAnswer): Promise<void>;
   /** Forgets finished transfers among `ids`. */
@@ -104,6 +108,8 @@ export function createTransfersStore(
       },
 
       cancel: (id) => api.cancelTransfer(id),
+      pause: (id) => api.pauseTransfer(id),
+      resume: (id) => api.resumeTransfer(id),
       retry: (id) => api.retryTransfer(id),
       answer: (id, answer) => api.answerConflict(id, answer),
 
@@ -150,7 +156,7 @@ export function transferSummary(
   transfers: readonly Transfer[],
   speeds: Record<TransferId, number>,
 ): { count: number; bytesPerSecond: number } {
-  const underWay = transfers.filter((t) => !isFinished(t));
+  const underWay = transfers.filter((t) => !isFinished(t) && t.state.type !== "paused");
   const bytesPerSecond = underWay.reduce((sum, t) => sum + (speeds[t.id] ?? 0), 0);
   return { count: underWay.length, bytesPerSecond };
 }
