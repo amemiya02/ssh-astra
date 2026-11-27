@@ -14,3 +14,5 @@ export const enableOpenSshSync = (approval: number) =>
 export const disableOpenSshSync = () =>
   invoke<SettingsChange>("ssh_config_export_disable").then(receiveSettingsChange);
 export const refreshOpenSshSync = () => invoke<void>("ssh_config_export_refresh");
+export const importOpenSshAliases = (approval: number) =>
+  invoke<void>("ssh_config_sync_import", { approval });

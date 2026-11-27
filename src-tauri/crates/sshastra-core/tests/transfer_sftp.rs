@@ -61,6 +61,7 @@ fn endpoint(sshd: &Sshd, dir: &Path) -> (ConnectionManager, Host) {
         default_directory: None,
         forwards: Vec::new(),
         bookmarks: Vec::new(),
+        open_ssh_source: None,
     };
     (manager, host)
 }

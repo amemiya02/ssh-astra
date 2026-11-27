@@ -66,6 +66,10 @@ impl CommandError {
         Self::new("configChanged", "the OpenSSH Include approval has expired")
     }
 
+    pub fn open_ssh_read_changed() -> Self {
+        Self::new("readReviewChanged", "the OpenSSH import review has changed")
+    }
+
     fn with_details(mut self, details: Value) -> Self {
         self.details = Some(details);
         self

@@ -191,6 +191,7 @@ fn host_at(address: &str, port: u16, user: &str) -> Host {
         default_directory: None,
         forwards: Vec::new(),
         bookmarks: Vec::new(),
+        open_ssh_source: None,
         group_id: None,
     }
 }
@@ -596,6 +597,7 @@ async fn an_unreachable_address_is_reported() {
         default_directory: None,
         forwards: Vec::new(),
         bookmarks: Vec::new(),
+        open_ssh_source: None,
         group_id: None,
     };
     let prompter = ScriptedPrompter::new(HostKeyDecision::SaveAndTrust, &[]);
@@ -1166,6 +1168,7 @@ fn behind(name: &str, jump: &Host) -> Host {
         default_directory: None,
         forwards: Vec::new(),
         bookmarks: Vec::new(),
+        open_ssh_source: None,
         group_id: None,
     }
 }

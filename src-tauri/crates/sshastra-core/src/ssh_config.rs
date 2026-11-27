@@ -17,10 +17,12 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::io::{self, BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 
 use crate::forward::{ForwardDraft, ForwardKind, LOOPBACK, REMOTE_LOOPBACK};
 use crate::proxy::normalize_command;
+use crate::ssh_config_export::HEADER;
 
 pub use crate::host_import::{ConfigHost, ImportIssue, ImportProblem, ParsedConfig};
 
@@ -40,6 +42,8 @@ pub struct IncludedFile {
 
 /// OpenSSH's limit on nested `Include`s.
 pub(crate) const MAX_INCLUDE_DEPTH: usize = 16;
+const MAX_CONFIG_BYTES: u64 = 512 * 1024;
+const MAX_INCLUDE_FILES: usize = 256;
 
 /// Parses config `text`. `includes` resolves one `Include` pattern to the
 /// files it matches (none is fine), or says why it cannot.
@@ -48,6 +52,22 @@ pub fn parse(
     ctx: &ParseContext,
     includes: &mut dyn FnMut(&str) -> Result<Vec<IncludedFile>, String>,
 ) -> ParsedConfig {
+    parse_config(text, ctx, includes).parsed
+}
+
+/// The resolved user config and the literal aliases declared by `Host`.
+/// The resolved entries can also contain implicitly created ProxyJump hops.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UserConfig {
+    pub(crate) parsed: ParsedConfig,
+    pub(crate) aliases: Vec<String>,
+}
+
+fn parse_config(
+    text: &str,
+    ctx: &ParseContext,
+    includes: &mut dyn FnMut(&str) -> Result<Vec<IncludedFile>, String>,
+) -> UserConfig {
     let mut reader = Reader {
         blocks: vec![Block {
             selector: Selector::All,
@@ -89,9 +109,12 @@ pub fn parse(
         }
     }
     issues.extend(hosts.link_jumps(&config));
-    ParsedConfig {
-        hosts: hosts.list.into_iter().map(|h| h.host).collect(),
-        issues,
+    UserConfig {
+        parsed: ParsedConfig {
+            hosts: hosts.list.into_iter().map(|h| h.host).collect(),
+            issues,
+        },
+        aliases,
     }
 }
 
@@ -895,72 +918,124 @@ impl Hosts {
 // --- Reading the real files ------------------------------------------------
 
 /// Resolves `Include` patterns on the file system the way `ssh` does for the
-/// user's config: relative to `~/.ssh`, `~` expanded, `*`/`?` globbed in the
-/// file name.
+/// user's config: relative to `~/.ssh`, with home path and glob expansion.
 pub struct FsIncludes {
     pub home: PathBuf,
 }
 
 impl FsIncludes {
     pub fn resolve(&self, pattern: &str) -> Result<Vec<IncludedFile>, String> {
-        let path = if let Some(rest) = pattern.strip_prefix("~/") {
-            self.home.join(rest)
-        } else if Path::new(pattern).is_absolute() {
-            PathBuf::from(pattern)
-        } else {
-            self.home.join(".ssh").join(pattern)
-        };
-        let name = path.file_name().map(|n| n.to_string_lossy().into_owned());
-        let dir = path.parent().map(Path::to_path_buf);
-        let (Some(name), Some(dir)) = (name, dir) else {
-            return Ok(Vec::new());
-        };
-        let mut paths = if name.contains(['*', '?']) {
-            match fs::read_dir(&dir) {
-                Ok(entries) => entries
-                    .filter_map(Result::ok)
-                    .map(|e| e.path())
-                    .filter(|p| {
-                        p.is_file()
-                            && p.file_name()
-                                .is_some_and(|n| glob(&name, &n.to_string_lossy()))
-                    })
-                    .collect(),
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
-                Err(e) => return Err(format!("{pattern}: {e}")),
-            }
-        } else if path.exists() {
-            vec![path]
-        } else {
-            // `ssh` ignores an Include that matches nothing.
-            Vec::new()
-        };
-        paths.sort();
-        paths
-            .into_iter()
-            .map(|p| {
-                fs::read_to_string(&p)
-                    .map(|text| IncludedFile {
-                        name: p.display().to_string(),
-                        text,
-                    })
-                    .map_err(|e| format!("{}: {e}", p.display()))
-            })
-            .collect()
+        let mut files = MAX_INCLUDE_FILES;
+        let mut bytes = MAX_CONFIG_BYTES;
+        self.resolve_files(pattern, false, &mut files, &mut bytes)
     }
+
+    fn resolve_files(
+        &self,
+        pattern: &str,
+        omit_managed: bool,
+        remaining_files: &mut usize,
+        remaining_bytes: &mut u64,
+    ) -> Result<Vec<IncludedFile>, String> {
+        let home = self.home.to_string_lossy();
+        let expanded = pattern.replace("${HOME}", &home).replace("%d", &home);
+        if expanded.contains("${") || expanded.contains('%') {
+            return Err(format!("{pattern}: unsupported dynamic Include"));
+        }
+        let path = if let Some(rest) = expanded.strip_prefix("~/") {
+            self.home.join(rest)
+        } else if expanded.starts_with('~') {
+            return Err(format!("{pattern}: unsupported home directory"));
+        } else {
+            self.home.join(".ssh").join(&expanded)
+        };
+        let mut paths = if expanded.contains(['*', '?', '[']) {
+            let path = path.to_str().ok_or("Include path is not UTF-8")?;
+            let options = glob::MatchOptions {
+                case_sensitive: !cfg!(windows),
+                require_literal_leading_dot: true,
+                require_literal_separator: true,
+            };
+            glob::glob_with(path, options)
+                .map_err(|error| format!("{pattern}: {error}"))?
+                .take(*remaining_files + 1)
+                .map(|path| path.map_err(|error| format!("{pattern}: {error}")))
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            vec![path]
+        };
+        *remaining_files = remaining_files
+            .checked_sub(paths.len())
+            .ok_or("too many OpenSSH Includes")?;
+        paths.sort();
+        let mut files = Vec::new();
+        for path in paths {
+            match read_config_file(&path, remaining_bytes, omit_managed) {
+                Ok(Some(text)) => {
+                    files.push(IncludedFile {
+                        name: path.display().to_string(),
+                        text,
+                    });
+                }
+                Ok(None) => {}
+                Err(error) => return Err(format!("{}: {error}", path.display())),
+            }
+        }
+        Ok(files)
+    }
+}
+
+/// Read a regular config file without following a path into an unbounded stream.
+fn read_config_file(
+    path: &Path,
+    remaining_bytes: &mut u64,
+    omit_managed: bool,
+) -> io::Result<Option<String>> {
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(rustix::fs::OFlags::NONBLOCK.bits() as i32);
+    }
+    let file = match options.open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    if !file.metadata()?.is_file() {
+        return Err(io::Error::other("OpenSSH config is not a regular file"));
+    }
+    let mut reader = BufReader::new(file);
+    if omit_managed && reader.fill_buf()?.starts_with(HEADER.as_bytes()) {
+        return Ok(None);
+    }
+    let mut text = String::new();
+    reader
+        .take(*remaining_bytes + 1)
+        .read_to_string(&mut text)?;
+    *remaining_bytes = remaining_bytes
+        .checked_sub(text.len() as u64)
+        .ok_or_else(|| io::Error::other("OpenSSH config exceeds the size limit"))?;
+    Ok(Some(text))
 }
 
 /// Reads and parses the user's `~/.ssh/config` under `home`; a missing file
 /// is an empty config.
 pub fn parse_user_config(home: &Path, ctx: &ParseContext) -> std::io::Result<ParsedConfig> {
+    read_user_config(home, ctx).map(|user| user.parsed)
+}
+
+/// Reads a user config without considering any fragments generated by SSH Astra.
+pub fn read_user_config(home: &Path, ctx: &ParseContext) -> std::io::Result<UserConfig> {
     let path = home.join(".ssh").join("config");
-    let text = match fs::read_to_string(&path) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(e) => return Err(e),
-    };
+    let mut remaining_bytes = MAX_CONFIG_BYTES;
+    let mut remaining_files = MAX_INCLUDE_FILES;
+    let text = read_config_file(&path, &mut remaining_bytes, true)?.unwrap_or_default();
     let includes = FsIncludes {
         home: home.to_path_buf(),
     };
-    Ok(parse(&text, ctx, &mut |pattern| includes.resolve(pattern)))
+    Ok(parse_config(&text, ctx, &mut |pattern| {
+        includes.resolve_files(pattern, true, &mut remaining_files, &mut remaining_bytes)
+    }))
 }
