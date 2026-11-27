@@ -9,3 +9,8 @@ export interface NotificationText {
 export function showDesktopNotification(text: NotificationText): Promise<void> {
   return invoke("notification_show", { ...text });
 }
+
+/** Requests an informational taskbar or Dock alert for this Window. */
+export function requestDesktopAttention(): Promise<void> {
+  return invoke("notification_request_attention");
+}

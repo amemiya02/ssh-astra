@@ -10,12 +10,42 @@
       "read": "唯讀",
       "approval": "需要核准"
     },
-    "hostHint": "兩種存取層級目前均允許代理讀取此 Host 已開啟的終端機和檔案。此權限僅儲存在本機。",
+    "hostHint": "唯讀權限分享此主機上開啟的終端機與檔案。需要核准的權限也允許逐筆要求審核指令。此權限只儲存在本機。",
+    "review": {
+      "title": "審核代理指令",
+      "description": "請核對所選終端機的指令提案。你可以將它複製到剪貼簿，再自行貼上與送出。要求將在兩分鐘後逾時。",
+      "host": "主機",
+      "terminal": "終端機",
+      "terminalId": "終端機 #{{id}}",
+      "reject": "拒絕",
+      "copy": "複製指令",
+      "notification": "開啟 SSH Astra 審核指令要求。",
+      "copied": "已將指令複製到剪貼簿。",
+      "copyFailed": "無法複製指令。要求可能已逾時，或終端機狀態已變更。"
+    },
     "enabled": "代理存取已開啟",
     "turnOff": "關閉代理存取",
     "sharedTerminal": "終端機已向代理開放",
     "startFailed": "無法開啟代理存取。",
-    "saveFailed": "本次執行的代理存取已關閉，但無法儲存設定。"
+    "saveFailed": "本次執行的代理存取已關閉，但無法儲存設定。",
+    "activity": {
+      "title": "近期代理活動",
+      "description": "本機保留最近 30 天的工具呼叫，記錄工具名稱、已授權的 Host 和路徑以及結果。",
+      "refresh": "重新整理",
+      "clear": "清除活動記錄",
+      "loadOlder": "載入更早的活動記錄",
+      "loading": "正在載入代理活動記錄…",
+      "loadFailed": "無法載入代理活動記錄。",
+      "clearFailed": "無法清除代理活動記錄。",
+      "empty": "近期沒有代理活動。",
+      "unknownTool": "未知工具",
+      "outcome": {
+        "allowed": "允許",
+        "denied": "拒絕",
+        "timedOut": "逾時",
+        "failed": "失敗"
+      }
+    }
   },
   "shell": {
     "workspace": "終端機",
@@ -1462,6 +1492,10 @@
       }
     },
     "notifications": {
+      "agentReview": {
+        "label": "代理指令審核",
+        "description": "SSH Astra 在背景時，如果本機 MCP 用戶端要求審核指令，則傳送通知。"
+      },
       "transfers": {
         "label": "批次傳輸",
         "description": "一批上傳、下載或複製在背景結束時通知。"

@@ -10,12 +10,42 @@
       "read": "只读",
       "approval": "需要批准"
     },
-    "hostHint": "两种访问级别目前均允许代理读取此 Host 已打开的终端和文件。此权限仅保存在本机。",
+    "hostHint": "只读权限共享此主机上打开的终端和文件。需要批准的权限还允许逐条请求审核命令。此权限只保存在本机。",
+    "review": {
+      "title": "审核代理命令",
+      "description": "请核对针对所选终端的命令。你可以将它复制到剪贴板，再自行粘贴和提交。请求将在两分钟后过期。",
+      "host": "主机",
+      "terminal": "终端",
+      "terminalId": "终端 #{{id}}",
+      "reject": "拒绝",
+      "copy": "复制命令",
+      "notification": "打开 SSH Astra 审核命令请求。",
+      "copied": "命令已复制到剪贴板。",
+      "copyFailed": "无法复制命令。请求可能已过期，或终端状态已改变。"
+    },
     "enabled": "代理访问已开启",
     "turnOff": "关闭代理访问",
     "sharedTerminal": "终端已向代理开放",
     "startFailed": "无法开启代理访问。",
-    "saveFailed": "本次运行的代理访问已关闭，但无法保存设置。"
+    "saveFailed": "本次运行的代理访问已关闭，但无法保存设置。",
+    "activity": {
+      "title": "近期代理活动",
+      "description": "本机保留最近 30 天的工具调用，记录工具名称、已授权的 Host 和路径以及结果。",
+      "refresh": "刷新",
+      "clear": "清空活动记录",
+      "loadOlder": "加载更早的活动记录",
+      "loading": "正在加载代理活动记录…",
+      "loadFailed": "无法加载代理活动记录。",
+      "clearFailed": "无法清空代理活动记录。",
+      "empty": "近期没有代理活动。",
+      "unknownTool": "未知工具",
+      "outcome": {
+        "allowed": "允许",
+        "denied": "拒绝",
+        "timedOut": "超时",
+        "failed": "失败"
+      }
+    }
   },
   "shell": {
     "workspace": "终端",
@@ -1462,6 +1492,10 @@
       }
     },
     "notifications": {
+      "agentReview": {
+        "label": "代理命令审核",
+        "description": "SSH Astra 在后台时，如果本机 MCP 客户端请求审核命令，则发送通知。"
+      },
       "transfers": {
         "label": "批量传输",
         "description": "一批上传、下载或复制在后台结束时通知。"
