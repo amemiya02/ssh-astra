@@ -41,14 +41,15 @@ export function HomeView({ active, controller, connectedIds, onOpenLocalTerminal
   const [query, setQuery] = useState("");
   const search = useRef<HTMLInputElement>(null);
 
+  const empty = tree.hosts.length === 0;
+  // The field only exists once there are Hosts, which load after the first render.
   useEffect(() => {
     if (active) search.current?.focus({ preventScroll: true });
-  }, [active]);
+  }, [active, empty]);
 
   const searching = query.trim() !== "";
   const sections = useMemo(() => homeSections(tree, query), [tree, query]);
   const recents = useMemo(() => recentHostsOf(tree.hosts, recent, recentLimit), [tree.hosts, recent]);
-  const empty = tree.hosts.length === 0;
   const { actions, messages } = controller;
 
   return (
