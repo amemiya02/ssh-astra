@@ -952,6 +952,10 @@
       "label": "Confirm Terminal close",
       "description": "Ask before closing a connected remote Terminal."
     },
+    "confirmQuit": {
+      "label": "Confirm app quit",
+      "description": "Ask before quitting while Connections, transfers, or Port forwards are active."
+    },
     "tabOrientation": {
       "label": "Tab orientation",
       "description": "Place tabs across the top or along the left side of the workspace.",
@@ -1221,12 +1225,21 @@
     "releaseNotes": "Release notes",
     "noReleaseNotes": "No release notes are available for this version.",
     "interruptions": "Restarting will interrupt the following activity.",
+    "later": "Later",
+    "dismiss": "Dismiss"
+  },
+  "interruptions": {
     "connections_one": "{{count}} Connection",
     "connections_other": "{{count}} Connections",
     "transfers_one": "{{count}} transfer",
-    "transfers_other": "{{count}} transfers",
-    "later": "Later",
-    "dismiss": "Dismiss"
+    "transfers_other": "{{count}} transfers"
+  },
+  "quit": {
+    "title": "Quit SSH Astra?",
+    "interruptions": "Quitting will interrupt the following activity.",
+    "confirm": "Quit",
+    "menuFile": "File",
+    "menuQuit": "Quit SSH Astra"
   },
   "rail": {
     "home": "Home",

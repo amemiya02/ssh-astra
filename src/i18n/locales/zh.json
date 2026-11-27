@@ -952,6 +952,10 @@
       "label": "关闭终端前确认",
       "description": "关闭已连接的远程终端前询问。"
     },
+    "confirmQuit": {
+      "label": "退出应用前确认",
+      "description": "有活动的连接、传输或端口转发时，退出应用前询问。"
+    },
     "tabOrientation": {
       "label": "标签方向",
       "description": "将标签排列在工作区顶部或左侧。",
@@ -1221,12 +1225,21 @@
     "releaseNotes": "发布说明",
     "noReleaseNotes": "此版本暂无发布说明。",
     "interruptions": "重启将中断以下活动。",
+    "later": "以后",
+    "dismiss": "关闭"
+  },
+  "interruptions": {
     "connections_one": "{{count}} 个连接",
     "connections_other": "{{count}} 个连接",
     "transfers_one": "{{count}} 项传输",
-    "transfers_other": "{{count}} 项传输",
-    "later": "以后",
-    "dismiss": "关闭"
+    "transfers_other": "{{count}} 项传输"
+  },
+  "quit": {
+    "title": "退出 SSH Astra？",
+    "interruptions": "退出将中断以下活动。",
+    "confirm": "退出",
+    "menuFile": "文件",
+    "menuQuit": "退出 SSH Astra"
   },
   "rail": {
     "home": "主页",
