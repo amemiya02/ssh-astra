@@ -9,10 +9,10 @@ use arboard::{Clipboard, Error as ClipboardError, ImageData};
 use sshastra_core::files::{join, FsError, RemoteFs, RemoteTransfer, TransferHost};
 use sshastra_core::ssh::ConnectionManager;
 use sshastra_core::terminal::{TerminalId, TerminalRegistry};
-use tauri::State;
+use tauri::{State, WebviewWindow};
 use tempfile::{Builder, NamedTempFile, TempDir};
 
-use super::transfers::TransfersState;
+use super::{terminal::with_terminal, transfers::TransfersState};
 use crate::error::CommandResult;
 
 const CACHE_DIRECTORY: &str = ".sshastra-clipboard";
@@ -39,6 +39,7 @@ impl ClipboardImages {
 
 #[tauri::command]
 pub async fn terminal_save_clipboard_image(
+    window: WebviewWindow,
     images: State<'_, ClipboardImages>,
     connections: State<'_, ConnectionManager>,
     transfers: State<'_, TransfersState>,
@@ -47,7 +48,7 @@ pub async fn terminal_save_clipboard_image(
     host: Option<TransferHost>,
     generation: Option<u64>,
 ) -> CommandResult<Option<String>> {
-    let connection = terminals.connection(id)?;
+    let connection = with_terminal(&window, id, || Ok(terminals.connection(id)?))?;
     let target = match (host, generation, connection) {
         (Some(host), Some(expected), Some((actual, connection))) if expected == actual => {
             Some((host, expected, connection))

@@ -23,6 +23,7 @@ interface TabPanelsProps {
   broadcast?: Broadcast;
   tabs: Tab[];
   activeId: string | null;
+  moving?: boolean;
   /** Home, drawn for the Home tab (or when no tab is open). `active`: it is the pane shown. */
   renderHome(active: boolean): ReactNode;
   onFocusPane(paneId: string): void;
@@ -43,7 +44,7 @@ interface TabPanelsProps {
  * hidden); only the active tab is shown. A tree determines positions, while the pane DOM
  * stays keyed directly under its tab so edits to the tree cannot remount a neighbour.
  */
-export function TabPanels({ tabs, activeId, activity, ...paneProps }: TabPanelsProps) {
+export function TabPanels({ tabs, activeId, activity, moving, ...paneProps }: TabPanelsProps) {
   // Closing the last tab leaves Home, never an empty stage.
   if (tabs.length === 0) return <div className="absolute inset-0">{paneProps.renderHome(true)}</div>;
 
@@ -60,7 +61,7 @@ export function TabPanels({ tabs, activeId, activity, ...paneProps }: TabPanelsP
         className="absolute inset-0"
       >
         <TabActivityContext.Provider value={{ activity, tabId: tab.id }}>
-          <SplitPanes tab={tab} active={active} nextConnection={nextConnection} {...paneProps} />
+          <SplitPanes tab={tab} active={active && !moving} nextConnection={nextConnection} {...paneProps} />
         </TabActivityContext.Provider>
       </div>
     );
@@ -195,6 +196,7 @@ function PaneContent({
           host={pane.host}
           initialCwd={pane.initialCwd}
           expectedTarget={pane.expectedTarget}
+          savedHostTerminal={pane.savedHostTerminal}
           onClose={() => onClosePane(pane.id)}
           onEditHost={() => onEditHost(pane.host)}
           active={active}

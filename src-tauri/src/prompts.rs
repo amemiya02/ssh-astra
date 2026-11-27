@@ -138,18 +138,33 @@ impl PendingPrompts {
     }
 }
 
-pub struct ChannelPrompter {
+#[derive(Clone)]
+pub(crate) struct PromptEndpoint {
     pub pending: Arc<PendingPrompts>,
     pub channel: Channel<PromptRequest>,
 }
 
+pub(crate) struct ChannelPrompter(Box<dyn Fn() -> Option<PromptEndpoint> + Send + Sync>);
+
 impl ChannelPrompter {
+    pub(crate) fn new(pending: Arc<PendingPrompts>, channel: Channel<PromptRequest>) -> Self {
+        let endpoint = PromptEndpoint { pending, channel };
+        Self::routed(move || Some(endpoint.clone()))
+    }
+
+    pub(crate) fn routed(
+        endpoint: impl Fn() -> Option<PromptEndpoint> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Box::new(endpoint))
+    }
+
     /// Sends the request built for a fresh id and waits for the reply.
     /// `None` if the webview went away.
     async fn ask(&self, request: impl FnOnce(u64) -> PromptRequest) -> Option<PromptAnswer> {
-        let (id, rx) = self.pending.register()?;
-        if self.channel.send(request(id)).is_err() {
-            if let Some(waiting) = self.pending.lock().as_mut() {
+        let endpoint = (self.0)()?;
+        let (id, rx) = endpoint.pending.register()?;
+        if endpoint.channel.send(request(id)).is_err() {
+            if let Some(waiting) = endpoint.pending.lock().as_mut() {
                 waiting.remove(&id);
             }
             return None;
@@ -185,7 +200,9 @@ impl ChannelPrompter {
 
 impl Prompter for ChannelPrompter {
     fn progress(&self, progress: ConnectProgress) {
-        let _ = self.channel.send(PromptRequest::Progress { progress });
+        if let Some(endpoint) = (self.0)() {
+            let _ = endpoint.channel.send(PromptRequest::Progress { progress });
+        }
     }
 
     fn confirm_host_key(&self, prompt: HostKeyPrompt) -> BoxFuture<'_, HostKeyDecision> {

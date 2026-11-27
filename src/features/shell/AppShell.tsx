@@ -34,6 +34,7 @@ export interface AppShellProps {
   filePanel: ReactNode;
   /** The selected workspace view fills the area normally shared with the File panel. */
   fullWorkspace?: boolean;
+  movingTab?: boolean;
   onOpenTransfers(): void;
   /** What the status bar reports. */
   status?: StatusInfo;
@@ -54,7 +55,7 @@ const sidebarSize = "248px";
  * The main window: nav rail | sidebar view | (tab strip / Terminal workspace + File panel dock), over a status bar.
  * Panel sizes, collapsed panels and the dock position persist across restarts.
  */
-export function AppShell({ sidebar, nav, tabs, workspace, filePanel, fullWorkspace, onOpenTransfers, status }: AppShellProps) {
+export function AppShell({ sidebar, nav, tabs, workspace, filePanel, fullWorkspace, onOpenTransfers, status, movingTab }: AppShellProps) {
   const { t } = useTranslation();
   const { layout, saveGroup, setDock, setSidebarView } = useShellLayout();
   const { dock, sidebarView } = layout;
@@ -194,7 +195,7 @@ export function AppShell({ sidebar, nav, tabs, workspace, filePanel, fullWorkspa
   );
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col" inert={movingTab}>
       <h1 className="sr-only">{t("app.name")}</h1>
       <div className="relative flex min-h-0 flex-1">
         <NavRail

@@ -34,7 +34,8 @@ use super::command_history;
 use super::connections::{detect_os_on_current_connection, HostRoute};
 use super::settings::SettingsState;
 use crate::error::{CommandError, CommandResult};
-use crate::prompts::{ChannelPrompter, PromptAnswer, PromptRequest};
+use crate::prompts::{ChannelPrompter, PromptAnswer, PromptEndpoint, PromptRequest};
+use crate::terminal_handoff::{TerminalDelivery, TerminalRoute};
 use crate::windows;
 
 #[derive(Serialize)]
@@ -89,9 +90,8 @@ fn terminal_output(
     size: TerminalSize,
     settings: &TerminalSettings,
     directory: &TerminalOutputDirectory,
-    on_event: &Channel<InvokeResponseBody>,
+    route: Arc<TerminalRoute>,
 ) -> Arc<TerminalOutput> {
-    let on_event = on_event.clone();
     Arc::new(TerminalOutput::new(
         host,
         size,
@@ -101,7 +101,7 @@ fn terminal_output(
                 OutputKind::Log => OutputMessage::TerminalLog(status),
                 OutputKind::Recording => OutputMessage::Recording(status),
             };
-            send_json(&on_event, &message);
+            send_routed_json(&route, &message);
         },
     ))
 }
@@ -117,32 +117,33 @@ fn send_json(channel: &Channel<InvokeResponseBody>, message: &impl Serialize) {
     }
 }
 
-/// Forwards a Terminal's events to its channel in the wire format above.
-fn channel_sink(
-    on_event: Channel<InvokeResponseBody>,
-    on_prompt: Option<Channel<PromptRequest>>,
-) -> impl FnMut(TerminalEvent) + Send {
+fn send_routed_json(route: &TerminalRoute, message: &impl Serialize) {
+    if let Ok(json) = serde_json::to_string(message) {
+        route.send(InvokeResponseBody::Json(json));
+    }
+}
+
+/// Forwards a Terminal's events to its current Window in the wire format above.
+fn channel_sink(route: Arc<TerminalRoute>) -> impl FnMut(TerminalEvent) + Send {
     move |event| {
-        // A send only fails once the webview is gone; nothing left to tell.
+        if matches!(
+            event,
+            TerminalEvent::Connection(_) | TerminalEvent::Exit { .. }
+        ) {
+            route.connection_event(&event);
+        }
         match event {
-            TerminalEvent::Output(bytes) => {
-                let _ = on_event.send(InvokeResponseBody::Raw(bytes));
-            }
+            TerminalEvent::Output(bytes) => route.send(InvokeResponseBody::Raw(bytes)),
             TerminalEvent::Connection(connection) => {
-                // Recovery states must reach the overlay in order with the progress
-                // updates, while the Terminal stream still orders shell events.
-                if let Some(channel) = &on_prompt {
-                    let _ = channel.send(PromptRequest::Reconnect {
-                        state: connection.clone(),
-                    });
-                }
-                send_json(&on_event, &ConnectionMessage { connection });
+                send_routed_json(&route, &ConnectionMessage { connection });
             }
-            TerminalEvent::Cwd(cwd) => send_json(&on_event, &CwdMessage { cwd }),
+            TerminalEvent::Cwd(cwd) => send_routed_json(&route, &CwdMessage { cwd }),
             TerminalEvent::ShellIntegration(shell_integration) => {
-                send_json(&on_event, &ShellIntegrationMessage { shell_integration });
+                send_routed_json(&route, &ShellIntegrationMessage { shell_integration });
             }
-            TerminalEvent::Exit { code } => send_json(&on_event, &ExitMessage { exit_code: code }),
+            TerminalEvent::Exit { code } => {
+                send_routed_json(&route, &ExitMessage { exit_code: code });
+            }
         }
     }
 }
@@ -196,17 +197,22 @@ pub async fn local_terminal_open(
     };
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     let _ = cwd;
+    let route = TerminalRoute::new(TerminalDelivery {
+        webview: window.label().into(),
+        events: on_event,
+        prompts: None,
+    });
     let output = terminal_output(
         "Local",
         size,
         &terminal_settings(&settings),
         &output_directory,
-        &on_event,
+        route.clone(),
     );
-    let pty = LocalPty::spawn(command, size, output.wrap(channel_sink(on_event, None)))?;
+    let pty = LocalPty::spawn(command, size, output.wrap(channel_sink(route.clone())))?;
     let shell_program = pty.shell_program().to_owned();
     let id = registry.insert_with_output(Box::new(pty), output);
-    track_terminal(&window, &registry, id)?;
+    track_terminal(&window, &registry, id, route)?;
     Ok(OpenedLocalTerminal {
         id,
         shell_program,
@@ -275,16 +281,29 @@ pub async fn remote_terminal_open(
         return Err(CommandError::ssh_link_target_changed());
     }
     let saved_host = matches!(route.as_ref(), HostRoute::Saved(_));
+    let channel_route = TerminalRoute::new(TerminalDelivery {
+        webview: webview.label().into(),
+        events: on_event,
+        prompts: Some(PromptEndpoint {
+            pending: windows::prompts(&window)?,
+            channel: on_prompt,
+        }),
+    });
     let metadata = saved_host.then(|| {
-        let screen = pending_screens.reader(webview.label().to_owned(), on_event.clone());
+        let channel_route = channel_route.clone();
+        let pending_screens = pending_screens.inner().clone();
+        let screen = move |lines| {
+            let route = channel_route.lock();
+            pending_screens.request(&route.delivery.webview, &route.delivery.events, lines)
+        };
         Arc::new(SavedTerminalMetadata::new(host_id.clone()).with_screen_reader(screen))
     });
     let observed = metadata.clone();
     let host = host.clone();
-    let prompter = Arc::new(ChannelPrompter {
-        pending: windows::prompts(&window)?,
-        channel: on_prompt.clone(),
-    });
+    let prompt_route = channel_route.clone();
+    let prompter = Arc::new(ChannelPrompter::routed(move || {
+        prompt_route.lock().delivery.prompts.clone()
+    }));
     let prompts = prompter.clone();
     let connect_app = app.clone();
     let connect = move || {
@@ -292,11 +311,17 @@ pub async fn remote_terminal_open(
         async move { route.connect(&app, prompter).await }
     };
     let settings = terminal_settings(&settings);
-    let output = terminal_output(&host.name, size, &settings, &output_directory, &on_event);
+    let output = terminal_output(
+        &host.name,
+        size,
+        &settings,
+        &output_directory,
+        channel_route.clone(),
+    );
     let mut options = RemoteTerminalOptions::for_host(&host, settings.shell_integration);
     options.initial_cwd = cwd;
     let (reconnect_app, reconnect_host_id) = (app.clone(), host_id.clone());
-    let mut sink = channel_sink(on_event, Some(on_prompt));
+    let mut sink = channel_sink(channel_route.clone());
     let terminal = RemoteTerminal::open_with_progress(
         connect,
         options,
@@ -325,44 +350,59 @@ pub async fn remote_terminal_open(
     // Open the PTY before using another session channel on the same SSH transport.
     detect_os_on_current_connection(app, host_id);
     let id = registry.insert_with_metadata(Box::new(terminal), output, metadata);
-    track_terminal(&window, &registry, id)?;
+    track_terminal(&window, &registry, id, channel_route)?;
     Ok(OpenedRemoteTerminal { id, saved_host })
 }
 
 #[tauri::command]
-pub fn terminal_set_title(registry: State<'_, TerminalRegistry>, id: TerminalId, title: String) {
-    registry.set_title(id, title);
+pub fn terminal_set_title(
+    window: WebviewWindow,
+    registry: State<'_, TerminalRegistry>,
+    id: TerminalId,
+    title: String,
+) -> CommandResult<()> {
+    with_terminal(&window, id, || {
+        registry.set_title(id, title);
+        Ok(())
+    })
 }
 
 /// Tries a remote Terminal's dropped Connection again now (the overlay's
 /// "Reconnect" button).
 #[tauri::command]
 pub async fn terminal_reconnect(
+    window: WebviewWindow,
     registry: State<'_, TerminalRegistry>,
     id: TerminalId,
 ) -> CommandResult<()> {
-    Ok(registry.reconnect(id)?)
+    with_terminal(&window, id, || Ok(registry.reconnect(id)?))
 }
 
 /// Makes a Terminal's shell report its directory once, by typing a command
 /// into it (the File panel's "sync" button, for shells without ShellIntegration).
 #[tauri::command]
 pub async fn terminal_report_cwd(
+    window: WebviewWindow,
     registry: State<'_, TerminalRegistry>,
     id: TerminalId,
 ) -> CommandResult<()> {
-    Ok(registry.write(id, REPORT_CWD.as_bytes())?)
+    with_terminal(&window, id, || {
+        Ok(registry.write(id, REPORT_CWD.as_bytes())?)
+    })
 }
 
 /// Follows a File panel only if the remote shell is still at the observed prompt.
 #[tauri::command]
 pub async fn terminal_follow_file_directory(
+    window: WebviewWindow,
     registry: State<'_, TerminalRegistry>,
     id: TerminalId,
     prompt_id: u64,
     path: String,
 ) -> CommandResult<()> {
-    Ok(registry.follow_file_directory(id, prompt_id, &path)?)
+    with_terminal(&window, id, || {
+        Ok(registry.follow_file_directory(id, prompt_id, &path)?)
+    })
 }
 
 /// Answers a question sent on a `remote_terminal_open` prompt channel.
@@ -375,25 +415,29 @@ pub fn prompt_answer(window: WebviewWindow, id: u64, answer: PromptAnswer) {
 
 #[tauri::command]
 pub async fn terminal_write(
+    window: WebviewWindow,
     registry: State<'_, TerminalRegistry>,
     id: TerminalId,
     data: String,
     generation: Option<u64>,
 ) -> CommandResult<()> {
-    match generation {
-        Some(generation) => registry.write_for_connection(id, generation, data.as_bytes())?,
-        None => registry.write(id, data.as_bytes())?,
-    }
-    Ok(())
+    with_terminal(&window, id, || {
+        match generation {
+            Some(generation) => registry.write_for_connection(id, generation, data.as_bytes())?,
+            None => registry.write(id, data.as_bytes())?,
+        }
+        Ok(())
+    })
 }
 
 #[tauri::command]
 pub async fn terminal_resize(
+    window: WebviewWindow,
     registry: State<'_, TerminalRegistry>,
     id: TerminalId,
     size: TerminalSize,
 ) -> CommandResult<()> {
-    Ok(registry.resize(id, size)?)
+    with_terminal(&window, id, || Ok(registry.resize(id, size)?))
 }
 
 #[tauri::command]
@@ -402,16 +446,33 @@ pub async fn terminal_close(
     registry: State<'_, TerminalRegistry>,
     id: TerminalId,
 ) -> CommandResult<()> {
-    let _ = windows::with_resources(&window, |resources| resources.terminals.remove(&id));
-    Ok(registry.close(id)?)
+    if windows::with_resources(&window, |resources| resources.terminals.remove(&id))?.is_some() {
+        registry.close(id)?;
+    }
+    Ok(())
+}
+
+pub(super) fn with_terminal<T>(
+    window: &WebviewWindow,
+    id: TerminalId,
+    operation: impl FnOnce() -> CommandResult<T>,
+) -> CommandResult<T> {
+    windows::with_resources(window, |resources| {
+        if !resources.terminals.contains_key(&id) {
+            return Err(sshastra_core::terminal::TerminalError::NotFound(id).into());
+        }
+        operation()
+    })?
 }
 
 fn track_terminal(
     window: &WebviewWindow,
     registry: &TerminalRegistry,
     id: TerminalId,
+    route: Arc<TerminalRoute>,
 ) -> CommandResult<()> {
-    if let Err(error) = windows::with_resources(window, |resources| resources.terminals.insert(id))
+    if let Err(error) =
+        windows::with_resources(window, |resources| resources.terminals.insert(id, route))
     {
         let _ = registry.close(id);
         return Err(error);
@@ -422,41 +483,49 @@ fn track_terminal(
 /// Starts writing Terminal output to a plain-text file.
 #[tauri::command]
 pub async fn terminal_log_start(
+    window: WebviewWindow,
     registry: State<'_, TerminalRegistry>,
     settings: State<'_, SettingsState>,
     output_directory: State<'_, TerminalOutputDirectory>,
     id: TerminalId,
 ) -> CommandResult<()> {
-    registry.start_log(id, &output_directory.resolve(&terminal_settings(&settings)))?;
-    Ok(())
+    with_terminal(&window, id, || {
+        registry.start_log(id, &output_directory.resolve(&terminal_settings(&settings)))?;
+        Ok(())
+    })
 }
 
 /// Finishes writing this Terminal's log and closes the file.
 #[tauri::command]
 pub async fn terminal_log_stop(
+    window: WebviewWindow,
     registry: State<'_, TerminalRegistry>,
     id: TerminalId,
 ) -> CommandResult<()> {
-    Ok(registry.stop_log(id)?)
+    with_terminal(&window, id, || Ok(registry.stop_log(id)?))
 }
 
 /// Starts recording Terminal output and size changes to an asciicast v2 file.
 #[tauri::command]
 pub async fn terminal_recording_start(
+    window: WebviewWindow,
     registry: State<'_, TerminalRegistry>,
     settings: State<'_, SettingsState>,
     output_directory: State<'_, TerminalOutputDirectory>,
     id: TerminalId,
 ) -> CommandResult<()> {
-    registry.start_recording(id, &output_directory.resolve(&terminal_settings(&settings)))?;
-    Ok(())
+    with_terminal(&window, id, || {
+        registry.start_recording(id, &output_directory.resolve(&terminal_settings(&settings)))?;
+        Ok(())
+    })
 }
 
 /// Finishes writing this Terminal's Recording and closes the file.
 #[tauri::command]
 pub async fn terminal_recording_stop(
+    window: WebviewWindow,
     registry: State<'_, TerminalRegistry>,
     id: TerminalId,
 ) -> CommandResult<()> {
-    Ok(registry.stop_recording(id)?)
+    with_terminal(&window, id, || Ok(registry.stop_recording(id)?))
 }

@@ -186,15 +186,8 @@ pub fn temporary_host_save(
 }
 
 #[tauri::command]
-pub fn temporary_host_forget(
-    window: WebviewWindow,
-    temporary: State<'_, TemporaryHosts>,
-    host_id: HostId,
-) {
-    let _ = windows::with_resources(&window, |resources| {
-        resources.temporary_hosts.remove(&host_id)
-    });
-    temporary.forget(&host_id);
+pub fn temporary_host_forget(window: WebviewWindow, host_id: HostId) {
+    windows::forget_temporary_host(&window, &host_id);
 }
 
 /// A Terminal or standalone File panel can open either a saved route or a Temporary Host.
@@ -300,10 +293,7 @@ pub async fn host_connect(
     let app = window.app_handle();
     let mut hops = hosts.with(|store| Ok(store.jump_chain(&host_id)?))?;
     let host = hops.pop().expect("a jump chain ends with the Host itself");
-    let prompter = Arc::new(ChannelPrompter {
-        pending: windows::prompts(&window)?,
-        channel: on_prompt,
-    });
+    let prompter = Arc::new(ChannelPrompter::new(windows::prompts(&window)?, on_prompt));
     let connection = connect_host(app, &hops, &host, prompter).await?;
     schedule_os_detection(app, &host.id, &connection);
     connections.held.hold(&host.id, connection);
@@ -322,10 +312,7 @@ pub async fn host_test_connection(
     let app = window.app_handle();
     let mut hops = hosts.with(|store| Ok(store.draft_jump_chain(id, draft)?))?;
     let host = hops.pop().expect("a jump chain ends with the draft Host");
-    let prompter = Arc::new(ChannelPrompter {
-        pending: windows::prompts(&window)?,
-        channel: on_prompt,
-    });
+    let prompter = Arc::new(ChannelPrompter::new(windows::prompts(&window)?, on_prompt));
     configured_connections(app)
         .test_connection(&hops, &host, prompter)
         .await?;

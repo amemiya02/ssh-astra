@@ -364,6 +364,8 @@
     "closeOthers": "Close other tabs",
     "closeRight": "Close tabs to the right",
     "duplicate": "Duplicate tab",
+    "moveToNewWindow": "Move to New Window",
+    "moveToNewWindowFailed": "Could not move the tab to a new Window.",
     "rename": "Rename tab",
     "renameHint": "Clear the title to use the automatic name.",
     "title": "Tab title",

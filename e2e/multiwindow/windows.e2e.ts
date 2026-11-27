@@ -37,21 +37,28 @@ async function liveConnections(): Promise<number> {
   });
 }
 
-async function transportEndpoint(): Promise<string> {
-  await browser.execute(() => {
-    const input = document.querySelector<HTMLTextAreaElement>('[role="tabpanel"]:not([hidden]) .xterm-helper-textarea');
+async function typeCommand(command: string, pane = 0): Promise<void> {
+  await browser.execute((text, index) => {
+    const input = document.querySelectorAll<HTMLTextAreaElement>('[role="tabpanel"]:not([hidden]) .xterm-helper-textarea')[index];
     if (!input) throw new Error("The active Terminal has no input");
     input.focus();
     const data = new DataTransfer();
-    data.setData("text/plain", 'printf "astra-transport %s\\n" "$SSH_CONNECTION"');
+    data.setData("text/plain", text);
     input.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
-  });
+  }, command, pane);
   await browser.keys("Enter");
+}
+
+async function terminalText(): Promise<string[]> {
+  return browser.execute(() =>
+    (window as unknown as { __sshastraE2E: { terminalText(): string[] } }).__sshastraE2E.terminalText());
+}
+
+async function transportEndpoint(): Promise<string> {
+  await typeCommand('printf "astra-transport %s\\n" "$SSH_CONNECTION"');
   let matched = "";
   await browser.waitUntil(async () => {
-    const text = await browser.execute(() =>
-      (window as unknown as { __sshastraE2E: { terminalText(): string[] } }).__sshastraE2E.terminalText().join("\n"));
-    matched = text.match(/^astra-transport ([0-9.:]+ \d+ [0-9.:]+ \d+)$/m)?.[1] ?? "";
+    matched = (await terminalText()).join("\n").match(/^astra-transport ([0-9.:]+ \d+ [0-9.:]+ \d+)$/m)?.[1] ?? "";
     return matched !== "";
   }, { timeoutMsg: "The Terminal never reported its SSH transport endpoint." });
   return matched;
@@ -135,6 +142,48 @@ describe("SSH Astra Windows", function () {
     await expect($('[role="dialog"]')).not.toExist();
     expect(await liveConnections()).toBe(1);
     expect(await transportEndpoint()).toBe(endpoint);
+
+    // Capture both shell identities and their output before moving the whole split.
+    await shortcut("KeyE");
+    const shownPanes = () => $$('[role="tabpanel"]:not([hidden]) .xterm');
+    await expect(shownPanes()).toBeElementsArrayOfSize(2);
+    await browser.waitUntil(async () => {
+      return (await shownPanes().map((pane) => pane.isDisplayed())).every(Boolean)
+        && (await terminalText()).every((text) => text.length > 0);
+    });
+    for (const pane of [0, 1]) {
+      await typeCommand(`ASTRA_PANE=split-${pane}; printf '%s:%s\\n' "$ASTRA_PANE" "$$"`, pane);
+    }
+    const identities = () => terminalText().then((texts) =>
+      texts.map((text, index) => text.match(new RegExp(`^split-${index}:(\\d+)$`, "m"))?.[0]));
+    let shells: (string | undefined)[] = [];
+    await browser.waitUntil(async () => (shells = await identities()).length === 2 && shells.every(Boolean));
+    const movedTab = await activeTab().getAttribute("id");
+    if (!movedTab) throw new Error("The split has no tab ID.");
+    await activeTab().click({ button: "right" });
+    await $('//*[@role="menuitem" and contains(., "Move to New Window")]').click();
+    await browser.waitUntil(async () => (handles = await browser.getWindowHandles()).length === 3);
+    const destination = handles.find((label) => label !== main && label !== second)!;
+    await selectWindow(destination);
+    await expect(activeTab()).toHaveAttribute("id", movedTab);
+    await expect(shownPanes()).toBeElementsArrayOfSize(2);
+    await browser.waitUntil(async () => (await identities()).join(",") === shells.join(","));
+    await browser.waitUntil(() => browser.execute(() =>
+      !document.querySelector('[role="tabpanel"]:not([hidden])')?.closest("[inert]")));
+    expect(await liveConnections()).toBe(1);
+    for (const pane of [0, 1]) {
+      await typeCommand(`printf 'after-%s:%s\\n' "$ASTRA_PANE" "$$"`, pane);
+    }
+    await browser.waitUntil(async () =>
+      (await terminalText()).every((text, pane) => text.split("\n").includes(`after-${shells[pane]}`)));
+    await selectWindow(second);
+    await browser.waitUntil(async () => !(await tabIds()).includes(movedTab));
+    await selectWindow(destination);
+    await browser.closeWindow();
+    await browser.waitUntil(async () => (await browser.getWindowHandles()).length === 2);
+    await selectWindow(second);
+    await homeCard().click();
+    await activeTab().$('[data-status="connected"]').waitForExist();
 
     await $('button[aria-label="Port forwards"]').click();
     await expect($('button[aria-label="Port forwards"]')).toHaveAttribute("aria-pressed", "true");
