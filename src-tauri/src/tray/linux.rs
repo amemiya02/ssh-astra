@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use tauri::WebviewWindow;
+use tauri::{Manager, WebviewWindow};
 
 const PANEL_CHECK: Duration = Duration::from_secs(5);
 

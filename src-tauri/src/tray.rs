@@ -212,13 +212,11 @@ pub(crate) fn close_enabled(app: &AppHandle) -> bool {
 
 /// Background launch can use the same gate before hiding a Window.
 pub(crate) async fn can_restore(app: &AppHandle) -> bool {
-    if app.try_state::<Tray>().is_none() {
-        return false;
-    }
+    let registered = app.try_state::<Tray>().is_some();
     #[cfg(target_os = "linux")]
-    return linux::panel_available().await;
+    return registered && linux::panel_available().await;
     #[cfg(not(target_os = "linux"))]
-    true
+    registered
 }
 
 /// Call on the UI thread after checking that a tray action can bring it back.
