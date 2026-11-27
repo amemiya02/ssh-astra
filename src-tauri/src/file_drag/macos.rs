@@ -200,6 +200,29 @@ define_class!(
     unsafe impl NSObjectProtocol for DragSource {}
 
     unsafe impl NSDraggingSource for DragSource {
+        #[cfg(feature = "e2e")]
+        #[unsafe(method(draggingSession:willBeginAtPoint:))]
+        fn began(&self, session: &NSDraggingSession, point: NSPoint) {
+            let board = session.draggingPasteboard();
+            let types = board.types().map(|kinds| {
+                kinds
+                    .iter()
+                    .map(|kind| kind.to_string())
+                    .collect::<Vec<_>>()
+            });
+            log::info!(
+                "file drag AppKit offered pasteboard types={types:?} from x={} y={}",
+                point.x,
+                point.y
+            );
+        }
+
+        #[cfg(feature = "e2e")]
+        #[unsafe(method(draggingSession:movedToPoint:))]
+        fn moved(&self, _session: &NSDraggingSession, point: NSPoint) {
+            log::info!("file drag AppKit moved to x={} y={}", point.x, point.y);
+        }
+
         #[unsafe(method(draggingSession:sourceOperationMaskForDraggingContext:))]
         fn allowed(
             &self,
@@ -214,9 +237,16 @@ define_class!(
         }
 
         #[unsafe(method(draggingSession:endedAtPoint:operation:))]
-        fn ended(&self, _session: &NSDraggingSession, _point: NSPoint, operation: NSDragOperation) {
+        fn ended(&self, _session: &NSDraggingSession, point: NSPoint, operation: NSDragOperation) {
             #[cfg(feature = "e2e")]
-            log::info!("file drag ended AppKit session operation={}", operation.0);
+            log::info!(
+                "file drag ended AppKit session operation={} x={} y={}",
+                operation.0,
+                point.x,
+                point.y
+            );
+            #[cfg(not(feature = "e2e"))]
+            let _ = point;
             let state = self.ivars();
             if operation.contains(NSDragOperation::Copy) {
                 let Delivery { app, started } = state.delivery.clone();

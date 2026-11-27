@@ -133,13 +133,21 @@ export type OsFileDrag =
  * Resolves with the function that stops following.
  */
 export async function onOsFileDrag(handler: (drag: OsFileDrag) => void): Promise<() => void> {
+  let hasFiles = false;
   return getCurrentWebview().onDragDropEvent(({ payload }) => {
-    if (payload.type === "leave") return handler({ type: "leave" });
+    if (payload.type === "leave") {
+      hasFiles = false;
+      return handler({ type: "leave" });
+    }
+    // A native file promise can hover back over its own Window without any local paths.
+    if (payload.type === "enter") hasFiles = payload.paths.length > 0;
     // Physical pixels; the page lays out in CSS pixels.
     const scale = window.devicePixelRatio || 1;
     const x = payload.position.x / scale;
     const y = payload.position.y / scale;
-    if (payload.type === "drop") handler({ type: "drop", x, y, paths: payload.paths });
-    else handler({ type: "over", x, y });
+    if (payload.type === "drop") {
+      hasFiles = false;
+      handler({ type: "drop", x, y, paths: payload.paths });
+    } else if (hasFiles) handler({ type: "over", x, y });
   });
 }
