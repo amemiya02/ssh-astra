@@ -1,16 +1,19 @@
 //! File panel commands: an SFTP session per File panel, over the Host's
 //! existing Connection or a connection opened by the SFTP workspace.
 
+use std::future::Future;
 use std::sync::Arc;
 
 use sshastra_core::edit::Opener;
 use sshastra_core::files::{
-    self, DiskBrowser, FsError, FsId, FsRegistry, Listing, OpenRemote, PermissionChange, RemoteFs,
+    self, DiskBrowser, FsError, FsId, FsRegistry, FsResult, Listing, NameSearchMode,
+    NameSearchResult, OpenRemote, PermissionChange, RemoteFs,
 };
 use sshastra_core::hosts::HostId;
 use sshastra_core::ssh::ConnectionManager;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
+use tokio::sync::oneshot;
 
 use crate::prompts::{ChannelPrompter, PendingPrompts, PromptRequest};
 
@@ -167,21 +170,49 @@ pub async fn files_folder_size(
     path: String,
     on_start: Channel<u64>,
 ) -> CommandResult<Option<u64>> {
-    let (request, fs, cancelled) = registry
-        .start_folder_size(id)
-        .ok_or_else(CommandError::not_open)?;
+    scan(&registry, id, on_start, |fs, cancelled| async move {
+        fs.folder_size(&path, cancelled).await
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn files_search_names(
+    registry: State<'_, FsRegistry>,
+    id: FsId,
+    path: String,
+    query: String,
+    mode: NameSearchMode,
+    on_start: Channel<u64>,
+) -> CommandResult<Option<NameSearchResult>> {
+    scan(&registry, id, on_start, |fs, cancelled| async move {
+        fs.search_names(&path, &query, mode, cancelled).await
+    })
+    .await
+}
+
+async fn scan<T, F>(
+    registry: &FsRegistry,
+    id: FsId,
+    on_start: Channel<u64>,
+    run: impl FnOnce(Arc<dyn RemoteFs>, oneshot::Receiver<()>) -> F,
+) -> CommandResult<Option<T>>
+where
+    F: Future<Output = FsResult<Option<T>>>,
+{
+    let (request, fs, cancelled) = registry.start_scan(id).ok_or_else(CommandError::not_open)?;
     let result = if on_start.send(request).is_ok() {
-        fs.folder_size(&path, cancelled).await.map_err(Into::into)
+        run(fs, cancelled).await.map_err(Into::into)
     } else {
         Ok(None)
     };
-    registry.cancel_folder_size(id, request);
+    registry.cancel_scan(id, request);
     result
 }
 
 #[tauri::command]
-pub fn files_cancel_folder_size(registry: State<'_, FsRegistry>, id: FsId, request_id: u64) {
-    registry.cancel_folder_size(id, request_id);
+pub fn files_cancel_scan(registry: State<'_, FsRegistry>, id: FsId, request_id: u64) {
+    registry.cancel_scan(id, request_id);
 }
 
 /// Deletes `paths`, directories with everything in them; symlinks are

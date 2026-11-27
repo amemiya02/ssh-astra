@@ -9,7 +9,10 @@ use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::oneshot;
 
-use super::{FileEntry, FileReader, FileStat, FileWriter, FsResult, OpenRemote, RemoteFs};
+use super::{
+    FileEntry, FileReader, FileStat, FileWriter, FsResult, NameSearchMode, NameSearchResult,
+    OpenRemote, RemoteFs,
+};
 use crate::ssh::BoxFuture;
 
 /// A [`RemoteFs`] that asks `open` for a session on every request (the app
@@ -61,6 +64,21 @@ impl RemoteFs for LiveHostFs {
         cancelled: oneshot::Receiver<()>,
     ) -> BoxFuture<'a, FsResult<Option<u64>>> {
         Box::pin(async move { self.fs().await?.folder_size(path, cancelled).await })
+    }
+
+    fn search_names<'a>(
+        &'a self,
+        path: &'a str,
+        query: &'a str,
+        mode: NameSearchMode,
+        cancelled: oneshot::Receiver<()>,
+    ) -> BoxFuture<'a, FsResult<Option<NameSearchResult>>> {
+        Box::pin(async move {
+            self.fs()
+                .await?
+                .search_names(path, query, mode, cancelled)
+                .await
+        })
     }
 
     fn create_dir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>> {

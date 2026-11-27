@@ -15,7 +15,7 @@ pub struct FsId(u64);
 
 struct OpenFs {
     fs: Arc<dyn RemoteFs>,
-    folder_sizes: HashMap<u64, oneshot::Sender<()>>,
+    scans: HashMap<u64, oneshot::Sender<()>>,
 }
 
 /// Every open remote file system, addressed by [`FsId`]. Each keeps its
@@ -24,7 +24,7 @@ struct OpenFs {
 #[derive(Default)]
 pub struct FsRegistry {
     next_id: AtomicU64,
-    next_folder_size: AtomicU64,
+    next_scan: AtomicU64,
     open: Mutex<HashMap<FsId, OpenFs>>,
 }
 
@@ -35,7 +35,7 @@ impl FsRegistry {
             id,
             OpenFs {
                 fs,
-                folder_sizes: HashMap::new(),
+                scans: HashMap::new(),
             },
         );
         id
@@ -46,26 +46,23 @@ impl FsRegistry {
     }
 
     /// Registers cancellation before returning the request ID to the File panel.
-    pub fn start_folder_size(
-        &self,
-        id: FsId,
-    ) -> Option<(u64, Arc<dyn RemoteFs>, oneshot::Receiver<()>)> {
+    pub fn start_scan(&self, id: FsId) -> Option<(u64, Arc<dyn RemoteFs>, oneshot::Receiver<()>)> {
         let mut registry = self.lock();
         let open = registry.get_mut(&id)?;
-        let request = self.next_folder_size.fetch_add(1, Ordering::Relaxed) + 1;
+        let request = self.next_scan.fetch_add(1, Ordering::Relaxed) + 1;
         let (cancel, cancelled) = oneshot::channel();
-        open.folder_sizes.insert(request, cancel);
+        open.scans.insert(request, cancel);
         Some((request, Arc::clone(&open.fs), cancelled))
     }
 
     /// Drops the cancellation sender, if the scan is still registered.
-    pub fn cancel_folder_size(&self, id: FsId, request: u64) {
+    pub fn cancel_scan(&self, id: FsId, request: u64) {
         if let Some(open) = self.lock().get_mut(&id) {
-            open.folder_sizes.remove(&request);
+            open.scans.remove(&request);
         }
     }
 
-    /// Forgets the file system and cancels its pending folder sizes.
+    /// Forgets the file system and cancels its pending scans.
     /// Returns `false` if it was not open.
     pub fn remove(&self, id: FsId) -> bool {
         self.lock().remove(&id).is_some()

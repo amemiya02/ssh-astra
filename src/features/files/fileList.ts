@@ -54,13 +54,15 @@ export function fileIconKind(entry: FileEntry): FileIconKind {
  * The rows the File panel shows, in order: directories first, then files, each sorted by
  * `sort` (ties by name); dotfiles only with `showHidden`.
  */
-export function shownEntries(entries: readonly FileEntry[], sort: FileSort, showHidden: boolean): FileEntry[] {
+export function shownEntries(
+  entries: readonly FileEntry[], sort: FileSort, showHidden: boolean, revealed: string | null = null,
+): FileEntry[] {
   const sign = sort.direction === "asc" ? 1 : -1;
   const value = sort.key === "name" ? null : column[sort.key];
   const compare = (a: FileEntry, b: FileEntry) =>
     value ? sign * (value(a) - value(b)) || byName(a, b) : sign * byName(a, b);
   return entries
-    .filter((entry) => showHidden || !entry.name.startsWith("."))
+    .filter((entry) => showHidden || entry.name === revealed || !entry.name.startsWith("."))
     .sort((a, b) => Number(isDirLike(b)) - Number(isDirLike(a)) || compare(a, b));
 }
 

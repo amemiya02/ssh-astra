@@ -3,7 +3,7 @@ import type { ConnectionStatus } from "@/features/workspace/tabs";
 import { readCommandError, type CommandError } from "@/lib/ipc/connect";
 import { maxEditSize } from "@/lib/ipc/edit";
 import * as ipc from "@/lib/ipc/files";
-import type { FileEntry, FsId, PermissionChange } from "@/lib/ipc/files";
+import type { FileEntry, FsId, NameMatch, NameSearchMode, NameSearchResult, PermissionChange } from "@/lib/ipc/files";
 import type { HostId } from "@/lib/ipc/hosts";
 import { createSharedRemoteEdits, type EditCommands, type RemoteEditItem } from "./sharedRemoteEdits";
 import { childPath, isDirLike, isFileLike, parentPath } from "./fileList";
@@ -12,7 +12,7 @@ import { childPath, isDirLike, isFileLike, parentPath } from "./fileList";
 export type FilesApi = Pick<
   typeof ipc,
   "openFiles" | "listFiles" | "closeFiles" | "createDir" | "createEmptyFile" | "renameFile" | "countFiles" | "deleteFiles" | "chmodFile"
-  | "folderSize"
+  | "folderSize" | "searchNames"
 > & EditCommands;
 
 /**
@@ -42,6 +42,11 @@ export interface MoveFailure {
 export type FolderSize =
   | { state: "calculating" }
   | { state: "complete"; bytes: number }
+  | { state: "failed"; error: CommandError };
+
+export type NameSearch =
+  | { state: "running" | "cancelled" }
+  | { state: "complete"; result: NameSearchResult }
   | { state: "failed"; error: CommandError };
 
 export interface FileBrowserState {
@@ -112,6 +117,13 @@ export interface FileBrowserState {
   folderSizes: ReadonlyMap<string, FolderSize>;
   calculateFolderSize(name: string): Promise<void>;
   cancelFolderSize(name: string): void;
+  search: NameSearch | null;
+  searchNames(query: string, mode: NameSearchMode): Promise<void>;
+  cancelSearch(): void;
+  clearSearch(): void;
+  /** The result selected by a search, including a hidden entry while it remains selected. */
+  revealedName: string | null;
+  revealSearchMatch(match: NameMatch): Promise<void>;
   /** Closes the SFTP session (the Connection dropped, or the pane closed); keeps the path for `connect`. Edits stay open. */
   disconnect(): void;
   /** The pane closed: disconnects and closes every edit. */
@@ -142,6 +154,7 @@ export function createFileBrowserStore(
   let listingNavigation = false;
   const pendingMoveRefresh = new Set<string>();
   const folderSizeScans = new Map<string, AbortController>();
+  let nameScan: AbortController | null = null;
   let anchor: string | null = null;
   /** Only successful listings enter history, using the canonical paths returned by the filesystem. */
   const history: string[] = [];
@@ -171,22 +184,36 @@ export function createFileBrowserStore(
       set({ folderSizes });
     };
 
+    const stopSearch = () => {
+      nameScan?.abort();
+      nameScan = null;
+    };
+
     const list = async (
       path: string,
       keepSelection: boolean,
-      { targetIndex, preserveError = false }: { targetIndex?: number; preserveError?: boolean } = {},
+      { targetIndex, preserveError = false, selectName }: {
+        targetIndex?: number;
+        preserveError?: boolean;
+        selectName?: string;
+      } = {},
     ) => {
       if (fsId === null) return;
       const mine = ++request;
       listingNavigation = !keepSelection;
-      set({ loading: true });
+      if (listingNavigation) stopSearch();
+      set({ loading: true, ...(listingNavigation ? { search: null } : {}) });
       try {
         const listing = await api.listFiles(fsId, path);
         if (mine !== request) return;
         const names = new Set(listing.entries.map((e) => e.name));
         const samePath = listing.path === get().path;
-        const selection =
-          keepSelection && samePath ? new Set([...get().selection].filter((n) => names.has(n))) : new Set<string>();
+        const revealedName = selectName && names.has(selectName) ? selectName : null;
+        const missingMatch = selectName !== undefined && revealedName === null;
+        const selection = revealedName !== null
+          ? new Set([revealedName])
+          : keepSelection && samePath ? new Set([...get().selection].filter((n) => names.has(n))) : new Set<string>();
+        if (revealedName !== null) anchor = revealedName;
         if (!selection.has(anchor ?? "")) anchor = null;
         if (targetIndex !== undefined) {
           historyIndex = targetIndex;
@@ -200,8 +227,13 @@ export function createFileBrowserStore(
           entries: listing.entries,
           folderSizes: retainFolderSizes(samePath ? listing.entries : []),
           selection,
+          revealedName: revealedName ?? (keepSelection && samePath ? get().revealedName : null),
           loading: false,
-          ...(preserveError ? {} : { error: null }),
+          ...(preserveError ? {} : {
+            error: missingMatch
+              ? { kind: "notFound", message: "", details: { path: childPath(listing.path, selectName) } }
+              : null,
+          }),
           canGoBack: historyIndex > 0,
           canGoForward: historyIndex < history.length - 1,
         });
@@ -322,6 +354,8 @@ export function createFileBrowserStore(
       moving: false,
       moveFailures: [],
       folderSizes: new Map(),
+      search: null,
+      revealedName: null,
 
       connect() {
         if (get().phase === "open") return Promise.resolve();
@@ -478,16 +512,47 @@ export function createFileBrowserStore(
         stopFolderSize(name);
         showFolderSize(name, null);
       },
+      async searchNames(query, mode) {
+        const { path, loading, phase } = get();
+        const id = fsId;
+        if (local || phase !== "open" || id === null || path === null || (loading && listingNavigation) || query === "") return;
+        stopSearch();
+        const scan = new AbortController();
+        nameScan = scan;
+        set({ search: { state: "running" } });
+        let search: NameSearch;
+        try {
+          const result = await api.searchNames(id, path, query, mode, scan.signal);
+          search = result ? { state: "complete", result } : { state: "cancelled" };
+        } catch (error) {
+          search = { state: "failed", error: readCommandError(error) };
+        }
+        if (nameScan === scan) {
+          nameScan = null;
+          set({ search });
+        }
+      },
+      cancelSearch() {
+        if (nameScan === null) return;
+        stopSearch();
+        set({ search: { state: "cancelled" } });
+      },
+      clearSearch() {
+        stopSearch();
+        if (get().search !== null) set({ search: null });
+      },
+      revealSearchMatch: ({ parent, name }) => list(parent, false, { selectName: name }),
 
       disconnect() {
         openGeneration += 1;
         request += 1;
         opening = null;
         pendingMoveRefresh.clear();
+        stopSearch();
         const folderSizes = retainFolderSizes([]);
         if (fsId !== null) void api.closeFiles(fsId).catch(() => {});
         fsId = null;
-        set({ phase: "closed", loading: false, folderSizes });
+        set({ phase: "closed", loading: false, folderSizes, search: null, revealedName: null });
       },
 
       dispose() {

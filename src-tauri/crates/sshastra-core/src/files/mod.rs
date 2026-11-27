@@ -80,6 +80,31 @@ pub struct Listing {
     pub entries: Vec<FileEntry>,
 }
 
+/// How a name search matches an entry's basename. Matching is case-sensitive.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum NameSearchMode {
+    Substring,
+    /// `*` matches any run of characters, and `?` matches one character.
+    Wildcard,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NameMatch {
+    pub parent: String,
+    pub name: String,
+}
+
+#[derive(Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NameSearchResult {
+    pub matches: Vec<NameMatch>,
+    pub visited: usize,
+    pub limit_reached: bool,
+    pub skipped_directories: bool,
+}
+
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum PermissionScope {
@@ -193,7 +218,19 @@ pub trait RemoteFs: Send + Sync {
         path: &'a str,
         cancelled: oneshot::Receiver<()>,
     ) -> BoxFuture<'a, FsResult<Option<u64>>> {
-        Box::pin(cancellable_folder_scan(cancelled, sum_folder(self, path)))
+        Box::pin(cancellable_scan(cancelled, sum_folder(self, path)))
+    }
+
+    /// Finds descendant names on SFTP within a bounded scan, without traversing symlinks.
+    /// Sending or dropping the cancellation sender stops the scan and returns `None`.
+    fn search_names<'a>(
+        &'a self,
+        _path: &'a str,
+        _query: &'a str,
+        _mode: NameSearchMode,
+        _cancelled: oneshot::Receiver<()>,
+    ) -> BoxFuture<'a, FsResult<Option<NameSearchResult>>> {
+        Box::pin(async { Err(FsError::Protocol("name search requires SFTP".into())) })
     }
 
     /// Creates the directory `path` (its parent must exist).
@@ -324,7 +361,6 @@ async fn publish_by_plain_rename(
 /// `~` mean the home directory and `~/x` is under it; anything else is
 /// resolved by the server. Fails with [`FsError::NotADirectory`] for a file.
 pub async fn browse(fs: &dyn RemoteFs, path: &str) -> FsResult<Listing> {
-    let path = path.trim();
     let path = match path.strip_prefix('~') {
         Some("") => fs.home().await?,
         Some(rest) if rest.starts_with('/') => format!("{}{rest}", fs.home().await?),
@@ -346,10 +382,10 @@ pub async fn count_tree(fs: &dyn RemoteFs, path: &str) -> FsResult<u64> {
     Ok(walk(fs, path).await?.len() as u64)
 }
 
-async fn cancellable_folder_scan(
+async fn cancellable_scan<T>(
     mut cancelled: oneshot::Receiver<()>,
-    scan: impl Future<Output = FsResult<u64>>,
-) -> FsResult<Option<u64>> {
+    scan: impl Future<Output = FsResult<T>>,
+) -> FsResult<Option<T>> {
     tokio::select! {
         biased;
         _ = &mut cancelled => Ok(None),
