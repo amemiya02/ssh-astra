@@ -7,7 +7,7 @@ import type { HostId } from "@/lib/ipc/hosts";
 
 type State = { status: "idle" | "clearing" | "cleared" } | { status: "failed"; message: string };
 
-/** In the Host editor: forgets the Host's saved password and key passphrase. */
+/** In the Host editor: forgets the Host's saved credentials. */
 export function ClearCredentialsButton({ hostId }: { hostId: HostId }) {
   const { t } = useTranslation();
   const [state, setState] = useState<State>({ status: "idle" });

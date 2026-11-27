@@ -104,31 +104,16 @@ pub fn sshd_dir() -> PathBuf {
 /// The server for `service`, starting the containers if needed. `None` means
 /// Docker is unavailable and the calling test should return early.
 pub fn sshd(service: Service) -> Option<Sshd> {
-    let mode = std::env::var("SSHASTRA_DOCKER_TESTS").unwrap_or_default();
-    if mode == "skip" {
+    if !services_started() {
         return None;
     }
-    static STARTED: OnceLock<Result<(), String>> = OnceLock::new();
-    if let Err(why) = STARTED.get_or_init(compose_up) {
-        if mode == "require" {
-            panic!("SSHASTRA_DOCKER_TESTS=require but the test sshd is unavailable: {why}");
-        }
-        eprintln!("skipping Docker integration test: {why}");
-        return None;
-    }
-
-    let published = compose(&["port", service.name(), "22"])
-        .unwrap_or_else(|e| panic!("no published port for {}: {e}", service.name()));
-    let (host, port) = published
-        .trim()
-        .rsplit_once(':')
-        .unwrap_or_else(|| panic!("unexpected `docker compose port` output: {published}"));
+    let (host, port) = published_port(service.name(), 22);
     let host_key = std::fs::read_to_string(sshd_dir().join("ssh_host_ed25519_key.pub")).unwrap();
 
     Some(Sshd {
         service,
-        host: host.to_owned(),
-        port: port.parse().unwrap(),
+        host,
+        port,
         user: USER,
         password: PASSWORD,
         host_key: HostKey::from_openssh(&host_key).unwrap(),
@@ -230,6 +215,63 @@ impl Sshd {
     pub fn unpause(&self) {
         compose(&["unpause", self.service.name()])
             .unwrap_or_else(|e| panic!("cannot unpause {}: {e}", self.service.name()));
+    }
+}
+
+fn services_started() -> bool {
+    let mode = std::env::var("SSHASTRA_DOCKER_TESTS").unwrap_or_default();
+    if mode == "skip" {
+        return false;
+    }
+    static STARTED: OnceLock<Result<(), String>> = OnceLock::new();
+    if let Err(why) = STARTED.get_or_init(compose_up) {
+        if mode == "require" {
+            panic!("SSHASTRA_DOCKER_TESTS=require but the test sshd is unavailable: {why}");
+        }
+        eprintln!("skipping Docker integration test: {why}");
+        return false;
+    }
+    true
+}
+
+fn published_port(service: &str, port: u16) -> (String, u16) {
+    let published = compose(&["port", service, &port.to_string()])
+        .unwrap_or_else(|e| panic!("no published port for {service}:{port}: {e}"));
+    let (host, port) = published
+        .trim()
+        .rsplit_once(':')
+        .unwrap_or_else(|| panic!("unexpected `docker compose port` output: {published}"));
+    (host.to_owned(), port.parse().unwrap())
+}
+
+pub const PROXY_TARGET: &str = "proxy-target";
+pub const PROXY_USER: &str = "proxy-fixture";
+pub const PROXY_PASSWORD: &str = "outbound-proxy-test-secret";
+
+pub struct OutboundProxy;
+
+pub fn outbound_proxy() -> Option<OutboundProxy> {
+    services_started().then_some(OutboundProxy)
+}
+
+impl OutboundProxy {
+    pub fn config(
+        &self,
+        kind: sshastra_core::proxy::ProxyKind,
+        auth: bool,
+    ) -> sshastra_core::proxy::ProxyConfig {
+        use sshastra_core::proxy::{ProxyConfig, ProxyKind};
+        let port = match kind {
+            ProxyKind::Socks5 => 1080,
+            ProxyKind::HttpConnect => 3128,
+        } + u16::from(auth);
+        let (address, port) = published_port("proxy", port);
+        ProxyConfig {
+            kind,
+            address,
+            port,
+            username: auth.then(|| PROXY_USER.to_owned()),
+        }
     }
 }
 

@@ -27,6 +27,7 @@ mod exec;
 mod handshake;
 mod held;
 mod host_keys;
+mod outbound_proxy;
 mod progress;
 mod remote_listen;
 mod remote_terminal;
@@ -36,6 +37,7 @@ pub use auth::Agent;
 pub use exec::{shell_quote, ExecError, ExecOutput};
 pub use held::{HeldConnections, HeldEvent};
 pub use host_keys::HostKeyRecord;
+pub use outbound_proxy::ProxyError;
 pub use progress::{AuthMethod, ConnectProgress, ConnectStage, ProgressStatus};
 pub use remote_terminal::{ReconnectPolicy, RemoteTerminal, RemoteTerminalOptions};
 pub use shell::RemoteShell;
@@ -56,13 +58,14 @@ use std::time::Duration;
 
 use russh::client::{self, Handle};
 use russh::keys::PublicKeyOrCertificate;
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncWrite, BufReader};
 use tokio::net::TcpStream;
 
 use crate::credentials::{CredentialVault, NoVault};
 use crate::files::{FsError, SftpFs};
 use crate::hosts::{Host, HostAuth, HostDraft, HostId, HostStoreError};
 use crate::known_hosts::{KnownHosts, KnownHostsError};
+use crate::proxy::{HostProxy, ProxyConfig};
 use crate::terminal::{TerminalEvent, TerminalSize};
 use shell::ShellEvent;
 
@@ -83,6 +86,9 @@ pub struct ConnectionSettings {
     pub keepalive_seconds: u32,
     /// Unix socket or Windows named pipe; blank uses the system agent.
     pub agent_path: String,
+    /// Outbound proxy for Hosts that inherit the global choice.
+    #[serde(deserialize_with = "crate::proxy::deserialize_global_proxy")]
+    pub proxy: Option<ProxyConfig>,
 }
 
 impl Default for ConnectionSettings {
@@ -90,6 +96,7 @@ impl Default for ConnectionSettings {
         Self {
             keepalive_seconds: DEFAULT_KEEPALIVE_SECONDS,
             agent_path: String::new(),
+            proxy: None,
         }
     }
 }
@@ -211,6 +218,10 @@ pub trait Prompter: Send + Sync {
     fn confirm_host_key(&self, prompt: HostKeyPrompt) -> BoxFuture<'_, HostKeyDecision>;
     /// The password.
     fn password(&self, prompt: PasswordPrompt) -> BoxFuture<'_, Option<Secret>>;
+    /// The password for a first-hop outbound proxy.
+    fn proxy_password(&self, _prompt: PasswordPrompt) -> BoxFuture<'_, Option<Secret>> {
+        Box::pin(async { None })
+    }
     /// The passphrase of an encrypted private key.
     fn passphrase(&self, prompt: PassphrasePrompt) -> BoxFuture<'_, Option<Secret>> {
         let _ = prompt;
@@ -231,6 +242,8 @@ pub trait Prompter: Send + Sync {
 pub enum ConnectError {
     #[error("cannot reach the host: {0}")]
     Unreachable(String),
+    #[error(transparent)]
+    Proxy(#[from] ProxyError),
     #[error("the host did not answer in time")]
     TimedOut,
     /// The server's key differs from the one recorded: possibly an attack.
@@ -288,6 +301,7 @@ impl ConnectError {
     fn log_kind(&self) -> &'static str {
         match self {
             Self::Unreachable(_) => "unreachable",
+            Self::Proxy(error) => error.kind(),
             Self::TimedOut => "timedOut",
             Self::HostKeyMismatch { .. } => "hostKeyMismatch",
             Self::HostKeyRevoked { .. } => "hostKeyRevoked",
@@ -330,6 +344,7 @@ pub struct ConnectionManager {
     vault: Arc<dyn CredentialVault>,
     /// Read when a Connection opens; changing it leaves open ones as they are.
     keepalive_interval: Mutex<Option<Duration>>,
+    proxy: Mutex<Option<ProxyConfig>>,
     handshake_timeout: Duration,
     slots: Mutex<HashMap<HostId, Arc<Slot>>>,
     /// Each Host's shared SFTP session ([`Self::live_sftp`]), kept only while
@@ -384,6 +399,7 @@ impl ConnectionManager {
                 .map(PathBuf::from),
             vault: Arc::new(NoVault),
             keepalive_interval: Mutex::new(ConnectionSettings::default().keepalive_interval()),
+            proxy: Mutex::default(),
             handshake_timeout: HANDSHAKE_TIMEOUT,
             slots: Mutex::default(),
             sftp: tokio::sync::Mutex::default(),
@@ -428,11 +444,12 @@ impl ConnectionManager {
             .unwrap_or_else(|p| p.into_inner()) = interval;
     }
 
-    /// Sets the global keepalive and SSH agent for new Connections.
+    /// Sets the global connection settings for new Connections.
     pub fn apply_settings(&self, settings: &ConnectionSettings) {
         self.set_keepalive_interval(settings.keepalive_interval());
         *self.agent.lock().unwrap_or_else(|p| p.into_inner()) =
             Agent::from_path(&settings.agent_path, self.home_dir.as_deref());
+        *self.proxy.lock().unwrap_or_else(|p| p.into_inner()) = settings.proxy.clone();
     }
 
     fn client_config(&self, host: &Host) -> Arc<client::Config> {
@@ -521,6 +538,7 @@ impl ConnectionManager {
             auth: HostAuth::Auto,
             identities_only: false,
             forward_agent: false,
+            proxy: Default::default(),
             keepalive_seconds: None,
             post_login_command: None,
             terminal_charset: None,
@@ -561,8 +579,9 @@ impl ConnectionManager {
             .insert(temporary.host.id.clone(), Arc::clone(&temporary.keys));
     }
 
-    /// Authenticates on a private Connection at every hop, without using the
-    /// credential vault or opening a shell, then closes the route.
+    /// Authenticates on a private Connection at every hop, then closes the
+    /// route. It opens no shell, tries no SSH credentials from the vault,
+    /// and never saves credentials. It can use a configured proxy password.
     pub async fn test_connection(
         &self,
         jump_hosts: &[Host],
@@ -625,7 +644,7 @@ impl ConnectionManager {
             match via {
                 None => {
                     log::info!("connection hop={} step=tcp result=starting", host.id);
-                    let stream = open_tcp(host).await;
+                    let stream = self.open_first_hop(host, prompter.as_ref(), purpose).await;
                     log_hop(&host.id, "tcp", &stream);
                     self.establish(
                         progress,
@@ -662,6 +681,33 @@ impl ConnectionManager {
         };
         log_hop(&host.id, "connect", &result);
         result
+    }
+
+    async fn open_first_hop(
+        &self,
+        host: &Host,
+        prompter: &dyn Prompter,
+        purpose: ConnectionPurpose<'_>,
+    ) -> Result<BufReader<TcpStream>, ConnectError> {
+        let (proxy, owner) = match &host.proxy {
+            HostProxy::Inherit => (
+                self.proxy.lock().unwrap_or_else(|p| p.into_inner()).clone(),
+                None,
+            ),
+            HostProxy::Direct => (None, None),
+            HostProxy::Override(config) => (Some(config.clone()), Some(&host.id)),
+        };
+        match proxy {
+            Some(config) => {
+                let can_save = matches!(purpose, ConnectionPurpose::Shared);
+                let credentials =
+                    outbound_proxy::ProxyCredentials::new(&self.vault, owner, can_save);
+                outbound_proxy::dial(config, host, credentials, prompter).await
+            }
+            None => open_tcp(host)
+                .await
+                .map(|tcp| BufReader::with_capacity(0, tcp)),
+        }
     }
 
     /// The Host's live Connection, if it has one, without connecting. While

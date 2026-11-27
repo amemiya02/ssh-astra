@@ -649,6 +649,34 @@
       "terafox": "Terafox"
     }
   },
+  "proxy": {
+    "mode": "代理类型",
+    "none": "不使用代理",
+    "direct": "直连",
+    "inherit": "跟随全局代理设置",
+    "jumpHint": "此连接使用首个跳板主机的代理设置。",
+    "passwordHint": "可选。填写用户名后，连接时会询问代理密码。",
+    "save": "保存代理设置",
+    "clearPassword": "清除保存的密码",
+    "passwordCleared": "已清除保存的代理密码。",
+    "clearFailed": "无法清除保存的代理密码。",
+    "fields": {
+      "address": "代理地址",
+      "port": "代理端口",
+      "username": "代理用户名"
+    },
+    "errors": {
+      "proxyAddress": "请输入主机名或 IP 地址。",
+      "proxyPort": "请输入 1 到 65535 之间的端口。",
+      "proxyUsername": "请输入此代理类型支持的用户名。"
+    },
+    "prompt": {
+      "title": "{{host}} 上 {{user}} 的代理密码",
+      "description": "请输入出站代理的密码。",
+      "label": "代理密码",
+      "retry": "代理拒绝了保存的密码。"
+    }
+  },
   "connect": {
     "progress": {
       "connecting": "正在连接",
@@ -712,6 +740,13 @@
       "hostKeyDeclined": "未信任主机密钥，已取消连接。",
       "hostKeyRevoked": "主机密钥已被吊销，连接已阻断。",
       "authenticationFailed": "认证失败。",
+      "proxyInvalidConfiguration": "请检查出站代理设置",
+      "proxyInvalidTarget": "此代理不支持该主机地址",
+      "proxyUnreachable": "无法连接到出站代理",
+      "proxyTimedOut": "出站代理响应超时",
+      "proxyInvalidResponse": "出站代理返回了无效响应",
+      "proxyAuthenticationFailed": "出站代理拒绝认证",
+      "proxyConnectFailed": "出站代理无法连接到主机",
       "cancelled": "已取消连接。",
       "generic": "连接失败。",
       "keyUnreadable": "无法使用私钥 {{keyPath}}：{{reason}}",
@@ -950,6 +985,10 @@
         "description": "空闲的 Connection 多久确认一次服务器仍在。连续三次没有回应即视为掉线。对新的 Connection 生效。",
         "off": "关",
         "seconds": "{{count}} 秒"
+      },
+      "outboundProxy": {
+        "label": "出站代理",
+        "description": "用于新连接的第一跳 TCP。每台主机可以单独设置。"
       },
       "agentPath": {
         "label": "自定义 SSH 代理路径",

@@ -122,6 +122,7 @@ fn saving_after_upgrading_from_v0_1_0_keeps_every_host() {
                 terminal_scheme: None,
                 identities_only: false,
                 forward_agent: false,
+                proxy: Default::default(),
                 keepalive_seconds: None,
                 post_login_command: None,
                 terminal_charset: None,
@@ -167,6 +168,7 @@ fn saving_automatic_auth_keeps_the_explicit_auth_of_v0_3_0_hosts() {
                     terminal_scheme: None,
                     identities_only: false,
                     forward_agent: false,
+                    proxy: Default::default(),
                     keepalive_seconds: None,
                     post_login_command: None,
                     terminal_charset: None,
@@ -178,7 +180,7 @@ fn saving_automatic_auth_keeps_the_explicit_auth_of_v0_3_0_hosts() {
     );
 
     let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    assert_eq!(saved["version"], 11);
+    assert_eq!(saved["version"], 12);
     assert_eq!(saved["hosts"][2]["auth"], json!({ "type": "auto" }));
     assert_eq!(HostStore::open(path).unwrap().list(), expected);
 }
@@ -210,7 +212,7 @@ fn version_6_hosts_keep_their_authentication_and_default_to_identities_only_off(
         )
         .unwrap();
     let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    assert_eq!(saved["version"], 11);
+    assert_eq!(saved["version"], 12);
     assert_eq!(saved["hosts"][1]["identitiesOnly"], true);
     let reopened = HostStore::open(path).unwrap();
     assert_eq!(
@@ -238,7 +240,7 @@ fn version_8_hosts_inherit_global_keepalive_until_edited() {
         .unwrap();
 
     let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    assert_eq!(saved["version"], 11);
+    assert_eq!(saved["version"], 12);
     assert!(saved["hosts"][0].get("keepaliveSeconds").is_none());
     assert_eq!(saved["hosts"][1]["keepaliveSeconds"], 0);
     assert!(saved["hosts"][2].get("keepaliveSeconds").is_none());
@@ -269,7 +271,7 @@ fn version_9_hosts_have_no_post_login_command_until_edited() {
         .unwrap();
 
     let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    assert_eq!(saved["version"], 11);
+    assert_eq!(saved["version"], 12);
     assert!(saved["hosts"][0].get("postLoginCommand").is_none());
     assert_eq!(saved["hosts"][1]["postLoginCommand"], command);
     assert!(saved["hosts"][2].get("postLoginCommand").is_none());
@@ -304,7 +306,7 @@ fn version_10_hosts_keep_their_login_command_and_default_terminal_behavior() {
         .unwrap();
 
     let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    assert_eq!(saved["version"], 11);
+    assert_eq!(saved["version"], 12);
     assert!(saved["hosts"][0].get("terminalCharset").is_none());
     assert!(saved["hosts"][0].get("terminalBackspace").is_none());
     assert_eq!(saved["hosts"][1]["terminalCharset"], "gbk");
@@ -336,7 +338,7 @@ fn version_7_hosts_keep_identities_only_and_default_to_agent_forwarding_off() {
         .unwrap();
 
     let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    assert_eq!(saved["version"], 11);
+    assert_eq!(saved["version"], 12);
     assert_eq!(saved["hosts"][0]["forwardAgent"], false);
     assert_eq!(saved["hosts"][1]["forwardAgent"], true);
     assert_eq!(saved["hosts"][1]["identitiesOnly"], true);
@@ -398,4 +400,36 @@ fn saving_after_upgrading_from_v0_1_0_keeps_every_setting() {
         }
     }
     assert_eq!(after.sections()["appearance"], json!({ "theme": "light" }));
+}
+
+#[test]
+fn version_11_hosts_inherit_the_global_proxy_and_keep_their_terminal_options() {
+    use sshastra_core::proxy::HostProxy;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = hosts_path(&dir);
+    fs::write(&path, include_str!("fixtures/hosts-v11/hosts.json")).unwrap();
+    let mut store = HostStore::open(&path).unwrap();
+    let before = store.list().to_vec();
+    assert!(before.iter().all(|host| host.proxy == HostProxy::Inherit));
+
+    let mut draft = serde_json::to_value(&before[1]).unwrap();
+    assert_eq!(draft["terminalCharset"], "gbk");
+    assert_eq!(draft["terminalBackspace"], "ctrlH");
+    draft["proxy"] = serde_json::json!({"mode":"direct"});
+    let edited = store
+        .upsert(
+            Some(before[1].id.clone()),
+            serde_json::from_value(draft).unwrap(),
+        )
+        .unwrap();
+
+    let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(saved["version"], 12);
+    assert_eq!(saved["hosts"][1]["proxy"]["mode"], "direct");
+    assert!(saved["hosts"][0].get("proxy").is_none());
+    assert_eq!(
+        HostStore::open(path).unwrap().list(),
+        &[before[0].clone(), edited, before[2].clone()]
+    );
 }

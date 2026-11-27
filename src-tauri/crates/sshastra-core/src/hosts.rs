@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::forward::{ForwardDraft, ForwardId, PortForward};
 use crate::fs_util::write_atomically;
+use crate::proxy::HostProxy;
 use crate::ssh_config::{ImportIssue, ParsedConfig};
 use crate::terminal::{TerminalBackspace, TerminalCharset};
 
@@ -20,7 +21,7 @@ pub use transfer::{ImportSummary, EXPORT_FORMAT};
 /// The file format version this build writes, to the store and to export
 /// files. Bump it together with a migration step in [`migrate`], which reads
 /// both.
-const CURRENT_VERSION: u32 = 11;
+const CURRENT_VERSION: u32 = 12;
 
 /// Identifies a Host across restarts and across the IPC boundary.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -114,6 +115,9 @@ pub struct Host {
     /// Allow shells on this Host to forward the local SSH agent.
     #[serde(default)]
     pub forward_agent: bool,
+    /// Outbound proxy choice for this Host when it is the first TCP hop.
+    #[serde(default, skip_serializing_if = "HostProxy::is_inherit")]
+    pub proxy: HostProxy,
     /// Seconds between keepalives; `None` follows the global setting, `Some(0)` turns them off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keepalive_seconds: Option<u32>,
@@ -164,6 +168,9 @@ pub struct HostDraft {
     /// Allow shells on this Host to forward the local SSH agent.
     #[serde(default)]
     pub forward_agent: bool,
+    /// Outbound proxy choice for this Host when it is the first TCP hop.
+    #[serde(default, skip_serializing_if = "HostProxy::is_inherit")]
+    pub proxy: HostProxy,
     /// Seconds between keepalives; `None` follows the global setting, `Some(0)` turns them off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keepalive_seconds: Option<u32>,
@@ -219,6 +226,7 @@ impl HostDraft {
             auth,
             identities_only: self.identities_only,
             forward_agent: self.forward_agent,
+            proxy: self.proxy.normalize().map_err(HostStoreError::Invalid)?,
             keepalive_seconds: self.keepalive_seconds,
             post_login_command: self.post_login_command.filter(|s| !s.trim().is_empty()),
             terminal_charset: self.terminal_charset,
@@ -604,6 +612,7 @@ impl HostStore {
                 auth,
                 identities_only: entry.identities_only,
                 forward_agent: entry.forward_agent,
+                proxy: HostProxy::Inherit,
                 keepalive_seconds: entry.keepalive_seconds,
                 post_login_command: None,
                 terminal_charset: None,
@@ -839,7 +848,8 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
         // it and inherit the global one via Host's serde default. v10
         // adds a command sent after each shell opens. v11 adds the Terminal
         // character set and Backspace byte, defaulting to UTF-8 and DEL.
-        2 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | CURRENT_VERSION => {
+        // v12 adds outbound proxies; older Hosts inherit the global setting.
+        2 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | CURRENT_VERSION => {
             let FileV2 { groups, hosts } = serde_json::from_str(text).map_err(corrupt)?;
             Ok(Library { groups, hosts })
         }
@@ -855,6 +865,11 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
         // An extra field in an older file was never configured to run.
         for host in &mut library.hosts {
             host.post_login_command = None;
+        }
+    }
+    if version < 12 {
+        for host in &mut library.hosts {
+            host.proxy = HostProxy::Inherit;
         }
     }
     Ok(library)

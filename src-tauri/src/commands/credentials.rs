@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use sshastra_core::credentials::{CredentialVault, VaultError};
+use sshastra_core::credentials::{CredentialKind, CredentialVault, VaultError};
 use sshastra_core::hosts::HostId;
 use tauri::State;
 
@@ -26,9 +26,24 @@ impl Vault {
     }
 }
 
-/// Forgets the saved password and key passphrase of a Host: the next connect
-/// asks again.
+/// Forgets the saved credentials of a Host. Its next connect asks again.
 #[tauri::command]
 pub async fn host_credentials_clear(vault: State<'_, Vault>, id: HostId) -> CommandResult<()> {
     vault.clear(id).await
+}
+
+/// Forgets the password for the app-wide outbound proxy.
+#[tauri::command]
+pub async fn global_proxy_password_clear(vault: State<'_, Vault>) -> CommandResult<()> {
+    let vault = Arc::clone(&vault.0);
+    tauri::async_runtime::spawn_blocking(move || {
+        vault.delete(
+            &CredentialKind::global_proxy_owner(),
+            CredentialKind::GlobalProxyPassword,
+        )
+    })
+    .await
+    .map_err(|_| VaultError("could not clear the outbound proxy password".to_owned()))?
+    .map_err(|_| VaultError("could not clear the outbound proxy password".to_owned()))?;
+    Ok(())
 }
