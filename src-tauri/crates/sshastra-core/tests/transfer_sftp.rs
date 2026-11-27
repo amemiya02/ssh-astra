@@ -8,8 +8,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use base64::Engine;
 use sshastra_core::files::{
-    DiskFs, OpenRemote, RemoteFs, RemoteTransfer, Transfer, TransferHost, TransferQueue,
+    DiskFs, FsError, OpenRemote, RemoteFs, RemoteTransfer, Transfer, TransferHost, TransferQueue,
     TransferState,
 };
 use sshastra_core::hosts::{Host, HostAuth, HostId};
@@ -50,6 +51,7 @@ fn endpoint(sshd: &Sshd, dir: &Path) -> (ConnectionManager, Host) {
         identities_only: false,
         forward_agent: false,
         allow_legacy_algorithms: false,
+        open_on_startup: false,
         proxy: Default::default(),
         keepalive_seconds: None,
         post_login_command: None,
@@ -114,6 +116,70 @@ async fn settle(queue: &TransferQueue) {
     tokio::time::timeout(Duration::from_secs(60), wait)
         .await
         .expect("transfers finish");
+}
+
+#[tokio::test]
+async fn clipboard_png_is_published_privately_and_never_replaces_an_existing_file() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let scratch = tempfile::tempdir().unwrap();
+    let (manager, host) = endpoint(&sshd, scratch.path());
+    let connection = manager
+        .connect(&host, Arc::new(Trusting(sshd.password)))
+        .await
+        .unwrap();
+    let fs = manager
+        .sftp_for_connection(&host.id, &connection)
+        .await
+        .unwrap();
+    let cache = format!(".sshastra-images-{}", uuid::Uuid::new_v4());
+    let directory = fs.private_home_directory(&cache).await.unwrap();
+    assert_eq!(fs.private_home_directory(&cache).await.unwrap(), directory);
+    assert_eq!(fs.lstat(&directory).await.unwrap().permissions, Some(0o700));
+
+    let png = base64::engine::general_purpose::STANDARD
+        .decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aJQcAAAAASUVORK5CYII=")
+        .unwrap();
+    let local_path = scratch.path().join("image-fixture.png");
+    std::fs::write(&local_path, &png).unwrap();
+    let queue = TransferQueue::new(Arc::new(DiskFs), |_| {});
+    let target = RemoteTransfer {
+        host: TransferHost {
+            id: host.id,
+            name: host.name,
+            temporary: false,
+        },
+        open: {
+            let remote: Arc<dyn RemoteFs> = fs.clone();
+            Arc::new(move || {
+                let remote = remote.clone();
+                Box::pin(async move { Ok(remote) })
+            })
+        },
+    };
+    let (_, complete) =
+        queue.upload_private_file(target.clone(), local_path.clone(), directory.clone());
+    tokio::time::timeout(Duration::from_secs(10), complete)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let path = format!("{directory}/image-fixture.png");
+    assert_eq!(fs.read_file(&path).await.unwrap(), png);
+    assert_eq!(fs.lstat(&path).await.unwrap().permissions, Some(0o600));
+    assert_eq!(fs.list_dir(&directory).await.unwrap().len(), 1);
+
+    std::fs::write(&local_path, b"replacement").unwrap();
+    let (_, complete) = queue.upload_private_file(target, local_path, directory.clone());
+    let failed = tokio::time::timeout(Duration::from_secs(10), complete)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(failed, Err(FsError::AlreadyExists(path.clone())));
+    assert_eq!(fs.read_file(&path).await.unwrap(), png);
+    fs.remove_file(&path).await.unwrap();
+    fs.remove_dir(&directory).await.unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -7,7 +7,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal as XTerm } from "@xterm/xterm";
-import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState, type RefObject } from "react";
 import { exposeTerminal } from "@/lib/e2e";
 import { SnippetMenu } from "@/features/snippets/SnippetMenu";
 import { useSnippetRunner } from "@/features/snippets/use-snippet-runner";
@@ -48,6 +48,8 @@ interface XtermViewProps {
   canPasteHistory?(): boolean;
   /** A program set a window title (OSC 0/2); an empty string clears it. */
   onTitleChange?(title: string): void;
+  /** The image paste for the running shell, or null between attachments. */
+  imagePasteRef?: RefObject<(() => Promise<void>) | null>;
   /**
    * Wires the Terminal to its backend. Called once, after it opens; returns the
    * teardown. Read later-changing values through refs: it is never called again.
@@ -66,7 +68,7 @@ function appearanceOptions(
  * the user's font, size, ligatures and colour scheme (live), find in scrollback,
  * clickable links, copy on select, right-click paste and paste confirmation.
  */
-export function XtermView({ label, active, colorScheme, historyHostId, canPasteHistory, onTitleChange, attach }: XtermViewProps) {
+export function XtermView({ label, active, colorScheme, historyHostId, canPasteHistory, onTitleChange, imagePasteRef, attach }: XtermViewProps) {
   const { t } = useTranslation();
   const { theme } = useTheme();
   const { broadcast, paneId } = useContext(BroadcastPaneContext) ?? {};
@@ -136,13 +138,24 @@ export function XtermView({ label, active, colorScheme, historyHostId, canPasteH
   }, [applyPaste]);
 
   const captureRecipients = useCallback(() => paneId === undefined ? undefined : broadcast?.capture(paneId), [broadcast, paneId]);
+  const pasteImage = useCallback((paste: (() => Promise<void>) | null | undefined) => {
+    if (!paste || !prefsRef.current.pasteImages || imagePasteRef?.current !== paste) return;
+    void paste().catch(() => {
+      if (imagePasteRef.current === paste) showToast((t) => t("terminal.imagePaste.failed"), "error");
+    });
+  }, [imagePasteRef]);
   const pasteFromClipboard = useCallback(() => {
     const xterm = xtermRef.current;
     const recipients = captureRecipients();
+    const image = prefsRef.current.pasteImages ? imagePasteRef?.current : null;
     void readClipboardText().then((text) => {
-      if (xtermRef.current === xterm) requestPaste(text, recipients);
-    }, () => undefined);
-  }, [captureRecipients, requestPaste]);
+      if (xtermRef.current !== xterm) return;
+      if (text) requestPaste(text, recipients);
+      else pasteImage(image);
+    }, () => {
+      if (xtermRef.current === xterm) pasteImage(image);
+    });
+  }, [captureRecipients, imagePasteRef, pasteImage, requestPaste]);
 
   const fitIfVisible = useCallback(() => {
     // A hidden pane has no size. Fitting it would shrink the shell to a sliver.
@@ -247,7 +260,14 @@ export function XtermView({ label, active, colorScheme, historyHostId, canPasteH
     const onPaste = (event: ClipboardEvent) => {
       event.preventDefault();
       event.stopPropagation();
-      requestPaste(event.clipboardData?.getData("text/plain") ?? "", captureRecipients());
+      const clipboard = event.clipboardData;
+      const text = clipboard?.getData("text/plain");
+      if (text) requestPaste(text, captureRecipients());
+      else if (prefsRef.current.pasteImages && clipboard &&
+        !clipboard.types.some((type) => type.startsWith("text/"))) {
+        // WebKit can omit native image formats from the event. Native code checks the formats before reading the image.
+        pasteImage(imagePasteRef?.current);
+      }
     };
     const onContextMenu = (event: MouseEvent) => {
       if (!prefsRef.current.rightClickPaste) return;
@@ -297,7 +317,7 @@ export function XtermView({ label, active, colorScheme, historyHostId, canPasteH
       rendererRef.current = null;
       imagesRef.current = null;
     };
-  }, [broadcast, captureRecipients, fitIfVisible, pasteFromClipboard, requestPaste]);
+  }, [broadcast, captureRecipients, fitIfVisible, imagePasteRef, pasteFromClipboard, pasteImage, requestPaste]);
 
   useEffect(() => {
     const xterm = xtermRef.current;

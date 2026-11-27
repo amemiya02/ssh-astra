@@ -31,6 +31,7 @@ use sshastra_core::terminal::{CommandHistory, TerminalRegistry};
 use tauri::Manager;
 use tauri_plugin_window_state::StateFlags;
 
+use commands::clipboard::ClipboardImages;
 use commands::connections::{ConnectionsState, TemporaryHosts};
 use commands::credentials::Vault;
 use commands::edit::SystemOpener;
@@ -154,6 +155,7 @@ pub fn run() {
             Ok(())
         })
         .manage(TerminalRegistry::default())
+        .manage(ClipboardImages::default())
         .manage(ForwardsState::default())
         .manage(ConnectionsState::default())
         .manage(TemporaryHosts::default())
@@ -239,6 +241,7 @@ pub fn run() {
             commands::terminal::terminal_reconnect,
             commands::terminal::terminal_report_cwd,
             commands::terminal::terminal_follow_file_directory,
+            commands::clipboard::terminal_save_clipboard_image,
             commands::files::files_open,
             commands::files::files_connect,
             commands::files::files_local_open,
@@ -282,8 +285,9 @@ pub fn run() {
                 tauri::RunEvent::Exit => {
                     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
                     drop(wake_listener.take());
-                    // Remote edits' temp files go with the app.
+                    // Remote edits and pasted images' temp files go with the app.
                     app.state::<RemoteEditor>().close_all();
+                    app.state::<ClipboardImages>().close();
                 }
                 _ => {}
             }

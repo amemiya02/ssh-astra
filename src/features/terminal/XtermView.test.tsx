@@ -36,7 +36,11 @@ vi.mock("@xterm/addon-webgl", () => ({
 
 beforeAll(startI18n);
 
-function mountTerminal(broadcast?: ReturnType<typeof createBroadcast>, historyHostId?: string) {
+function mountTerminal(
+  broadcast?: ReturnType<typeof createBroadcast>,
+  pasteImage?: () => Promise<void>,
+  historyHostId?: string,
+) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
   Element.prototype.scrollIntoView = () => {};
@@ -63,7 +67,7 @@ function mountTerminal(broadcast?: ReturnType<typeof createBroadcast>, historyHo
     }}>
       <BroadcastPaneContext.Provider value={broadcast && { broadcast, tabId: "work", paneId: "source" }}>
         <TooltipProvider>
-          <XtermView active historyHostId={historyHostId} canPasteHistory={() => true} attach={(xterm) => {
+          <XtermView active imagePasteRef={{ current: pasteImage ?? null }} historyHostId={historyHostId} canPasteHistory={() => true} attach={(xterm) => {
             terminal = xterm;
             const subscription = xterm.onData((data) => input.push(data));
             return () => subscription.dispose();
@@ -218,7 +222,7 @@ it("keeps line breaks in a bracketed paste and rejects unbracketed or escaped co
 });
 
 it("clears the focused Host's history after confirmation", async () => {
-  const { terminal, cleanup } = mountTerminal(undefined, "saved-host");
+  const { terminal, cleanup } = mountTerminal(undefined, undefined, "saved-host");
   vi.mocked(invoke).mockResolvedValueOnce(["git status"]).mockResolvedValueOnce(undefined);
   try {
     await openHistory(terminal);
@@ -243,6 +247,54 @@ async function openHistory(terminal: Terminal) {
   await act(async () => terminal.textarea!.dispatchEvent(event));
   expect(event.defaultPrevented).toBe(true);
 }
+
+it("only hands explicit image-only pastes to the enabled Terminal image action", async () => {
+  const original = getSetting(terminalSetting);
+  const pasteImage = vi.fn(async () => {});
+  const { terminal, input, cleanup } = mountTerminal(undefined, pasteImage);
+  try {
+    await act(async () => pasteText(terminal, ""));
+    expect(pasteImage).not.toHaveBeenCalled();
+
+    act(() => setSetting(terminalSetting, { ...original, pasteImages: true }));
+    expect(pasteImage).not.toHaveBeenCalled();
+    await act(async () => pasteText(terminal, "text even when an image is also present", ["text/plain", "Files"]));
+    expect(input).toEqual(["text even when an image is also present"]);
+    expect(pasteImage).not.toHaveBeenCalled();
+    await act(async () => pasteText(terminal, "", ["text/html", "Files"]));
+    expect(pasteImage).not.toHaveBeenCalled();
+    await act(async () => pasteText(terminal, "", ["Files"]));
+    expect(pasteImage).toHaveBeenCalledTimes(1);
+  } finally {
+    cleanup();
+    setSetting(terminalSetting, original);
+  }
+});
+
+it("uses the native image fallback from the Paste menu only when there is no plain text", async () => {
+  const original = getSetting(terminalSetting);
+  setSetting(terminalSetting, { ...original, pasteImages: true });
+  const pasteImage = vi.fn(async () => {});
+  const { terminal, input, cleanup } = mountTerminal(undefined, pasteImage);
+  try {
+    vi.mocked(readText).mockResolvedValueOnce("first\nsecond");
+    await openContextMenu(terminal);
+    await chooseMenuItem("Paste");
+    expect(pasteDialog()?.querySelector("h2")?.textContent).toBe("Paste 2 lines?");
+    expect(pasteImage).not.toHaveBeenCalled();
+    await answerPaste("Paste");
+    expect(input).toEqual(["first\rsecond"]);
+
+    vi.mocked(readText).mockRejectedValueOnce(new Error("No plain text"));
+    await openContextMenu(terminal);
+    await chooseMenuItem("Paste");
+    expect(pasteImage).toHaveBeenCalledTimes(1);
+  } finally {
+    cleanup();
+    vi.mocked(readText).mockReset();
+    setSetting(terminalSetting, original);
+  }
+});
 
 it("opens the Terminal menu with Shift+F10 and moves focus to Find when selected", async () => {
   const { terminal, input, cleanup } = mountTerminal();
@@ -407,7 +459,7 @@ function broadcastFixture(historyHostId?: string) {
   const broadcast = createBroadcast();
   const inTab = vi.fn();
   const otherTab = vi.fn();
-  const mounted = mountTerminal(broadcast, historyHostId);
+  const mounted = mountTerminal(broadcast, undefined, historyHostId);
   broadcast.updateWorkspace("source", ["work", "other"], ["source", "peer", "other-peer", "new-peer"]);
   const removeSource = broadcast.register("work", "source", vi.fn());
   const removePeer = broadcast.register("work", "peer", inTab);
@@ -462,9 +514,9 @@ it("relays IME text committed by xterm as keyboard input", async () => {
 
 const pasteDialog = () => document.querySelector<HTMLElement>('[role="dialog"]');
 
-function pasteText(terminal: Terminal, text: string) {
+function pasteText(terminal: Terminal, text: string, types: string[] = ["text/plain"]) {
   const event = new Event("paste", { bubbles: true, cancelable: true });
-  Object.defineProperty(event, "clipboardData", { value: { getData: () => text } });
+  Object.defineProperty(event, "clipboardData", { value: { getData: () => text, types } });
   act(() => terminal.textarea!.dispatchEvent(event));
 }
 

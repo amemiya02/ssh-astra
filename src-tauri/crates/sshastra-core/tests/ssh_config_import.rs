@@ -309,6 +309,7 @@ fn a_host_with_a_taken_name_is_skipped_and_its_namesake_used_as_jump_host() {
                 identities_only: false,
                 forward_agent: false,
                 allow_legacy_algorithms: false,
+                open_on_startup: false,
                 proxy: Default::default(),
                 keepalive_seconds: None,
                 post_login_command: None,

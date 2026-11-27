@@ -14,7 +14,7 @@ import { settingRows } from "./setting-rows";
 import { TerminalHighlightingSettings } from "./terminal-highlighting-settings";
 import { TerminalSchemeSettings } from "./terminal-scheme-settings";
 
-type BooleanPref = "ligatures" | "cursorBlink" | "copyOnSelect" | "confirmMultilinePaste" | "shellIntegration" | "commandHistory" | "autoLog" | "inlineImages";
+type BooleanPref = "ligatures" | "cursorBlink" | "copyOnSelect" | "confirmMultilinePaste" | "pasteImages" | "shellIntegration" | "commandHistory" | "autoLog" | "inlineImages";
 
 export function TerminalSection() {
   const { t } = useTranslation();
@@ -161,6 +161,7 @@ export function TerminalSection() {
         />
       </SettingRow>
       {toggle("confirmMultilinePaste")}
+      {toggle("pasteImages")}
       {toggle("shellIntegration")}
       {toggle("commandHistory", !prefs.shellIntegration
         ? t("settings.terminal.commandHistory.shellIntegrationDisabled")

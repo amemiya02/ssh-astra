@@ -18,7 +18,7 @@
 use std::fmt::Write as _;
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use tokio::time::Instant;
@@ -85,6 +85,7 @@ impl RemoteTerminalOptions {
 
 enum Command {
     Data(Vec<u8>),
+    ConnectionData { generation: u64, input: Vec<u8> },
     FollowDirectory { prompt_id: u64, input: Vec<u8> },
     Resize(TerminalSize),
     Reconnect,
@@ -97,6 +98,7 @@ enum Command {
 pub struct RemoteTerminal {
     commands: mpsc::UnboundedSender<Command>,
     retry_on_focus_or_wake: watch::Sender<bool>,
+    connection: watch::Receiver<Option<(u64, Weak<Connection>)>>,
     charset: TerminalCharset,
     backspace: TerminalBackspace,
 }
@@ -183,6 +185,8 @@ impl RemoteTerminal {
         let shell = start_shell(&connection, size, &shell_tx, progress.as_ref()).await?;
         let (commands, command_rx) = mpsc::unbounded_channel();
         let retry_on_focus_or_wake = watch::Sender::new(false);
+        let (active_connection, connection) =
+            watch::channel(Some((0, Arc::downgrade(&connection))));
         let runner = Runner {
             connect: Box::new(move || Box::pin(connect())),
             progress,
@@ -196,6 +200,8 @@ impl RemoteTerminal {
             sink: Box::new(sink),
             commands: command_rx,
             retry_on_focus_or_wake: retry_on_focus_or_wake.clone(),
+            active_connection,
+            generation: 0,
             shell_tx,
             shell_events,
         };
@@ -203,6 +209,7 @@ impl RemoteTerminal {
         Ok(Self {
             commands,
             retry_on_focus_or_wake,
+            connection,
             charset: options.charset,
             backspace: options.backspace,
         })
@@ -300,6 +307,22 @@ impl Terminal for RemoteTerminal {
             _ => data,
         };
         self.send(Command::Data(self.charset.encode_input(data)))
+    }
+
+    fn connection(&self) -> Option<(u64, Arc<Connection>)> {
+        let connection = self.connection.borrow();
+        let (generation, connection) = connection.as_ref()?;
+        let connection = connection
+            .upgrade()
+            .filter(|connection| !connection.is_closed())?;
+        Some((*generation, connection))
+    }
+
+    fn write_for_connection(&mut self, generation: u64, data: &[u8]) -> Result<()> {
+        self.send(Command::ConnectionData {
+            generation,
+            input: self.charset.encode_input(data),
+        })
     }
 
     fn follow_file_directory(&mut self, prompt_id: u64, path: &str) -> Result<()> {
@@ -491,6 +514,8 @@ struct Runner {
     sink: Box<dyn FnMut(TerminalEvent) + Send>,
     commands: mpsc::UnboundedReceiver<Command>,
     retry_on_focus_or_wake: watch::Sender<bool>,
+    active_connection: watch::Sender<Option<(u64, Weak<Connection>)>>,
+    generation: u64,
     /// Every shell this Terminal runs reports here. A shell's last event is
     /// `Exit` or `Lost`, so events of an old shell never follow a new one's.
     shell_tx: mpsc::UnboundedSender<ShellEvent>,
@@ -501,7 +526,9 @@ impl Runner {
     async fn run(mut self, mut shell: RemoteShell) {
         let mut cwd = None;
         loop {
-            let Ok(last_cwd) = self.serve(&mut shell, cwd).await else {
+            let ended = self.serve(&mut shell, cwd).await;
+            self.active_connection.send_replace(None);
+            let Ok(last_cwd) = ended else {
                 return;
             };
             cwd = last_cwd;
@@ -637,6 +664,16 @@ impl Runner {
                             typed.extend_from_slice(&bytes);
                         }
                     }
+                    Command::ConnectionData { generation, input } => {
+                        if self.generation == generation {
+                            follow_prompt.input(&input);
+                            if matches!(startup, Startup::Ready) {
+                                let _ = shell.write(&input);
+                            } else {
+                                typed.extend_from_slice(&input);
+                            }
+                        }
+                    }
                     Command::FollowDirectory { prompt_id, input } => {
                         // Bind the request to this exact prompt and never buffer it during startup or recovery.
                         if matches!(startup, Startup::Ready) && follow_prompt.take(prompt_id) {
@@ -741,7 +778,9 @@ impl Runner {
                 self.size = size;
                 Ok(false)
             }
-            Command::Data(_) | Command::FollowDirectory { .. } => Ok(false),
+            Command::Data(_) | Command::ConnectionData { .. } | Command::FollowDirectory { .. } => {
+                Ok(false)
+            }
         }
     }
 
@@ -790,14 +829,20 @@ impl Runner {
             }
         };
         // The size may have changed while connecting.
-        Ok(start_shell(
+        let shell = start_shell(
             &connection,
             self.size,
             &self.shell_tx,
             self.progress.as_ref(),
         )
         .await
-        .map_err(ReconnectError::Shell))
+        .map_err(ReconnectError::Shell);
+        if shell.is_ok() {
+            self.generation += 1;
+            self.active_connection
+                .send_replace(Some((self.generation, Arc::downgrade(&connection))));
+        }
+        Ok(shell)
     }
 }
 

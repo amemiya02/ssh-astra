@@ -444,6 +444,22 @@ export function HostFormDialogContent({
             <div className="grid gap-3.5 pt-2">
               <div className="flex items-start gap-2">
                 <Checkbox
+                  id="host-form-open-on-startup"
+                  checked={values.openOnStartup}
+                  aria-describedby="host-form-open-on-startup-hint"
+                  onCheckedChange={(checked) => setValues((v) => ({ ...v, openOnStartup: checked === true }))}
+                />
+                <div className="grid gap-1.5">
+                  <Label htmlFor="host-form-open-on-startup" className="text-xs">
+                    {t("hosts.fields.openOnStartup")}
+                  </Label>
+                  <p id="host-form-open-on-startup-hint" className="text-muted-foreground text-xs">
+                    {t("hosts.openOnStartupHint")}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-start gap-2">
+                <Checkbox
                   id="host-form-identities-only"
                   checked={values.identitiesOnly}
                   aria-describedby="host-form-identities-only-hint"

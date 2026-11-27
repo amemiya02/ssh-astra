@@ -37,6 +37,8 @@ export interface TerminalPrefs {
   copyOnSelect: boolean;
   /** Right-click pastes instead of opening the Terminal menu. */
   rightClickPaste: boolean;
+  /** Saves an image-only clipboard as a PNG and pastes its path. */
+  pasteImages: boolean;
   /**
    * Type the ShellIntegration hook into new remote bash/zsh shells so the File panel follows `cd`.
    * Read by the core too (`TerminalSettings`); applies to Terminals opened afterwards.
@@ -85,6 +87,7 @@ export const defaultTerminalPrefs: TerminalPrefs = {
   inlineImages: true,
   copyOnSelect: true,
   rightClickPaste: false,
+  pasteImages: false,
   shellIntegration: true,
   commandHistory: false,
   localShell: null,
@@ -140,6 +143,7 @@ export function normalizeTerminalPrefs(raw: Partial<Record<keyof TerminalPrefs, 
     inlineImages: bool(raw.inlineImages, d.inlineImages),
     copyOnSelect: bool(raw.copyOnSelect, d.copyOnSelect),
     rightClickPaste: bool(raw.rightClickPaste, d.rightClickPaste),
+    pasteImages: bool(raw.pasteImages, d.pasteImages),
     shellIntegration: bool(raw.shellIntegration, d.shellIntegration),
     commandHistory: bool(raw.commandHistory, d.commandHistory),
     localShell: parseLocalShellId(raw.localShell) ?? d.localShell,

@@ -79,6 +79,7 @@
       "identitiesOnly": "仅使用指定密钥",
       "forwardAgent": "SSH agent 转发",
       "allowLegacyAlgorithms": "允许旧算法",
+      "openOnStartup": "启动时打开",
       "keepaliveSeconds": "保活间隔（秒）",
       "postLoginCommand": "登录后命令",
       "terminalCharset": "终端字符集",
@@ -124,6 +125,7 @@
     "defaultDirectoryHint": "文件面板第一次打开时所在的目录。留空则为主目录。",
     "identitiesOnlyHint": "指定密钥文件后，ssh-agent 只提供与该文件匹配的密钥，且跳过默认密钥文件。",
     "allowLegacyAlgorithmsHint": "较旧的 SSH 算法提供的保护较弱。仅在此主机需要时开启。更改后需重新连接。",
+    "openOnStartupHint": "如果应用启动时没有为此 Host 恢复标签，则打开终端并连接。",
     "forwardAgentHint": "连接期间，远端主机可以通过你的本机 SSH agent 使用你的 SSH 密钥。 更改后需重新连接。",
     "keepaliveHint": "留空则跟随全局设置，输入 0 则关闭保活。更改后需重新连接。",
     "postLoginCommandHint": "每次打开新的 shell 并就绪后执行一次，重连时也会执行。",
@@ -729,6 +731,9 @@
     "followSystemAction": "主题：跟随系统"
   },
   "terminal": {
+    "imagePaste": {
+      "failed": "无法保存或粘贴剪贴板图片。"
+    },
     "fileDrop": {
       "destinationTitle": "选择上传目录",
       "destinationBody": "{{host}} 上的终端尚未上报当前目录。要将文件上传到哪里？",
@@ -1265,6 +1270,10 @@
         "label": "命令历史",
         "description": "已保存主机的命令行会以明文保存在本机。需要远程 zsh 或启用提示符展开的 bash 4.4+ 提供 Shell 集成。",
         "shellIntegrationDisabled": "Shell 集成已关闭。请开启后打开新的远程终端。记录生效时，命令行会以明文保存在本机。"
+      },
+      "pasteImages": {
+        "label": "将剪贴板图片粘贴为路径",
+        "description": "剪贴板中只有图片时，将图片保存为 PNG 并粘贴其路径。远程终端会将 PNG 上传到该主机的 SSH Astra 缓存目录。"
       },
       "shellIntegration": {
         "label": "Shell 集成",

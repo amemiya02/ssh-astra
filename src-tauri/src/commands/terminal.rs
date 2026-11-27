@@ -335,8 +335,13 @@ pub async fn terminal_write(
     registry: State<'_, TerminalRegistry>,
     id: TerminalId,
     data: String,
+    generation: Option<u64>,
 ) -> CommandResult<()> {
-    Ok(registry.write(id, data.as_bytes())?)
+    match generation {
+        Some(generation) => registry.write_for_connection(id, generation, data.as_bytes())?,
+        None => registry.write(id, data.as_bytes())?,
+    }
+    Ok(())
 }
 
 #[tauri::command]

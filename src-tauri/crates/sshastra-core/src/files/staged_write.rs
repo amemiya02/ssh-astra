@@ -387,18 +387,25 @@ pub(super) struct StagedWrite<'a> {
     temp: Side,
     parked: Side,
     original: Option<FileStat>,
+    private: bool,
     claimed: bool,
     opened: bool,
     parked_stat: Option<FileStat>,
 }
 
 impl<'a> StagedWrite<'a> {
-    pub(super) fn new(target: &'a Side, parked: Side, original: Option<FileStat>) -> Self {
+    pub(super) fn new(
+        target: &'a Side,
+        parked: Side,
+        original: Option<FileStat>,
+        private: bool,
+    ) -> Self {
         Self {
             target,
             temp: parked.active_stage(),
             parked,
             original,
+            private,
             claimed: false,
             opened: false,
             parked_stat: None,
@@ -505,7 +512,10 @@ impl<'a> StagedWrite<'a> {
                 Err(e) => return Err(e),
             }
         }
-        let writer = match temp.create_new(self.original.is_some()).await {
+        let writer = match temp
+            .create_new(self.private || self.original.is_some())
+            .await
+        {
             Ok(writer) => {
                 self.claimed = true;
                 self.opened = true;
