@@ -1,26 +1,93 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { formatSize } from "@/features/files/fileList";
-import { watchResources, type ResourceEvent, type ResourceUsage } from "@/lib/ipc/resources";
+import { watchResources, type ResourceEvent, type ResourceSnapshot, type ResourceUsage } from "@/lib/ipc/resources";
 import type { TerminalId } from "@/lib/ipc/terminal";
+import { getSetting, useSetting, watchSetting } from "@/lib/storage";
+import { resourceIntervals, resourceSetting } from "./resource-settings";
+import { recordResourceSample, resizeResourceHistory, type ResourceHistories, type ResourceTrendSample } from "./resource-history";
+import { ResourceTrends } from "./ResourceTrends";
 
-export function ResourcePanel({ terminalId }: { terminalId: TerminalId }) {
-  const { t, i18n } = useTranslation();
+export function ResourcePanel({ terminalId, generation, histories }: {
+  terminalId: TerminalId;
+  generation: number;
+  histories: ResourceHistories;
+}) {
+  const { t } = useTranslation();
+  const [{ intervalSeconds }, setSettings] = useSetting(resourceSetting);
   const [event, setEvent] = useState<ResourceEvent>();
+  const [history, setHistory] = useState<readonly ResourceTrendSample[]>([]);
   useEffect(() => {
     let visible = true;
-    const stop = watchResources(terminalId, (next) => { if (visible) setEvent(next); });
-    return () => { visible = false; stop(); };
-  }, [terminalId]);
+    let activeInterval = getSetting(resourceSetting).intervalSeconds;
+    const cached = histories.get(terminalId);
+    let samples: readonly ResourceTrendSample[] = [];
+    if (cached?.generation === generation) {
+      samples = cached.interval === activeInterval ? cached.samples
+        : resizeResourceHistory(cached.samples, performance.now(), activeInterval);
+    }
+    const storeHistory = (next: readonly ResourceTrendSample[]) => {
+      samples = next;
+      histories.set(terminalId, { generation, interval: activeInterval, samples });
+      setHistory(samples);
+    };
+    const subscription = watchResources(terminalId, activeInterval, (next) => {
+      if (!visible) return;
+      setEvent(next);
+      if (next.type === "snapshot") {
+        storeHistory(recordResourceSample(samples, next.snapshot, performance.now(), activeInterval));
+      }
+    });
+    const unwatch = watchSetting(resourceSetting, ({ intervalSeconds }) => {
+      if (activeInterval === intervalSeconds) return;
+      activeInterval = intervalSeconds;
+      if (samples.length) storeHistory(resizeResourceHistory(samples, performance.now(), intervalSeconds));
+      subscription.setInterval(intervalSeconds);
+    });
+    return () => {
+      visible = false;
+      unwatch();
+      subscription.stop();
+    };
+  }, [generation, histories, terminalId]);
 
-  if (event?.type !== "snapshot") {
-    return <p className="text-muted-foreground p-4 text-sm" role="status">{t(
-      event?.type === "unsupported" ? "resources.unsupported"
-        : event?.type === "unavailable" ? "resources.unavailable" : "resources.loading",
-    )}</p>;
-  }
+  const intervalLabel = t("resources.sampleInterval");
+  return (
+    <>
+      <label className="text-muted-foreground flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2 text-xs">
+        <span>{intervalLabel}</span>
+        <select
+          aria-label={intervalLabel}
+          className="border-input bg-surface text-foreground focus-visible:ring-ring h-7 rounded-md border px-2 outline-none focus-visible:ring-2"
+          value={intervalSeconds}
+          onChange={(event) => {
+            const selected = resourceIntervals.find((seconds) => seconds === Number(event.target.value));
+            if (selected !== undefined) setSettings({ intervalSeconds: selected });
+          }}
+        >
+          {resourceIntervals.map((seconds) => (
+            <option key={seconds} value={seconds}>{t("resources.sampleSeconds", { count: seconds })}</option>
+          ))}
+        </select>
+      </label>
+      {event?.type === "snapshot" ? (
+        <>
+          <ResourceReadings snapshot={event.snapshot} />
+          <ResourceTrends history={history} />
+        </>
+      ) : (
+        <p className="text-muted-foreground p-4 text-sm" role="status">{t(
+          event?.type === "unsupported" ? "resources.unsupported"
+            : event?.type === "unavailable" ? "resources.unavailable" : "resources.loading",
+        )}</p>
+      )}
+    </>
+  );
+}
 
-  const { cpuPercent, cores, load, memory, swap, disks, network, uptimeSeconds } = event.snapshot;
+function ResourceReadings({ snapshot }: { snapshot: ResourceSnapshot }) {
+  const { t, i18n } = useTranslation();
+  const { cpuPercent, cores, load, memory, swap, disks, network, uptimeSeconds } = snapshot;
   const number = new Intl.NumberFormat(i18n.resolvedLanguage, { maximumFractionDigits: 2 });
   const percent = new Intl.NumberFormat(i18n.resolvedLanguage, { style: "percent", maximumFractionDigits: 1 });
   const units = new Intl.ListFormat(i18n.resolvedLanguage, { type: "unit", style: "short" });

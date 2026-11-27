@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use sshastra_core::files::FsError;
-use sshastra_core::monitor::{watch_resources, ResourceEvent};
+use sshastra_core::monitor::{watch_resources, ResourceEvent, ResourceInterval};
 use sshastra_core::terminal::{TerminalError, TerminalId, TerminalRegistry};
 use tauri::ipc::Channel;
 use tauri::{State, WebviewWindow};
@@ -18,12 +18,14 @@ pub fn terminal_resources_start(
     registry: State<'_, TerminalRegistry>,
     id: TerminalId,
     on_event: Channel<ResourceEvent>,
+    interval_seconds: ResourceInterval,
 ) -> CommandResult<()> {
     let (
         connection,
         ResourceSubscription {
             mut stopped,
             channel,
+            interval,
         },
     ) = windows::with_resources(&window, |resources| -> CommandResult<_> {
         let route = resources
@@ -33,7 +35,7 @@ pub fn terminal_resources_start(
         let mut route = route.lock();
         let (_, connection) = registry.connection(id)?.ok_or(FsError::NotConnected)?;
         let stopped = route
-            .start_resources(on_event.id())
+            .start_resources(on_event.id(), interval_seconds)
             .ok_or(FsError::NotConnected)?;
         Ok((connection, stopped))
     })??;
@@ -48,9 +50,28 @@ pub fn terminal_resources_start(
             let _ = on_event.send(ResourceEvent::Unavailable);
             return;
         };
-        watch_resources(&connection, stopped, |event| on_event.send(event).is_ok()).await;
+        watch_resources(&connection, stopped, interval, |event| {
+            on_event.send(event).is_ok()
+        })
+        .await;
     });
     Ok(())
+}
+
+#[tauri::command]
+pub fn terminal_resources_set_interval(
+    window: WebviewWindow,
+    id: TerminalId,
+    subscription: u32,
+    interval_seconds: ResourceInterval,
+) -> CommandResult<()> {
+    windows::with_resources(&window, |resources| {
+        if let Some(route) = resources.terminals.get(&id) {
+            route
+                .lock()
+                .set_resource_interval(subscription, interval_seconds);
+        }
+    })
 }
 
 #[tauri::command]
