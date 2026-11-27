@@ -5,7 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { hostsStore } from "@/features/hosts/hostsStore";
 import { settingsPageSections } from "@/features/settings/sections";
 import { startI18n } from "@/i18n";
-import { dragFileOut, type FileEntry, type Listing } from "@/lib/ipc/files";
+import { dragFileOut, waitForFileDragExit, type FileEntry, type Listing } from "@/lib/ipc/files";
 import * as hostsIpc from "@/lib/ipc/hosts";
 import { localStorageBackend, openSettings, setSetting, startSettings } from "@/lib/storage";
 import { FileBrowser, type FileExchange } from "./FileBrowser";
@@ -15,6 +15,8 @@ import { filesSetting } from "./file-prefs";
 
 vi.mock("@/lib/ipc/files", async (original) => ({
   ...(await original<typeof import("@/lib/ipc/files")>()),
+  waitForFileDragExit: vi.fn(() => Promise.resolve(false)),
+  cancelFileDragExit: vi.fn(() => Promise.resolve()),
   dragFileOut: vi.fn(() => Promise.resolve(false)),
 }));
 
@@ -493,23 +495,19 @@ describe("FileBrowser", () => {
     );
     vi.useFakeTimers();
     vi.stubGlobal("__sshastraFilePromises", true);
-    const capture = {
-      setPointerCapture: vi.fn(),
-      hasPointerCapture: () => true,
-      releasePointerCapture: vi.fn(),
-    };
-    Object.assign(document.documentElement, capture);
+    let leftWindow: (outside: boolean) => void = () => {};
+    vi.mocked(waitForFileDragExit).mockImplementationOnce(() => new Promise((resolve) => { leftWindow = resolve; }));
     try {
       act(() => pointer(file!, "pointerdown", 10, 36));
       act(() => pointer(document, "pointermove", 10, 46));
       act(() => pointer(folder!, "pointermove", 10, 10));
       expect(dragFileOut).not.toHaveBeenCalled();
 
-      await act(async () => pointer(document, "pointermove", -5, 10));
+      // WebKit can stop delivering pointer moves at the Window boundary.
+      await act(async () => leftWindow(true));
       expect(dragFileOut).toHaveBeenCalledExactlyOnceWith({
         id: 1, directory: "/move", name: "a.txt", size: 2048, modified: 1_704_164_645,
       });
-      expect(capture.releasePointerCapture).toHaveBeenCalledWith(1);
       await act(async () => pointer(folder!, "pointerup", 10, 10));
       expect(api.renameFile).not.toHaveBeenCalled();
     } finally {
@@ -517,7 +515,6 @@ describe("FileBrowser", () => {
       act(() => vi.advanceTimersByTime(50));
       vi.useRealTimers();
       vi.unstubAllGlobals();
-      for (const key of Object.keys(capture)) Reflect.deleteProperty(document.documentElement, key);
     }
   });
 

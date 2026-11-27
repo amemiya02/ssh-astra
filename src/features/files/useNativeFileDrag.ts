@@ -2,7 +2,7 @@ import type { DragStartEvent } from "@dnd-kit/core";
 import { useCallback, useEffect, useRef } from "react";
 import { showToast } from "@/features/toasts/toastStore";
 import { readCommandError } from "@/lib/ipc/connect";
-import { dragFileOut, type FilePromise } from "@/lib/ipc/files";
+import { cancelFileDragExit, dragFileOut, waitForFileDragExit, type FilePromise } from "@/lib/ipc/files";
 import { operationErrorText } from "./fileErrors";
 
 declare global {
@@ -11,12 +11,15 @@ declare global {
   }
 }
 
+let latestGesture = 0;
+
 /** Dnd-kit keeps the gesture inside the window, including moves and cross-Host copies. */
 export function useNativeFileDrag() {
-  const release = useRef<(() => void) | null>(null);
+  const activeGesture = useRef<number | null>(null);
   const stop = useCallback(() => {
-    release.current?.();
-    release.current = null;
+    const gesture = activeGesture.current;
+    activeGesture.current = null;
+    if (gesture !== null) void cancelFileDragExit(gesture).catch(() => {});
   }, []);
   useEffect(() => stop, [stop]);
 
@@ -29,31 +32,25 @@ export function useNativeFileDrag() {
     if (!file) return;
 
     const { pointerId } = activatorEvent;
-    // The root stays mounted if the source row scrolls out of the virtual list.
-    const capture = document.documentElement;
-    const leave = (event: PointerEvent) => {
-      if (event.pointerId !== pointerId || !(event.buttons & 1)) return;
-      if (event.clientX >= 0 && event.clientY >= 0 &&
-          event.clientX < window.innerWidth && event.clientY < window.innerHeight) return;
-      stop();
-      // The native drag consumes the release. Cancel the web sensor before starting it.
-      document.dispatchEvent(new PointerEvent("pointercancel", { pointerId }));
-      void dragFileOut(file).then((copied) => {
+    // A webview reload resets module state while the native Window may survive.
+    const gesture = Math.max(Date.now() * 1_000, latestGesture + 1);
+    latestGesture = gesture;
+    activeGesture.current = gesture;
+    void waitForFileDragExit(gesture).then(async (outside) => {
+      if (activeGesture.current !== gesture) return;
+      activeGesture.current = null;
+      if (outside) {
+        // The native drag consumes the release after the pointer leaves the Window.
+        document.dispatchEvent(new PointerEvent("pointercancel", { pointerId }));
+        const copied = await dragFileOut(file);
         if (copied) showToast((t) => t("files.dragOut.copied", { name: file.name }));
-      }).catch((error: unknown) => {
-        showToast((t) => t("files.dragOut.failed", {
-          name: file.name, error: operationErrorText(t, readCommandError(error)),
-        }), "error");
-      });
-    };
-    release.current = () => {
-      document.removeEventListener("pointermove", leave, true);
-      document.removeEventListener("pointerout", leave, true);
-      if (capture.hasPointerCapture(pointerId)) capture.releasePointerCapture(pointerId);
-    };
-    document.addEventListener("pointermove", leave, true);
-    document.addEventListener("pointerout", leave, true);
-    capture.setPointerCapture(pointerId);
+      }
+    }).catch((error: unknown) => {
+      if (activeGesture.current === gesture) activeGesture.current = null;
+      showToast((t) => t("files.dragOut.failed", {
+        name: file.name, error: operationErrorText(t, readCommandError(error)),
+      }), "error");
+    });
   };
   return { track, stop };
 }

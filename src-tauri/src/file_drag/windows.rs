@@ -39,7 +39,7 @@ use windows::Win32::UI::Shell::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{GetClientRect, GetCursorPos};
 
-use super::{Report, Source};
+use super::{PointerState, Report, Source};
 
 mod stream;
 use stream::{Cursor, FileStream};
@@ -67,7 +67,7 @@ pub(super) fn start(
 }
 
 fn run(hwnd: HWND, source: Arc<Source>, report: Arc<Report>) -> Result<()> {
-    if DRAG.with(Cell::get) || !outside_while_pressed(hwnd)? {
+    if DRAG.with(Cell::get) || physical_pointer(hwnd)? != PointerState::Outside {
         return Ok(());
     }
     // OLE drag-and-drop must run on this STA. Balance our own initialization.
@@ -84,11 +84,13 @@ fn run(hwnd: HWND, source: Arc<Source>, report: Arc<Report>) -> Result<()> {
         },
         finished,
     )?;
-    if !outside_while_pressed(hwnd)? {
+    if physical_pointer(hwnd)? != PointerState::Outside {
         return Ok(());
     }
     let drop_source: IDropSource = DropSource { drag: drag.clone() }.into();
     let mut effect = DROPEFFECT_NONE;
+    #[cfg(feature = "e2e")]
+    log::info!("file drag started OLE session");
     let status = unsafe { DoDragDrop(&data, &drop_source, DROPEFFECT_COPY, &mut effect) };
     drag.in_drag_loop.store(false, Ordering::Release);
     if status == DRAGDROP_S_DROP && effect.contains(DROPEFFECT_COPY) {
@@ -114,18 +116,29 @@ impl Drop for OleThread {
     }
 }
 
-fn outside_while_pressed(hwnd: HWND) -> Result<bool> {
+pub(super) fn sample_pointer(window: &WebviewWindow) -> Option<(isize, PointerState)> {
+    let hwnd = window.hwnd().ok()?;
+    Some((0, physical_pointer(hwnd).ok()?))
+}
+
+fn physical_pointer(hwnd: HWND) -> Result<PointerState> {
     let mut pointer = POINT::default();
     let mut window = RECT::default();
     unsafe {
         GetCursorPos(&mut pointer)?;
         GetClientRect(hwnd, &mut window)?;
         ScreenToClient(hwnd, &mut pointer).ok()?;
-        Ok(GetAsyncKeyState(VK_LBUTTON.0 as i32) < 0
-            && (pointer.x < window.left
-                || pointer.x >= window.right
-                || pointer.y < window.top
-                || pointer.y >= window.bottom))
+        if GetAsyncKeyState(VK_LBUTTON.0 as i32) >= 0 {
+            Ok(PointerState::Released)
+        } else if pointer.x < window.left
+            || pointer.x >= window.right
+            || pointer.y < window.top
+            || pointer.y >= window.bottom
+        {
+            Ok(PointerState::Outside)
+        } else {
+            Ok(PointerState::Inside)
+        }
     }
 }
 

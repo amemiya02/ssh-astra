@@ -18,6 +18,14 @@ export function dragFileOut(file: FilePromise): Promise<boolean> {
   return invoke("files_drag_out", { file });
 }
 
+export function waitForFileDragExit(gesture: number): Promise<boolean> {
+  return invoke("files_wait_for_drag_exit", { gesture });
+}
+
+export function cancelFileDragExit(gesture: number): Promise<void> {
+  return invoke("files_cancel_drag_exit", { gesture });
+}
+
 /** Mirrors `sshastra_core::files::FileKind`. */
 export type FileKind = "file" | "dir" | "symlink" | "other";
 

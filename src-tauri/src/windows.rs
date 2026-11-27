@@ -144,6 +144,8 @@ pub(crate) struct WindowResources {
     pub(crate) terminals: HashMap<TerminalId, Arc<TerminalRoute>>,
     /// Remote entries refer to the same SFTP session as the File panel's registry entry.
     pub(crate) files: HashMap<FsId, Option<std::sync::Weak<sshastra_core::files::SftpFs>>>,
+    #[cfg(any(windows, target_os = "macos"))]
+    pub(crate) file_drag_watch: crate::file_drag::GestureWatch,
     pub(crate) temporary_hosts: HashSet<HostId>,
     prompts: Arc<PendingPrompts>,
 }

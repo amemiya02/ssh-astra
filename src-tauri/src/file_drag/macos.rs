@@ -25,7 +25,7 @@ use objc2_foundation::{
 use sshastra_core::files::{FsError, FsResult};
 use tauri::WebviewWindow;
 
-use super::{RemoteRead, Report, Source, CHUNK_SIZE};
+use super::{PointerState, RemoteRead, Report, Source, CHUNK_SIZE};
 
 struct MouseGesture {
     down: Retained<NSEvent>,
@@ -121,6 +121,43 @@ impl PromiseDelegate {
     }
 }
 
+fn physical_pointer(view: &NSView) -> Option<(isize, PointerState)> {
+    let window = view.window()?;
+    let gesture = MOUSE.with_borrow(|mouse| {
+        let down = &mouse.as_ref()?.down;
+        (down.windowNumber() == window.windowNumber()).then(|| down.eventNumber())
+    })?;
+    let mouse = view.convertPoint_fromView(
+        window.convertPointFromScreen(NSEvent::mouseLocation()),
+        None,
+    );
+    let bounds = view.bounds();
+    let inside = mouse.x >= bounds.min().x
+        && mouse.x < bounds.max().x
+        && mouse.y >= bounds.min().y
+        && mouse.y < bounds.max().y;
+    let state = if NSEvent::pressedMouseButtons() & 1 == 0 {
+        PointerState::Released
+    } else if inside {
+        PointerState::Inside
+    } else {
+        PointerState::Outside
+    };
+    Some((gesture, state))
+}
+
+pub(super) async fn sample_pointer(window: &WebviewWindow) -> Option<(isize, PointerState)> {
+    let (send, receive) = tokio::sync::oneshot::channel();
+    window
+        .with_webview(move |webview| {
+            // Tauri supplies the WKWebView pointer while this main-thread callback runs.
+            let view = unsafe { webview.inner().cast::<NSView>().as_ref() };
+            let _ = send.send(view.and_then(physical_pointer));
+        })
+        .ok()?;
+    receive.await.ok().flatten()
+}
+
 define_class!(
     // The dragging source is only called on the AppKit thread.
     #[unsafe(super(NSObject))]
@@ -163,23 +200,12 @@ pub(super) fn start(
         let Some(view) = (unsafe { webview.inner().cast::<NSView>().as_ref() }) else {
             return;
         };
-        let Some(window) = view.window() else { return };
-        let mouse = view.convertPoint_fromView(
-            window.convertPointFromScreen(NSEvent::mouseLocation()),
-            None,
-        );
-        let bounds = view.bounds();
-        let inside = mouse.x >= bounds.min().x
-            && mouse.x < bounds.max().x
-            && mouse.y >= bounds.min().y
-            && mouse.y < bounds.max().y;
-        if NSEvent::pressedMouseButtons() & 1 == 0 || inside || DRAG.with_borrow(Option::is_some) {
+        if !matches!(physical_pointer(view), Some((_, PointerState::Outside)))
+            || DRAG.with_borrow(Option::is_some)
+        {
             return;
         }
-        let gesture = MOUSE.with_borrow_mut(Option::take);
-        let Some(gesture) =
-            gesture.filter(|gesture| gesture.down.windowNumber() == window.windowNumber())
-        else {
+        let Some(gesture) = MOUSE.with_borrow_mut(Option::take) else {
             return;
         };
         let event = gesture.dragged.as_ref().unwrap_or(&gesture.down);
@@ -205,6 +231,8 @@ pub(super) fn start(
         let this = DragSource::alloc(mtm).set_ivars(report);
         let drag_source: Retained<DragSource> = unsafe { msg_send![super(this), init] };
         DRAG.with_borrow_mut(|active| *active = Some(drag_source.clone()));
+        #[cfg(feature = "e2e")]
+        log::info!("file drag started AppKit session");
         view.beginDraggingSessionWithItems_event_source(
             &NSArray::from_retained_slice(&[item]),
             event,

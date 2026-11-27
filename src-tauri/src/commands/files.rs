@@ -72,6 +72,31 @@ pub fn files_local_open(
 
 #[cfg(any(windows, target_os = "macos"))]
 #[tauri::command]
+pub async fn files_wait_for_drag_exit(window: WebviewWindow, gesture: u64) -> bool {
+    let (stop, stopped) = oneshot::channel();
+    let registered = windows::with_resources(&window, |resources| {
+        resources.file_drag_watch.start(gesture, stop)
+    });
+    if !matches!(registered, Ok(true)) {
+        return false;
+    }
+    let outside = tokio::select! {
+        biased;
+        _ = stopped => false,
+        outside = crate::file_drag::wait_for_exit(window.clone()) => outside,
+    };
+    let _ = windows::with_resources(&window, |resources| resources.file_drag_watch.stop(gesture));
+    outside
+}
+
+#[cfg(any(windows, target_os = "macos"))]
+#[tauri::command]
+pub fn files_cancel_drag_exit(window: WebviewWindow, gesture: u64) {
+    let _ = windows::with_resources(&window, |resources| resources.file_drag_watch.stop(gesture));
+}
+
+#[cfg(any(windows, target_os = "macos"))]
+#[tauri::command]
 pub async fn files_drag_out(
     window: WebviewWindow,
     file: crate::file_drag::FilePromise,

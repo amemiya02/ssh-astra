@@ -160,6 +160,65 @@ impl Report {
 }
 
 #[cfg(any(windows, target_os = "macos"))]
+#[derive(PartialEq, Eq)]
+enum PointerState {
+    Released,
+    Inside,
+    Outside,
+}
+
+#[cfg(any(windows, target_os = "macos"))]
+#[derive(Default)]
+pub(crate) struct GestureWatch {
+    latest: u64,
+    stop: Option<oneshot::Sender<()>>,
+}
+
+#[cfg(any(windows, target_os = "macos"))]
+impl GestureWatch {
+    pub(crate) fn start(&mut self, gesture: u64, stop: oneshot::Sender<()>) -> bool {
+        if gesture <= self.latest {
+            return false;
+        }
+        self.latest = gesture;
+        self.stop = Some(stop);
+        true
+    }
+
+    pub(crate) fn stop(&mut self, gesture: u64) {
+        // A late cancel from a superseded web gesture cannot stop the new one.
+        if gesture >= self.latest {
+            self.latest = gesture;
+            self.stop = None;
+        }
+    }
+}
+
+/// A native view may stop delivering pointer moves to its page at the window
+/// boundary. Track the physical mouse while the page's drag sensor is active.
+#[cfg(any(windows, target_os = "macos"))]
+pub(crate) async fn wait_for_exit(window: tauri::WebviewWindow) -> bool {
+    let mut down = None;
+    loop {
+        #[cfg(target_os = "macos")]
+        let sample = macos::sample_pointer(&window).await;
+        #[cfg(windows)]
+        let sample = windows::sample_pointer(&window);
+        let Some((gesture, state)) = sample else {
+            return false;
+        };
+        if *down.get_or_insert(gesture) != gesture {
+            return false;
+        }
+        match state {
+            PointerState::Released => return false,
+            PointerState::Outside => return true,
+            PointerState::Inside => tokio::time::sleep(std::time::Duration::from_millis(20)).await,
+        }
+    }
+}
+
+#[cfg(any(windows, target_os = "macos"))]
 pub(crate) async fn start(
     window: tauri::WebviewWindow,
     file: FilePromise,
