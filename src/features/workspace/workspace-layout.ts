@@ -7,7 +7,8 @@ import type { RestoreTabs } from "./workspace-prefs";
 type HostedPaneKind = Extract<Pane, { host: unknown }>["kind"];
 
 export type SavedPane = { id: string } & (
-  | { kind: Exclude<Pane["kind"], HostedPaneKind> }
+  | { kind: "home" | "settings" }
+  | { kind: "local-terminal"; cwd?: string }
   | { kind: HostedPaneKind; hostId: string }
 );
 
@@ -16,7 +17,7 @@ export interface WorkspaceLayout {
   activeId: string | null;
 }
 
-/** Persists layout and pane identities without saving live Connection or shell state. */
+/** Persists layout, pane identities, and Local terminal directories. */
 export function serializeWorkspaceLayout(state: TabsState): WorkspaceLayout {
   return {
     activeId: state.activeId,
@@ -32,6 +33,9 @@ function serializeLayout(layout: PaneLayout): PaneLayout<SavedPane> {
   }
   const { pane } = layout;
   const { id } = pane;
+  if (pane.kind === "local-terminal" && pane.cwd !== undefined) {
+    return { type: "pane", pane: { id, kind: pane.kind, cwd: pane.cwd } };
+  }
   return { type: "pane", pane: "host" in pane ? { id, kind: pane.kind, hostId: pane.host.id } : { id, kind: pane.kind } };
 }
 
@@ -74,9 +78,12 @@ function parsePane(raw: unknown): SavedPane | undefined {
   const { id, kind } = raw;
   switch (kind) {
     case "home":
-    case "local-terminal":
     case "settings":
       return { id, kind };
+    case "local-terminal": {
+      const { cwd } = raw;
+      return typeof cwd === "string" && cwd.startsWith("/") && !cwd.includes("\0") ? { id, kind, cwd } : { id, kind };
+    }
     case "remote-terminal":
     case "sftp":
     case "port-forwards": {
