@@ -16,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { hueClasses } from "@/features/hosts/hostHue";
+import type { TerminalTitleSource } from "@/features/terminal/terminal-prefs";
 import { cn } from "@/lib/utils";
 import { TabMenu } from "./TabMenu";
 import { shortcutLabel, type Platform } from "./shortcuts";
@@ -38,6 +39,7 @@ interface TabStripProps {
   tabs: Tab[];
   activeId: string | null;
   platform: Platform;
+  titleSource: TerminalTitleSource;
   onActivate(id: string): void;
   onTabAction(action: TabMenuAction): void;
   /** Drop the dragged tab `id` at index `to`. */
@@ -76,6 +78,7 @@ export function TabStrip({
   tabs,
   activeId,
   platform,
+  titleSource,
   onActivate,
   onTabAction,
   onMove,
@@ -159,7 +162,7 @@ export function TabStrip({
             const pane = activePane(tab);
             const kind = pane.kind;
             const ordinal = tabs.slice(0, index + 1).filter((other) => activePane(other).kind === kind).length;
-            const title = tabTitle(tab, t, ordinal);
+            const title = tabTitle(tab, t, ordinal, titleSource);
             const status = tabStatus(tab);
             const details = [status && t(`tabs.status.${status}`), tab.locked && t("tabs.locked")].filter(Boolean).join(", ");
             const label = details ? `${title} (${details})` : title;

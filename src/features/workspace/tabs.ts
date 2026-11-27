@@ -1,4 +1,5 @@
 import { hostHue } from "@/features/hosts/hostHue";
+import type { TerminalTitleSource } from "@/features/terminal/terminal-prefs";
 import type { Host } from "@/lib/ipc/hosts";
 import type { AnsiHue } from "@/theme/monogram-ink";
 import { paneNeighbors, resizePaneLayout, type PaneDirection, type SplitResize } from "./pane-layout";
@@ -209,18 +210,18 @@ export function remoteTerminalPaneIds(state: TabsState): string[] {
 }
 
 /**
- * The tab's custom title or its focused pane's automatic label: the program's own title,
- * else the kind's name. `ordinal` is 1-based among tabs of the same kind. A remote Terminal
- * uses its Host's name and a Port forwards tab adds it to the kind's name.
+ * The tab's custom title or its focused pane's automatic label. In shell mode, a program's title
+ * takes priority over the kind's name. `ordinal` is 1-based among tabs of the same kind.
  */
 export function tabTitle(
   tab: Tab,
   t: (key: "tabs.home" | "tabs.localTerminal" | "tabs.settings" | "tabs.portForwards" | "tabs.sftp") => string,
   ordinal: number,
+  titleSource: TerminalTitleSource = "shell",
 ): string {
   if (tab.customTitle) return tab.customTitle;
   const pane = activePane(tab);
-  if (pane.title) return pane.title;
+  if (titleSource === "shell" && pane.title) return pane.title;
   switch (pane.kind) {
     case "home":
       return t("tabs.home");

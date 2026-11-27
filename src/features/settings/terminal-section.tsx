@@ -3,11 +3,11 @@ import { useTranslation } from "react-i18next";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { Input } from "@/components/ui/input";
 import { useTerminalPrefs } from "@/features/terminal/terminal-prefs-context";
-import { maxFontSize, minFontSize, type TerminalPrefs } from "@/features/terminal/terminal-prefs";
+import { cursorStyles, terminalNumberFields, type TerminalPrefs, type TerminalTitleSource } from "@/features/terminal/terminal-prefs";
 import { TerminalSchemeSelect } from "@/features/terminal/TerminalSchemeSelect";
 import { SettingRow } from "./SettingRow";
 
-type BooleanPref = "ligatures" | "copyOnSelect" | "rightClickPaste" | "confirmMultilinePaste" | "shellIntegration";
+type BooleanPref = "ligatures" | "cursorBlink" | "copyOnSelect" | "rightClickPaste" | "confirmMultilinePaste" | "shellIntegration";
 
 /**
  * A text field that applies its value when it loses focus or on Enter, so a half-typed
@@ -72,9 +72,35 @@ export function TerminalSection() {
     );
   };
 
+  const numberField = (key: keyof typeof terminalNumberFields) => {
+    const label = t(`settings.terminal.${key}.label`);
+    const { min, max, step } = terminalNumberFields[key];
+    return (
+      <SettingRow key={key} label={label} description={t(`settings.terminal.${key}.description`, { min, max })}>
+        <CommitField
+          id={`settings-terminal-${key}`}
+          label={label}
+          type="number"
+          inputMode={key === "lineHeight" ? "decimal" : "numeric"}
+          min={min}
+          max={max}
+          step={step}
+          value={String(prefs[key])}
+          onCommit={(raw) => {
+            const value = Number(raw);
+            if (raw.trim() && Number.isFinite(value)) updatePrefs({ [key]: value });
+          }}
+          className="h-8 w-20 tabular-nums"
+        />
+      </SettingRow>
+    );
+  };
+
   const fontLabel = t("settings.terminal.font.label");
-  const sizeLabel = t("settings.terminal.fontSize.label");
   const schemeLabel = t("settings.terminal.colorScheme.label");
+  const cursorLabel = t("settings.terminal.cursorStyle.label");
+  const separatorLabel = t("settings.terminal.wordSeparator.label");
+  const titleLabel = t("settings.terminal.titleSource.label");
 
   return (
     <>
@@ -87,27 +113,10 @@ export function TerminalSection() {
           className="h-8 w-56 font-mono"
         />
       </SettingRow>
-      <SettingRow
-        label={sizeLabel}
-        description={t("settings.terminal.fontSize.description", { min: minFontSize, max: maxFontSize })}
-      >
-        <CommitField
-          id="settings-terminal-font-size"
-          label={sizeLabel}
-          type="number"
-          inputMode="numeric"
-          min={minFontSize}
-          max={maxFontSize}
-          step={1}
-          value={String(prefs.fontSize)}
-          onCommit={(raw) => {
-            // An empty or non-numeric entry keeps the current size; the rest is clamped.
-            const fontSize = Number(raw);
-            if (raw.trim() && Number.isFinite(fontSize)) updatePrefs({ fontSize });
-          }}
-          className="h-8 w-20 tabular-nums"
-        />
-      </SettingRow>
+      {numberField("fontSize")}
+      {numberField("fontWeight")}
+      {numberField("lineHeight")}
+      {numberField("letterSpacing")}
       {toggle("ligatures")}
       <SettingRow label={schemeLabel} description={t("settings.terminal.colorScheme.description")}>
         <div className="w-56">
@@ -118,6 +127,35 @@ export function TerminalSection() {
             onValueChange={(colorScheme) => updatePrefs({ colorScheme: colorScheme ?? "app" })}
           />
         </div>
+      </SettingRow>
+      <SettingRow label={cursorLabel} description={t("settings.terminal.cursorStyle.description")}>
+        <SegmentedControl
+          label={cursorLabel}
+          value={prefs.cursorStyle}
+          options={cursorStyles.map((value) => ({ value, label: t(`settings.terminal.cursorStyle.options.${value}`) }))}
+          onChange={(cursorStyle) => updatePrefs({ cursorStyle })}
+        />
+      </SettingRow>
+      {toggle("cursorBlink")}
+      <SettingRow label={separatorLabel} description={t("settings.terminal.wordSeparator.description")}>
+        <CommitField
+          id="settings-terminal-word-separator"
+          label={separatorLabel}
+          value={prefs.wordSeparator}
+          onCommit={(wordSeparator) => updatePrefs({ wordSeparator })}
+          className="h-8 w-56 font-mono"
+        />
+      </SettingRow>
+      <SettingRow label={titleLabel} description={t("settings.terminal.titleSource.description")}>
+        <SegmentedControl<TerminalTitleSource>
+          label={titleLabel}
+          value={prefs.titleSource}
+          options={[
+            { value: "shell", label: t("settings.terminal.titleSource.options.shell") },
+            { value: "host", label: t("settings.terminal.titleSource.options.host") },
+          ]}
+          onChange={(titleSource) => updatePrefs({ titleSource })}
+        />
       </SettingRow>
       {toggle("copyOnSelect")}
       {toggle("rightClickPaste")}

@@ -19,7 +19,8 @@ export type WorkspaceCommand =
   /** 0-based; -1 is the last tab. */
   | { type: "goToTab"; index: number }
   | { type: "openPalette" }
-  | { type: "openSettings" };
+  | { type: "openSettings" }
+  | { type: "zoomTerminalFont"; step: 1 | -1 };
 
 /** Where keyboard focus is: a Terminal owns every key but the reserved ones; the rest of the app owns a few more. */
 export type KeyFocus = "terminal" | "app";
@@ -57,17 +58,18 @@ export type ShortcutName =
   | "previousTab"
   | "commandPalette"
   | "settings"
+  | "terminalZoomIn"
+  | "terminalZoomOut"
   | FileHistoryShortcut
   | "find";
 
-interface Binding {
+type Binding = ({ code: string; key?: never } | { key: string; code?: never }) & {
   name?: ShortcutName;
-  code: string;
   mods: Modifier[];
   command: WorkspaceCommand;
   /** Only when focus is outside a Terminal: the chord means something to the shell. */
   appOnly?: true;
-}
+};
 
 const split = (orientation: SplitOrientation): WorkspaceCommand => ({ type: "split", orientation });
 
@@ -80,6 +82,19 @@ const goToTab = (mod: Modifier): Binding[] =>
 
 const paneSwapBindings = (mods: Modifier[]): Binding[] =>
   paneSwapShortcuts.map(({ name, code, direction }) => ({ name, code, mods, command: { type: "swapPane", direction } }));
+
+function zoomBindings(mod: Modifier): Binding[] {
+  const increase: WorkspaceCommand = { type: "zoomTerminalFont", step: 1 };
+  const decrease: WorkspaceCommand = { type: "zoomTerminalFont", step: -1 };
+  // Match the symbol so the shortcut works on layouts with a dedicated plus key and on keypads.
+  return [
+    { name: "terminalZoomIn", key: "+", mods: [mod], command: increase },
+    { key: "+", mods: [mod, "shift"], command: increase },
+    { key: "=", mods: [mod], command: increase },
+    { name: "terminalZoomOut", key: "-", mods: [mod], command: decrease },
+    { key: "-", mods: [mod, "shift"], command: decrease },
+  ];
+}
 
 const shared: Binding[] = [
   { code: "Tab", mods: ["ctrl"], command: { type: "cycleTab", step: 1 } },
@@ -102,6 +117,7 @@ const bindings: Record<Platform, Binding[]> = {
     { code: "BracketLeft", mods: ["meta"], command: { type: "cyclePane", step: -1 } },
     { name: "commandPalette", code: "KeyK", mods: ["meta"], command: { type: "openPalette" } },
     { name: "settings", code: "Comma", mods: ["meta"], command: { type: "openSettings" } },
+    ...zoomBindings("meta"),
     ...goToTab("meta"),
     ...shared,
   ],
@@ -118,6 +134,7 @@ const bindings: Record<Platform, Binding[]> = {
     { code: "KeyP", mods: ["ctrl", "shift"], command: { type: "cyclePane", step: -1 } },
     { name: "commandPalette", code: "KeyK", mods: ["ctrl", "shift"], command: { type: "openPalette" } },
     { name: "settings", code: "Comma", mods: ["ctrl", "shift"], command: { type: "openSettings" } },
+    ...zoomBindings("ctrl"),
     // Ctrl+K is kill-line in readline and emacs, so a Terminal keeps it.
     { code: "KeyK", mods: ["ctrl"], command: { type: "openPalette" }, appOnly: true },
     ...goToTab("alt"),
@@ -141,7 +158,7 @@ const terminalBindings: Record<Platform, TerminalBinding[]> = {
   other: [{ name: "find", code: "KeyF", mods: ["ctrl", "shift"], command: "find" }],
 };
 
-const fileHistoryBindings: (Pick<Binding, "code" | "mods"> & { name: FileHistoryShortcut })[] = [
+const fileHistoryBindings: { code: string; mods: Modifier[]; name: FileHistoryShortcut }[] = [
   { name: "fileBack", code: "ArrowLeft", mods: ["alt"] },
   { name: "fileForward", code: "ArrowRight", mods: ["alt"] },
 ];
@@ -161,7 +178,9 @@ function exactly(chord: KeyChord, mods: Modifier[]): boolean {
  */
 export function matchShortcut(chord: KeyChord, platform: Platform, focus: KeyFocus = "terminal"): WorkspaceCommand | null {
   const binding = bindings[platform].find(
-    (b) => b.code === chord.code && (focus === "app" || !b.appOnly) && exactly(chord, b.mods),
+    (b) => (b.key === undefined ? b.code === chord.code : b.key === chord.key)
+      && (focus === "app" || !b.appOnly)
+      && exactly(chord, b.mods),
   );
   return binding?.command ?? null;
 }
@@ -192,13 +211,14 @@ function keyName(code: string): string {
 export function shortcutLabel(name: ShortcutName, platform: Platform): string {
   const binding = [...bindings[platform], ...terminalBindings[platform], ...fileHistoryBindings].find((b) => b.name === name);
   if (!binding) return "";
+  const key = binding.code === undefined ? binding.key : keyName(binding.code);
   if (platform === "mac") {
     // macOS orders modifiers ⌃⌥⇧⌘.
     const order: Modifier[] = ["ctrl", "alt", "shift", "meta"];
-    return order.filter((m) => binding.mods.includes(m)).map((m) => macSymbols[m]).join("") + keyName(binding.code);
+    return order.filter((m) => binding.mods.includes(m)).map((m) => macSymbols[m]).join("") + key;
   }
   const order: Modifier[] = ["ctrl", "alt", "shift", "meta"];
-  return [...order.filter((m) => binding.mods.includes(m)).map((m) => pcNames[m]), keyName(binding.code)].join("+");
+  return [...order.filter((m) => binding.mods.includes(m)).map((m) => pcNames[m]), key].join("+");
 }
 
 export function currentPlatform(): Platform {
