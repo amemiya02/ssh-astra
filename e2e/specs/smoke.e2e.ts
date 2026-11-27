@@ -158,6 +158,7 @@ describe("sshastra", () => {
 
   it("restores the tab and split layout after restarting and connects only on request", async () => {
     const name = "E2E restored sshd";
+    const firstHostConnected = await $(`[role="tab"][aria-label="${HOST_NAME} (Connected)"]`).isExisting();
     await $('[role="tab"][id]').click();
     await $("button=New Host").click();
     await $("#host-form-name").setValue(name);
@@ -200,7 +201,9 @@ describe("sshastra", () => {
     await restartSmokeApp(browser, async () => {
       const quitDialog = $('[role="dialog"]');
       await expect(quitDialog.$("h2")).toHaveText("Quit SSH Astra?");
-      await expect(quitDialog.$("li=1 Connection")).toBeDisplayed();
+      // The split shares one Connection. The preceding smoke case may have left another open.
+      const connectionCount = firstHostConnected ? "2 Connections" : "1 Connection";
+      await expect(quitDialog.$(`li=${connectionCount}`)).toBeDisplayed();
       // The quit can stop WebDriver before the click response arrives.
       await quitDialog.$("button=Quit").click().catch(() => undefined);
     });
