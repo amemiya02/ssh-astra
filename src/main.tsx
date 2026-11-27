@@ -11,7 +11,7 @@ import { startI18n } from "./i18n";
 import { watchFrontendErrors } from "./lib/ipc/diagnostics";
 import { tauriSettingsBackend } from "./lib/ipc/settings";
 import { browserStore, getSetting, localStorageBackend, startSettings } from "./lib/storage";
-import { applyInitialTheme } from "./theme/theme";
+import { applyInitialAppearance } from "./theme/theme";
 import { ThemeProvider } from "./theme/ThemeProvider";
 
 async function start() {
@@ -19,7 +19,7 @@ async function start() {
   // preferences are moved into it; in a plain browser (`pnpm dev`) they stay in localStorage.
   if (isTauri()) await startSettings(tauriSettingsBackend, browserStore());
   else await startSettings(localStorageBackend(browserStore()));
-  applyInitialTheme();
+  await applyInitialAppearance();
   startI18n();
 
   // Resolve Host ids from the saved workspace only after the Host list is available.

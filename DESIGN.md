@@ -313,9 +313,9 @@ Pickers list light themes first, then dark, Astra's own at the head of each (`ap
 
 **Anatomy.** Left to right: the 48px nav rail, then a resizable Host list column (default 248px, min 200px, max 40%, collapsible), both on `sidebar` with no rule between them; a 6px gutter; the main column on the ground. Top to bottom: the window above a full-width 24px status bar.
 
-**Nav rail.** A 34px drag region clear of the macOS traffic lights, the app mark (the three-star `>_` constellation in primary, 28px), then destinations and views 4px apart: Home, Hosts, Port forwards, SFTP. Local terminal and Settings sit at the bottom. Rail buttons are 36px with 18px icons and a tooltip to the right.
+**Nav rail.** A 34px drag region clear of the macOS traffic lights, the app mark (the three-star `>_` constellation in primary, 28px), then destinations and views 4px apart: Home, Hosts, Port forwards, SFTP. Short viewports tighten those gaps to 2px so Local terminal and Settings stay reachable at the bottom. Rail buttons are 36px with 18px icons and a tooltip to the right.
 
-**Chrome rows.** The sidebar header, horizontal tab strip and dock toggles align in a 34px row. The empty space in the row drags the window. In vertical mode the dock toggles stay across the top beside a full-height drag region. On macOS the leftmost chrome is inset by `--chrome-inset` (30px) to clear the traffic lights.
+**Chrome rows.** The sidebar header, horizontal tab strip and dock toggles align in a 34px row. The empty space in the row drags the window. In vertical mode the dock toggles stay across the top beside a full-height drag region. On macOS `--chrome-inset` keeps the leftmost chrome clear of the native traffic lights at every zoom level.
 
 **Workspace.** Below the top chrome, the Terminal panel and the File panel (docked right, default 340px, min 240px; or bottom, min 140px; keeping its pixel size as the window resizes) are separated by a 6px gutter, with 6px of ground at the sides and bottom of the main column. Home, Settings and Port forwards are tabs that fill the workspace in a `surface` panel.
 
@@ -411,6 +411,8 @@ The privacy toggle sits beside the theme menu. Its pressed state uses the `selec
 The top search field filters settings across all categories. Results keep their category headings and the original controls. Search matches titles, descriptions, and keywords in both English and Simplified Chinese. Clearing the field returns to the selected category. Choosing a category clears the search and scrolls its rows to the top.
 
 The left navigation lists Appearance, Terminal, Files, Connection, Transfers, Updates, and Diagnostics in that order when available. Appearance includes workspace layout and interface language. Updates and Diagnostics use the installed app's native features. The current category uses the `selected` surface, and narrow workspaces place the categories in a horizontally scrolling row above the controls. Shortcuts, Notifications, and Agent access can appear when they have settings available.
+
+Appearance applies interface zoom immediately and remembers the selected percentage from 90% to 125%. The interface font takes a single local font family name and falls back to the system UI stack when that family is unavailable or the field is blank. The Terminal category has its own font family and size controls.
 
 Terminal keyword highlighting uses the active Terminal palette. Settings → Terminal offers a switch for the built-in rules and a list of custom text or regular-expression rules. Matches use xterm decorations in the visible normal buffer.
 

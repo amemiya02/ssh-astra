@@ -44,8 +44,8 @@ const defaultFilesSize: Record<FilePanelDock, string> = { right: "340px", bottom
 
 /** macOS draws the traffic lights over the window (`titleBarStyle: "Overlay"`); only the app has that title bar. */
 const overlayTitleBar = isTauri() && currentPlatform() === "mac";
-/** How far the first column right of the 48px rail must reach to clear the traffic lights (78px wide). */
-const trafficLightInset = "30px";
+/** The native traffic lights are 78px wide even when the 48px rail scales with interface zoom. */
+const trafficLightInset = "max(0px, calc(78px / var(--interface-scale) - 48px))";
 const sidebarSize = "248px";
 
 /**

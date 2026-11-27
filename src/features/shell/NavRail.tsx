@@ -40,7 +40,7 @@ export function NavRail({
       {/* Clear of the macOS traffic lights; also the window's drag handle. */}
       <div data-tauri-drag-region className="h-8.5 w-full shrink-0" />
       <AppMark />
-      <div className="mt-2 flex w-full flex-col items-center gap-1">
+      <div className="mt-2 flex w-full flex-col items-center gap-1 [@media(max-height:340px)]:mt-1 [@media(max-height:340px)]:gap-0.5">
         <RailButton label={t("rail.home")} active={activeKind === "home"} onClick={onHome}>
           <House />
         </RailButton>
