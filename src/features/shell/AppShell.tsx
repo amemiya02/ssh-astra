@@ -7,11 +7,14 @@ import { IconButton } from "@/components/IconButton";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { usePaletteActions, type PaletteAction } from "@/features/palette/palette-actions";
 import { currentPlatform } from "@/features/workspace/shortcuts";
+import { compactTabStripWidth, workspaceSetting } from "@/features/workspace/workspace-prefs";
+import { getSetting, setSetting, useSetting } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import { FilePanelDockContext } from "./file-panel-dock";
 import { NavRail, type NavRailProps } from "./NavRail";
 import { isPanelCollapsed, type FilePanelDock, type SidebarView } from "./shell-layout";
 import { StatusBar, type StatusInfo } from "./StatusBar";
+import { TabStripGutter, verticalTabsMinMainWidth } from "./TabStripGutter";
 import { useShellLayout } from "./use-shell-layout";
 
 export interface AppShellProps {
@@ -53,6 +56,16 @@ export function AppShell({ sidebar, nav, tabs, workspace, filePanel, fullWorkspa
   const { t } = useTranslation();
   const { layout, saveGroup, setDock, setSidebarView } = useShellLayout();
   const { dock, sidebarView } = layout;
+  const [{ tabOrientation, verticalTabWidth, verticalTabsCompact }] = useSetting(workspaceSetting);
+  const verticalTabs = tabOrientation === "vertical";
+  const resizableTabs = verticalTabs && !verticalTabsCompact;
+  const [previewTabWidth, setPreviewTabWidth] = useState<number | null>(null);
+  if (!resizableTabs && previewTabWidth !== null) setPreviewTabWidth(null);
+  const tabWidth = verticalTabsCompact ? compactTabStripWidth : previewTabWidth ?? verticalTabWidth;
+  function saveTabWidth(width: number) {
+    const prefs = getSetting(workspaceSetting);
+    if (prefs.verticalTabWidth !== width) setSetting(workspaceSetting, { ...prefs, verticalTabWidth: width });
+  }
 
   const sidebarRef = usePanelRef();
   const filesRef = usePanelRef();
@@ -220,25 +233,42 @@ export function AppShell({ sidebar, nav, tabs, workspace, filePanel, fullWorkspa
             </aside>
           </ResizablePanel>
           <ResizableHandle className="focus-visible:ring-0" />
-          <ResizablePanel id="main" minSize="320px">
+          <ResizablePanel id="main" minSize={resizableTabs ? `${verticalTabsMinMainWidth + 12}px` : "320px"}>
             <div
-              className="flex h-full min-w-0 flex-col px-1.5"
-              style={{ "--chrome-inset": overlayTitleBar && sidebarCollapsed ? trafficLightInset : "0px" } as CSSProperties}
+              className="relative grid h-full min-w-0 grid-cols-[var(--tab-column)_minmax(0,1fr)_auto] grid-rows-[34px_minmax(0,1fr)] px-1.5"
+              style={{
+                "--chrome-inset": overlayTitleBar && sidebarCollapsed ? trafficLightInset : "0px",
+                "--tab-column": verticalTabs
+                  ? `min(${tabWidth + 6}px, max(${compactTabStripWidth + 6}px, calc(100% - 200px)))`
+                  : "0px",
+              } as CSSProperties}
             >
-              <div className="flex h-8.5 shrink-0 items-center gap-1 pl-[var(--chrome-inset)]">
+              <div className={cn(
+                "min-h-0 min-w-0",
+                verticalTabs ? "relative col-start-1 row-start-2 pb-1.5 pr-1.5" : "col-span-2 col-start-1 row-start-1 pl-[var(--chrome-inset)]",
+              )}>
                 {tabs}
-                {!fullWorkspace && (
-                  <div className="flex items-center gap-0.5" role="group" aria-label={t("files.dockGroup")}>
-                    <DockButton current={dock} dock="bottom" collapsed={filesCollapsed} onSelect={selectDock} />
-                    <DockButton current={dock} dock="right" collapsed={filesCollapsed} onSelect={selectDock} />
-                  </div>
+                {resizableTabs && (
+                  <TabStripGutter
+                    width={tabWidth}
+                    onPreview={setPreviewTabWidth}
+                    onResize={saveTabWidth}
+                    tabListId="workspace-tabs"
+                  />
                 )}
               </div>
+              {verticalTabs && <div data-tauri-drag-region className="col-span-2 col-start-1 row-start-1 ml-[var(--chrome-inset)]" />}
+              {!fullWorkspace && (
+                <div className="col-start-3 row-start-1 ml-1 flex items-center gap-0.5" role="group" aria-label={t("files.dockGroup")}>
+                  <DockButton current={dock} dock="bottom" collapsed={filesCollapsed} onSelect={selectDock} />
+                  <DockButton current={dock} dock="right" collapsed={filesCollapsed} onSelect={selectDock} />
+                </div>
+              )}
               <ResizablePanelGroup
                 id="workspace"
                 groupRef={workspaceRef}
                 orientation={dock === "right" ? "horizontal" : "vertical"}
-                className="min-h-0 flex-1 pb-1.5"
+                className={cn("col-end-4 row-start-2 min-h-0 min-w-0 pb-1.5", verticalTabs ? "col-start-2" : "col-start-1")}
                 defaultLayout={layout.groups[workspaceGroup(dock)]}
                 onLayoutChange={(next) => {
                   if ("files" in next) setFilesCollapsed(isPanelCollapsed(next, "files"));

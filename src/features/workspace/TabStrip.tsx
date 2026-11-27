@@ -1,4 +1,4 @@
-import { Columns2, House, Lock, Plus, Rows2, Settings, SquareTerminal, Waypoints, X } from "lucide-react";
+import { ChevronRight, Columns2, House, Lock, PanelLeftClose, PanelLeftOpen, Plus, Rows2, Settings, SquareTerminal, Waypoints, X } from "lucide-react";
 import {
   DndContext,
   PointerSensor,
@@ -11,17 +11,21 @@ import {
   type DragMoveEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { IconButton } from "@/components/IconButton";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { HostMonogram } from "@/features/hosts/HostMonogram";
 import { hueClasses } from "@/features/hosts/hostHue";
 import type { TerminalTitleSource } from "@/features/terminal/terminal-prefs";
+import { getSetting, setSetting, useSetting } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import { TabMenu } from "./TabMenu";
 import { shortcutLabel, type Platform } from "./shortcuts";
 import type { TabActivity } from "./tab-activity";
+import { groupTabsByHost, type TabGroup } from "./tab-groups";
+import { workspaceSetting } from "./workspace-prefs";
 import {
   activePane,
   canSplit,
@@ -91,28 +95,55 @@ export function TabStrip({
 }: TabStripProps) {
   const { t } = useTranslation();
   const { unread, flashing } = useStore(activity.store);
+  const [{ tabOrientation, verticalTabsCompact, groupTabsByHost: grouping }] = useSetting(workspaceSetting);
+  const vertical = tabOrientation === "vertical";
+  const compact = vertical && verticalTabsCompact;
+  const groups = useMemo((): TabGroup[] => vertical && grouping
+    ? groupTabsByHost(tabs)
+    : tabs.map((tab) => ({ type: "tab", tab })), [grouping, tabs, vertical]);
+  const ordered = groups.flatMap((group) => group.type === "host" ? group.tabs : [group.tab]);
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
+  const visible = groups.flatMap((group) => group.type === "host"
+    ? collapsed.has(group.host.id) ? [] : group.tabs
+    : [group.tab]);
+  const focusableTabId = visible.find((tab) => tab.id === activeId)?.id ?? visible[0]?.id;
+
+  function toggleHost(hostId: string) {
+    setCollapsed((closed) => {
+      const next = new Set(closed);
+      if (next.has(hostId)) next.delete(hostId);
+      else next.add(hostId);
+      return next;
+    });
+  }
+
+  function toggleCompact() {
+    const prefs = getSetting(workspaceSetting);
+    setSetting(workspaceSetting, { ...prefs, verticalTabsCompact: !prefs.verticalTabsCompact });
+  }
   const selected = tabs.find((tab) => tab.id === activeId);
-  const listRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [drop, setDrop] = useState<DropTarget | null>(null);
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (!(event.target instanceof Element) || !event.currentTarget.contains(event.target)) return;
-    if (event.key === "Delete" && selected) {
+    const target = event.target;
+    if (!(target instanceof HTMLElement) || !event.currentTarget.contains(target) || target.getAttribute("role") !== "tab") return;
+    const index = visible.findIndex((tab) => tabId(tab.id) === target.id);
+    if (event.key === "Delete") {
       event.preventDefault();
-      if (!selected.locked) onTabAction({ type: "close", id: selected.id });
+      const tab = visible[index];
+      if (tab && !tab.locked) onTabAction({ type: "close", id: tab.id });
       return;
     }
-    const index = tabs.findIndex((tab) => tab.id === activeId);
-    const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
+    const step = vertical ? { ArrowDown: 1, ArrowUp: -1 }[event.key] : { ArrowRight: 1, ArrowLeft: -1 }[event.key];
     let next: Tab | undefined;
-    if (step !== undefined) next = tabs[(index + step + tabs.length) % tabs.length];
-    if (event.key === "Home") next = tabs[0];
-    if (event.key === "End") next = tabs.at(-1);
+    if (step !== undefined) next = visible[(index + step + visible.length) % visible.length];
+    if (event.key === "Home") next = visible[0];
+    if (event.key === "End") next = visible.at(-1);
     if (!next) return;
     event.preventDefault();
     onActivate(next.id);
-    listRef.current?.querySelector<HTMLElement>(`#${tabId(next.id)}`)?.focus();
+    document.getElementById(tabId(next.id))?.focus();
   };
 
   // @dnd-kit (pointer events), not HTML5 drag and drop: Tauri's native file drop eats the latter on Windows.
@@ -123,8 +154,10 @@ export function TabStrip({
     const over = event.over;
     if (!over || over.id === event.active.id) return null;
     const start = event.activatorEvent as PointerEvent;
-    const x = (start.clientX ?? 0) + event.delta.x;
-    return { id: String(over.id), side: x < over.rect.left + over.rect.width / 2 ? "before" : "after" };
+    const before = vertical
+      ? start.clientY + event.delta.y < over.rect.top + over.rect.height / 2
+      : start.clientX + event.delta.x < over.rect.left + over.rect.width / 2;
+    return { id: String(over.id), side: before ? "before" : "after" };
   };
 
   const showDrop = (event: DragMoveEvent) => {
@@ -144,8 +177,146 @@ export function TabStrip({
     if (to !== from) onMove(id, to);
   };
 
+  const ordinals = new Map<string, number>();
+  const kinds = new Map<PaneKind["kind"], number>();
+  for (const tab of tabs) {
+    const kind = activePane(tab).kind;
+    const ordinal = (kinds.get(kind) ?? 0) + 1;
+    kinds.set(kind, ordinal);
+    ordinals.set(tab.id, ordinal);
+  }
+
+  function renderTab(tab: Tab, grouped = false, hidden = false) {
+    const active = tab.id === activeId;
+    const kind = activePane(tab).kind;
+    const title = tabTitle(tab, t, ordinals.get(tab.id)!, titleSource);
+    const status = tabStatus(tab);
+    const hasUnreadOutput = !active && unread.has(tab.id);
+    const bellRang = flashing.has(tab.id);
+    const details = [
+      status && t(`tabs.status.${status}`),
+      tab.locked && t("tabs.locked"),
+      hasUnreadOutput && t("tabs.unreadOutput"),
+      bellRang && t("tabs.terminalBell"),
+    ].filter(Boolean).join(", ");
+    const label = details ? `${title} (${details})` : title;
+    const TabIcon = tab.layout.type === "split"
+      ? tab.layout.orientation === "horizontal" ? Columns2 : Rows2
+      : kindIcons[kind];
+    const hue = tabHue(tab);
+    return (
+      <DraggableTab
+        key={tab.id}
+        id={tab.id}
+        hidden={hidden}
+        className={cn(
+          "group/tab relative flex h-7 shrink-0 items-center rounded-lg border transition-colors data-dragging:opacity-50",
+          vertical ? "w-full min-w-0" : "max-w-52 min-w-28",
+          active
+            ? "bg-surface text-foreground border-border"
+            : "text-muted-foreground hover:bg-accent/60 hover:text-foreground active:bg-accent border-transparent",
+        )}
+        onAuxClick={() => !tab.locked && onTabAction({ type: "close", id: tab.id })}
+        menu={<TabMenu
+          tab={tab}
+          title={title}
+          vertical={vertical}
+          onAction={(action) => {
+            if (vertical && action.type === "closeRight") {
+              const index = ordered.findIndex(({ id }) => id === tab.id);
+              onTabAction({ ...action, after: ordered.slice(index + 1).map(({ id }) => id) });
+            } else {
+              onTabAction(action);
+            }
+          }}
+        />}
+      >
+        {drop?.id === tab.id && dragging !== tab.id && (
+          <span
+            aria-hidden
+            className={cn(
+              "bg-ring absolute rounded-full",
+              vertical
+                ? cn("inset-x-1 h-0.5", drop.side === "before" ? "-top-0.5" : "-bottom-0.5")
+                : cn("inset-y-1 w-0.5", drop.side === "before" ? "-left-0.5" : "-right-0.5"),
+            )}
+          />
+        )}
+        <button
+          id={tabId(tab.id)}
+          type="button"
+          role="tab"
+          aria-selected={active}
+          aria-controls={tabPanelId(tab.id)}
+          aria-keyshortcuts={tab.locked ? undefined : "Delete"}
+          aria-label={label}
+          tabIndex={!hidden && tab.id === focusableTabId ? 0 : -1}
+          title={label}
+          className={cn(
+            "focus-visible:ring-ring/50 flex h-full min-w-0 flex-1 items-center gap-2 rounded-lg outline-none focus-visible:ring-[3px]",
+            compact ? "justify-center" : cn("pr-1 pl-2.5", grouped && "pl-4"),
+          )}
+          onClick={() => onActivate(tab.id)}
+        >
+          {status ? (
+            <span className="grid size-3.5 shrink-0 place-items-center" aria-hidden>
+              <span
+                data-status={status}
+                className={cn("size-2 rounded-full", statusDot[status], status === "connecting" && "animate-pulse")}
+              />
+            </span>
+          ) : (
+            <TabIcon className="size-3.5 shrink-0 opacity-70" aria-hidden />
+          )}
+          {!compact && <span className="truncate">{title}</span>}
+          {hasUnreadOutput && <span aria-hidden data-unread-output className={cn(
+            "bg-primary size-1.5 shrink-0 rounded-full",
+            compact && "absolute top-1 right-1",
+          )} />}
+          {bellRang && <span aria-hidden data-terminal-bell className="pointer-events-none absolute inset-0 rounded-lg" />}
+        </button>
+        {hue && (
+          <span
+            aria-hidden
+            className={cn(
+              "pointer-events-none absolute inset-x-2.5 -bottom-px h-0.5 rounded-full",
+              !tab.color && hueClasses[hue].line,
+              !tab.color && !active && "opacity-40",
+            )}
+            style={tab.color ? { backgroundColor: `var(--ansi-${tab.color}-ink)` } : undefined}
+          />
+        )}
+        {tab.locked ? (
+          <span aria-hidden className={cn(
+            "text-muted-foreground grid shrink-0 place-items-center",
+            compact ? "absolute right-0.5 bottom-0.5 size-3" : "mr-1 size-5",
+          )}>
+            <Lock className={compact ? "size-2.5" : "size-3.5"} />
+          </span>
+        ) : (
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label={t("tabs.close", { title })}
+            className={cn(
+              "text-muted-foreground hover:bg-accent hover:text-foreground active:bg-accent/70 focus-visible:ring-ring/50 grid shrink-0 place-items-center rounded-md outline-none focus-visible:opacity-100 focus-visible:ring-2",
+              compact ? "absolute right-0 bottom-0 size-4" : "mr-1 size-5",
+              (compact || !active) && "opacity-0 group-hover/tab:opacity-100",
+            )}
+            onClick={() => onTabAction({ type: "close", id: tab.id })}
+          >
+            <X className={compact ? "size-3" : "size-3.5"} aria-hidden />
+          </button>
+        )}
+      </DraggableTab>
+    );
+  }
+
   return (
-    <div className="flex h-full min-w-0 flex-1 items-center gap-1">
+    <div className={cn(
+      "flex h-full min-w-0 flex-1 gap-1",
+      vertical ? "min-h-0 flex-col" : "items-center",
+    )}>
       <DndContext
         sensors={sensors}
         collisionDetection={pointerWithin}
@@ -156,141 +327,100 @@ export function TabStrip({
         onDragCancel={() => endDrag(null)}
       >
         <div
-          ref={listRef}
+          id="workspace-tabs"
           role="tablist"
           aria-label={t("tabs.listLabel")}
-          className="flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]"
+          aria-orientation={tabOrientation}
+          className={cn(
+            "flex min-w-0 gap-1 [scrollbar-width:none]",
+            vertical ? "min-h-0 flex-1 flex-col overflow-y-auto" : "items-center overflow-x-auto",
+          )}
           onKeyDown={onKeyDown}
         >
-          {tabs.map((tab, index) => {
-            const active = tab.id === activeId;
-            const pane = activePane(tab);
-            const kind = pane.kind;
-            const ordinal = tabs.slice(0, index + 1).filter((other) => activePane(other).kind === kind).length;
-            const title = tabTitle(tab, t, ordinal, titleSource);
-            const status = tabStatus(tab);
-            const hasUnreadOutput = !active && unread.has(tab.id);
-            const bellRang = flashing.has(tab.id);
-            const details = [
-              status && t(`tabs.status.${status}`),
-              tab.locked && t("tabs.locked"),
-              hasUnreadOutput && t("tabs.unreadOutput"),
+          {groups.flatMap((group) => {
+            if (group.type === "tab") return [renderTab(group.tab)];
+            const closed = collapsed.has(group.host.id);
+            const hasUnread = closed && group.tabs.some(({ id }) => id !== activeId && unread.has(id));
+            const bellRang = closed && group.tabs.some(({ id }) => flashing.has(id));
+            const current = closed && group.tabs.some(({ id }) => id === activeId);
+            const title = t("tabs.hostGroup", { name: group.host.name });
+            const label = [
+              title,
+              hasUnread && t("tabs.unreadOutput"),
               bellRang && t("tabs.terminalBell"),
             ].filter(Boolean).join(", ");
-            const label = details ? `${title} (${details})` : title;
-            const TabIcon = tab.layout.type === "split"
-              ? tab.layout.orientation === "horizontal" ? Columns2 : Rows2
-              : kindIcons[kind];
-            const hue = tabHue(tab);
-            return (
-              <DraggableTab
-                key={tab.id}
-                id={tab.id}
+            return [
+              <button
+                key={`host:${group.host.id}`}
+                type="button"
+                aria-expanded={!closed}
+                aria-current={current || undefined}
+                aria-controls={group.tabs.map(({ id }) => tabId(id)).join(" ")}
+                aria-label={label}
+                title={label}
                 className={cn(
-                  "group/tab relative flex h-7 max-w-52 min-w-28 shrink-0 items-center rounded-lg border transition-colors data-dragging:opacity-50",
-                  active
-                    ? "bg-surface text-foreground border-border"
-                    : "text-muted-foreground hover:bg-accent/60 hover:text-foreground active:bg-accent border-transparent",
+                  "hover:bg-accent focus-visible:ring-ring/50 relative flex h-7 w-full min-w-0 shrink-0 items-center gap-1 rounded-lg text-xs outline-none focus-visible:ring-[3px]",
+                  current ? "bg-surface text-foreground" : "text-muted-foreground",
+                  compact ? "justify-center gap-0.5" : "px-2",
                 )}
-                onAuxClick={() => !tab.locked && onTabAction({ type: "close", id: tab.id })}
-                menu={<TabMenu tab={tab} title={title} onAction={onTabAction} />}
+                onClick={() => toggleHost(group.host.id)}
               >
-                {drop?.id === tab.id && dragging !== tab.id && (
-                  <span
-                    aria-hidden
-                    className={cn(
-                      "bg-ring absolute inset-y-1 w-0.5 rounded-full",
-                      drop.side === "before" ? "-left-0.5" : "-right-0.5",
-                    )}
-                  />
-                )}
-                <button
-                  id={tabId(tab.id)}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  aria-controls={tabPanelId(tab.id)}
-                  aria-keyshortcuts={tab.locked ? undefined : "Delete"}
-                  aria-label={label}
-                  tabIndex={active ? 0 : -1}
-                  title={label}
-                  className="focus-visible:ring-ring/50 flex h-full min-w-0 flex-1 items-center gap-2 rounded-lg pr-1 pl-2.5 outline-none focus-visible:ring-[3px]"
-                  onClick={() => onActivate(tab.id)}
-                >
-                  {status ? (
-                    <span className="grid size-3.5 shrink-0 place-items-center" aria-hidden>
-                      <span
-                        data-status={status}
-                        className={cn("size-2 rounded-full", statusDot[status], status === "connecting" && "animate-pulse")}
-                      />
-                    </span>
-                  ) : (
-                    <TabIcon className="size-3.5 shrink-0 opacity-70" aria-hidden />
-                  )}
-                  <span className="truncate">{title}</span>
-                  {hasUnreadOutput && <span aria-hidden data-unread-output className="bg-primary size-1.5 shrink-0 rounded-full" />}
-                  {bellRang && <span aria-hidden data-terminal-bell className="pointer-events-none absolute inset-0 rounded-lg" />}
-                </button>
-                {hue && (
-                  <span
-                    aria-hidden
-                    className={cn(
-                      "pointer-events-none absolute inset-x-2.5 -bottom-px h-0.5 rounded-full",
-                      !tab.color && hueClasses[hue].line,
-                      !tab.color && !active && "opacity-40",
-                    )}
-                    style={tab.color ? { backgroundColor: `var(--ansi-${tab.color}-ink)` } : undefined}
-                  />
-                )}
-                {tab.locked ? (
-                  <span aria-hidden className="text-muted-foreground mr-1 grid size-5 shrink-0 place-items-center">
-                    <Lock className="size-3.5" />
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    tabIndex={-1}
-                    aria-label={t("tabs.close", { title })}
-                    className={cn(
-                      "text-muted-foreground hover:bg-accent hover:text-foreground active:bg-accent/70 focus-visible:ring-ring/50 mr-1 grid size-5 shrink-0 place-items-center rounded-md outline-none focus-visible:opacity-100 focus-visible:ring-2",
-                      !active && "opacity-0 group-hover/tab:opacity-100",
-                    )}
-                    onClick={() => onTabAction({ type: "close", id: tab.id })}
-                  >
-                    <X className="size-3.5" aria-hidden />
-                  </button>
-                )}
-              </DraggableTab>
-            );
+                <ChevronRight aria-hidden className={cn("shrink-0", compact ? "size-3" : "size-3.5", !closed && "rotate-90")} />
+                {compact ? <HostMonogram host={group.host} /> : <span className="truncate">{group.host.name}</span>}
+                {hasUnread && <span aria-hidden data-unread-output className={cn(
+                  "bg-primary size-1.5 shrink-0 rounded-full",
+                  compact && "absolute top-1 right-1",
+                )} />}
+                {bellRang && <span aria-hidden data-terminal-bell className="pointer-events-none absolute inset-0 rounded-lg" />}
+              </button>,
+              ...group.tabs.map((tab) => renderTab(tab, true, closed)),
+            ];
           })}
         </div>
       </DndContext>
-      <IconButton
-        label={t("tabs.newLocalTerminal")}
-        shortcut={shortcutLabel("newTab", platform)}
-        onClick={onNewLocalTerminal}
-      >
-        <Plus />
-      </IconButton>
-      <div data-tauri-drag-region className="h-full min-w-4 flex-1" />
-      {selected && canSplit(selected) && (
-        <>
+      <div className={cn(
+        vertical ? "flex shrink-0 items-center justify-center gap-1" : "contents",
+        compact && "flex-col",
+      )}>
+        <IconButton
+          label={t("tabs.newLocalTerminal")}
+          shortcut={shortcutLabel("newTab", platform)}
+          tooltipSide={vertical ? "right" : "bottom"}
+          onClick={onNewLocalTerminal}
+        >
+          <Plus />
+        </IconButton>
+        {!vertical && <div data-tauri-drag-region className="h-full min-w-4 flex-1" />}
+        {selected && canSplit(selected) && (
+          <>
+            <IconButton
+              label={t("tabs.splitRight")}
+              shortcut={shortcutLabel("splitRight", platform)}
+              tooltipSide={vertical ? "right" : "bottom"}
+              onClick={() => onSplit("horizontal")}
+            >
+              <Columns2 />
+            </IconButton>
+            <IconButton
+              label={t("tabs.splitDown")}
+              shortcut={shortcutLabel("splitDown", platform)}
+              tooltipSide={vertical ? "right" : "bottom"}
+              onClick={() => onSplit("vertical")}
+            >
+              <Rows2 />
+            </IconButton>
+          </>
+        )}
+        {vertical && (
           <IconButton
-            label={t("tabs.splitRight")}
-            shortcut={shortcutLabel("splitRight", platform)}
-            onClick={() => onSplit("horizontal")}
+            label={t(compact ? "tabs.showTitles" : "tabs.showIconsOnly")}
+            tooltipSide="right"
+            onClick={toggleCompact}
           >
-            <Columns2 />
+            {compact ? <PanelLeftOpen /> : <PanelLeftClose />}
           </IconButton>
-          <IconButton
-            label={t("tabs.splitDown")}
-            shortcut={shortcutLabel("splitDown", platform)}
-            onClick={() => onSplit("vertical")}
-          >
-            <Rows2 />
-          </IconButton>
-        </>
-      )}
+        )}
+      </div>
     </div>
   );
 }
@@ -299,11 +429,13 @@ export function TabStrip({
 function DraggableTab({
   id,
   className,
+  hidden,
   onAuxClick,
   menu,
   children,
 }: {
   id: string;
+  hidden: boolean;
   className: string;
   /** Middle-click. */
   onAuxClick(): void;
@@ -322,6 +454,7 @@ function DraggableTab({
           }}
           {...drag.listeners}
           data-dragging={drag.isDragging || undefined}
+          hidden={hidden}
           className={className}
           onAuxClick={(event) => {
             if (event.button === 1) onAuxClick();

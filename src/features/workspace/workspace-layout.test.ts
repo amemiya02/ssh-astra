@@ -257,13 +257,30 @@ describe("workspace startup", () => {
   });
 
   it("defaults to layout-only restoration and confirmation and repairs unknown options", () => {
-    expect(workspaceSetting.parse(undefined)).toEqual({ restoreTabs: "layout", confirmClose: true });
-    expect(workspaceSetting.parse({ restoreTabs: "unknown", confirmClose: "false" })).toEqual({
+    expect(workspaceSetting.parse(undefined)).toMatchObject({ restoreTabs: "layout", confirmClose: true });
+    expect(workspaceSetting.parse({ restoreTabs: "unknown", confirmClose: "false" })).toMatchObject({
       restoreTabs: "layout", confirmClose: true,
     });
-    expect(workspaceSetting.parse({ restoreTabs: "connect" })).toEqual({ restoreTabs: "connect", confirmClose: true });
-    expect(workspaceSetting.parse({ restoreTabs: "none", confirmClose: false })).toEqual({
+    expect(workspaceSetting.parse({ restoreTabs: "connect" })).toMatchObject({ restoreTabs: "connect", confirmClose: true });
+    expect(workspaceSetting.parse({ restoreTabs: "none", confirmClose: false })).toMatchObject({
       restoreTabs: "none", confirmClose: false,
+    });
+  });
+
+  it("repairs tab strip preferences in settings from older or hand-edited files", () => {
+    expect(workspaceSetting.parse({ restoreTabs: "connect" })).toMatchObject({
+      tabOrientation: "horizontal",
+      verticalTabWidth: 192,
+      verticalTabsCompact: false,
+      groupTabsByHost: false,
+    });
+    expect(workspaceSetting.parse({
+      tabOrientation: "vertical", verticalTabWidth: 400, verticalTabsCompact: true, groupTabsByHost: true,
+    })).toMatchObject({
+      tabOrientation: "vertical",
+      verticalTabWidth: 320,
+      verticalTabsCompact: true,
+      groupTabsByHost: true,
     });
   });
 });

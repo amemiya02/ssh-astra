@@ -140,6 +140,11 @@
     "invalidName": "这是 Windows 保留的名称，或名称中含有 Windows 不允许的字符。"
   },
   "tabs": {
+    "resizeTabStrip": "调整标签栏宽度",
+    "showIconsOnly": "仅显示标签图标",
+    "showTitles": "显示标签标题",
+    "hostGroup": "{{name}} 的标签",
+    "closeBelow": "关闭下方标签",
     "sftp": "SFTP",
     "listLabel": "已打开的标签页",
     "localTerminal": "本地终端",
@@ -676,6 +681,18 @@
     "confirmClose": {
       "label": "关闭终端前确认",
       "description": "关闭已连接的远程终端前询问。"
+    },
+    "tabOrientation": {
+      "label": "标签方向",
+      "description": "将标签排列在工作区顶部或左侧。",
+      "options": {
+        "horizontal": "横向",
+        "vertical": "纵向"
+      }
+    },
+    "groupTabsByHost": {
+      "label": "按 Host 分组",
+      "description": "将同一 Host 的多个标签放入可折叠的分组。"
     },
     "restoreTabs": {
       "label": "恢复标签",

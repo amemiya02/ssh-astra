@@ -377,7 +377,7 @@ it("saves the confirmation opt-out and lets Settings turn it back on", async () 
   expect(dialog()?.querySelector('[role="checkbox"]')?.getAttribute("aria-checked")).toBe("false");
   await clickButton("Don't ask again", dialog()!);
   await clickButton("Close", dialog()!);
-  expect(settingsFile.workspacePreferences).toEqual({ restoreTabs: "none", confirmClose: false });
+  expect(settingsFile.workspacePreferences).toMatchObject({ restoreTabs: "none", confirmClose: false });
 
   await unmount();
   await startSettings(settingsBackend);
@@ -392,7 +392,7 @@ it("saves the confirmation opt-out and lets Settings turn it back on", async () 
   await clickButton("On", setting);
   await clickButton("Close Second");
   expect(dialog()?.querySelector("h2")?.textContent).toBe("Close 1 connected Terminal?");
-  expect(settingsFile.workspacePreferences).toEqual({ restoreTabs: "none", confirmClose: true });
+  expect(settingsFile.workspacePreferences).toMatchObject({ restoreTabs: "none", confirmClose: true });
 });
 
 it("shows the count and confirmation controls in Chinese", async () => {
