@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, HashSet};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use super::{
-    decode_windows_text, ssh_address, valid_label, ConfigHost, ImportIssue, ImportProblem,
-    ParsedConfig,
+    decode_windows_text, portable_key_path, relative_session_path, ssh_address, valid_label,
+    ConfigHost, ImportIssue, ImportProblem, ParsedConfig,
 };
 
 /// Parses `.xsh` session files supplied as (relative path, contents). The
@@ -16,7 +16,7 @@ pub fn parse_xshell<'a>(
     let mut parsed = ParsedConfig::default();
     let mut sessions = Vec::new();
     for (path, bytes) in files {
-        let Some(parts) = session_path(path) else {
+        let Some(parts) = relative_session_path(path, "xsh") else {
             parsed
                 .issues
                 .push(issue("", true, ImportProblem::XshellFile));
@@ -55,22 +55,6 @@ pub fn parse_xshell<'a>(
         parsed.hosts.push(host);
     }
     parsed
-}
-
-fn session_path(path: &Path) -> Option<Vec<&str>> {
-    if !path.extension()?.to_str()?.eq_ignore_ascii_case("xsh") {
-        return None;
-    }
-    path.components()
-        .map(|component| {
-            let Component::Normal(part) = component else {
-                return None;
-            };
-            let part = part.to_str()?;
-            (valid_label(part) && !part.trim().is_empty() && !part.contains(['\\', ':']))
-                .then_some(part)
-        })
-        .collect()
 }
 
 fn issue(entry: &str, dropped: bool, problem: ImportProblem) -> ImportIssue {
@@ -298,7 +282,7 @@ impl Endpoint {
             return Err(ImportProblem::XshellFile);
         }
         let key = key.filter(|key| configured(key));
-        let identity_file = key.and_then(key_path);
+        let identity_file = key.and_then(portable_key_path);
         Ok(Self {
             address: address.to_owned(),
             port,
@@ -325,22 +309,4 @@ impl Endpoint {
             group_path,
         }
     }
-}
-
-fn key_path(value: &str) -> Option<PathBuf> {
-    let value = value
-        .strip_prefix('"')
-        .and_then(|path| path.strip_suffix('"'))
-        .unwrap_or(value);
-    let windows_absolute =
-        matches!(value.as_bytes(), [drive, b':', b'\\' | b'/', ..] if drive.is_ascii_alphabetic());
-    if !valid_label(value) || value.contains("://") {
-        return None;
-    }
-    // Xshell's managed user key name alone is not a portable filesystem path.
-    (Path::new(value).is_absolute()
-        || windows_absolute
-        || value.starts_with("~/")
-        || value.starts_with("\\\\"))
-    .then(|| PathBuf::from(value))
 }
