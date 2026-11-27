@@ -33,8 +33,11 @@ impl ShellCommand {
 
     /// The user's own shell, configured for an xterm-compatible front end.
     pub fn default_shell() -> Self {
-        Self::default()
-            .env("TERM", "xterm-256color")
+        Self::default().with_xterm_env()
+    }
+
+    pub(super) fn with_xterm_env(self) -> Self {
+        self.env("TERM", "xterm-256color")
             .env("COLORTERM", "truecolor")
     }
 

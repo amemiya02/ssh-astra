@@ -207,7 +207,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
     const kind: PaneKind = pane.kind === "remote-terminal"
       ? { kind: pane.kind, host: pane.host, initialCwd: terminalCwds.lastReported(pane.id) }
       : pane.kind === "local-terminal"
-        ? { kind: pane.kind, cwd: pane.cwd }
+        ? { kind: pane.kind, cwd: pane.cwd, shellId: pane.shellId }
         : localTerminal;
     dispatch({ type: "split", orientation, pane: newPane(kind), paneId: pane.id });
   };
@@ -453,6 +453,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
             }}
             onMove={(id, to) => dispatch({ type: "move", id, to })}
             onNewLocalTerminal={openLocalTerminal}
+            onNewLocalShell={(shellId) => openTab({ kind: "local-terminal", shellId })}
             onSplit={split}
             onSaveTemporaryHost={hostsController.openTemporaryHostEditor}
           />

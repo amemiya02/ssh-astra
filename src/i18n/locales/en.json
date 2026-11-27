@@ -752,6 +752,15 @@
       "failed": "Could not write the Recording. {{message}}"
     },
     "pressEnterToRestart": "Press Enter to start a new shell.",
+    "localShell": {
+      "choose": "Choose a Local terminal shell",
+      "systemDefault": "System default",
+      "loading": "Finding installed shells…",
+      "failed": "Could not list installed shells.",
+      "empty": "No installed shells found.",
+      "unavailable": "Selected shell unavailable",
+      "fallback": "The selected shell is unavailable. Using the system default shell."
+    },
     "menu": {
       "label": "Terminal menu",
       "clear": "Clear screen"
@@ -1092,6 +1101,10 @@
     "on": "On",
     "off": "Off",
     "terminal": {
+      "localShell": {
+        "label": "Default local shell",
+        "description": "Shell used when opening a new Local terminal."
+      },
       "font": {
         "label": "Font",
         "description": "A CSS font list; the first font installed on this computer is used."

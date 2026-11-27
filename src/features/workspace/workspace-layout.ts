@@ -1,6 +1,7 @@
 import { defineSection } from "@/lib/storage";
 import { isTemporaryHost, type Host } from "@/lib/ipc/hosts";
 import { ansiHues } from "@/theme/monogram-ink";
+import { parseLocalShellId } from "@/features/terminal/terminal-prefs";
 import { layoutPanes, maxPanesPerTab, startupTabs, type Pane, type PaneLayout, type Tab, type TabsState } from "./tabs";
 import type { RestoreTabs } from "./workspace-prefs";
 
@@ -8,7 +9,7 @@ type HostedPaneKind = Extract<Pane, { host: unknown }>["kind"];
 
 export type SavedPane = { id: string } & (
   | { kind: "home" | "settings" | "transfers" }
-  | { kind: "local-terminal"; cwd?: string }
+  | { kind: "local-terminal"; cwd?: string; shellId?: string }
   | { kind: HostedPaneKind; hostId: string }
 );
 
@@ -41,8 +42,14 @@ function serializeLayout(layout: PaneLayout): PaneLayout<SavedPane> | undefined 
   const { pane } = layout;
   const { id } = pane;
   if ("host" in pane && isTemporaryHost(pane.host)) return undefined;
-  if (pane.kind === "local-terminal" && pane.cwd !== undefined) {
-    return { type: "pane", pane: { id, kind: pane.kind, cwd: pane.cwd } };
+  if (pane.kind === "local-terminal") {
+    const { cwd, shellId } = pane;
+    return { type: "pane", pane: {
+      id,
+      kind: pane.kind,
+      ...(cwd === undefined ? {} : { cwd }),
+      ...(shellId === undefined ? {} : { shellId }),
+    } };
   }
   return { type: "pane", pane: "host" in pane ? { id, kind: pane.kind, hostId: pane.host.id } : { id, kind: pane.kind } };
 }
@@ -96,7 +103,11 @@ function parsePane(raw: unknown): SavedPane | undefined {
       return { id, kind };
     case "local-terminal": {
       const { cwd } = raw;
-      return typeof cwd === "string" && cwd.startsWith("/") && !cwd.includes("\0") ? { id, kind, cwd } : { id, kind };
+      const shellId = parseLocalShellId(raw.shellId);
+      const pane: SavedPane = { id, kind };
+      if (typeof cwd === "string" && cwd.startsWith("/") && !cwd.includes("\0")) pane.cwd = cwd;
+      if (shellId !== undefined) pane.shellId = shellId;
+      return pane;
     }
     case "remote-terminal":
     case "sftp":

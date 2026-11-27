@@ -42,6 +42,8 @@ export interface TerminalPrefs {
    * Read by the core too (`TerminalSettings`); applies to Terminals opened afterwards.
    */
   shellIntegration: boolean;
+  /** The shell ID used by new Local terminals. Null selects the system default. */
+  localShell: string | null;
   /** Log output from newly opened Terminals. Read by the core. */
   autoLog: boolean;
   /** A user-selected directory for Terminal logs and Recordings. Null uses the app directory. */
@@ -82,6 +84,7 @@ export const defaultTerminalPrefs: TerminalPrefs = {
   copyOnSelect: true,
   rightClickPaste: false,
   shellIntegration: true,
+  localShell: null,
   autoLog: false,
   logDirectory: null,
   confirmMultilinePaste: true,
@@ -97,6 +100,10 @@ export function zoomTerminalFont(step: 1 | -1): void {
   const prefs = getSetting(terminalSetting);
   const fontSize = Math.min(maxFontSize, Math.max(minFontSize, prefs.fontSize + step));
   if (fontSize !== prefs.fontSize) setSetting(terminalSetting, { ...prefs, fontSize });
+}
+
+export function parseLocalShellId(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 && !/\p{Cc}/u.test(value) ? value : undefined;
 }
 
 /** Coerces untrusted input (a saved value, a settings field) into valid preferences. */
@@ -131,6 +138,7 @@ export function normalizeTerminalPrefs(raw: Partial<Record<keyof TerminalPrefs, 
     copyOnSelect: bool(raw.copyOnSelect, d.copyOnSelect),
     rightClickPaste: bool(raw.rightClickPaste, d.rightClickPaste),
     shellIntegration: bool(raw.shellIntegration, d.shellIntegration),
+    localShell: parseLocalShellId(raw.localShell) ?? d.localShell,
     autoLog: bool(raw.autoLog, d.autoLog),
     logDirectory: typeof raw.logDirectory === "string" && raw.logDirectory.trim() ? raw.logDirectory : null,
     confirmMultilinePaste: bool(raw.confirmMultilinePaste, d.confirmMultilinePaste),

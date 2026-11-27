@@ -212,6 +212,7 @@ pub fn run() {
             commands::diagnostics::diagnostics_report,
             commands::credentials::host_credentials_clear,
             commands::credentials::global_proxy_password_clear,
+            commands::terminal::local_terminal_shells,
             commands::terminal::local_terminal_open,
             commands::terminal::remote_terminal_open,
             commands::terminal::prompt_answer,

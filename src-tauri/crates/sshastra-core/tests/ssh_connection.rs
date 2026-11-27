@@ -237,8 +237,7 @@ async fn legacy_algorithms_require_opt_in_before_host_key_verification_and_login
     let error = manager
         .connect(&target, prompter.clone())
         .await
-        .err()
-        .expect("default settings must reject the legacy-only sshd");
+        .expect_err("default settings must reject the legacy-only sshd");
     assert!(
         error.to_string().contains("No common Kex algorithm"),
         "{error}"
@@ -254,8 +253,7 @@ async fn legacy_algorithms_require_opt_in_before_host_key_verification_and_login
     let error = manager
         .connect(&enabled, declining.clone())
         .await
-        .err()
-        .expect("the legacy host key still needs to be trusted");
+        .expect_err("the legacy host key still needs to be trusted");
     assert!(matches!(&error, ConnectError::HostKeyDeclined), "{error}");
     assert_eq!(declining.asked(), [host_key_question(&sshd)]);
 
