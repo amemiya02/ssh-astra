@@ -8,6 +8,7 @@ import { startI18n } from "@/i18n";
 import type { Host } from "@/lib/ipc/hosts";
 import { TabPanels } from "./TabPanels";
 import { TabStrip } from "./TabStrip";
+import { createTabActivity } from "./tab-activity";
 import { emptyTabs, newPane, tabsReducer, type Pane, type TabsAction } from "./tabs";
 
 // Keep the real workspace and reducer while substituting a Terminal that can hold user input.
@@ -61,11 +62,14 @@ function renderWorkspace(initialPane: Pane = local("a")) {
   document.body.append(container);
   root = createRoot(container);
   let state = emptyTabs;
+  const activity = createTabActivity();
   function dispatch(action: TabsAction) {
     state = tabsReducer(state, action);
+    activity.updateWorkspace(state.activeId, state.tabs.map((tab) => tab.id));
     root!.render(
       <TooltipProvider>
         <TabStrip
+          activity={activity}
           tabs={state.tabs}
           activeId={state.activeId}
           platform="mac"
@@ -77,6 +81,7 @@ function renderWorkspace(initialPane: Pane = local("a")) {
           onSplit={() => {}}
         />
         <TabPanels
+          activity={activity}
           tabs={state.tabs}
           activeId={state.activeId}
           renderHome={() => null}

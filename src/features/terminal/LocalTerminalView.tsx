@@ -2,6 +2,7 @@ import type { Terminal as XTerm } from "@xterm/xterm";
 import { useCallback, useContext, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { BroadcastPaneContext } from "@/features/workspace/broadcast";
+import { TabActivityContext } from "@/features/workspace/tab-activity";
 import {
   closeTerminal,
   openLocalTerminal,
@@ -30,6 +31,7 @@ interface LocalTerminalViewProps {
 export function LocalTerminalView({ active = true, initialCwd, onCwd, onTitleChange }: LocalTerminalViewProps) {
   const { t } = useTranslation();
   const { broadcast, tabId, paneId } = useContext(BroadcastPaneContext) ?? {};
+  const { activity, tabId: activityTabId } = useContext(TabActivityContext) ?? {};
   // Read through refs so a language change or a new callback never recreates the Terminal.
   const tRef = useRef(t);
   const onTitleChangeRef = useRef(onTitleChange);
@@ -71,6 +73,7 @@ export function LocalTerminalView({ active = true, initialCwd, onCwd, onTitleCha
       openLocalTerminal(size(), (event) => {
         if (disposed || exited) return;
         if (event.type === "output") {
+          if (activityTabId !== undefined && event.data.length > 0) activity?.output(activityTabId);
           xterm.write(event.data);
           return;
         }
@@ -128,6 +131,9 @@ export function LocalTerminalView({ active = true, initialCwd, onCwd, onTitleCha
     const onResize = xterm.onResize((next) => {
       if (id !== undefined) void resizeTerminal(id, next);
     });
+    const onBell = xterm.onBell(() => {
+      if (activityTabId !== undefined) activity?.bell(activityTabId);
+    });
     start(initialCwdRef.current);
 
     return () => {
@@ -136,9 +142,10 @@ export function LocalTerminalView({ active = true, initialCwd, onCwd, onTitleCha
       pendingInput = "";
       onData.dispose();
       onResize.dispose();
+      onBell.dispose();
       if (id !== undefined) void closeTerminal(id);
     };
-  }, [broadcast, paneId, tabId]);
+  }, [activity, activityTabId, broadcast, paneId, tabId]);
 
   return <XtermView active={active} onTitleChange={onTitleChange} attach={attach} />;
 }

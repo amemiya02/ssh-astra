@@ -155,6 +155,8 @@
     "cancel": "取消",
     "lock": "锁定标签",
     "locked": "已锁定",
+    "unreadOutput": "终端有未读输出",
+    "terminalBell": "终端响铃",
     "color": {
       "label": "标签颜色",
       "automatic": "自动",
@@ -742,6 +744,15 @@
         "options": {
           "shell": "Shell 标题",
           "host": "Host 名称"
+        }
+      },
+      "bell": {
+        "label": "终端响铃",
+        "description": "选择程序触发终端响铃时的提醒方式。",
+        "options": {
+          "none": "无",
+          "flash": "标签闪烁",
+          "sound": "声音"
         }
       },
       "copyOnSelect": {
