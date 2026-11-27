@@ -71,6 +71,7 @@ export type TerminalEvent =
   | { type: "terminalLog" | "recording"; status: TerminalOutputStatus }
   | { type: "agentScreen"; request: AgentScreenRequest }
   | { type: "localShellFallback" }
+  | { type: "moveFence"; token: string }
   | { type: "exit"; code: number | null };
 
 /** Raw message shape on a Terminal's channel (see `src-tauri/src/commands/terminal.rs`). */
@@ -84,6 +85,7 @@ export type TerminalMessage =
   | { recording: TerminalOutputStatus }
   | { agentScreen: AgentScreenRequest }
   | { localShellFallback: true }
+  | { moveFence: string }
   | { exitCode: number | null };
 
 export function decodeTerminalMessage(message: TerminalMessage): TerminalEvent {
@@ -95,6 +97,7 @@ export function decodeTerminalMessage(message: TerminalMessage): TerminalEvent {
   if ("terminalLog" in message) return { type: "terminalLog", status: message.terminalLog };
   if ("recording" in message) return { type: "recording", status: message.recording };
   if ("agentScreen" in message) return { type: "agentScreen", request: message.agentScreen };
+  if ("moveFence" in message) return { type: "moveFence", token: message.moveFence };
   if ("localShellFallback" in message) return { type: "localShellFallback" };
   return { type: "exit", code: message.exitCode };
 }
@@ -118,8 +121,23 @@ export function resolveWslPaths(distribution: string, paths: string[]): Promise<
   return invoke("local_terminal_wsl_paths", { distribution, paths });
 }
 
+const pendingWrites = new Map<TerminalId, Set<Promise<void>>>();
+
 export function writeTerminal(id: TerminalId, data: string, generation?: number): Promise<void> {
-  return invoke("terminal_write", { id, data, ...(generation !== undefined && { generation }) });
+  const write = invoke<void>("terminal_write", { id, data, ...(generation !== undefined && { generation }) });
+  let pending = pendingWrites.get(id);
+  if (!pending) pendingWrites.set(id, pending = new Set());
+  pending.add(write);
+  const settled = () => {
+    pending.delete(write);
+    if (pending.size === 0) pendingWrites.delete(id);
+  };
+  void write.then(settled, settled);
+  return write;
+}
+
+export async function drainTerminalWrites(ids: readonly TerminalId[]): Promise<void> {
+  await Promise.allSettled(ids.flatMap((id) => [...pendingWrites.get(id) ?? []]));
 }
 
 /** Changes directories on the same prompt the File panel observed, if it is still idle. */

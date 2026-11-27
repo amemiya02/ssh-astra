@@ -13,6 +13,7 @@ mod macos_menu;
 mod prompts;
 #[cfg(desktop)]
 mod quit;
+mod terminal_handoff;
 #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
 mod wake;
 mod windows;
@@ -209,6 +210,12 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             windows::window_new,
+            windows::tab_move::window_prepare_tab_move,
+            windows::tab_move::window_open_tab_move,
+            windows::tab_move::window_incoming_tab_move,
+            windows::tab_move::window_stage_moved_terminal,
+            windows::tab_move::window_complete_tab_move,
+            windows::tab_move::window_cancel_tab_move,
             windows::window_try_close,
             windows::window_startup_workspaces,
             windows::window_settings_saved,

@@ -13,6 +13,7 @@ import { transfersStore } from "@/features/transfers/transfersStore";
 import { useOsFileDrop } from "@/features/transfers/use-os-file-drop";
 import { privacyModeSetting, workspaceHostName } from "@/features/workspace/privacy-mode";
 import {
+  connectPromptChannel,
   openRemoteTerminal,
   readCommandError,
   refusal,
@@ -27,6 +28,7 @@ import { reconnectTerminal, setTerminalTitle, type ConnectionState, type Termina
 import { transferHost } from "@/lib/ipc/transfers";
 import { useSetting } from "@/lib/storage";
 import type { ConnectionStatus, ReconnectProgress } from "@/features/workspace/tabs";
+import { incomingPane, stageMovedTerminal } from "@/features/workspace/tab-window-move";
 import { TerminalSurface, type OpenTerminal } from "./TerminalSurface";
 
 /** The tab dot while a dropped Connection is retried. */
@@ -58,6 +60,7 @@ interface RemoteTerminalViewProps {
   host: Host;
   initialCwd?: string;
   expectedTarget?: SshLinkTarget;
+  savedHostTerminal?: boolean;
   /** Whether this is the focused pane of the shown tab. */
   active?: boolean;
   /** Non-focused splits in the shown tab can also receive dropped files. */
@@ -87,6 +90,7 @@ export function RemoteTerminalView({
   host,
   initialCwd,
   expectedTarget,
+  savedHostTerminal,
   active = true,
   visible = active,
   onEditHost,
@@ -150,77 +154,81 @@ export function RemoteTerminalView({
       signal.throwIfAborted();
       let opening = true;
       let exited = false;
-      const registered = await openRemoteTerminal(
-        host.id,
-        size,
-        (event) => {
-          if (signal.aborted) return;
-          if (event.type === "cwd") return onCwdRef.current?.(event.path);
-          if (event.type === "exit") exited = true;
-          onEvent(event);
-          if (event.type !== "connection") return;
-          const state = event.state;
-          setConnected(state.state === "connected");
-          if (state.state !== "connected") {
-            terminalCwds.resetReport(paneId);
-            setDropQuestion(null);
-          }
-          if (state.state === "disconnected" && state.reportReconnectFailure) {
-            notifySystem({ category: "reconnect" }, (t) => ({
-              title: t("notifications.reconnect.title"),
-              body: t("notifications.reconnect.body", { host: displayNameRef.current }),
-            }));
-          }
-          onStatusChangeRef.current?.(
-            statusAfterDrop[state.state],
-            state.state === "reconnecting" ? { attempt: state.attempt, attempts: state.attempts } : undefined,
-          );
+      const handleEvent: Parameters<OpenTerminal>[1] = (event) => {
+        if (signal.aborted) return;
+        if (event.type === "cwd") return onCwdRef.current?.(event.path);
+        if (event.type === "exit") exited = true;
+        onEvent(event);
+        if (event.type !== "connection") return;
+        const state = event.state;
+        setConnected(state.state === "connected");
+        if (state.state !== "connected") {
+          terminalCwds.resetReport(paneId);
+          setDropQuestion(null);
+        }
+        if (state.state === "disconnected" && state.reportReconnectFailure) {
+          notifySystem({ category: "reconnect" }, (t) => ({
+            title: t("notifications.reconnect.title"),
+            body: t("notifications.reconnect.body", { host: displayNameRef.current }),
+          }));
+        }
+        onStatusChangeRef.current?.(
+          statusAfterDrop[state.state],
+          state.state === "reconnecting" ? { attempt: state.attempt, attempts: state.attempts } : undefined,
+        );
+      };
+      const ask = (prompt: ConnectPrompt) => new Promise<PromptAnswer>((resolve) => {
+        if (signal.aborted) {
+          resolve(refusal(prompt));
+          return;
+        }
+        const cancel = () => {
+          setPending((current) => current?.prompt.id === prompt.id ? null : current);
+          resolve(refusal(prompt));
+        };
+        signal.addEventListener("abort", cancel, { once: true });
+        setPending({
+          prompt,
+          resolve: (answer) => {
+            signal.removeEventListener("abort", cancel);
+            resolve(answer);
+          },
+        });
+      });
+      const updates: Parameters<typeof connectPromptChannel>[1] = {
+        onProgress(progress) {
+          if (signal.aborted || exited) return;
+          const observed = { ...progress, receivedAt: performance.now() };
+          if (opening) setSteps((previous) => updateConnectionSteps(previous, observed));
+          else setRecovery((current) => current?.state.state === "reconnecting"
+            ? { ...current, steps: updateConnectionSteps(current.steps, observed) }
+            : current);
         },
-        (prompt) => new Promise((resolve) => {
-          if (signal.aborted) {
-            resolve(refusal(prompt));
-            return;
-          }
-          const cancel = () => {
-            setPending((current) => current?.prompt.id === prompt.id ? null : current);
-            resolve(refusal(prompt));
-          };
-          signal.addEventListener("abort", cancel, { once: true });
-          setPending({
-            prompt,
-            resolve: (answer) => {
-              signal.removeEventListener("abort", cancel);
-              resolve(answer);
-            },
+        onReconnect(state) {
+          if (signal.aborted || exited) return;
+          opening = false;
+          setRecovery((current) => {
+            if (state.state === "connected") return null;
+            return { state, steps: state.state === "reconnecting" ? [] : current?.steps ?? [] };
           });
-        }),
-        {
-          onProgress(progress) {
-            if (signal.aborted || exited) return;
-            const observed = { ...progress, receivedAt: performance.now() };
-            if (opening) setSteps((previous) => updateConnectionSteps(previous, observed));
-            else setRecovery((current) => current?.state.state === "reconnecting"
-              ? { ...current, steps: updateConnectionSteps(current.steps, observed) }
-              : current);
-          },
-          onReconnect(state) {
-            if (signal.aborted || exited) return;
-            opening = false;
-            setRecovery((current) => {
-              if (state.state === "connected") return null;
-              return { state, steps: state.state === "reconnecting" ? [] : current?.steps ?? [] };
-            });
-          },
         },
-        initialCwd,
-        expectedTarget,
+      };
+      const moved = incomingPane(paneId);
+      if (moved) {
+        await stageMovedTerminal(moved.id, handleEvent, connectPromptChannel(ask, updates));
+        opening = false;
+        onSavedHost.current = savedHostTerminal === true;
+        return moved.id;
+      }
+      const registered = await openRemoteTerminal(
+        host.id, size, handleEvent, ask, updates, initialCwd, expectedTarget,
       ).finally(() => {
         opening = false;
       });
       onSavedHost.current = registered.savedHost;
       return registered.id;
     },
-    [host.id, initialCwd, expectedTarget, paneId],
+    [host.id, initialCwd, expectedTarget, paneId, savedHostTerminal],
   );
   const reconnect = useCallback(() => {
     if (terminalId.current !== null) void reconnectTerminal(terminalId.current);

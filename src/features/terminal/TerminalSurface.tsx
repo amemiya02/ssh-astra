@@ -4,6 +4,8 @@ import { useTranslation } from "react-i18next";
 import { notifySystem } from "@/features/notifications/system-notifications";
 import { BroadcastPaneContext } from "@/features/workspace/broadcast";
 import { TabActivityContext } from "@/features/workspace/tab-activity";
+import { incomingPane, movedTerminalReady, movingSourcePane, receiveMoveFence, registerMovableTerminal, restoreTerminalScreen } from "@/features/workspace/tab-window-move";
+import { terminalCwds } from "@/features/files/terminalCwds";
 import { e2eHooks } from "@/lib/e2e";
 import type { HostId } from "@/lib/ipc/hosts";
 import {
@@ -106,7 +108,10 @@ export function TerminalSurface({
     });
     let exited = false;
     let connected = true;
-    let generation = 0;
+    const moved = incomingPane(paneId);
+    let canResize = moved === undefined;
+    let generation = moved?.generation ?? 0;
+    let unregisterMove: (() => void) | undefined;
     let unregisterWriter: (() => void) | undefined;
     const sendInput = (id: TerminalId, data: string, generation?: number) => {
       shellIntegration.input(paneId, data);
@@ -117,7 +122,7 @@ export function TerminalSurface({
       const sourceGeneration = generation;
       const paste = async () => {
         const path = await saveClipboardImage(opened, { host: hostRef.current, generation: sourceGeneration });
-        if (path === null || imagePasteRef.current !== paste) return;
+        if (path === null || imagePasteRef.current !== paste || movingSourcePane(paneId)) return;
         const text = quoteDroppedPaths("sh", [path]);
         if (text === null) throw new Error("Cannot quote this path for the remote shell");
         const bracketed = xterm.modes.bracketedPasteMode && !xterm.options.ignoreBracketedPasteMode;
@@ -139,87 +144,126 @@ export function TerminalSurface({
     };
     shellIntegration.open(paneId);
     const output = terminalOutputs.track(paneId);
+    if (moved?.log) output.status("log", { state: "active" });
+    if (moved?.recording) output.status("recording", { state: "active" });
     const size = () => ({ cols: xterm.cols, rows: xterm.rows });
 
-    openRef
-      .current(size(), (event) => {
-        if (lifetime.signal.aborted || exited) return;
-        if (event.type === "output") {
-          if (activityTabId !== undefined && event.data.length > 0) activity?.output(activityTabId);
-          if (e2eHooks) e2eHooks.trackOutput(xterm, event.data);
-          else xterm.write(event.data);
-          return;
+    async function openSurface(onEvent: (event: TerminalEvent) => void) {
+      if (moved) {
+        await Promise.resolve();
+        lifetime.signal.throwIfAborted();
+        await restoreTerminalScreen(xterm, moved, lifetime.signal);
+        if (moved.shell) {
+          const { command } = moved.shell;
+          shellIntegration.restore(paneId, {
+            ...moved.shell,
+            command: command && { ...command, startedAt: command.startedAt - performance.timeOrigin },
+          });
         }
-        if (event.type === "shellIntegration") {
-          const finished = shellIntegration.event(paneId, event.event, xterm.buffer.active.type === "normal");
-          if (finished) notifyCommandFinished(labelRef.current, finished);
-          return;
-        }
-        if (event.type === "connection") {
-          connected = event.state.state === "connected";
-          if (connected) {
-            generation++;
-            shellIntegration.open(paneId, id);
-            if (id !== undefined) {
-              enableImagePaste(id);
-              registerWriter(id);
-            }
-          } else {
-            imagePasteRef.current = null;
-            removeWriter();
-            shellIntegration.close(paneId);
+      }
+      return openRef.current(size(), onEvent, lifetime.signal);
+    }
+
+    void openSurface((event) => {
+      if (lifetime.signal.aborted || exited) return;
+      if (event.type === "moveFence") {
+        receiveMoveFence(paneId, event.token);
+        return;
+      }
+      if (event.type === "output") {
+        if (activityTabId !== undefined && event.data.length > 0) activity?.output(activityTabId);
+        if (e2eHooks) e2eHooks.trackOutput(xterm, event.data);
+        else xterm.write(event.data);
+        return;
+      }
+      if (event.type === "shellIntegration") {
+        const finished = shellIntegration.event(paneId, event.event, xterm.buffer.active.type === "normal");
+        if (finished) notifyCommandFinished(labelRef.current, finished);
+        return;
+      }
+      if (event.type === "connection") {
+        connected = event.state.state === "connected";
+        if (connected) {
+          generation++;
+          shellIntegration.open(paneId, id);
+          if (id !== undefined) {
+            enableImagePaste(id);
+            registerWriter(id);
           }
-          return;
-        }
-        if (event.type === "terminalLog" || event.type === "recording") {
-          output.status(event.type === "terminalLog" ? "log" : "recording", event.status);
-          return;
-        }
-        if (event.type === "agentScreen") {
-          const { requestId, scrollbackLines } = event.request;
-          void answerAgentScreen(requestId, readAgentScreen(xterm, scrollbackLines)).catch(() => undefined);
-          return;
-        }
-        if (event.type !== "exit") return;
-        exited = true;
-        imagePasteRef.current = null;
-        removeWriter();
-        output.close();
-        if (id !== undefined) void closeTerminal(id).catch(() => undefined);
-        id = undefined;
-        shellIntegration.close(paneId);
-        const message =
-          event.code === null
-            ? tRef.current("terminal.exitedUnknown")
-            : tRef.current("terminal.exited", { code: event.code });
-        xterm.write(`\r\n\x1b[2m${message}\x1b[0m\r\n`);
-        xterm.options.cursorBlink = false;
-        onTitleChangeRef.current?.("");
-        onExitRef.current?.();
-      }, lifetime.signal)
-      .then(
-        (opened) => {
-          if (lifetime.signal.aborted || exited) {
-            void closeTerminal(opened);
-            return;
-          }
-          id = opened;
-          shellIntegration.attach(paneId, opened);
-          output.attach(opened);
-          if (connected) {
-            enableImagePaste(opened);
-            registerWriter(opened);
-          }
-          onOpenedRef.current?.(opened);
-          // Catch up on any resize that happened while connecting.
-          void resizeTerminal(opened, size());
-        },
-        (error: unknown) => {
-          if (lifetime.signal.aborted) return;
+        } else {
+          imagePasteRef.current = null;
+          removeWriter();
           shellIntegration.close(paneId);
-          onOpenErrorRef.current?.(error);
-        },
-      );
+        }
+        return;
+      }
+      if (event.type === "terminalLog" || event.type === "recording") {
+        output.status(event.type === "terminalLog" ? "log" : "recording", event.status);
+        return;
+      }
+      if (event.type === "agentScreen") {
+        const { requestId, scrollbackLines } = event.request;
+        void answerAgentScreen(requestId, readAgentScreen(xterm, scrollbackLines)).catch(() => undefined);
+        return;
+      }
+      if (event.type !== "exit") return;
+      exited = true;
+      imagePasteRef.current = null;
+      removeWriter();
+      output.close();
+      unregisterMove?.();
+      if (id !== undefined) void closeTerminal(id).catch(() => undefined);
+      id = undefined;
+      shellIntegration.close(paneId);
+      const message =
+        event.code === null
+          ? tRef.current("terminal.exitedUnknown")
+          : tRef.current("terminal.exited", { code: event.code });
+      xterm.write(`\r\n\x1b[2m${message}\x1b[0m\r\n`);
+      xterm.options.cursorBlink = false;
+      onTitleChangeRef.current?.("");
+      onExitRef.current?.();
+    }).then(
+      (opened) => {
+        if (lifetime.signal.aborted || exited) {
+          void closeTerminal(opened);
+          return;
+        }
+        id = opened;
+        shellIntegration.attach(paneId, opened);
+        output.attach(opened);
+        if (connected) {
+          enableImagePaste(opened);
+          registerWriter(opened);
+        }
+        unregisterMove = registerMovableTerminal(paneId, opened, xterm, () => {
+          const shell = shellIntegration.store.getState().get(paneId);
+          return {
+            cwd: terminalCwds.lastReported(paneId),
+            generation,
+            shell: shell && {
+              ...shell,
+              command: shell.command && { ...shell.command, startedAt: performance.timeOrigin + shell.command.startedAt },
+            },
+          };
+        });
+        onOpenedRef.current?.(opened);
+        if (moved?.cwd) terminalCwds.report(paneId, moved.cwd);
+        // Catch up on any resize that happened while connecting or reattaching.
+        const resize = () => {
+          if (lifetime.signal.aborted || id !== opened) return;
+          canResize = true;
+          void resizeTerminal(opened, size());
+        };
+        if (moved) void movedTerminalReady(paneId)?.then(resize);
+        else resize();
+      },
+      (error: unknown) => {
+        if (lifetime.signal.aborted) return;
+        shellIntegration.close(paneId);
+        onOpenErrorRef.current?.(error);
+      },
+    );
 
     const onData = xterm.onData((data) => {
       if (id !== undefined) void sendInput(id, data);
@@ -228,7 +272,7 @@ export function TerminalSurface({
       if (buffer.type === "alternate") shellIntegration.invalidatePrompt(paneId);
     });
     const onResize = xterm.onResize((next) => {
-      if (id !== undefined) void resizeTerminal(id, next);
+      if (id !== undefined && canResize) void resizeTerminal(id, next);
     });
     const onBell = xterm.onBell(() => {
       if (activityTabId !== undefined) activity?.bell(activityTabId);
@@ -240,6 +284,7 @@ export function TerminalSurface({
       output.close();
       stopNotifications();
       removeWriter();
+      unregisterMove?.();
       onData.dispose();
       onResize.dispose();
       onBufferChange.dispose();

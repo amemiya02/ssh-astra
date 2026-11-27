@@ -1,6 +1,7 @@
-import { BookmarkPlus, Copy, Palette, Pencil, X } from "lucide-react";
+import { BookmarkPlus, Copy, Palette, Pencil, SquareArrowOutUpRight, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useStore } from "zustand";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenuCheckboxItem,
@@ -18,16 +19,19 @@ import { Input } from "@/components/ui/input";
 import { TerminalOutputMenuItems } from "@/features/terminal/TerminalOutputMenuItems";
 import { isTemporaryHost, type TemporaryHost } from "@/lib/ipc/hosts";
 import { ansiHues } from "@/theme/monogram-ink";
+import { canMoveToWindow, liveMoveTerminals } from "./tab-window-move";
 import { activePane, canDuplicateTab, tabId, tabPanes, type Tab, type TabMenuAction } from "./tabs";
 
-export function TabMenu({ tab, title, vertical, onAction, onSaveTemporaryHost }: {
+export function TabMenu({ tab, title, vertical, onAction, onSaveTemporaryHost, onMoveToWindow }: {
   tab: Tab;
   title: string;
   vertical: boolean;
   onAction(action: TabMenuAction): void;
   onSaveTemporaryHost?(host: TemporaryHost): void;
+  onMoveToWindow?(tab: Tab): void;
 }) {
   const { t } = useTranslation();
+  const moveAvailable = useStore(liveMoveTerminals, (live) => canMoveToWindow(tab, live));
   const [draft, setDraft] = useState<string | null>(null);
   const openingHostEditor = useRef(false);
   const [temporaryHost] = [activePane(tab), ...tabPanes(tab)].flatMap((pane) =>
@@ -76,6 +80,12 @@ export function TabMenu({ tab, title, vertical, onAction, onSaveTemporaryHost }:
           <Copy />
           {t("tabs.duplicate")}
         </ContextMenuItem>
+        {onMoveToWindow && (
+          <ContextMenuItem disabled={!moveAvailable} onSelect={() => onMoveToWindow(tab)}>
+            <SquareArrowOutUpRight />
+            {t("tabs.moveToNewWindow")}
+          </ContextMenuItem>
+        )}
         {temporaryHost && onSaveTemporaryHost && (
           <ContextMenuItem onSelect={() => {
             openingHostEditor.current = true;

@@ -5,6 +5,7 @@ import { showToast } from "@/features/toasts/toastStore";
 import { useOsFileDrop } from "@/features/transfers/use-os-file-drop";
 import { BroadcastPaneContext } from "@/features/workspace/broadcast";
 import { TabActivityContext } from "@/features/workspace/tab-activity";
+import { incomingPane, movedTerminalReady, movingSourcePane, receiveMoveFence, registerMovableTerminal, restoreTerminalScreen, stageMovedTerminal } from "@/features/workspace/tab-window-move";
 import {
   closeTerminal,
   openLocalTerminal,
@@ -12,6 +13,7 @@ import {
   resizeTerminal,
   saveClipboardImage,
   writeTerminal,
+  type TerminalEvent,
   type TerminalId,
 } from "@/lib/ipc/terminal";
 import { getSetting } from "@/lib/storage";
@@ -65,6 +67,11 @@ export function LocalTerminalView({ active = true, visible = active, initialCwd,
   const attach = useCallback((xterm: XTerm) => {
     let id: TerminalId | undefined;
     let disposed = false;
+    const lifetime = new AbortController();
+    let unregisterMove: (() => void) | undefined;
+    let lastCwd = initialCwdRef.current;
+    let fallback = false;
+    let canResize = false;
     let unregisterWriter: (() => void) | undefined;
     let releaseOutput: (() => void) | undefined;
     // ConPTY can ask xterm for its cursor position before the open call returns an id.
@@ -79,9 +86,12 @@ export function LocalTerminalView({ active = true, visible = active, initialCwd,
       setRunning(false);
       unregisterWriter?.();
       unregisterWriter = undefined;
+      unregisterMove?.();
+      unregisterMove = undefined;
       releaseOutput?.();
       releaseOutput = undefined;
       id = undefined;
+      canResize = false;
       pendingInput = "";
       waitingForRestart = true;
       xterm.options.cursorBlink = false;
@@ -89,25 +99,33 @@ export function LocalTerminalView({ active = true, visible = active, initialCwd,
       onTitleChangeRef.current?.("");
     };
 
-    const start = (cwd?: string) => {
+    const start = (cwd?: string, moved?: ReturnType<typeof incomingPane>) => {
       waitingForRestart = false;
       xterm.options.cursorBlink = true;
       // The exit message can arrive before the open call resolves; this shell must not be adopted then.
       let exited = false;
       const output = paneId === undefined ? undefined : terminalOutputs.track(paneId);
       releaseOutput = output?.close;
-      openLocalTerminal(size(), (event) => {
+      if (moved?.log) output?.status("log", { state: "active" });
+      if (moved?.recording) output?.status("recording", { state: "active" });
+      const onEvent = (event: TerminalEvent) => {
         if (disposed || exited) return;
+        if (event.type === "moveFence") {
+          if (paneId !== undefined) receiveMoveFence(paneId, event.token);
+          return;
+        }
         if (event.type === "output") {
           if (activityTabId !== undefined && event.data.length > 0) activity?.output(activityTabId);
           xterm.write(event.data);
           return;
         }
         if (event.type === "cwd") {
+          lastCwd = event.path;
           onCwdRef.current?.(event.path);
           return;
         }
         if (event.type === "localShellFallback") {
+          fallback = true;
           setShellFallback(true);
           return;
         }
@@ -125,18 +143,32 @@ export function LocalTerminalView({ active = true, visible = active, initialCwd,
             : tRef.current("terminal.exited", { code: event.code });
         xterm.write(`\r\n${dim(message)}\r\n`);
         offerRestart();
-      }, cwd, shellId ?? getSetting(terminalSetting).localShell ?? undefined).then(
+      };
+      const open = async () => {
+        if (!moved?.local) return openLocalTerminal(size(), onEvent, cwd, shellId ?? getSetting(terminalSetting).localShell ?? undefined);
+        await Promise.resolve();
+        lifetime.signal.throwIfAborted();
+        await restoreTerminalScreen(xterm, moved, lifetime.signal);
+        await stageMovedTerminal(moved.id, onEvent);
+        fallback = moved.local.shellFallback;
+        setShellFallback(fallback);
+        lastCwd = moved.cwd;
+        if (lastCwd !== undefined) onCwdRef.current?.(lastCwd);
+        return { id: moved.id, shellProgram: moved.local.shellProgram, wslDistribution: moved.local.wslDistribution };
+      };
+      void open().then(
         ({ id: opened, shellProgram, wslDistribution }) => {
           if (disposed || exited) {
             void closeTerminal(opened);
             return;
           }
           id = opened;
+          canResize = moved === undefined;
           const isCurrent = () => !disposed && !exited && id === opened;
           const pastePaths = async (paths: string[]) => {
             if (!isCurrent()) return;
             const input = wslDistribution ? await resolveWslPaths(wslDistribution, paths) : { shellProgram, paths };
-            if (!isCurrent()) return;
+            if (!isCurrent() || (paneId !== undefined && movingSourcePane(paneId))) return;
             const text = input && quoteDroppedPaths(input.shellProgram, input.paths);
             if (text === null) throw new Error("Cannot quote these paths for the shell");
             const bracketed = xterm.modes.bracketedPasteMode && !xterm.options.ignoreBracketedPasteMode;
@@ -165,8 +197,20 @@ export function LocalTerminalView({ active = true, visible = active, initialCwd,
               () => xterm.modes.bracketedPasteMode && !xterm.options.ignoreBracketedPasteMode,
             );
           }
+          if (paneId !== undefined) {
+            unregisterMove = registerMovableTerminal(paneId, opened, xterm, () => ({
+              cwd: lastCwd,
+              local: { shellProgram, wslDistribution, shellFallback: fallback },
+            }));
+          }
           // Catch up on any resize that happened while the shell was starting.
-          void resizeTerminal(opened, size());
+          if (moved && paneId !== undefined) {
+            void movedTerminalReady(paneId)?.then(() => {
+              if (!isCurrent()) return;
+              canResize = true;
+              void resizeTerminal(opened, size());
+            });
+          } else void resizeTerminal(opened, size());
         },
         (error: unknown) => {
           if (disposed || exited) return;
@@ -183,21 +227,24 @@ export function LocalTerminalView({ active = true, visible = active, initialCwd,
       if (id !== undefined) void writeTerminal(id, data);
       else if (!waitingForRestart) pendingInput += data;
       else if (data === "\r") {
+        fallback = false;
         setShellFallback(false);
         xterm.write("\r\n");
         start();
       }
     });
     const onResize = xterm.onResize((next) => {
-      if (id !== undefined) void resizeTerminal(id, next);
+      if (id !== undefined && canResize) void resizeTerminal(id, next);
     });
     const onBell = xterm.onBell(() => {
       if (activityTabId !== undefined) activity?.bell(activityTabId);
     });
-    start(initialCwdRef.current);
+    start(initialCwdRef.current, paneId === undefined ? undefined : incomingPane(paneId));
 
     return () => {
       disposed = true;
+      lifetime.abort();
+      unregisterMove?.();
       pasteDroppedPaths.current = null;
       imagePasteRef.current = null;
       releaseOutput?.();

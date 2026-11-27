@@ -107,6 +107,7 @@ export type TabsAction =
   | { type: "activate"; id: string }
   | { type: "cycle"; step: 1 | -1 }
   | { type: "move"; id: string; to: number }
+  | { type: "removeMovedTab"; id: string }
   | { type: "split"; orientation: SplitOrientation; pane: Pane; paneId?: string }
   | ({ type: "resizeSplit"; tabId: string } & SplitResize)
   | { type: "focusPane"; paneId: string }
@@ -287,6 +288,8 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
     }
     case "duplicateTab":
       return duplicateTab(state, action);
+    case "removeMovedTab":
+      return closeTabs(state, action.id, "close", undefined, true);
     case "close":
     case "closeOthers":
       return closeTabs(state, action.id, action.type);
@@ -450,12 +453,13 @@ function closeTabs(
   id: string,
   mode: "close" | "closeOthers" | "closeRight",
   after?: readonly string[],
+  moving = false,
 ): TabsState {
   const index = state.tabs.findIndex((tab) => tab.id === id);
   if (index === -1) return state;
   const displayedAfter = after && new Set(after);
   const tabs = state.tabs.filter((tab, at) => {
-    if (tab.locked) return true;
+    if (tab.locked && !moving) return true;
     if (mode === "closeOthers") return at === index;
     if (mode === "closeRight") return displayedAfter ? !displayedAfter.has(tab.id) : at <= index;
     return at !== index;

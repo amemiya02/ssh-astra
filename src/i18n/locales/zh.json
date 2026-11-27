@@ -346,6 +346,8 @@
     "closeOthers": "关闭其他标签",
     "closeRight": "关闭右侧标签",
     "duplicate": "复制标签",
+    "moveToNewWindow": "移到新窗口",
+    "moveToNewWindowFailed": "无法将标签移到新窗口。",
     "rename": "重命名标签",
     "renameHint": "清空标题即可恢复自动命名。",
     "title": "标签标题",
