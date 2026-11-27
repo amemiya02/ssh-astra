@@ -11,6 +11,8 @@
   },
   "hosts": {
     "title": "Hosts",
+    "basicInfo": "基本信息",
+    "advanced": "高级",
     "emptyTitle": "还没有 Host",
     "emptyBody": "添加的 Host 会显示在这里，双击即可打开终端。",
     "new": "新建 Host",
@@ -23,6 +25,7 @@
       "address": "地址",
       "port": "端口",
       "user": "用户名",
+      "group": "分组",
       "jumpHost": "跳板机",
       "auth": "认证方式",
       "identityFile": "私钥文件",

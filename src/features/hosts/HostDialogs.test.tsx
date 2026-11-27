@@ -1,0 +1,137 @@
+import { act, type ComponentProps } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { Dialog } from "@/components/ui/dialog";
+import { startI18n } from "@/i18n";
+import type { Host } from "@/lib/ipc/hosts";
+import { HostFormDialogContent } from "./HostDialogs";
+
+type EditorProps = ComponentProps<typeof HostFormDialogContent>;
+
+const host: Host = {
+  id: "prod",
+  name: "Production",
+  address: "prod.local",
+  port: 22,
+  user: "deploy",
+  auth: { type: "password" },
+  jumpHost: null,
+  groupId: null,
+  forwards: [],
+  terminalScheme: "ember",
+  defaultDirectory: "/srv/app",
+};
+
+let root: Root;
+let container: HTMLDivElement;
+
+beforeAll(() => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  HTMLElement.prototype.scrollIntoView ??= () => {};
+  startI18n();
+});
+
+afterEach(() => {
+  act(() => root.unmount());
+  container.remove();
+});
+
+async function renderEditor(props: Partial<EditorProps> = {}) {
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () => {
+    root.render(
+      <Dialog open>
+        <HostFormDialogContent
+          host={host}
+          hosts={[]}
+          save={vi.fn(async () => host)}
+          onSaved={vi.fn()}
+          onCancel={vi.fn()}
+          {...props}
+        />
+      </Dialog>,
+    );
+  });
+}
+
+const button = (name: string) =>
+  [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find((item) => item.textContent === name)!;
+
+const field = (name: string) =>
+  [...document.querySelectorAll<HTMLLabelElement>('[role="dialog"] label')].find((label) => label.textContent === name)!.control!;
+
+describe("Host editor", () => {
+  it("shows the connection fields by default and lets the user toggle advanced options", async () => {
+    await renderEditor({ groupName: "Infrastructure" });
+
+    const advanced = button("Advanced");
+    const directory = field("File panel folder");
+    expect(field("Jump host").closest("[hidden]")).toBeNull();
+    expect(document.querySelector('[role="dialog"] dd')?.textContent).toBe("Infrastructure");
+    expect(advanced?.getAttribute("aria-expanded")).toBe("false");
+    expect(directory.closest("[hidden]")).not.toBeNull();
+
+    act(() => advanced.click());
+    expect(advanced.getAttribute("aria-expanded")).toBe("true");
+    expect(directory.closest("[hidden]")).toBeNull();
+    expect(field("Terminal colours").closest("[hidden]")).toBeNull();
+
+    act(() => advanced.click());
+    expect(advanced.getAttribute("aria-expanded")).toBe("false");
+    expect(directory.closest("[hidden]")).not.toBeNull();
+  });
+
+  it.each([
+    ["defaultDirectory", "File panel folder"],
+    ["terminalScheme", "Terminal colours"],
+  ])("opens Advanced and focuses the rejected %s field on save", async (rejectedField, label) => {
+    const save = vi.fn<EditorProps["save"]>().mockRejectedValue({
+      kind: "invalid",
+      message: "Choose a valid value",
+      details: { field: rejectedField },
+    });
+    await renderEditor({ save });
+
+    await act(async () => button("Save").click());
+
+    const control = field(label);
+    expect(button("Advanced").getAttribute("aria-expanded")).toBe("true");
+    expect(document.activeElement).toBe(control);
+    expect(control.getAttribute("aria-invalid")).toBe("true");
+    const messageId = document.querySelector('[role="alert"]')?.id;
+    expect(control.getAttribute("aria-describedby")?.split(" ")).toContain(messageId);
+    expect(document.querySelector('[role="alert"]')?.textContent).toBe("Choose a valid value");
+  });
+
+  it("saves edits to both advanced fields after the section is collapsed again", async () => {
+    const save = vi.fn<EditorProps["save"]>().mockResolvedValue(host);
+    await renderEditor({ save });
+
+    act(() => button("Advanced").click());
+    act(() => {
+      const directory = field("File panel folder");
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setValue.call(directory, " ~/release ");
+      directory.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    act(() => field("Terminal colours").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    const dark = [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+      .find((option) => option.textContent === "Astra Dark")!;
+    act(() => dark.click());
+    act(() => button("Advanced").click());
+    await act(async () => button("Save").click());
+
+    expect(save).toHaveBeenCalledWith({
+      name: "Production",
+      address: "prod.local",
+      port: 22,
+      user: "deploy",
+      auth: { type: "password" },
+      jumpHost: null,
+      terminalScheme: "dark",
+      defaultDirectory: "~/release",
+    }, "prod");
+  });
+});
