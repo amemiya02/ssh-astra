@@ -943,6 +943,7 @@
       "connection": "连接",
       "transfers": "传输",
       "shortcuts": "快捷键",
+      "knownHosts": "已知主机",
       "notifications": "通知",
       "updates": "更新",
       "diagnostics": "诊断"
@@ -1253,6 +1254,26 @@
         "label": "Terminal 程序",
         "description": "允许 Terminal 中的程序在窗口处于后台时发送通知。"
       }
+    },
+    "knownHosts": {
+      "label": "OpenSSH 主机密钥文件",
+      "description": "查看用户文件中的主机密钥。此页面为只读。",
+      "refresh": "刷新",
+      "reveal": "在文件管理器中显示",
+      "loading": "正在读取已知主机…",
+      "loadFailed": "无法读取已知主机文件。",
+      "missing": "已知主机文件尚未创建。",
+      "empty": "文件中没有已知主机条目。",
+      "private": "隐私模式会隐藏主机详情和文件路径。",
+      "posix": "将复制的命令粘贴到本机的 POSIX Shell。命令会移除所有匹配的密钥以及这些行中的别名。",
+      "powershell": "将复制的命令粘贴到本机的 PowerShell。命令会移除所有匹配的密钥以及这些行中的别名。",
+      "line": "第 {{line}} 行",
+      "copy": "复制删除命令",
+      "copyForLine": "复制第 {{line}} 行的删除命令",
+      "unavailable": "无可用的删除命令",
+      "copied": "已复制删除命令。",
+      "revealFailed": "无法在文件管理器中显示已知主机文件。",
+      "copyFailed": "无法复制删除命令。"
     },
     "diagnostics": {
       "logs": "日志文件",

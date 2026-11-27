@@ -48,6 +48,117 @@ impl Fixture {
 }
 
 #[test]
+fn lists_user_entries_in_file_order_without_writing_to_either_file() {
+    let contents = format!(
+        "  # comment with an address\r\n\r\n[example.com]:2222\t{KEY_A} inline comment\r\n\
+         {HASHED_EXAMPLE_22} {KEY_B}\n\
+         @cert-authority *.example.com {KEY_A}\n\
+         @revoked example.com,192.0.2.1 {KEY_B}\n\
+         broken line\n"
+    );
+    let user = Fixture::with(&contents);
+    let global = Fixture::with(&format!("global.example {KEY_A}\n"));
+    let kh = user.known_hosts().with_global_file(&global.path);
+
+    let entries = kh.list_user_entries().unwrap().unwrap();
+    let rows: Vec<_> = entries
+        .iter()
+        .map(|entry| {
+            (
+                entry.line,
+                entry.hosts.as_str(),
+                entry.marker,
+                entry.algorithm.as_str(),
+                entry.fingerprint.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            (
+                3,
+                "[example.com]:2222",
+                None,
+                "ssh-ed25519",
+                KEY_A_FINGERPRINT
+            ),
+            (4, HASHED_EXAMPLE_22, None, "ssh-ed25519", KEY_B_FINGERPRINT),
+            (
+                5,
+                "*.example.com",
+                Some("@cert-authority"),
+                "ssh-ed25519",
+                KEY_A_FINGERPRINT
+            ),
+            (
+                6,
+                "example.com,192.0.2.1",
+                Some("@revoked"),
+                "ssh-ed25519",
+                KEY_B_FINGERPRINT
+            ),
+        ]
+    );
+    assert_eq!(user.contents(), contents);
+    assert_eq!(global.contents(), format!("global.example {KEY_A}\n"));
+    assert!(entries[1..]
+        .iter()
+        .all(|entry| entry.removal_command.is_none()));
+}
+
+#[test]
+fn lists_quoted_removal_commands_for_concrete_endpoints_including_ports() {
+    let dir = tempfile::Builder::new()
+        .prefix("ssh $HOME's ")
+        .tempdir()
+        .unwrap();
+    let path = dir.path().join("known_hosts");
+    fs::write(
+        &path,
+        format!(
+            "[example.com]:2222,[2001:db8::1]:2222 {KEY_A}\n\
+         -literal';$(value).example {KEY_A}\n\
+         *.example.com {KEY_A}\n\
+         !other.example,example.com {KEY_A}\n\
+         direction\u{202e}.example {KEY_A}\n"
+        ),
+    )
+    .unwrap();
+    let entries = KnownHosts::new(&path).list_user_entries().unwrap().unwrap();
+    assert_eq!(entries.len(), 5);
+    let first = entries[0].removal_command.as_deref().unwrap();
+    let second = entries[1].removal_command.as_deref().unwrap();
+    assert!(first.starts_with("ssh-keygen -f '"));
+    assert!(first.ends_with("' -R '[example.com]:2222'"));
+    if cfg!(windows) {
+        assert!(first.contains("ssh $HOME''s "));
+        assert!(second.ends_with("' -R '-literal'';$(value).example'"));
+    } else {
+        assert!(first.contains(r"ssh $HOME'\''s "));
+        assert!(second.ends_with(r"' -R '-literal'\'';$(value).example'"));
+    }
+    assert!(entries[2..]
+        .iter()
+        .all(|entry| entry.removal_command.is_none()));
+}
+
+#[test]
+fn listing_distinguishes_a_missing_file_from_a_file_with_no_entries() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(".ssh").join("known_hosts");
+    let missing = KnownHosts::new(&path);
+    assert_eq!(missing.list_user_entries().unwrap(), None);
+    assert!(!path.parent().unwrap().exists());
+
+    let empty = Fixture::with("# no entries yet\n");
+    assert_eq!(
+        empty.known_hosts().list_user_entries().unwrap(),
+        Some(Vec::new())
+    );
+}
+
+#[test]
 fn a_listed_host_with_the_same_key_matches() {
     let f = Fixture::with(&format!("example.com {KEY_A}\n"));
     let verdict = f

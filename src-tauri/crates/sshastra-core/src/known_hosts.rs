@@ -15,7 +15,10 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use hmac::{Hmac, KeyInit, Mac};
 use russh::keys::{HashAlg, PublicKey};
+use serde::Serialize;
 use sha1::Sha1;
+
+use crate::ssh::shell_quote;
 
 /// A server's public host key.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,6 +85,19 @@ pub struct KnownHost {
     pub line: usize,
 }
 
+/// A view of a user file entry. The hostname field keeps the original
+/// patterns and hashed names intact.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnownHostEntry {
+    pub line: usize,
+    pub hosts: String,
+    pub marker: Option<&'static str>,
+    pub algorithm: String,
+    pub fingerprint: String,
+    pub removal_command: Option<String>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum KnownHostsError {
     #[error("could not access {path}: {source}")]
@@ -130,6 +146,35 @@ impl KnownHosts {
 
     pub fn user_file(&self) -> &Path {
         &self.user_file
+    }
+
+    /// Lists the configured user file in file order. A missing file returns `None`.
+    pub fn list_user_entries(&self) -> Result<Option<Vec<KnownHostEntry>>, KnownHostsError> {
+        let Some(contents) = read_optional(&self.user_file)? else {
+            return Ok(None);
+        };
+        Ok(Some(
+            contents
+                .lines()
+                .enumerate()
+                .filter_map(|(index, line)| {
+                    let entry = Entry::parse(line)?;
+                    let marker = match entry.marker {
+                        Marker::None => None,
+                        Marker::CertAuthority => Some("@cert-authority"),
+                        Marker::Revoked => Some("@revoked"),
+                    };
+                    Some(KnownHostEntry {
+                        line: index + 1,
+                        hosts: entry.patterns.to_owned(),
+                        marker,
+                        algorithm: entry.key.algorithm(),
+                        fingerprint: entry.key.fingerprint(),
+                        removal_command: removal_command(&entry, &self.user_file, cfg!(windows)),
+                    })
+                })
+                .collect(),
+        ))
     }
 
     pub fn verify(&self, host: &str, port: u16, key: &HostKey) -> Result<Verdict, KnownHostsError> {
@@ -218,6 +263,55 @@ fn lookup_name(host: &str, port: u16) -> String {
     } else {
         format!("[{host}]:{port}")
     }
+}
+
+/// `-R` matches a concrete endpoint and preserves CA and revocation lines.
+/// A matching ordinary line is removed in full, including any other aliases.
+fn removal_command(entry: &Entry<'_>, path: &Path, windows: bool) -> Option<String> {
+    if entry.marker != Marker::None || !path.is_absolute() {
+        return None;
+    }
+    let path = path.to_str()?;
+    if !safe_clipboard_word(path, windows) {
+        return None;
+    }
+    let patterns = || entry.patterns.split(',');
+    // Hashed names are opaque. Negated patterns can exclude a literal alias
+    // from matching its own line.
+    if patterns().any(|pattern| pattern.starts_with(['!', '|'])) {
+        return None;
+    }
+    let host = patterns().find(|pattern| {
+        !pattern.is_empty()
+            && !pattern.contains(['*', '?'])
+            && safe_clipboard_word(pattern, windows)
+    })?;
+    let quote = if windows {
+        powershell_quote
+    } else {
+        shell_quote
+    };
+    Some(format!("ssh-keygen -f {} -R {}", quote(path), quote(host)))
+}
+
+fn safe_clipboard_word(word: &str, windows: bool) -> bool {
+    // Avoid control and bidi characters in pasted text. Embedded double
+    // quotes also have different native argument handling in PowerShell versions.
+    (!windows || !word.contains('"')) && !word.chars().any(|c| {
+        c.is_control() || matches!(c, '\u{061c}' | '\u{200b}'..='\u{200f}' | '\u{2028}'..='\u{202e}' | '\u{2066}'..='\u{2069}' | '\u{feff}' | '\u{fffd}')
+    })
+}
+
+fn powershell_quote(word: &str) -> String {
+    let mut quoted = String::from("'");
+    for c in word.chars() {
+        quoted.push(c);
+        if matches!(c, '\'' | '\u{2018}'..='\u{201b}') {
+            quoted.push(c);
+        }
+    }
+    quoted.push('\'');
+    quoted
 }
 
 fn read_optional(path: &Path) -> Result<Option<String>, KnownHostsError> {
