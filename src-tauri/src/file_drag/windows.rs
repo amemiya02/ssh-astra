@@ -92,6 +92,12 @@ fn run(hwnd: HWND, source: Arc<Source>, report: Arc<Report>) -> Result<()> {
     #[cfg(feature = "e2e")]
     log::info!("file drag started OLE session");
     let status = unsafe { DoDragDrop(&data, &drop_source, DROPEFFECT_COPY, &mut effect) };
+    #[cfg(feature = "e2e")]
+    log::info!(
+        "file drag ended OLE session status={:#x} effect={}",
+        status.0,
+        effect.0
+    );
     drag.in_drag_loop.store(false, Ordering::Release);
     if status == DRAGDROP_S_DROP && effect.contains(DROPEFFECT_COPY) {
         if !drag.extracting.load(Ordering::Acquire) && drag.read_started.load(Ordering::Acquire) {

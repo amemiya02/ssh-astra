@@ -27,35 +27,19 @@ use tauri::WebviewWindow;
 
 use super::{PointerState, RemoteRead, Report, Source, CHUNK_SIZE};
 
-struct MouseGesture {
-    down: Retained<NSEvent>,
-    dragged: Option<Retained<NSEvent>>,
-}
-
 thread_local! {
     static MONITOR: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
-    static MOUSE: RefCell<Option<MouseGesture>> = const { RefCell::new(None) };
+    static MOUSE_DOWN: RefCell<Option<Retained<NSEvent>>> = const { RefCell::new(None) };
     static DRAG: RefCell<Option<Retained<DragSource>>> = const { RefCell::new(None) };
 }
 
 pub(crate) fn capture_mouse_events() {
-    let mask =
-        NSEventMask::LeftMouseDown | NSEventMask::LeftMouseDragged | NSEventMask::LeftMouseUp;
+    let mask = NSEventMask::LeftMouseDown | NSEventMask::LeftMouseUp;
     let monitor = StackBlock::new(|event: NonNull<NSEvent>| {
         // AppKit owns the event for this callback and executes local monitors on its UI thread.
         let mouse = unsafe { event.as_ref() };
-        MOUSE.with_borrow_mut(|gesture| match mouse.r#type() {
-            NSEventType::LeftMouseDown => {
-                *gesture = Some(MouseGesture {
-                    down: mouse.retain(),
-                    dragged: None,
-                });
-            }
-            NSEventType::LeftMouseDragged => {
-                if let Some(gesture) = gesture {
-                    gesture.dragged = Some(mouse.retain());
-                }
-            }
+        MOUSE_DOWN.with_borrow_mut(|gesture| match mouse.r#type() {
+            NSEventType::LeftMouseDown => *gesture = Some(mouse.retain()),
             NSEventType::LeftMouseUp => *gesture = None,
             _ => {}
         });
@@ -123,8 +107,8 @@ impl PromiseDelegate {
 
 fn physical_pointer(view: &NSView) -> Option<(isize, PointerState)> {
     let window = view.window()?;
-    let gesture = MOUSE.with_borrow(|mouse| {
-        let down = &mouse.as_ref()?.down;
+    let gesture = MOUSE_DOWN.with_borrow(|mouse| {
+        let down = mouse.as_ref()?;
         (down.windowNumber() == window.windowNumber()).then(|| down.eventNumber())
     })?;
     let mouse = view.convertPoint_fromView(
@@ -179,6 +163,8 @@ define_class!(
 
         #[unsafe(method(draggingSession:endedAtPoint:operation:))]
         fn ended(&self, _session: &NSDraggingSession, _point: NSPoint, operation: NSDragOperation) {
+            #[cfg(feature = "e2e")]
+            log::info!("file drag ended AppKit session operation={}", operation.0);
             if !operation.contains(NSDragOperation::Copy) {
                 self.ivars().finish(Ok(false));
             }
@@ -205,10 +191,9 @@ pub(super) fn start(
         {
             return;
         }
-        let Some(gesture) = MOUSE.with_borrow_mut(Option::take) else {
+        let Some(event) = MOUSE_DOWN.with_borrow_mut(Option::take) else {
             return;
         };
-        let event = gesture.dragged.as_ref().unwrap_or(&gesture.down);
         let delegate = PromiseDelegate::new(source, report.clone());
         let provider = NSFilePromiseProvider::initWithFileType_delegate(
             NSFilePromiseProvider::alloc(),
@@ -228,17 +213,26 @@ pub(super) fn start(
         );
         let icon = NSImage::imageNamed(unsafe { NSImageNameMultipleDocuments });
         unsafe { item.setDraggingFrame_contents(frame, icon.as_deref().map(|icon| icon.as_ref())) };
-        let this = DragSource::alloc(mtm).set_ivars(report);
+        let this = DragSource::alloc(mtm).set_ivars(report.clone());
         let drag_source: Retained<DragSource> = unsafe { msg_send![super(this), init] };
         DRAG.with_borrow_mut(|active| *active = Some(drag_source.clone()));
+        let items = NSArray::from_retained_slice(&[item]);
+        let source: &ProtocolObject<dyn NSDraggingSource> = ProtocolObject::from_ref(&*drag_source);
+        // AppKit requires the original mouse-down event. The method can return nil
+        // if AppKit cannot start the session, even though the SDK declares it nonnull.
+        let session: Option<Retained<NSDraggingSession>> = unsafe {
+            msg_send![view, beginDraggingSessionWithItems: &*items, event: &*event, source: source]
+        };
+        let Some(session) = session else {
+            DRAG.with_borrow_mut(|active| *active = None);
+            report.finish(Err(FsError::Io(
+                "AppKit could not start the file drag".into(),
+            )));
+            return;
+        };
         #[cfg(feature = "e2e")]
         log::info!("file drag started AppKit session");
-        view.beginDraggingSessionWithItems_event_source(
-            &NSArray::from_retained_slice(&[item]),
-            event,
-            ProtocolObject::from_ref(&*drag_source),
-        )
-        .setAnimatesToStartingPositionsOnCancelOrFail(false);
+        session.setAnimatesToStartingPositionsOnCancelOrFail(false);
     })
 }
 
