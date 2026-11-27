@@ -251,8 +251,9 @@ Host *
 
     let chain = store.jump_chain(&find(&store, "internal").id).unwrap();
     let (target, jumps) = chain.split_last().unwrap();
-    let known_hosts = tempfile::tempdir().unwrap();
-    let manager = ConnectionManager::new(KnownHosts::new(known_hosts.path().join("known_hosts")));
+    let home = tempfile::tempdir().unwrap();
+    let manager = ConnectionManager::new(KnownHosts::new(home.path().join("known_hosts")))
+        .with_home_dir(home.path());
     let prompter = Arc::new(Trusting {
         passwords: Mutex::new(VecDeque::from(vec![sshd.password.to_owned(); 2])),
     });
