@@ -529,12 +529,20 @@ fn agent_access_is_local_to_the_host_store() {
     use sshastra_core::agent::AgentPermission;
 
     let (dir, mut source) = store();
-    let host = source.upsert(None, HostDraft {
-        agent_access: AgentPermission::Read,
-        ..draft("build")
-    }).unwrap();
+    let host = source
+        .upsert(
+            None,
+            HostDraft {
+                agent_access: AgentPermission::Read,
+                ..draft("build")
+            },
+        )
+        .unwrap();
     let on_disk = HostStore::open(dir.path().join("hosts.json")).unwrap();
-    assert_eq!(on_disk.get(&host.id).unwrap().agent_access, AgentPermission::Read);
+    assert_eq!(
+        on_disk.get(&host.id).unwrap().agent_access,
+        AgentPermission::Read
+    );
 
     let export = source.export();
     assert!(!export.contains("agentAccess"));

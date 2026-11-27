@@ -35,8 +35,8 @@ use sshastra_core::terminal::{CommandHistory, TerminalRegistry};
 use tauri::Manager;
 use tauri_plugin_window_state::StateFlags;
 
-use agent_transport::AgentService;
 pub use agent_transport::run_stdio as run_agent_stdio;
+use agent_transport::AgentService;
 
 use commands::clipboard::ClipboardImages;
 use commands::connections::{ConnectionsState, TemporaryHosts};

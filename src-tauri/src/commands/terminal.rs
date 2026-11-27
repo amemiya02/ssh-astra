@@ -22,8 +22,9 @@ use sshastra_core::hosts::HostId;
 use sshastra_core::ssh::{RemoteTerminal, RemoteTerminalOptions};
 use sshastra_core::terminal::{
     local_shell_command, local_shells, local_wsl_paths, ConnectionState, LocalPty, LocalShell,
-    OutputKind, OutputStatus, SavedTerminalMetadata, ShellCommand, ShellIntegrationEvent, TerminalEvent, TerminalId,
-    TerminalOutput, TerminalRegistry, TerminalSettings, TerminalSize, REPORT_CWD,
+    OutputKind, OutputStatus, SavedTerminalMetadata, ShellCommand, ShellIntegrationEvent,
+    TerminalEvent, TerminalId, TerminalOutput, TerminalRegistry, TerminalSettings, TerminalSize,
+    REPORT_CWD,
 };
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, State};
