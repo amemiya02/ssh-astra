@@ -140,6 +140,11 @@
     "invalidName": "This name is reserved or contains characters Windows does not allow."
   },
   "tabs": {
+    "resizeTabStrip": "Resize tab strip",
+    "showIconsOnly": "Show tab icons only",
+    "showTitles": "Show tab titles",
+    "hostGroup": "Tabs for {{name}}",
+    "closeBelow": "Close tabs below",
     "sftp": "SFTP",
     "listLabel": "Open tabs",
     "localTerminal": "Local terminal",
@@ -681,6 +686,18 @@
     "confirmClose": {
       "label": "Confirm Terminal close",
       "description": "Ask before closing a connected remote Terminal."
+    },
+    "tabOrientation": {
+      "label": "Tab orientation",
+      "description": "Place tabs across the top or along the left side of the workspace.",
+      "options": {
+        "horizontal": "Horizontal",
+        "vertical": "Vertical"
+      }
+    },
+    "groupTabsByHost": {
+      "label": "Group tabs by Host",
+      "description": "Show multiple tabs for the same Host in a collapsible group."
     },
     "restoreTabs": {
       "label": "Restore tabs",

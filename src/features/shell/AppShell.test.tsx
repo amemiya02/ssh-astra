@@ -1,12 +1,17 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { paletteActions } from "@/features/palette/palette-actions";
 import { startI18n } from "@/i18n";
 import { ThemeProvider } from "@/theme/ThemeProvider";
+import { WorkspaceSection } from "@/features/settings/workspace-section";
+import { TabStrip } from "@/features/workspace/TabStrip";
+import { createTabActivity } from "@/features/workspace/tab-activity";
+import { emptyTabs, newPane, tabsReducer } from "@/features/workspace/tabs";
+import { workspaceSetting } from "@/features/workspace/workspace-prefs";
 import { AppShell } from "./AppShell";
-import { getSetting, setSetting } from "@/lib/storage";
+import { getSetting, setSetting, startSettings, type SettingsBackend } from "@/lib/storage";
 import { useFilePanelDock } from "./file-panel-dock";
 import type { PaneKind } from "@/features/workspace/tabs";
 import { defaultShellLayout, layoutSetting } from "./shell-layout";
@@ -34,7 +39,10 @@ beforeAll(() => {
   startI18n();
 });
 
-beforeEach(() => setSetting(layoutSetting, defaultShellLayout));
+beforeEach(() => {
+  setSetting(layoutSetting, defaultShellLayout);
+  setSetting(workspaceSetting, workspaceSetting.defaults);
+});
 
 afterEach(() => {
   act(() => root?.unmount());
@@ -47,6 +55,9 @@ function DockState() {
   return <p data-testid="dock">{collapsed ? "hidden" : "shown"}</p>;
 }
 
+const fixtureTabs = tabsReducer(emptyTabs, { type: "open", tabId: "local", pane: newPane({ kind: "local-terminal" }, "pane") });
+const activity = createTabActivity();
+
 function shell(activeKind: PaneKind["kind"] | null) {
   return (
     <ThemeProvider>
@@ -54,8 +65,19 @@ function shell(activeKind: PaneKind["kind"] | null) {
         <AppShell
           sidebar={{ hosts: <p>hosts view</p>, forwards: <p>forwards view</p> }}
           nav={{ activeKind, onHome() {}, onSftp() {}, onLocalTerminal() {}, onSettings() {} }}
-          tabs={null}
-          workspace={null}
+          tabs={<TabStrip
+            activity={activity}
+            tabs={fixtureTabs.tabs}
+            activeId={fixtureTabs.activeId}
+            platform="mac"
+            titleSource="shell"
+            onActivate={() => {}}
+            onTabAction={() => {}}
+            onMove={() => {}}
+            onNewLocalTerminal={() => {}}
+            onSplit={() => {}}
+          />}
+          workspace={<><input aria-label="Terminal input" /><WorkspaceSection /></>}
           filePanel={<DockState />}
         />
       </TooltipProvider>
@@ -77,6 +99,68 @@ const focus = (activeKind: PaneKind["kind"] | null) => act(() => root!.render(sh
 const toggleAction = () => paletteActions.list().find((a) => a.id === "files.togglePanel");
 
 describe("AppShell", () => {
+  it("changes the tab orientation without replacing the selected tab or focused workspace", () => {
+    const container = render("local-terminal");
+    const list = container.querySelector('[role="tablist"]')!;
+    const tab = container.querySelector('[role="tab"]')!;
+    const input = container.querySelector<HTMLInputElement>('[aria-label="Terminal input"]')!;
+    input.value = "in progress";
+    const vertical = container.querySelector<HTMLButtonElement>('[role="radio"][data-value="vertical"]')!;
+    vertical.focus();
+
+    act(() => vertical.click());
+
+    expect(list.getAttribute("aria-orientation")).toBe("vertical");
+    expect(container.querySelector('[role="tab"]')).toBe(tab);
+    expect(tab.getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(vertical);
+    expect(input.value).toBe("in progress");
+    expect(container.querySelector('[data-tauri-drag-region]:not(nav *)')).toBeTruthy();
+
+    input.focus();
+    act(() => setSetting(workspaceSetting, { ...getSetting(workspaceSetting), tabOrientation: "horizontal" }));
+    expect(list.getAttribute("aria-orientation")).toBe("horizontal");
+    expect(document.activeElement).toBe(input);
+  });
+
+  it("saves a resized width once on release and restores it after leaving icon-only mode", async () => {
+    const saved: Record<string, unknown> = {
+      workspacePreferences: { tabOrientation: "vertical" },
+    };
+    const backend: SettingsBackend = {
+      load: async () => structuredClone(saved),
+      save: vi.fn(async (section, value) => { saved[section] = structuredClone(value); }),
+    };
+    await startSettings(backend);
+    const container = render("local-terminal");
+    const divider = () => container.querySelector<HTMLDivElement>('[aria-label="Resize tab strip"]')!;
+    divider().setPointerCapture = vi.fn();
+    vi.spyOn(divider(), "getBoundingClientRect").mockReturnValue(new DOMRect(192, 34, 6, 600));
+    vi.spyOn(divider().parentElement!, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 34, 1200, 600));
+    const pointer = (type: string, clientX: number) => act(() => {
+      divider().dispatchEvent(new PointerEvent(type, { bubbles: true, button: 0, isPrimary: true, pointerId: 1, clientX }));
+    });
+    const writes = () => vi.mocked(backend.save).mock.calls.filter(([section]) => section === workspaceSetting.key);
+    pointer("pointerdown", 195);
+    pointer("pointermove", 237);
+    expect(divider().getAttribute("aria-valuenow")).toBe("234");
+    expect(writes()).toHaveLength(0);
+    pointer("pointerup", 237);
+    expect(writes()).toHaveLength(1);
+    expect(divider().getAttribute("aria-valuenow")).toBe("234");
+    const namedButton = (label: string) => container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+    act(() => namedButton("Show tab icons only").click());
+    expect(divider()).toBeNull();
+
+    act(() => root?.unmount());
+    root = null;
+    await startSettings(backend);
+    const restarted = render("local-terminal");
+    expect(restarted.querySelector('[aria-label="Resize tab strip"]')).toBeNull();
+    act(() => restarted.querySelector<HTMLButtonElement>('[aria-label="Show tab titles"]')!.click());
+    expect(restarted.querySelector('[aria-label="Resize tab strip"]')?.getAttribute("aria-valuenow")).toBe("234");
+  });
+
   it("offers showing and hiding the File panel in the command palette", () => {
     const container = render();
     const dock = () => container.querySelector('[data-testid="dock"]')!.textContent;

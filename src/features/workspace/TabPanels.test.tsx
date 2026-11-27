@@ -4,12 +4,15 @@ import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { terminalSetting } from "@/features/terminal/terminal-prefs";
+import { getSetting, setSetting } from "@/lib/storage";
 import { startI18n } from "@/i18n";
 import type { Host } from "@/lib/ipc/hosts";
 import { TabPanels } from "./TabPanels";
 import { TabStrip } from "./TabStrip";
 import { createTabActivity } from "./tab-activity";
 import { emptyTabs, newPane, tabsReducer, type Pane, type TabsAction } from "./tabs";
+import { workspaceSetting } from "./workspace-prefs";
 
 // Keep the real workspace and reducer while substituting a Terminal that can hold user input.
 vi.mock("@/features/terminal/LocalTerminalView", () => ({
@@ -55,6 +58,8 @@ afterEach(() => {
   container?.remove();
   container = undefined;
   vi.mocked(invoke).mockClear();
+  setSetting(workspaceSetting, workspaceSetting.defaults);
+  setSetting(terminalSetting, terminalSetting.defaults);
 });
 
 function renderWorkspace(initialPane: Pane = local("a")) {
@@ -99,7 +104,7 @@ function renderWorkspace(initialPane: Pane = local("a")) {
   }
   const send = (action: TabsAction) => act(() => dispatch(action));
   send({ type: "open", tabId: "work", pane: initialPane });
-  return { container, send };
+  return { container, send, activity };
 }
 
 function selectTabMenu(tabId: string, label: string) {
@@ -124,6 +129,55 @@ describe("TabPanels", () => {
 
     expect([...container.querySelectorAll('[role="tab"]')].map((tab) => tab.id)).toEqual(survivors);
     expect(container.querySelector('[role="tab"][aria-selected="true"]')?.id).toBe("tab-anchor");
+  });
+
+  it("folds Host groups while keeping activity and navigates tabs in their displayed order", () => {
+    vi.useFakeTimers();
+    try {
+      const host: Host = {
+        id: "group-host", name: "Build server", address: "example.com", port: 22, user: "deploy",
+        auth: { type: "password" }, jumpHost: null, groupId: null, forwards: [],
+      };
+      const remote = (id: string): Pane => ({
+        ...newPane({ kind: "remote-terminal", host }, id), restoreConnection: "manual",
+      });
+      setSetting(workspaceSetting, { ...getSetting(workspaceSetting), tabOrientation: "vertical", groupTabsByHost: true });
+      setSetting(terminalSetting, { ...getSetting(terminalSetting), bell: "flash" });
+      const { container, send, activity } = renderWorkspace(remote("first"));
+      send({ type: "open", tabId: "local", pane: local("local") });
+      send({ type: "open", tabId: "second", pane: remote("second") });
+      send({ type: "activate", id: "work" });
+      const group = container.querySelector<HTMLButtonElement>('button[aria-label="Tabs for Build server"]')!;
+      const first = document.getElementById("tab-work")!;
+      const second = document.getElementById("tab-second")!;
+      const panel = document.getElementById("tabpanel-work")!;
+      expect(group.getAttribute("aria-expanded")).toBe("true");
+
+      act(() => {
+        group.click();
+        activity.output("second");
+        activity.bell("second");
+      });
+
+      expect(group.getAttribute("aria-expanded")).toBe("false");
+      expect(second.closest("[hidden]")).toBeTruthy();
+      expect(panel.hasAttribute("hidden")).toBe(false);
+      expect(group.getAttribute("aria-label")).toContain("Unread Terminal output");
+      expect(group.querySelector("[data-terminal-bell]")).toBeTruthy();
+
+      act(() => group.click());
+      first.focus();
+      act(() => first.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })));
+      expect(document.activeElement).toBe(second);
+      expect(second.getAttribute("aria-selected")).toBe("true");
+      expect(second.querySelector("[data-unread-output]")).toBeNull();
+
+      selectTabMenu("second", "Close tabs below");
+      expect([...container.querySelectorAll('[role="tab"]')].map(({ id }) => id)).toEqual(["tab-work", "tab-second"]);
+      act(() => vi.runOnlyPendingTimers());
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("opens a separate remote Terminal for each duplicated pane on the same Host", async () => {

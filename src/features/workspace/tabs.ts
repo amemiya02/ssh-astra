@@ -93,7 +93,7 @@ export type TabMenuAction =
   | { type: "duplicateTab"; id: string; tabId: string; paneIds: string[] }
   | { type: "close"; id: string }
   | { type: "closeOthers"; id: string }
-  | { type: "closeRight"; id: string };
+  | { type: "closeRight"; id: string; after?: readonly string[] };
 
 export type TabsAction =
   | TabMenuAction
@@ -260,8 +260,9 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
       return duplicateTab(state, action);
     case "close":
     case "closeOthers":
-    case "closeRight":
       return closeTabs(state, action.id, action.type);
+    case "closeRight":
+      return closeTabs(state, action.id, action.type, action.after);
     case "renameTab":
       return updateTab(state, action.id, { customTitle: action.title.trim() || undefined });
     case "setTabColor":
@@ -408,13 +409,19 @@ export function countTerminalsClosing(state: TabsState, action: CloseAction): nu
   ).length;
 }
 
-function closeTabs(state: TabsState, id: string, mode: "close" | "closeOthers" | "closeRight"): TabsState {
+function closeTabs(
+  state: TabsState,
+  id: string,
+  mode: "close" | "closeOthers" | "closeRight",
+  after?: readonly string[],
+): TabsState {
   const index = state.tabs.findIndex((tab) => tab.id === id);
   if (index === -1) return state;
+  const displayedAfter = after && new Set(after);
   const tabs = state.tabs.filter((tab, at) => {
     if (tab.locked) return true;
     if (mode === "closeOthers") return at === index;
-    if (mode === "closeRight") return at <= index;
+    if (mode === "closeRight") return displayedAfter ? !displayedAfter.has(tab.id) : at <= index;
     return at !== index;
   });
   if (tabs.length === state.tabs.length) return state;

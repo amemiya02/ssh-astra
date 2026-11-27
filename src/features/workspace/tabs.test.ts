@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { groupTabsByHost } from "./tab-groups";
 import type { Host } from "@/lib/ipc/hosts";
 import {
   activePane,
@@ -56,6 +57,25 @@ function withTabs(ids: string[], activeId: string): TabsState {
 const ids = (state: TabsState) => state.tabs.map((t) => t.id);
 const paneIds = (state: TabsState, tabId: string) =>
   state.tabs.filter((t) => t.id === tabId).flatMap(tabPanes).map((p) => p.id);
+
+describe("groupTabsByHost", () => {
+  it("groups tabs with the same Host ID at the first member's position", () => {
+    const web = host("web", "Production");
+    const db = host("db", "Production");
+    const first = tab("first", [remote("web.1", web), remote("web.2", web)]);
+    const localTab = tab("local");
+    const dbTab = tab("db", [remote("db.1", db)]);
+    const sftpTab = tab("sftp", [{ kind: "sftp", id: "files", host: web }]);
+    const mixed = tab("mixed", [remote("web.3", web), remote("db.2", db)]);
+
+    expect(groupTabsByHost([first, localTab, dbTab, sftpTab, mixed])).toEqual([
+      { type: "host", host: web, tabs: [first, sftpTab] },
+      { type: "tab", tab: localTab },
+      { type: "tab", tab: dbTab },
+      { type: "tab", tab: mixed },
+    ]);
+  });
+});
 
 describe("tabsReducer: tabs", () => {
   it("opens a pane in a new tab at the end and focuses it", () => {
