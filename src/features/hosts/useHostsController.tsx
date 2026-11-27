@@ -5,6 +5,7 @@ import { ConnectPromptDialog } from "@/features/connect/ConnectPromptDialog";
 import { connectionsStore, useConnections } from "@/features/connect/connectionsStore";
 import { usePaletteActions } from "@/features/palette/palette-actions";
 import { readCommandError, refusal, type ConnectPrompt, type PromptAnswer } from "@/lib/ipc/connect";
+import { testHostConnection } from "@/lib/ipc/connections";
 import type { Host, HostDraft, HostId, ImportReport } from "@/lib/ipc/hosts";
 import { pickOpenPath, pickSavePath } from "@/lib/ipc/system";
 import { ConfirmRemoveDialogContent, HostFormDialogContent, type Removal } from "./HostDialogs";
@@ -232,6 +233,7 @@ export function useHostsController(openers: HostOpeners): HostsController {
             hosts={editing === "new" ? tree.hosts : tree.hosts.filter((h) => h.id !== editing.id)}
             groupName={tree.groups.find((group) => group.id === (editing === "new" ? selectedGroupId : editing.groupId))?.name}
             save={save}
+            testConnection={testHostConnection}
             onCancel={() => setEditing(null)}
             onSaved={(host) => {
               setSelected({ kind: "host", id: host.id });

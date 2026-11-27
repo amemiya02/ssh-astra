@@ -1,6 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { connectPromptChannel, type ConnectPrompt, type PromptAnswer } from "./connect";
-import type { HostId } from "./hosts";
+import type { HostDraft, HostId } from "./hosts";
 
 /** A Host's Connection started or stopped being held by "Connect only" (`sshastra_core::ssh::HeldEvent`). */
 export interface HeldEvent {
@@ -23,6 +23,16 @@ export function watchConnections(onEvent: (event: HeldEvent) => void): Promise<H
 export function connectHost(hostId: HostId, ask: (prompt: ConnectPrompt) => Promise<PromptAnswer>): Promise<void> {
   const onPrompt = connectPromptChannel(ask);
   return invoke("host_connect", { hostId, onPrompt });
+}
+
+/** Authenticates using the Host editor's draft and closes the private Connection. */
+export function testHostConnection(
+  draft: HostDraft,
+  id: HostId | undefined,
+  ask: (prompt: ConnectPrompt) => Promise<PromptAnswer>,
+): Promise<void> {
+  const onPrompt = connectPromptChannel(ask);
+  return invoke("host_test_connection", { id: id ?? null, draft, onPrompt });
 }
 
 /** Ends "Connect only": stops the Host's Port forwards and lets the Connection go. */
