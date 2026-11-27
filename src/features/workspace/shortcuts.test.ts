@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { matchFileHistoryShortcut, matchShortcut, matchTerminalShortcut, shortcutLabel, type KeyChord } from "./shortcuts";
+import {
+  captureShortcut,
+  editShortcut,
+  matchFileHistoryShortcut,
+  matchShortcut,
+  matchTerminalShortcut,
+  resolveShortcuts,
+  shortcutLabel,
+  type KeyChord,
+} from "./shortcuts";
 
 const chord = (key: string, mods: Partial<Omit<KeyChord, "key" | "code">> = {}, code?: string): KeyChord => ({
   key,
@@ -9,6 +18,49 @@ const chord = (key: string, mods: Partial<Omit<KeyChord, "key" | "code">> = {}, 
   altKey: false,
   shiftKey: false,
   ...mods,
+});
+
+it("reports a conflict with Terminal Find and replaces its binding only when requested", () => {
+  const find = chord("F", { ctrlKey: true, shiftKey: true });
+  const proposed = { code: "KeyF", key: "F", mods: ["ctrl", "shift"] } as const;
+  expect(editShortcut("other", {}, "newTab", proposed)).toEqual({ conflicts: ["find"] });
+
+  const replaced = editShortcut("other", {}, "newTab", proposed, true);
+  expect(replaced).toEqual({ overrides: { newTab: proposed, find: null } });
+  const resolved = resolveShortcuts("other", "overrides" in replaced ? replaced.overrides : {});
+  expect(matchShortcut(find, resolved)).toEqual({ type: "newTab" });
+  expect(matchTerminalShortcut(find, resolved)).toBeNull();
+  expect(shortcutLabel("newTab", resolved)).toBe("Ctrl+Shift+F");
+  expect(shortcutLabel("find", resolved)).toBe("");
+});
+
+it("rebinds all alternatives for an action and checks conflicts when restoring its defaults", () => {
+  const custom = { code: "KeyF", key: "F", mods: ["meta", "alt"] } as const;
+  const overrides = {
+    nextTab: custom,
+    find: { code: "Tab", key: "Tab", mods: ["ctrl"] } as const,
+  };
+  const resolved = resolveShortcuts("mac", overrides);
+  expect(matchShortcut(chord("f", { metaKey: true, altKey: true }), resolved)).toEqual({ type: "cycleTab", step: 1 });
+  expect(matchShortcut(chord("}", { metaKey: true, shiftKey: true }, "BracketRight"), resolved)).toBeNull();
+  expect(matchTerminalShortcut(chord("Tab", { ctrlKey: true }), resolved)).toBe("find");
+  expect(editShortcut("mac", overrides, "nextTab", undefined)).toEqual({ conflicts: ["find"] });
+  expect(editShortcut("mac", overrides, "nextTab", undefined, true)).toEqual({ overrides: { find: null } });
+});
+
+it("reserves non-macOS Ctrl+letter for the shell while preserving the app-only palette default", () => {
+  const ctrlK = chord("k", { ctrlKey: true });
+  expect(captureShortcut(ctrlK, "other")).toEqual({ issue: "shellCtrlLetter" });
+  expect(captureShortcut(chord("Ж", { ctrlKey: true }, "KeyS"), "other")).toEqual({ issue: "shellCtrlLetter" });
+  expect(captureShortcut(ctrlK, "mac")).toEqual({ chord: { code: "KeyK", key: "k", mods: ["ctrl"] } });
+  const resolved = resolveShortcuts("other", { newTab: { code: "KeyK", key: "k", mods: ["ctrl"] } });
+  expect(matchShortcut(ctrlK, resolved)).toBeNull();
+  expect(matchShortcut(ctrlK, resolved, "app")).toEqual({ type: "openPalette" });
+});
+
+it("finds conflicts with the symbol aliases for Terminal font zoom", () => {
+  const plus = { code: "Equal", key: "+", mods: ["meta", "shift"] } as const;
+  expect(editShortcut("mac", {}, "find", plus)).toEqual({ conflicts: ["terminalZoomIn"] });
 });
 
 describe("matchShortcut on macOS", () => {

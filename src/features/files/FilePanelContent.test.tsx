@@ -6,10 +6,12 @@ import { startI18n } from "@/i18n";
 import { listFiles } from "@/lib/ipc/files";
 import * as transferIpc from "@/lib/ipc/transfers";
 import { currentPlatform } from "@/features/workspace/shortcuts";
+import { shortcutSetting } from "@/features/workspace/shortcut-settings";
 import { closeRemoteEdit } from "@/lib/ipc/edit";
 import type { Host } from "@/lib/ipc/hosts";
 import { emptyTabs, newPane, remoteTerminalPaneIds, tabsReducer, type TabsState } from "@/features/workspace/tabs";
 import { FilePanelDockContext } from "@/features/shell/file-panel-dock";
+import { getSetting, setSetting } from "@/lib/storage";
 import { FilePanelContent } from "./FilePanelContent";
 import { fileBrowsers } from "./fileBrowsers";
 import { terminalCwds } from "./terminalCwds";
@@ -159,6 +161,35 @@ describe("a File panel following its Terminal's cd", () => {
     expect(pathBars()).toEqual([["/", "srv", "www"]]);
     container.remove();
   });
+});
+
+it("uses a remapped history shortcut while the file list is focused", async () => {
+  const pane = newPane({ kind: "remote-terminal", host });
+  const container = document.body.appendChild(document.createElement("div"));
+  root = createRoot(container);
+  const previous = getSetting(shortcutSetting);
+  try {
+    await act(async () => root!.render(
+      <FilePanelDockContext value={{ dock: "right", collapsed: false, collapse() {} }}>
+        <TooltipProvider>
+          <FilePanelContent pane={{ id: pane.id, host, status: "connected" }} />
+        </TooltipProvider>
+      </FilePanelDockContext>,
+    ));
+    vi.mocked(listFiles).mockResolvedValueOnce({
+      path: "/srv/www", entries: [{ name: "index.html", kind: "file", size: 3, modified: null, permissions: null, linkTarget: null }],
+    });
+    await act(async () => terminalCwds.report(pane.id, "/srv/www"));
+    act(() => setSetting(shortcutSetting, { fileBack: { code: "ArrowUp", key: "ArrowUp", mods: ["alt"] } }));
+    expect(container.querySelector('[aria-keyshortcuts="Alt+ArrowUp"]')).not.toBeNull();
+    await act(async () => container.querySelector('[role="grid"]')!.dispatchEvent(new KeyboardEvent("keydown", {
+      code: "ArrowUp", key: "ArrowUp", altKey: true, bubbles: true, cancelable: true,
+    })));
+    expect(container.querySelector('nav[aria-label="Path"]')?.textContent).toContain("etc");
+  } finally {
+    act(() => setSetting(shortcutSetting, previous));
+    container.remove();
+  }
 });
 
 

@@ -257,6 +257,51 @@ async function clickButton(label: string, scope: ParentNode = document) {
   await act(async () => button!.click());
 }
 
+it("records a replacement in Settings and uses it in the window and command palette after reopening", async () => {
+  const initial = workspace({ type: "open", tabId: "settings", pane: newPane({ kind: "settings" }, "settings") });
+  const mac = currentPlatform() === "mac";
+  const mods = mac ? { metaKey: true } : { ctrlKey: true, shiftKey: true };
+  async function press(key: string, code: string, modifiers: KeyboardEventInit = mods) {
+    const event = new KeyboardEvent("keydown", { key, code, bubbles: true, cancelable: true, ...modifiers });
+    await act(async () => (document.activeElement ?? document.body).dispatchEvent(event));
+    return event.defaultPrevented;
+  }
+
+  await render(initial);
+  await clickButton("Shortcuts");
+  await clickButton("Edit shortcut for New Local terminal");
+  if (!mac) {
+    expect(await press("w", "KeyW", { ctrlKey: true })).toBe(true);
+    expect(document.body.textContent).toContain("Ctrl + letter combinations are reserved for the Terminal shell");
+    expect(settingsFile.shortcuts).toBeUndefined();
+  }
+  expect(await press("w", "KeyW")).toBe(true);
+  expect(document.body.textContent).toContain("already used by Close pane");
+  expect(tabIds()).toEqual(["tab-settings"]);
+  expect(settingsFile.shortcuts).toBeUndefined();
+  await clickButton("Replace shortcut");
+  expect(settingsFile.shortcuts).toMatchObject({ newTab: { code: "KeyW" }, closePane: null });
+
+  await unmount();
+  await startSettings(settingsBackend);
+  await render(initial);
+  await press("k", "KeyK");
+  const newTerminal = [...(dialog()?.querySelectorAll('[role="option"]') ?? [])]
+    .find((option) => option.textContent?.includes("New Local terminal"));
+  expect(newTerminal?.textContent).toContain(mac ? "⌘W" : "Ctrl+Shift+W");
+  await press("k", "KeyK");
+
+  expect(await press("t", "KeyT")).toBe(false);
+  expect(await press("w", "KeyW")).toBe(true);
+  expect(tabIds()).toHaveLength(2);
+  await act(async () => document.getElementById("tab-settings")!.click());
+  await clickButton("Shortcuts");
+  await clickButton("Reset shortcut for New Local terminal");
+  expect(settingsFile.shortcuts).toEqual({ closePane: null });
+  await clickButton("Reset all shortcuts");
+  expect(settingsFile.shortcuts).toEqual({});
+});
+
 it("splits the focused remote Terminal on the same Host and in its reported directory", async () => {
   await render(workspace({ type: "open", tabId: "work", pane: remote("original") }));
   const remoteOpens = () => vi.mocked(invoke).mock.calls

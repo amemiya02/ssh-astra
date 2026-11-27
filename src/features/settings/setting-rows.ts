@@ -1,5 +1,6 @@
 import type { ParseKeys } from "i18next";
 import type { Language, resources } from "@/i18n/resources";
+import { shortcutNames } from "@/features/workspace/shortcuts";
 
 type SettingMessage = Extract<ParseKeys, `settings.${string}`>;
 type SettingsCopy = (typeof resources)["en"]["translation"]["settings"];
@@ -129,6 +130,10 @@ export const settingRows = {
   concurrency: row("transfers", "settings.transfers.concurrency.label",
     { en: "SFTP queue parallel uploads downloads", zh: "SFTP 队列 并行 上传 下载" }, "settings.transfers.concurrency.description",
   ),
+  resetShortcuts: row("shortcuts", "settings.shortcuts.keyboard",
+    { en: "keyboard bindings restore defaults hotkeys", zh: "键盘 按键 恢复默认 热键" },
+    "settings.shortcuts.description",
+  ),
   version: row("updates", "settings.updates.version.label",
     { en: "manual update upgrade release check", zh: "手动检查 更新 升级 发布" }, "settings.updates.version.description",
   ),
@@ -142,3 +147,8 @@ export const settingRows = {
     { en: "debugging support privacy clipboard copy", zh: "调试 支持 隐私 剪贴板 复制" }, "settings.diagnostics.reportDescription",
   ),
 };
+
+export const shortcutRows = new Map(shortcutNames.map((name) => [
+  name,
+  row("shortcuts", `settings.shortcuts.actions.${name}`, { en: "keyboard shortcut hotkey", zh: "键盘 快捷键 热键" }),
+]));

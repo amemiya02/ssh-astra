@@ -418,11 +418,13 @@ Additional toasts queue in arrival order. A normal toast stays on screen for fiv
 
 The top search field filters settings across all categories. Results keep their category headings and the original controls. Search matches titles, descriptions, and keywords in both English and Simplified Chinese. Clearing the field returns to the selected category. Choosing a category clears the search and scrolls its rows to the top.
 
-The left navigation lists Appearance, Terminal, Files, Connection, Transfers, Updates, and Diagnostics in that order when available. Appearance includes workspace layout and interface language. Updates and Diagnostics use the installed app's native features. The current category uses the `selected` surface, and narrow workspaces place the categories in a horizontally scrolling row above the controls. Shortcuts, Notifications, and Agent access can appear when they have settings available.
+The left navigation lists Appearance, Terminal, Files, Connection, Transfers, Shortcuts, Updates, and Diagnostics in that order when available. Appearance includes workspace layout and interface language. Updates and Diagnostics use the installed app's native features. The current category uses the `selected` surface, and narrow workspaces place the categories in a horizontally scrolling row above the controls. Notifications and Agent access can appear when they have settings available.
 
 Settings → Connection accepts a custom Unix agent socket or Windows named pipe in a text field. The field saves on Enter or blur. Clearing it returns new Connections to the system agent. A Connection uses the same source for authentication and agent forwarding when its Host enables forwarding.
 
 Appearance applies interface zoom immediately and remembers the selected percentage from 90% to 125%. The interface font takes a single local font family name and falls back to the system UI stack when that family is unavailable or the field is blank. The Terminal category has its own font family and size controls.
+
+In Shortcuts, each action lists its current key combinations. Select a combination to record its replacement, or press Esc to cancel. When a combination is in use, the row names the conflicting action and lets you replace it, leaving that action unassigned. Restore one action or reset the whole category to the platform defaults. Windows and Linux reserve Ctrl with a letter for the Terminal shell and explain this in the recorder. Window, Terminal and File panel shortcuts and their displayed hints update as soon as the setting changes.
 
 Terminal keyword highlighting uses the active Terminal palette. Settings → Terminal offers a switch for the built-in rules and a list of custom text or regular-expression rules. Matches use xterm decorations in the visible normal buffer.
 
