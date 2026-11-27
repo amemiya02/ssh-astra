@@ -77,6 +77,11 @@ export function forgetTemporaryHost(hostId: HostId): Promise<void> {
   return invoke("temporary_host_forget", { hostId });
 }
 
+/** Persists the Temporary Host under the id of its live Connection. */
+export function saveTemporaryHost(hostId: HostId, draft: HostDraft): Promise<Host> {
+  return invoke<Host>("temporary_host_save", { hostId, draft });
+}
+
 /** A folder in the Host list (`sshastra_core::hosts::Group`). */
 export interface Group {
   id: GroupId;

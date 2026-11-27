@@ -327,6 +327,8 @@ Within a tab, the focused pane splits to the right or down. Nested panes share a
 
 **Quick connect.** A valid SSH address adds an outline action above Home's Host cards and the first result in the command palette. Both read “Connect to …” and switch to “Quick connect” in privacy mode. An exact saved Host name takes priority in either search.
 
+**Save as Host.** A Temporary Host offers this action in its tab menu and, when focused, at the right of the status bar. The Host editor fills in the connection details and asks for a name. Saving keeps the same Connection, Terminals and File panels.
+
 **Status bar.** Left: one segment per connected Host (green dot and name), per reconnecting Host (pulsing amber dot, try count), a Port forwards count (a button that opens the forwards view), transfers with speed, and the update notice. Each segment is 10px padded and closed by a 1px right rule. Right: the focused Host's address in mono, the theme menu and Settings.
 
 **Rhythm.** Tailwind's 4px scale with 2px steps in chrome: 2px between Host rows, 4px between tabs and rail buttons, 6px gutters, 8 to 12px inside panels, 24px dialog padding.
@@ -440,6 +442,7 @@ Settings lists every theme as a card (10px radius, 6px padding, auto-fill at min
 - F2 and the row menu’s Rename action edit the name within the row. Enter saves, and Escape cancels. Show validation and rename errors below the list and keep the name editable.
 - In the remote row menu, Compress takes the selection and opens a name dialog for a new .tar.gz in the current folder. Extract appears for a single supported archive and confirms the new sibling folder. Keep conflicts, missing tools and other operation errors in the dialog.
 - The footer shows item and selected counts after filtering. When selected entries are hidden, show their count alongside the visible selection.
+- **Show another Host's File panel** opens a second File panel for a connected Host with an open Terminal. The panels stack in the right dock and sit side by side in the bottom dock. Drop selected entries into the other panel or onto a folder row there. Copy and Paste also work when switching Terminal tabs. Transfers shows both Host names, with both full paths in the row tooltip.
 
 ### Menus, tooltips, dialogs
 - **Menus:** `raised` fill, 1px border, 8px radius, 4px padding, `shadow-overlay`; items 6px radius, `accent` on focus, destructive items red.

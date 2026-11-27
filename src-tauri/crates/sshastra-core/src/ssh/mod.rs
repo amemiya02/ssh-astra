@@ -321,6 +321,7 @@ fn log_hop<T>(id: &HostId, step: &str, result: &Result<T, ConnectError>) {
 /// Saved Hosts' temporary key trust lasts for the lifetime of the manager.
 pub struct ConnectionManager {
     host_keys: Arc<HostKeys>,
+    promoted_host_keys: Mutex<HashMap<HostId, Arc<HostKeys>>>,
     agent: Agent,
     home_dir: Option<PathBuf>,
     vault: Arc<dyn CredentialVault>,
@@ -373,6 +374,7 @@ impl ConnectionManager {
     pub fn new(known_hosts: KnownHosts) -> Self {
         Self {
             host_keys: Arc::new(HostKeys::new(known_hosts)),
+            promoted_host_keys: Mutex::default(),
             agent: Agent::None,
             home_dir: std::env::var_os("HOME")
                 .or_else(|| std::env::var_os("USERPROFILE"))
@@ -538,6 +540,15 @@ impl ConnectionManager {
             ConnectionPurpose::Temporary(&temporary.keys),
         )
         .await
+    }
+
+    /// Keeps the key scope when a Temporary Host is saved under the same id.
+    /// An in-flight handshake can still record trust in this scope.
+    pub fn preserve_temporary_host_trust(&self, temporary: &TemporaryHost) {
+        self.promoted_host_keys
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(temporary.host.id.clone(), Arc::clone(&temporary.keys));
     }
 
     /// Authenticates on a private Connection at every hop, without using the
@@ -788,7 +799,13 @@ impl ConnectionManager {
             endpoint: Arc::clone(&endpoint),
             host_keys: match purpose {
                 ConnectionPurpose::Temporary(keys) => Arc::clone(keys),
-                _ => Arc::clone(&self.host_keys),
+                _ => self
+                    .promoted_host_keys
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .get(&host.id)
+                    .cloned()
+                    .unwrap_or_else(|| Arc::clone(&self.host_keys)),
             },
             prompter: prompter.clone(),
             failure: failure.clone(),

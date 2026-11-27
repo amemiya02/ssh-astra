@@ -8,6 +8,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { privacyModeSetting, workspaceHostName } from "@/features/workspace/privacy-mode";
+import { useSetting } from "@/lib/storage";
 import type { ConflictAnswer } from "@/lib/ipc/transfers";
 import { firstConflict, transfersStore, useTransfers } from "./transfersStore";
 
@@ -17,6 +19,7 @@ import { firstConflict, transfersStore, useTransfers } from "./transfersStore";
  */
 export function ConflictDialog() {
   const { t } = useTranslation();
+  const [privacyMode] = useSetting(privacyModeSetting);
   const conflict = useTransfers((s) => firstConflict(s.transfers));
   const path = conflict?.state.type === "conflict" ? conflict.state.path : null;
   const answer = (value: ConflictAnswer) => {
@@ -31,7 +34,14 @@ export function ConflictDialog() {
             <DialogTitle>{t("transfers.conflict.title")}</DialogTitle>
             <DialogDescription>{t("transfers.conflict.body")}</DialogDescription>
           </DialogHeader>
-          <p className="bg-muted rounded-lg border px-3.5 py-3 font-mono text-xs break-all">{path}</p>
+          <p className="bg-muted rounded-lg border px-3.5 py-3 font-mono text-xs break-all">
+            {conflict?.targetHost && (
+              <span className="mb-0.5 block font-sans font-medium">
+                {workspaceHostName(conflict.targetHost, t, privacyMode)}
+              </span>
+            )}
+            {path}
+          </p>
           <DialogFooter className="sm:justify-between">
             <div className="flex gap-2">
               <Button type="button" variant="outline" size="sm" onClick={() => answer("skipAll")}>

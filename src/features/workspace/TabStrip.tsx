@@ -19,6 +19,7 @@ import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { HostMonogram } from "@/features/hosts/HostMonogram";
 import { hueClasses } from "@/features/hosts/hostHue";
 import type { TerminalTitleSource } from "@/features/terminal/terminal-prefs";
+import type { TemporaryHost } from "@/lib/ipc/hosts";
 import { getSetting, setSetting, useSetting } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import { TabMenu } from "./TabMenu";
@@ -54,6 +55,7 @@ interface TabStripProps {
   onMove(id: string, to: number): void;
   onNewLocalTerminal(): void;
   onSplit(orientation: SplitOrientation): void;
+  onSaveTemporaryHost?(host: TemporaryHost): void;
 }
 
 const statusDot: Record<ConnectionStatus, string> = {
@@ -93,6 +95,7 @@ export function TabStrip({
   onMove,
   onNewLocalTerminal,
   onSplit,
+  onSaveTemporaryHost,
 }: TabStripProps) {
   const { t } = useTranslation();
   const { unread, flashing } = useStore(activity.store);
@@ -223,6 +226,7 @@ export function TabStrip({
           tab={tab}
           title={title}
           vertical={vertical}
+          onSaveTemporaryHost={onSaveTemporaryHost}
           onAction={(action) => {
             if (vertical && action.type === "closeRight") {
               const index = ordered.findIndex(({ id }) => id === tab.id);

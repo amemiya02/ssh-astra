@@ -1,4 +1,4 @@
-//! Transfer commands: the app's one TransferQueue. Uploads and downloads go
+//! Transfer commands: the app's one TransferQueue. Remote endpoints go
 //! over a Host's live Connection (never connecting), on its shared SFTP
 //! session (`ConnectionManager::live_sftp`), not the File panel's, so
 //! browsing is not stuck behind a big file.
@@ -10,7 +10,8 @@ use std::sync::Arc;
 
 use super::watch::Watcher;
 use sshastra_core::files::{
-    ConflictAnswer, DiskFs, Transfer, TransferId, TransferQueue, TransferSettings,
+    ConflictAnswer, DiskFs, RemoteTransfer, Transfer, TransferHost, TransferId, TransferQueue,
+    TransferSettings,
 };
 use sshastra_core::hosts::HostId;
 use tauri::ipc::Channel;
@@ -92,6 +93,34 @@ pub async fn transfers_download(
             transfers
                 .queue
                 .download(Arc::clone(&open), path, local_dir.clone())
+        })
+        .collect())
+}
+
+/// Queues copying each source path into a directory on another Host.
+#[tauri::command]
+pub async fn transfers_copy_remote(
+    app: AppHandle,
+    transfers: State<'_, TransfersState>,
+    source: TransferHost,
+    paths: Vec<String>,
+    target: TransferHost,
+    remote_dir: String,
+) -> Result<Vec<TransferId>, ()> {
+    let source = RemoteTransfer {
+        open: live_sftp(app.clone(), source.id.clone()),
+        host: source,
+    };
+    let target = RemoteTransfer {
+        open: live_sftp(app, target.id.clone()),
+        host: target,
+    };
+    Ok(paths
+        .into_iter()
+        .map(|path| {
+            transfers
+                .queue
+                .copy_remote(source.clone(), path, target.clone(), remote_dir.clone())
         })
         .collect())
 }

@@ -17,7 +17,7 @@ import { ConnectErrorPanel } from "@/features/connect/ConnectErrorPanel";
 import { ConnectPromptDialog } from "@/features/connect/ConnectPromptDialog";
 import { readCommandError, refusal, type CommandError, type ConnectPrompt, type PromptAnswer } from "@/lib/ipc/connect";
 import type { testHostConnection } from "@/lib/ipc/connections";
-import type { Group, Host, HostDraft, HostId, TerminalBackspace, TerminalCharset } from "@/lib/ipc/hosts";
+import { isTemporaryHost, type Group, type Host, type HostDraft, type HostId, type TerminalBackspace, type TerminalCharset } from "@/lib/ipc/hosts";
 import { cn } from "@/lib/utils";
 import { TerminalSchemeSelect } from "@/features/terminal/TerminalSchemeSelect";
 import { useTerminalPrefs } from "@/features/terminal/terminal-prefs-context";
@@ -79,7 +79,7 @@ type ConnectionTestState =
   | { status: "succeeded"; values: HostFormValues }
   | { status: "failed"; values: HostFormValues; error: CommandError };
 
-/** The Host editor: a new Host (`host` omitted) or edits to `host`. */
+/** The Host editor creates a Host, edits one, or saves a Temporary Host. */
 export function HostFormDialogContent({
   host,
   hosts,
@@ -101,7 +101,12 @@ export function HostFormDialogContent({
 }) {
   const { t } = useTranslation();
   const { prefs: { importedSchemes } } = useTerminalPrefs();
-  const [values, setValues] = useState<HostFormValues>(() => (host ? hostFormFrom(host, importedSchemes) : emptyHostForm));
+  const temporary = host !== undefined && isTemporaryHost(host);
+  const [values, setValues] = useState<HostFormValues>(() => {
+    if (!host) return emptyHostForm;
+    const initial = hostFormFrom(host, importedSchemes);
+    return temporary ? { ...initial, name: "" } : initial;
+  });
   const [errors, setErrors] = useState<Extract<HostFormResult, { ok: false }>["errors"]>({});
   const [saveError, setSaveError] = useState<{ message: string; field?: keyof typeof advancedFieldIds } | null>(null);
   const [saving, setSaving] = useState(false);
@@ -109,6 +114,7 @@ export function HostFormDialogContent({
   const [connectionTest, setConnectionTest] = useState<ConnectionTestState | null>(null);
   const [testPrompt, setTestPrompt] = useState<{ prompt: ConnectPrompt; answer(answer: PromptAnswer): void } | null>(null);
   const testAbort = useRef<AbortController | null>(null);
+  const savingTemporaryHost = temporary && saving;
   const testing = connectionTest?.status === "testing";
   const result = connectionTest && connectionTest.status !== "testing" && connectionTest.values === values
     ? connectionTest : null;
@@ -179,6 +185,8 @@ export function HostFormDialogContent({
     <DialogContent
       showCloseButton={false}
       className="max-h-[calc(100vh-2rem)] max-w-[calc(100%-2rem)] overflow-y-auto p-5 sm:max-w-120"
+      onEscapeKeyDown={(event) => { if (savingTemporaryHost) event.preventDefault(); }}
+      onInteractOutside={(event) => { if (savingTemporaryHost) event.preventDefault(); }}
     >
       <form
         className="grid gap-3.5"
@@ -194,14 +202,17 @@ export function HostFormDialogContent({
             const field = error.kind === "invalid" && error.details?.field;
             const advancedField = field === "terminalScheme" || field === "defaultDirectory" ? field : undefined;
             if (advancedField) setAdvancedOpen(true);
-            setSaveError({ message: error.message, field: advancedField });
+            let message = error.message;
+            if (error.kind === "temporaryHostUnavailable") message = t("quickConnect.noLongerAvailable");
+            if (error.kind === "duplicateHostId") message = t("quickConnect.alreadySaved");
+            setSaveError({ message, field: advancedField });
             setSaving(false);
           });
         }}
       >
         <DialogHeader>
-          <DialogTitle>{host ? t("hosts.edit") : t("hosts.new")}</DialogTitle>
-          <DialogDescription>{host ? t("hosts.editDescription") : t("hosts.newDescription")}</DialogDescription>
+          <DialogTitle>{t(temporary ? "quickConnect.saveAsHost" : host ? "hosts.edit" : "hosts.new")}</DialogTitle>
+          <DialogDescription>{t(temporary ? "quickConnect.saveAsHostDescription" : host ? "hosts.editDescription" : "hosts.newDescription")}</DialogDescription>
         </DialogHeader>
         <section aria-labelledby="host-form-basic" className="grid gap-3.5">
           <h3 id="host-form-basic" className="text-sm font-semibold">{t("hosts.basicInfo")}</h3>
@@ -470,7 +481,7 @@ export function HostFormDialogContent({
                   </Select>
                 </div>
               </div>
-              {host && <ClearCredentialsButton hostId={host.id} />}
+              {host && !temporary && <ClearCredentialsButton hostId={host.id} />}
             </div>
           </div>
         </div>
@@ -482,7 +493,7 @@ export function HostFormDialogContent({
           <Button type="button" variant="outline" size="sm" className="sm:mr-auto" disabled={testing || saving} onClick={() => void runTest()}>
             {t("hosts.connectionTest.action")}
           </Button>
-          <Button type="button" variant="outline" size="sm" onClick={onCancel}>
+          <Button type="button" variant="outline" size="sm" disabled={savingTemporaryHost} onClick={onCancel}>
             {t("hosts.cancel")}
           </Button>
           <Button type="submit" size="sm" disabled={saving || testing}>

@@ -6,7 +6,7 @@ import { connectionsStore, useConnections } from "@/features/connect/connections
 import { usePaletteActions } from "@/features/palette/palette-actions";
 import { readCommandError, refusal, type ConnectPrompt, type PromptAnswer } from "@/lib/ipc/connect";
 import { testHostConnection } from "@/lib/ipc/connections";
-import type { Host, HostDraft, HostId, ImportReport } from "@/lib/ipc/hosts";
+import { isTemporaryHost, type Host, type HostDraft, type HostId, type ImportReport, type TemporaryHost } from "@/lib/ipc/hosts";
 import { pickOpenPath, pickSavePath } from "@/lib/ipc/system";
 import { ConfirmRemoveDialogContent, HostFormDialogContent, type Removal } from "./HostDialogs";
 import type { HostListActions } from "./HostList";
@@ -34,6 +34,7 @@ export interface HostsController {
   selectedGroupId: string | null;
   renamingGroupId: string | null;
   newHost(): void;
+  openTemporaryHostEditor(host: TemporaryHost): void;
   createGroup(parentId: string | null): Promise<void>;
   /** Imports ~/.ssh/config, then shows the report (or why it failed). */
   importSshConfig(): void;
@@ -45,7 +46,7 @@ export interface HostsController {
   dialogs: ReactNode;
 }
 
-export function useHostsController(openers: HostOpeners): HostsController {
+export function useHostsController(openers: HostOpeners, onTemporaryHostSaved: (host: Host) => void): HostsController {
   const { t } = useTranslation();
   const tree = useHosts((s) => s.tree);
   const [selected, setSelected] = useState<DragItem | null>(null);
@@ -199,8 +200,10 @@ export function useHostsController(openers: HostOpeners): HostsController {
     move: (op) => void attempt(() => store().move(op)),
   };
 
+  const temporary = editing && editing !== "new" && isTemporaryHost(editing) ? editing : undefined;
   /** Saves the editor; a new Host goes into the selected Group, last. */
   const save = async (draft: HostDraft, id?: HostId) => {
+    if (temporary) return store().saveTemporaryHost(temporary.id, draft);
     const host = await store().saveHost(draft, id);
     if (!id && selectedGroupId) {
       const index = store().tree.hosts.filter((h) => h.groupId === selectedGroupId).length;
@@ -236,6 +239,7 @@ export function useHostsController(openers: HostOpeners): HostsController {
             testConnection={testHostConnection}
             onCancel={() => setEditing(null)}
             onSaved={(host) => {
+              if (temporary) onTemporaryHostSaved(host);
               setSelected({ kind: "host", id: host.id });
               setEditing(null);
             }}
@@ -280,6 +284,7 @@ export function useHostsController(openers: HostOpeners): HostsController {
     selectedGroupId,
     renamingGroupId,
     newHost: () => setEditing("new"),
+    openTemporaryHostEditor: setEditing,
     createGroup,
     importSshConfig,
     importHosts: transfer.importHosts,

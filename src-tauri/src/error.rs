@@ -34,6 +34,13 @@ impl CommandError {
         Self::new("notOpen", "the File panel's SFTP session is closed")
     }
 
+    pub fn temporary_host_unavailable() -> Self {
+        Self::new(
+            "temporaryHostUnavailable",
+            "this Temporary Host is no longer available",
+        )
+    }
+
     fn with_details(mut self, details: Value) -> Self {
         self.details = Some(details);
         self
@@ -76,6 +83,7 @@ impl From<HostStoreError> for CommandError {
                 Self::new("invalid", &err).with_details(json!({ "field": field }))
             }
             NotFound(_) | GroupNotFound(_) | ForwardNotFound(_) => Self::new("notFound", &err),
+            DuplicateId(_) => Self::new("duplicateHostId", &err),
             InvalidMove => Self::new("invalidMove", &err),
             JumpHostCycle(names) => {
                 let details = json!({ "hosts": names });

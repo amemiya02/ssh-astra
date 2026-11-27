@@ -1,10 +1,11 @@
-import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, RotateCw, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, Check, ChevronDown, ChevronRight, RotateCw, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { Button } from "@/components/ui/button";
 import { formatSize } from "@/features/files/fileList";
+import { privacyModeSetting, workspaceHostName } from "@/features/workspace/privacy-mode";
 import type { FilePanelDock } from "@/features/shell/shell-layout";
 import type { Transfer } from "@/lib/ipc/transfers";
 import { useSetting } from "@/lib/storage";
@@ -92,6 +93,7 @@ export function TransfersPanel({ dock }: { dock: FilePanelDock }) {
 
 function TransferRow({ transfer, speed }: { transfer: Transfer; speed: number | undefined }) {
   const { t } = useTranslation();
+  const [privacyMode] = useSetting(privacyModeSetting);
   const { state } = transfer;
   const failed = state.type === "failed";
   const percent =
@@ -100,7 +102,12 @@ function TransferRow({ transfer, speed }: { transfer: Transfer; speed: number | 
       : state.type === "done"
         ? 100
         : 0;
-  const Direction = transfer.direction === "upload" ? ArrowUp : ArrowDown;
+  const Direction = { upload: ArrowUp, download: ArrowDown, copy: ArrowRight }[transfer.direction];
+  const sourceName = transfer.sourceHost && workspaceHostName(transfer.sourceHost, t, privacyMode);
+  const targetName = transfer.targetHost && workspaceHostName(transfer.targetHost, t, privacyMode);
+  const source = sourceName ? `${sourceName} · ${transfer.source}` : transfer.source;
+  const target = targetName ? `${targetName} · ${transfer.target}` : transfer.target;
+  const route = `${source} → ${target}`;
   const left = timeLeft(transfer, speed);
 
   let detail: string;
@@ -140,7 +147,7 @@ function TransferRow({ transfer, speed }: { transfer: Transfer; speed: number | 
             aria-label={t(`transfers.direction.${transfer.direction}`)}
           />
         )}
-        <span className="min-w-0 flex-1 truncate font-medium" title={`${transfer.source} → ${transfer.target}`}>
+        <span className="min-w-0 flex-1 truncate font-medium" title={route}>
           {transfer.name}
         </span>
         {state.type !== "done" && !failed && (
@@ -177,6 +184,11 @@ function TransferRow({ transfer, speed }: { transfer: Transfer; speed: number | 
           )
         )}
       </div>
+      {sourceName && targetName && (
+        <p className="text-muted-foreground mt-1 truncate text-xs" title={route}>
+          {sourceName} → {targetName}
+        </p>
+      )}
       {state.type !== "done" && (
         <div
           role="progressbar"

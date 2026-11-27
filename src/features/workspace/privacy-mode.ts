@@ -1,4 +1,3 @@
-import { isTemporaryHost, type Host } from "@/lib/ipc/hosts";
 import { defineSection, getSetting, setSetting } from "@/lib/storage";
 
 export const privacyModeSetting = defineSection("privacyMode", false, (raw) => raw === true);
@@ -8,9 +7,9 @@ export function togglePrivacyMode(): void {
 }
 
 export function workspaceHostName(
-  host: Host,
+  host: { name: string; temporary?: boolean },
   t: (key: "quickConnect.temporaryHost") => string,
   privacyMode: boolean,
 ): string {
-  return privacyMode && isTemporaryHost(host) ? t("quickConnect.temporaryHost") : host.name;
+  return privacyMode && host.temporary ? t("quickConnect.temporaryHost") : host.name;
 }

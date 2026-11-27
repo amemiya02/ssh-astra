@@ -234,6 +234,11 @@
     "dockRight": "将文件面板停靠在右侧",
     "dockBottom": "将文件面板停靠在下方",
     "dockGroup": "文件面板位置",
+    "copy": "复制",
+    "peer": {
+      "choose": "显示另一台主机的文件面板",
+      "currentOnly": "仅显示当前主机"
+    },
     "back": "后退",
     "forward": "前进",
     "up": "上一级文件夹",
@@ -420,7 +425,8 @@
     "timeLeft": "剩余 {{time}}",
     "direction": {
       "upload": "上传",
-      "download": "下载"
+      "download": "下载",
+      "copy": "在主机之间复制"
     },
     "unprotected": {
       "label": "未受保护",
@@ -995,6 +1001,10 @@
     "action": "快速连接",
     "connectTo": "连接到 {{target}}",
     "temporaryHost": "临时主机",
+    "saveAsHost": "保存为主机",
+    "saveAsHostDescription": "为这台主机命名并添加到主机列表。已打开的终端和文件面板会保持连接。",
+    "noLongerAvailable": "这台临时主机已不可用。",
+    "alreadySaved": "这台主机已保存。",
     "failed": "无法打开临时主机。"
   },
   "home": {

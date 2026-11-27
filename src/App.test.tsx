@@ -11,8 +11,10 @@ import { emptyTabs, newPane, tabsReducer, type TabsAction, type TabsState } from
 import { restoreWorkspaceLayout, workspaceLayoutSetting } from "@/features/workspace/workspace-layout";
 import i18n, { startI18n } from "@/i18n";
 import type { ConnectPrompt } from "@/lib/ipc/connect";
-import type { Host, QuickConnectTarget } from "@/lib/ipc/hosts";
+import type { Listing } from "@/lib/ipc/files";
+import type { Host, HostDraft, QuickConnectTarget } from "@/lib/ipc/hosts";
 import type { TerminalMessage } from "@/lib/ipc/terminal";
+import type { Transfer } from "@/lib/ipc/transfers";
 import { getSetting, startSettings, type SettingsBackend } from "@/lib/storage";
 import { ThemeProvider } from "@/theme/ThemeProvider";
 import { App } from "./App";
@@ -25,14 +27,27 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
     Channel: class<T> {
       constructor(public onmessage: (message: T) => void) {}
     },
-    invoke: vi.fn(async (command: string, args?: { target?: QuickConnectTarget }) => {
+    invoke: vi.fn(async (command: string, args?: {
+      target?: QuickConnectTarget;
+      hostId?: string;
+      id?: string;
+      draft?: HostDraft;
+    }) => {
       if (command === "remote_terminal_open" || command === "local_terminal_open") return ++nextTerminalId;
       if (command === "temporary_host_create") {
         const target = { ...args!.target!, user: args!.target!.user ?? "local-user" };
         return { ...host, ...target, id: `temporary-${++nextTemporaryId}`, name: quickConnectLabel(target), auth: { type: "auto" } };
       }
+      if (command === "temporary_host_save") {
+        if (saveTemporaryError) throw saveTemporaryError;
+        const saved = { ...args!.draft!, id: args!.hostId!, groupId: null, forwards: [] };
+        savedHosts.push(saved);
+        return saved;
+      }
+      if (command === "files_open" && args?.hostId && panelListings.has(args.hostId)) return args.hostId;
       if (command === "files_open" || command === "files_connect" || command === "files_local_open") return command;
-      if (command === "files_list") return { path: "/", entries: [] };
+      if (command === "files_list") return panelListings.get(args?.id ?? "") ?? { path: "/", entries: [] };
+      if (command === "transfers_copy_remote") return [1];
       if (command === "transfers_watch" || command === "forwards_watch" || command === "connections_watch") return [];
       if (command === "host_tree") return { hosts: savedHosts, groups: [] };
     }),
@@ -66,6 +81,8 @@ const host: Host = {
   auth: { type: "password" }, jumpHost: null, groupId: null, forwards: [],
 };
 let savedHosts: Host[] = [];
+let saveTemporaryError: { kind: string; message: string } | undefined;
+const panelListings = new Map<string, Listing>();
 const remote = (id: string) => newPane({ kind: "remote-terminal", host }, id);
 const local = (id: string) => newPane({ kind: "local-terminal" }, id);
 
@@ -99,6 +116,7 @@ beforeAll(() => {
 });
 
 beforeEach(async () => {
+  saveTemporaryError = undefined;
   settingsFile = { workspacePreferences: { restoreTabs: "none" } };
   await startSettings(settingsBackend);
   await i18n.changeLanguage("en");
@@ -118,6 +136,7 @@ afterEach(async () => {
     await hostsStore.getState().load();
   }
   vi.mocked(invoke).mockClear();
+  panelListings.clear();
   vi.unstubAllGlobals();
 });
 
@@ -581,6 +600,57 @@ it("opens a Temporary Host from an empty Home and discards it when its last tab 
   expect(opens()[1]?.hostId).not.toBe(id);
 });
 
+it("drops a file into another Host's File panel and shows both endpoints in Transfers", async () => {
+  const backup = { ...host, id: "backup", name: "Backup Host", defaultDirectory: "/archive" };
+  panelListings.set(host.id, {
+    path: "/work",
+    entries: [{ name: "notes.txt", kind: "file", size: 3, modified: null, permissions: null, linkTarget: null }],
+  });
+  panelListings.set(backup.id, { path: "/archive", entries: [] });
+  await render(workspace(
+    { type: "open", tabId: "backup", pane: newPane({ kind: "remote-terminal", host: backup }, "backup") },
+    { type: "open", tabId: "source", pane: remote("source") },
+  ));
+
+  const dock = document.getElementById("files")!;
+  await enter(dock.querySelector<HTMLElement>(`button[aria-label="Show another Host's File panel"]`)!);
+  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')]
+    .find((option) => option.textContent === backup.name);
+  expect(item).toBeDefined();
+  await act(async () => item!.click());
+
+  const source = dock.querySelector('[role="rowgroup"] [role="row"]')!;
+  const target = dock.querySelector('[role="grid"][aria-label="Files in /archive"]')!;
+  const targetDropZone = target.parentElement!.parentElement!;
+  source.getBoundingClientRect = () => new DOMRect(0, 20, 100, 26);
+  targetDropZone.getBoundingClientRect = () => new DOMRect(0, 100, 100, 180);
+  const pointer = (element: EventTarget, type: string, y: number) => element.dispatchEvent(new PointerEvent(type, {
+    bubbles: true, cancelable: true, button: 0, isPrimary: true, pointerId: 1, clientX: 10, clientY: y,
+  }));
+  act(() => pointer(source, "pointerdown", 30));
+  act(() => pointer(document, "pointermove", 42));
+  act(() => pointer(target, "pointermove", 145));
+  await act(async () => pointer(target, "pointerup", 145));
+
+  const sourceHost = { id: host.id, name: host.name };
+  const targetHost = { id: backup.id, name: backup.name };
+  expect(vi.mocked(invoke)).toHaveBeenCalledWith("transfers_copy_remote", {
+    source: sourceHost, target: targetHost, paths: ["/work/notes.txt"], remoteDir: "/archive",
+  });
+  expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "files_rename")).toBe(false);
+
+  const watch = vi.mocked(invoke).mock.calls.find(([command]) => command === "transfers_watch")?.[1] as {
+    onEvent: { onmessage(transfer: Transfer): void };
+  };
+  await act(async () => watch.onEvent.onmessage({
+    id: 1, direction: "copy", name: "notes.txt", state: { type: "running" },
+    source: "/work/notes.txt", target: "/archive/notes.txt", sourceHost, targetHost,
+    bytesDone: 1, bytesTotal: 3, filesDone: 0, filesTotal: 1, unprotected: false,
+  }));
+  expect(dock.querySelector('[aria-label="Transfers"]')?.textContent).toContain("Test Host → Backup Host");
+  expect(dock.querySelector('[title="Test Host · /work/notes.txt → Backup Host · /archive/notes.txt"]')).not.toBeNull();
+});
+
 it("puts an exact saved Host ahead of Quick connect in Home and the palette", async () => {
   const saved = { ...host, name: "lab" };
   savedHosts = [{ ...host, id: "prefix", name: "lab-old" }, saved];
@@ -606,6 +676,58 @@ it("puts an exact saved Host ahead of Quick connect in Home and the palette", as
   expect(vi.mocked(invoke)).toHaveBeenCalledWith("temporary_host_create", {
     target: { address: "lab", port: 2200, user: "testing" },
   });
+});
+
+it("saves a Temporary Host in place after canceling and retrying the Host editor", async () => {
+  await hostsStore.getState().load();
+  await render(emptyTabs);
+  await search(homeSearch(), "deploy@lab:2200");
+  await enter(homeSearch());
+  const calls = (command: string) => vi.mocked(invoke).mock.calls.filter(([name]) => name === command);
+  const open = calls("remote_terminal_open")[0]?.[1] as { hostId: string } | undefined;
+  const id = open?.hostId;
+  expect(id).toBeDefined();
+  expect(calls("files_open")).toEqual([["files_open", { hostId: id }]]);
+  const [tab] = tabIds();
+  const terminals = [...testTerminals];
+  const fileCloses = calls("files_close");
+
+  await clickButton("Privacy mode");
+  expect(container?.innerHTML).not.toContain("deploy@lab");
+  await selectTabMenu(tab!.slice(4), "Save as Host");
+  expect(dialog()?.querySelector("h2")?.textContent).toBe("Save as Host");
+  expect(document.querySelector<HTMLInputElement>("#host-form-address")?.value).toBe("lab");
+  expect(document.querySelector<HTMLInputElement>("#host-form-port")?.value).toBe("2200");
+  expect(document.querySelector<HTMLInputElement>("#host-form-user")?.value).toBe("deploy");
+  await clickButton("Cancel", dialog()!);
+  expect(calls("temporary_host_save")).toHaveLength(0);
+  expect(hostsStore.getState().tree.hosts).toEqual([]);
+  expect(document.getElementById(tab!)?.getAttribute("aria-label")).toBe("Temporary Host (Connected)");
+
+  await clickButton("Save as Host", document.querySelector("footer")!);
+  await search(document.querySelector<HTMLInputElement>("#host-form-name")!, "Lab");
+  saveTemporaryError = { kind: "io", message: "Disk write failed" };
+  await clickButton("Save", dialog()!);
+  expect(dialog()?.querySelector('[role="alert"]')?.textContent).toBe("Disk write failed");
+  expect(hostsStore.getState().tree.hosts).toEqual([]);
+
+  saveTemporaryError = undefined;
+  await clickButton("Save", dialog()!);
+  expect(dialog()).toBeNull();
+  expect(hostsStore.getState().tree.hosts).toEqual([
+    expect.objectContaining({ id, name: "Lab", address: "lab", port: 2200, user: "deploy" }),
+  ]);
+  expect(document.querySelector('aside button[aria-current="true"]')?.textContent).toContain("Lab");
+  expect(tabIds()).toEqual([tab]);
+  expect(document.getElementById(tab!)?.getAttribute("aria-label")).toBe("Lab (Connected)");
+  expect(document.querySelector('footer button[aria-label="Save as Host"]')).toBeNull();
+  expect(container?.innerHTML).not.toContain("deploy@lab");
+  expect([...testTerminals]).toEqual(terminals);
+  expect(calls("remote_terminal_open")).toHaveLength(1);
+  expect(terminalCloses()).toHaveLength(0);
+  expect(calls("files_open")).toHaveLength(1);
+  expect(calls("files_close")).toEqual(fileCloses);
+  expect(calls("temporary_host_forget")).toHaveLength(0);
 });
 
 async function paletteAction(title: string) {
