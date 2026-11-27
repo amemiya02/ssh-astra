@@ -530,6 +530,8 @@ describe("FileBrowser", () => {
       .find((item) => item.textContent?.startsWith(label))!;
     await openMenu(rows()[1]!);
     await act(async () => menuItem("Cut").click());
+    // The closed Radix menu restores focus on the next timer tick.
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
     await act(async () => rows()[0]!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
     await openMenu(container.querySelector('[role="grid"]')!);
     await act(async () => menuItem("Paste").click());
