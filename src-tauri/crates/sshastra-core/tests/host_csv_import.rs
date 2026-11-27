@@ -54,9 +54,10 @@ fn reads_csv_by_header_and_reports_problem_lines_without_echoing_values() {
 
 #[test]
 fn accepts_bom_and_windows_newlines_and_reports_missing_required_headers() {
-    let parsed = parse_csv("\u{feff}username,NAME,Address\r\nops,Server,192.0.2.1\r\n");
+    let parsed = parse_csv("\u{feff}username,NAME,Address\r\nops,\"Two\r\nlines\",192.0.2.1\r\n");
     assert!(parsed.issues.is_empty());
     assert_eq!(parsed.hosts[0].port, 22);
+    assert_eq!(parsed.hosts[0].name, "Two\r\nlines");
 
     let invalid = parse_csv("Name,Password\r\nServer,CSV_TEST_PASSWORD\r\n");
     assert!(invalid.hosts.is_empty());

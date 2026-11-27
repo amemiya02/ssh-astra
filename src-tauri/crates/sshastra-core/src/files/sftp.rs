@@ -17,12 +17,14 @@ use super::{
     cancellable_scan, join, publish_by_plain_rename, sum_folder, FileEntry, FileKind, FileReader,
     FileStat, FileWriter, FsError, FsResult, NameMatch, NameSearchMode, NameSearchResult, RemoteFs,
 };
+use crate::agent::{DirectoryRead, FILE_BYTE_LIMIT};
 use crate::ssh::{BoxFuture, Connection};
 
 /// Seconds to wait for each SFTP reply; slow links list big directories.
 const REQUEST_TIMEOUT_SECS: u64 = 30;
 const POSIX_RENAME: &str = "posix-rename@openssh.com";
 const NAME_SEARCH_LIMIT: usize = 1_000;
+const SFTP_READ_CHUNK: usize = 32 * 1024;
 
 /// A Host's files over SFTP. Keeps its Connection open while it lives;
 /// dropping it closes the SFTP channel (not the Connection, which Terminals
@@ -34,8 +36,94 @@ pub struct SftpFs {
 }
 
 impl SftpFs {
+    /// Lists one directory on the given Connection, stopping at the Agent access limits.
+    pub async fn agent_list(
+        connection: &Connection,
+        path: &str,
+        cancelled: oneshot::Receiver<()>,
+    ) -> FsResult<Option<DirectoryRead>> {
+        Self::scan(connection, cancelled, |stream| async move {
+            let session = raw_session(connection, path, stream).await?;
+            Self::list_bounded(&session, path).await
+        })
+        .await
+    }
+
+    async fn list_bounded(session: &RawSftpSession, path: &str) -> FsResult<DirectoryRead> {
+        let handle = session
+            .opendir(path)
+            .await
+            .map_err(|e| error(path, e))?
+            .handle;
+        let mut listing = DirectoryRead::default();
+        'directory: while let Some(batch) = read_directory_batch(session, path, &handle).await? {
+            for File {
+                filename: name,
+                attrs,
+                ..
+            } in batch
+            {
+                if matches!(name.as_str(), "." | "..") {
+                    continue;
+                }
+                validate_name(&name)?;
+                if !listing.push(entry(name, &attrs)) {
+                    break 'directory;
+                }
+            }
+        }
+        session.close(handle).await.map_err(|e| error(path, e))?;
+        Ok(listing)
+    }
+
+    /// Reads a regular file prefix with one extra byte to detect truncation.
+    pub async fn agent_read(
+        connection: &Connection,
+        path: &str,
+        cancelled: oneshot::Receiver<()>,
+    ) -> FsResult<Option<Vec<u8>>> {
+        Self::scan(connection, cancelled, |stream| async move {
+            let session = raw_session(connection, path, stream).await?;
+            Self::read_bounded(&session, path).await
+        })
+        .await
+    }
+
+    async fn read_bounded(session: &RawSftpSession, path: &str) -> FsResult<Vec<u8>> {
+        let attributes = session.stat(path).await.map_err(|e| error(path, e))?;
+        if kind(&attributes.attrs) != FileKind::File {
+            return Err(FsError::Protocol("Expected a regular file".into()));
+        }
+        let handle = session
+            .open(path, OpenFlags::READ, FileAttributes::empty())
+            .await
+            .map_err(|e| error(path, e))?
+            .handle;
+        let attributes = session.fstat(&handle).await.map_err(|e| error(path, e))?;
+        if kind(&attributes.attrs) != FileKind::File {
+            return Err(FsError::Protocol("Expected a regular file".into()));
+        }
+        let mut result = Vec::new();
+        while result.len() <= FILE_BYTE_LIMIT {
+            let bytes = (FILE_BYTE_LIMIT + 1 - result.len()).min(SFTP_READ_CHUNK);
+            match session
+                .read(&handle, result.len() as u64, bytes as u32)
+                .await
+            {
+                Ok(data) if !data.data.is_empty() && data.data.len() <= bytes => {
+                    result.extend(data.data)
+                }
+                Ok(_) => return Err(FsError::Protocol("Invalid SFTP read length".into())),
+                Err(SftpError::Status(status)) if status.status_code == StatusCode::Eof => break,
+                Err(err) => return Err(error(path, err)),
+            }
+        }
+        session.close(handle).await.map_err(|e| error(path, e))?;
+        Ok(result)
+    }
+
     async fn scan<T, F>(
-        &self,
+        connection: &Connection,
         mut cancelled: oneshot::Receiver<()>,
         run: impl FnOnce(russh::ChannelStream<russh::client::Msg>) -> F,
     ) -> FsResult<Option<T>>
@@ -50,7 +138,7 @@ impl SftpFs {
         }
         // Each scan owns its channel so cancellation also releases any directory
         // handle on the server. Wait for the SSH channel ID before closing.
-        let channel = self.connection.open_session_channel().await;
+        let channel = connection.open_session_channel().await;
         let channel = match channel {
             Ok(channel) => channel,
             Err(_)
@@ -61,7 +149,7 @@ impl SftpFs {
             {
                 return Ok(None)
             }
-            Err(error) => return Err(self.connection.sftp_channel_error(error)),
+            Err(error) => return Err(connection.sftp_channel_error(error)),
         };
         let started = tokio::select! {
             biased;
@@ -69,7 +157,7 @@ impl SftpFs {
                 let _ = channel.close().await;
                 return Ok(None);
             }
-            result = Self::request_sftp(&self.connection, &channel) => result,
+            result = Self::request_sftp(connection, &channel) => result,
         };
         if let Err(error) = started {
             let _ = channel.close().await;
@@ -273,10 +361,14 @@ impl RemoteFs for SftpFs {
         path: &'a str,
         cancelled: oneshot::Receiver<()>,
     ) -> BoxFuture<'a, FsResult<Option<u64>>> {
-        Box::pin(self.scan(cancelled, move |stream| async move {
-            let scan = Self::from_stream(Arc::clone(&self.connection), stream).await?;
-            sum_folder(&scan, path).await
-        }))
+        Box::pin(Self::scan(
+            &self.connection,
+            cancelled,
+            move |stream| async move {
+                let scan = Self::from_stream(Arc::clone(&self.connection), stream).await?;
+                sum_folder(&scan, path).await
+            },
+        ))
     }
 
     fn search_names<'a>(
@@ -286,12 +378,14 @@ impl RemoteFs for SftpFs {
         mode: NameSearchMode,
         cancelled: oneshot::Receiver<()>,
     ) -> BoxFuture<'a, FsResult<Option<NameSearchResult>>> {
-        Box::pin(self.scan(cancelled, move |stream| async move {
-            let scan = RawSftpSession::new(stream);
-            scan.set_timeout(REQUEST_TIMEOUT_SECS);
-            scan.init().await.map_err(|e| self.error(path, e))?;
-            search_names(&scan, path, query, mode).await
-        }))
+        Box::pin(Self::scan(
+            &self.connection,
+            cancelled,
+            move |stream| async move {
+                let scan = raw_session(&self.connection, path, stream).await?;
+                search_names(&scan, path, query, mode).await
+            },
+        ))
     }
 
     fn stat<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileStat>> {
@@ -573,7 +667,7 @@ async fn search_names(
         // Read one SFTP NAME packet at a time. The high-level read_dir would
         // fetch the whole directory before the visit limit could be enforced.
         loop {
-            let batch = match read_search_batch(session, &parent, &handle).await {
+            let batch = match read_directory_batch(session, &parent, &handle).await {
                 Ok(Some(batch)) => batch,
                 Ok(None) => break,
                 Err(FsError::PermissionDenied(_) | FsError::NotFound(_)) if parent != root => {
@@ -634,7 +728,7 @@ async fn open_search_directory(session: &RawSftpSession, path: &str) -> FsResult
         .handle)
 }
 
-async fn read_search_batch(
+async fn read_directory_batch(
     session: &RawSftpSession,
     path: &str,
     handle: &str,
@@ -647,6 +741,20 @@ async fn read_search_batch(
         Err(SftpError::Status(status)) if status.status_code == StatusCode::Eof => Ok(None),
         Err(err) => Err(error(path, err)),
     }
+}
+
+async fn raw_session(
+    connection: &Connection,
+    path: &str,
+    stream: russh::ChannelStream<russh::client::Msg>,
+) -> FsResult<RawSftpSession> {
+    let session = RawSftpSession::new(stream);
+    session.set_timeout(REQUEST_TIMEOUT_SECS);
+    session
+        .init()
+        .await
+        .map_err(|e| connection_error(connection, path, e))?;
+    Ok(session)
 }
 
 fn validate_name(name: &str) -> FsResult<()> {

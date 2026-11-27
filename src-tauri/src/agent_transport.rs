@@ -10,7 +10,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use serde_json::Value;
-use sshastra_core::agent::{dispatch, rpc_error, OpenTerminal};
+use sshastra_core::agent::{dispatch, rpc_error, AgentBackend};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::oneshot;
@@ -24,17 +24,15 @@ const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 const MAX_CLIENTS: usize = 8;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
-type Snapshot = dyn Fn() -> Vec<OpenTerminal> + Send + Sync;
-
 pub struct AgentService {
-    snapshot: Arc<Snapshot>,
+    backend: Arc<dyn AgentBackend>,
     server: Mutex<Option<Server>>,
 }
 
 impl AgentService {
-    pub fn new(snapshot: impl Fn() -> Vec<OpenTerminal> + Send + Sync + 'static) -> Self {
+    pub fn new(backend: impl AgentBackend + 'static) -> Self {
         Self {
-            snapshot: Arc::new(snapshot),
+            backend: Arc::new(backend),
             server: Mutex::new(None),
         }
     }
@@ -60,7 +58,7 @@ impl AgentService {
             return save();
         }
         *server = None;
-        let pending = Server::start(&Endpoint::current_user()?, Arc::clone(&self.snapshot))?;
+        let pending = Server::start(&Endpoint::current_user()?, Arc::clone(&self.backend))?;
         save()?;
         pending.active.store(true, Ordering::Release);
         *server = Some(pending);
@@ -83,7 +81,7 @@ struct Server {
 }
 
 impl Server {
-    fn start(endpoint: &Endpoint, snapshot: Arc<Snapshot>) -> io::Result<Self> {
+    fn start(endpoint: &Endpoint, backend: Arc<dyn AgentBackend>) -> io::Result<Self> {
         let runtime = runtime()?;
         let listener = {
             let _entered = runtime.enter();
@@ -94,9 +92,7 @@ impl Server {
         let active_on_thread = Arc::clone(&active);
         let thread = thread::Builder::new()
             .name("sshastra-agent".into())
-            .spawn(move || {
-                runtime.block_on(serve(listener, active_on_thread, snapshot, stopped))
-            })?;
+            .spawn(move || runtime.block_on(serve(listener, active_on_thread, backend, stopped)))?;
         Ok(Self {
             active,
             stop: Some(stop),
@@ -133,7 +129,7 @@ fn runtime() -> io::Result<Runtime> {
 async fn serve(
     mut listener: Listener,
     active: Arc<AtomicBool>,
-    snapshot: Arc<Snapshot>,
+    backend: Arc<dyn AgentBackend>,
     mut stopped: oneshot::Receiver<()>,
 ) {
     let mut clients = JoinSet::new();
@@ -151,11 +147,11 @@ async fn serve(
                     }
                     continue;
                 };
-                let (active, snapshot) = (Arc::clone(&active), Arc::clone(&snapshot));
+                let (active, backend) = (Arc::clone(&active), Arc::clone(&backend));
                 clients.spawn(async move {
                     let _ = tokio::time::timeout(
                         REQUEST_TIMEOUT,
-                        converse(stream, &active, snapshot.as_ref()),
+                        converse(stream, &active, backend.as_ref()),
                     ).await;
                 });
             }
@@ -167,14 +163,17 @@ async fn serve(
 async fn converse(
     mut stream: impl AsyncRead + AsyncWrite + Unpin,
     active: &AtomicBool,
-    snapshot: &Snapshot,
+    backend: &dyn AgentBackend,
 ) -> io::Result<()> {
     let Some(frame) = read_frame(&mut stream, MAX_REQUEST_BYTES).await? else {
         return Ok(());
     };
-    let response = dispatch(&frame, active.load(Ordering::Acquire), snapshot);
-    if let Some(response) = response.filter(|_| active.load(Ordering::Acquire)) {
-        stream.write_all(&json_line(&response)).await?;
+    let enabled = || active.load(Ordering::Acquire);
+    let response = dispatch(&frame, enabled, backend).await;
+    if let Some(response) = response.filter(|_| enabled()) {
+        let response = validate_frame(json_line(&response), MAX_RESPONSE_BYTES)?
+            .expect("JSON frame cannot be empty");
+        stream.write_all(&response).await?;
         // The proxy closes once it has the whole reply. Keep the pipe open
         // until then so Windows can deliver the last buffered bytes.
         let _ = stream.read_u8().await;
