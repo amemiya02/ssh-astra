@@ -129,6 +129,7 @@ export function TerminalSurface({
     let canResize = moved === undefined;
     let generation = moved?.generation ?? 0;
     let cwd = moved?.cwd;
+    let reportedCwd: string | undefined;
     let unregisterMove: (() => void) | undefined;
     let unregisterWriter: (() => void) | undefined;
     const sendInput = (id: TerminalId, data: string, generation?: number) => {
@@ -253,11 +254,19 @@ export function TerminalSurface({
         return;
       }
       if (event.type === "cwd") {
-        cwd = event.path;
-        completion.refresh();
+        // The integration reports PWD before each prompt. Keep it paired with
+        // that prompt instead of accepting a later standalone OSC 7 report.
+        reportedCwd = event.path;
         return;
       }
       if (event.type === "shellIntegration") {
+        if (event.event.type === "promptStart") {
+          cwd = reportedCwd;
+          reportedCwd = undefined;
+        } else if (event.event.type === "commandStart") {
+          cwd = undefined;
+          reportedCwd = undefined;
+        }
         const finished = shellIntegration.event(paneId, event.event, xterm.buffer.active.type === "normal");
         if (finished) notifyCommandFinished(labelRef.current, finished);
         suggestions.refresh();
@@ -267,6 +276,7 @@ export function TerminalSurface({
       if (event.type === "connection") {
         connected = event.state.state === "connected";
         cwd = undefined;
+        reportedCwd = undefined;
         resetSuggestions();
         invalidateAgentReview(paneId, true);
         if (connected) {

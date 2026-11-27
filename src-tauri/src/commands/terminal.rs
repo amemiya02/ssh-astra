@@ -450,7 +450,11 @@ pub async fn terminal_completion_paths(
     query: CompletionPathQuery,
     on_start: Channel<()>,
 ) -> CommandResult<Option<DirectoryRead>> {
-    let CompletionPathQuery { directory, prefix, directories_only } = query;
+    let CompletionPathQuery {
+        directory,
+        prefix,
+        directories_only,
+    } = query;
     if !(directory.starts_with('/') || directory.starts_with("~/"))
         || directory.len() > 8192
         || directory.chars().any(char::is_control)
@@ -472,7 +476,9 @@ pub async fn terminal_completion_paths(
             if current != generation {
                 return Err(FsError::NotConnected.into());
             }
-            let stopped = state.start_completion(request).ok_or(FsError::NotConnected)?;
+            let stopped = state
+                .start_completion(request)
+                .ok_or(FsError::NotConnected)?;
             Ok((Arc::clone(route), connection, stopped))
         })??;
     let result = if on_start.send(()).is_ok() {
@@ -485,7 +491,11 @@ pub async fn terminal_completion_paths(
 }
 
 #[tauri::command]
-pub fn terminal_completion_cancel(window: WebviewWindow, id: TerminalId, request: u32) -> CommandResult<()> {
+pub fn terminal_completion_cancel(
+    window: WebviewWindow,
+    id: TerminalId,
+    request: u32,
+) -> CommandResult<()> {
     windows::with_resources(&window, |resources| {
         if let Some(route) = resources.terminals.get(&id) {
             route.lock().stop_completion(request);

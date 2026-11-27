@@ -78,9 +78,10 @@ async function mount(history = Promise.resolve(["echo saved command"]), completi
     output(text);
     await new Promise<void>((resolve) => terminal.write("", resolve));
   });
-  const prompt = (verified = true) => act(async () => {
+  const prompt = (verified = true, cwd?: string) => act(async () => {
     emit({ type: "shellIntegration", event: { type: "availability", status: "available" } });
     output(`\x1b]6973;prompt\x07$ ${verified ? "\x1b]6973;input\x07" : ""}\x1b[?2004h`);
+    if (cwd) emit({ type: "cwd", path: cwd });
     emit({ type: "shellIntegration", event: { type: "promptStart", promptId: 1 } });
     await new Promise<void>((resolve) => terminal.write("", resolve));
   });
@@ -276,8 +277,8 @@ it("lists paths on the current Connection and discards a completion from a previ
       (args as { onStart: { onmessage(value: null): void } }).onStart.onmessage(null);
       return response;
     });
-    await prompt();
-    act(() => emit({ type: "cwd", path: "/work" }));
+    await prompt(true, "/work");
+    act(() => emit({ type: "cwd", path: "/another-directory" }));
     await receive("cat docs/re");
     await act(async () => {
       key(" ", 32, { code: "Space", ctrlKey: true });
@@ -295,5 +296,22 @@ it("lists paths on the current Connection and discards a completion from a previ
     expect(invoke).toHaveBeenCalledWith("terminal_completion_cancel", { id: 42, request: 12 });
     expect(container.querySelector('[role="listbox"]')).toBeNull();
     expect(bytes()).toEqual([]);
+
+    vi.mocked(invoke).mockImplementation((command) => Promise.resolve(
+      command === "terminal_completion_paths"
+        ? { entries: [{ name: "report $HOME", kind: "file" }] }
+        : undefined,
+    ));
+    await receive("\r\n");
+    await prompt(true, "/fresh");
+    await receive("cat re");
+    await act(async () => {
+      key(" ", 32, { code: "Space", ctrlKey: true });
+      await import("./completion-catalog.json");
+    });
+    const candidate = container.querySelector<HTMLButtonElement>('[role="option"]');
+    expect(candidate?.textContent).toBe("report $HOME");
+    act(() => candidate?.click());
+    expect(bytes()).toEqual([{ id: 42, generation: 1, data: "\x1b[200~'port $HOME' \x1b[201~" }]);
   } finally { close(); }
 });
