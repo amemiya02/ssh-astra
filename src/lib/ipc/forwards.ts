@@ -34,6 +34,12 @@ export type ForwardKind =
       type: "dynamic";
       bindAddress: string;
       bindPort: number;
+    }
+  | {
+      /** An HTTP CONNECT proxy here; the server opens each destination. */
+      type: "http";
+      bindAddress: string;
+      bindPort: number;
     };
 
 export type ForwardType = ForwardKind["type"];

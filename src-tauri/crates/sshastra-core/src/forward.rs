@@ -1,10 +1,11 @@
 //! Port forwards: the rules saved on a Host ([`PortForward`]) and the
 //! [`PortForwarder`] that runs them over the Host's Connection.
 //!
-//! Three kinds ([`ForwardKind`]): local (`ssh -L`), remote (`ssh -R`) and
-//! dynamic, a SOCKS5 proxy (`ssh -D`).
+//! Four kinds ([`ForwardKind`]): local (`ssh -L`), remote (`ssh -R`),
+//! dynamic (SOCKS5, `ssh -D`), and HTTP CONNECT.
 
 mod forwarder;
+mod http;
 mod socks;
 
 pub use forwarder::{Endpoint, ForwardError, ForwardEvent, ForwardStatus, PortForwarder};
@@ -47,6 +48,8 @@ impl fmt::Display for ForwardId {
 ///   "bindAddress": "localhost", "bindPort": 9000, "localHost": "127.0.0.1", "localPort": 3000 }
 /// { "id": "…", "label": "", "autoStart": true, "type": "dynamic",
 ///   "bindAddress": "127.0.0.1", "bindPort": 1080 }
+/// { "id": "…", "label": "", "autoStart": false, "type": "http",
+///   "bindAddress": "127.0.0.1", "bindPort": 8080 }
 /// ```
 ///
 /// `ssh -L [bind:]port:host:hostport`, `-R [bind:]port:host:hostport` and
@@ -80,6 +83,12 @@ pub enum ForwardKind {
     /// A SOCKS5 proxy on `bind_address:bind_port` on this machine: each
     /// client's destination is opened by the server (`ssh -D`).
     Dynamic {
+        bind_address: String,
+        bind_port: u16,
+    },
+    /// An HTTP CONNECT proxy on `bind_address:bind_port` on this machine.
+    /// The server opens the destination requested by each client.
+    Http {
         bind_address: String,
         bind_port: u16,
     },
@@ -122,77 +131,63 @@ pub const REMOTE_LOOPBACK: &str = "localhost";
 impl ForwardDraft {
     /// The rule, trimmed and checked; `Err` names the first invalid field.
     pub(crate) fn into_forward(self, id: ForwardId) -> Result<PortForward, &'static str> {
-        let kind = match self.kind {
+        let mut kind = self.kind;
+        let (bind_address, bind_port, default_bind) = match &mut kind {
             ForwardKind::Local {
                 bind_address,
                 bind_port,
-                remote_host,
-                remote_port,
-            } => {
-                let bind_address = match bind_address.trim() {
-                    "" => LOOPBACK.to_owned(),
-                    other => other.to_owned(),
-                };
-                let remote_host = remote_host.trim().to_owned();
-                if bind_port == 0 {
-                    return Err("bindPort");
-                }
-                if remote_host.is_empty() {
-                    return Err("remoteHost");
-                }
-                if remote_port == 0 {
-                    return Err("remotePort");
-                }
-                ForwardKind::Local {
-                    bind_address,
-                    bind_port,
-                    remote_host,
-                    remote_port,
-                }
+                ..
             }
+            | ForwardKind::Dynamic {
+                bind_address,
+                bind_port,
+            }
+            | ForwardKind::Http {
+                bind_address,
+                bind_port,
+            } => (bind_address, *bind_port, LOOPBACK),
             ForwardKind::Remote {
                 bind_address,
                 bind_port,
+                ..
+            } => (bind_address, *bind_port, REMOTE_LOOPBACK),
+        };
+        if bind_port == 0 {
+            return Err("bindPort");
+        }
+        *bind_address = match bind_address.trim() {
+            "" => default_bind.to_owned(),
+            other => other.to_owned(),
+        };
+        match &mut kind {
+            ForwardKind::Local {
+                remote_host,
+                remote_port,
+                ..
+            } => {
+                *remote_host = remote_host.trim().to_owned();
+                if remote_host.is_empty() {
+                    return Err("remoteHost");
+                }
+                if *remote_port == 0 {
+                    return Err("remotePort");
+                }
+            }
+            ForwardKind::Remote {
                 local_host,
                 local_port,
+                ..
             } => {
-                let bind_address = match bind_address.trim() {
-                    "" => REMOTE_LOOPBACK.to_owned(),
-                    other => other.to_owned(),
-                };
-                let local_host = local_host.trim().to_owned();
-                if bind_port == 0 {
-                    return Err("bindPort");
-                }
+                *local_host = local_host.trim().to_owned();
                 if local_host.is_empty() {
                     return Err("localHost");
                 }
-                if local_port == 0 {
+                if *local_port == 0 {
                     return Err("localPort");
                 }
-                ForwardKind::Remote {
-                    bind_address,
-                    bind_port,
-                    local_host,
-                    local_port,
-                }
             }
-            ForwardKind::Dynamic {
-                bind_address,
-                bind_port,
-            } => {
-                if bind_port == 0 {
-                    return Err("bindPort");
-                }
-                ForwardKind::Dynamic {
-                    bind_address: match bind_address.trim() {
-                        "" => LOOPBACK.to_owned(),
-                        other => other.to_owned(),
-                    },
-                    bind_port,
-                }
-            }
-        };
+            ForwardKind::Dynamic { .. } | ForwardKind::Http { .. } => {}
+        }
         Ok(PortForward {
             id,
             label: self.label.trim().to_owned(),

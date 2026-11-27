@@ -575,9 +575,9 @@
   },
   "forwards": {
     "title": "連接埠轉送",
-    "lead": "透過 {{host}} 的連線轉送流量，以存取其網路、開放本機連接埠供遠端使用，或使用 SOCKS 代理。即使沒有開啟終端機，連接埠轉送執行期間也會保持連線。",
+    "lead": "透過 {{host}} 的連線轉送流量，以存取其網路、開放本機連接埠供遠端使用，或使用 SOCKS 或 HTTP 代理。即使沒有開啟終端機，連接埠轉送執行期間也會保持連線。",
     "emptyTitle": "還沒有連接埠轉送",
-    "emptyBody": "新增連接埠轉送，即可存取 Host 網路中的服務（例如資料庫）、開放本機連接埠供遠端使用，或使用 SOCKS 代理。",
+    "emptyBody": "新增連接埠轉送，即可存取 Host 網路中的服務（例如資料庫）、開放本機連接埠供遠端使用，或使用 SOCKS 或 HTTP 代理。",
     "add": "新增連接埠轉送",
     "newTitle": "新增連接埠轉送",
     "editTitle": "編輯連接埠轉送",
@@ -627,7 +627,7 @@
         "targetPort": "本機連接埠",
         "bindAddress": "Host 上的監聽位址"
       },
-      "dynamic": {
+      "proxy": {
         "bindPort": "本機連接埠",
         "bindAddress": "監聽位址"
       }
@@ -641,24 +641,27 @@
         "targetHost": "按本機看到的位址填寫，例如 127.0.0.1。",
         "bindAddress": "留空則只接受 Host 本機的連線（localhost）。"
       },
-      "dynamic": {
+      "proxy": {
         "bindAddress": "留空則只接受本機的連線（127.0.0.1）。"
       }
     },
     "kinds": {
       "local": "本機",
       "remote": "遠端",
-      "dynamic": "SOCKS"
+      "dynamic": "SOCKS",
+      "http": "HTTP"
     },
     "kindHints": {
       "local": "從本機的連接埠連線至 Host 端可存取的位址（ssh -L）。",
       "remote": "從 Host 上的連接埠連線至本機可存取的位址（ssh -R）。",
-      "dynamic": "在本機提供 SOCKS5 代理，並由 Host 建立每個連線（ssh -D）。"
+      "dynamic": "在本機提供 SOCKS5 代理，並由 Host 建立每個連線（ssh -D）。",
+      "http": "在本機提供 HTTP CONNECT 代理。由 Host 連線至各用戶端要求的目的地。"
     },
     "ends": {
       "local": "本機",
       "remote": "Host",
-      "dynamic": "SOCKS5"
+      "dynamic": "SOCKS5",
+      "http": "HTTP CONNECT"
     },
     "autoStartHint": "開啟終端機、啟動其他連接埠轉送，或選取「僅連線」時，會自動啟動此規則。",
     "autoStartBadge": "自動",
@@ -719,6 +722,7 @@
     "forwardsLocal": "{{from}} → {{to}}",
     "forwardsRemote": "Host 上 {{from}} → {{to}}",
     "forwardsDynamic": "SOCKS {{from}}",
+    "forwardsHttp": "HTTP CONNECT {{from}}",
     "transfers": "傳輸：{{count}}",
     "transfersSpeed": "傳輸：{{count}} · {{speed}}/s"
   },

@@ -84,6 +84,16 @@ describe("parseForwardForm", () => {
     });
   });
 
+  it("turns the fields into an HTTP forward draft with a default loopback bind", () => {
+    const result = parseForwardForm({
+      ...emptyForwardForm("http"), bindPort: "8080", targetHost: "old-target", targetPort: "80", autoStart: true,
+    });
+    expect(result).toEqual({
+      ok: true,
+      draft: { label: "", autoStart: true, type: "http", bindAddress: "127.0.0.1", bindPort: 8080 },
+    });
+  });
+
   it("names each missing or invalid field", () => {
     expect(parseForwardForm(emptyForwardForm("local"))).toEqual({
       ok: false,
