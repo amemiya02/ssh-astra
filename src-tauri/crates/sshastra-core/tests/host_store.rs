@@ -22,6 +22,7 @@ fn draft(name: &str) -> HostDraft {
         terminal_scheme: None,
         identities_only: false,
         forward_agent: false,
+        allow_legacy_algorithms: false,
         proxy: Default::default(),
         keepalive_seconds: None,
         post_login_command: None,
@@ -151,7 +152,7 @@ fn a_version_4_file_is_migrated_with_no_default_directories() {
     store.upsert(None, draft("new")).unwrap();
     let json: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(json["version"], 17);
+    assert_eq!(json["version"], 18);
 }
 
 #[test]
@@ -334,7 +335,7 @@ fn the_file_is_versioned_json() {
 
     let json: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(json["version"], 17);
+    assert_eq!(json["version"], 18);
     assert_eq!(json["hosts"][0]["name"], "web");
     assert_eq!(json["hosts"][0]["auth"]["type"], "password");
 }

@@ -60,7 +60,8 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
 use russh::client::{self, Handle};
-use russh::keys::PublicKeyOrCertificate;
+use russh::keys::{Algorithm, PublicKeyOrCertificate};
+use russh::{cipher, kex, Preferred};
 use tokio::io::{AsyncRead, AsyncWrite, BufReader};
 use tokio::net::TcpStream;
 
@@ -513,7 +514,30 @@ impl ConnectionManager {
                 .lock()
                 .unwrap_or_else(|p| p.into_inner()),
         };
+        let mut preferred = Preferred::default();
+        let legacy_host_key = Algorithm::Rsa { hash: None };
+        // Russh includes ssh-rsa (RSA/SHA-1) by default. Reserve it for
+        // explicitly opted-in Hosts, after RSA/SHA-2 and other modern keys.
+        preferred.key.to_mut().retain(|key| *key != legacy_host_key);
+        if host.allow_legacy_algorithms {
+            // SSH picks the first mutual algorithm in the client's list.
+            preferred.key.to_mut().push(legacy_host_key);
+            preferred.kex.to_mut().extend([
+                kex::ECDH_SHA2_NISTP256,
+                kex::ECDH_SHA2_NISTP384,
+                kex::ECDH_SHA2_NISTP521,
+                kex::DH_G14_SHA1,
+                kex::DH_GEX_SHA1,
+                kex::DH_G1_SHA1,
+            ]);
+            preferred.cipher.to_mut().extend([
+                cipher::AES_256_CBC,
+                cipher::AES_192_CBC,
+                cipher::AES_128_CBC,
+            ]);
+        }
         Arc::new(client::Config {
+            preferred,
             keepalive_interval,
             keepalive_max: KEEPALIVE_MAX,
             // A backstop behind the keepalives (which a live server answers):
@@ -593,6 +617,7 @@ impl ConnectionManager {
             auth: HostAuth::Auto,
             identities_only: false,
             forward_agent: false,
+            allow_legacy_algorithms: false,
             proxy: Default::default(),
             keepalive_seconds: None,
             post_login_command: None,

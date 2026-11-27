@@ -39,7 +39,20 @@
     "loadFailed": "Could not load Snippets ({{message}})",
     "saveFailed": "Could not save the change ({{message}})",
     "terminalUnavailable": "The selected Terminal is unavailable.",
-    "sendFailed": "Could not send the Snippet to every Terminal ({{message}})"
+    "sendFailed": "Could not send the Snippet to every Terminal ({{message}})",
+    "transfer": {
+      "fileType": "Snippet library",
+      "import": "Import Snippets",
+      "export": "Export Snippets",
+      "reportTitle": "Snippet import results",
+      "imported_one": "Imported {{count}} Snippet.",
+      "imported_other": "Imported {{count}} Snippets.",
+      "skipped": "Skipped duplicate names",
+      "close": "Close",
+      "exported": "Snippet library exported.",
+      "importFailed": "Could not import Snippets ({{message}})",
+      "exportFailed": "Could not export Snippets ({{message}})"
+    }
   },
   "hosts": {
     "title": "Hosts",
@@ -65,6 +78,7 @@
       "identityFile": "Private key file",
       "identitiesOnly": "Identities only",
       "forwardAgent": "Agent forwarding",
+      "allowLegacyAlgorithms": "Allow legacy algorithms",
       "keepaliveSeconds": "Keepalive interval (seconds)",
       "postLoginCommand": "Post-login command",
       "terminalCharset": "Terminal character set",
@@ -109,6 +123,7 @@
     "terminalSchemeHint": "Give production Hosts their own colours so they are hard to mistake.",
     "defaultDirectoryHint": "Where the File panel opens the first time. Leave blank for the home folder.",
     "identitiesOnlyHint": "When a key file is selected, offer only its matching key from ssh-agent and skip default key files.",
+    "allowLegacyAlgorithmsHint": "Older SSH algorithms offer weaker protection. Enable only for this Host if it requires them. Reconnect to apply changes.",
     "forwardAgentHint": "While connected, the remote host can use your SSH keys through your local agent. Reconnect to apply changes.",
     "keepaliveHint": "Leave blank to follow the global setting. Enter 0 to turn keepalives off. Reconnect to apply changes.",
     "postLoginCommandHint": "Runs once when each new shell is ready, including after reconnecting.",

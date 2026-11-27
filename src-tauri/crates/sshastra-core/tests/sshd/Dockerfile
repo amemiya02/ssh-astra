@@ -57,6 +57,7 @@ COPY sshd_config /etc/ssh/sshd_config
 # A fixed host key, so tests know the fingerprint the server will present.
 COPY ssh_host_ed25519_key ssh_host_ed25519_key.pub /etc/ssh/
 RUN chmod 600 /etc/ssh/ssh_host_ed25519_key
+COPY --chmod=600 ssh_host_rsa_key /etc/ssh/ssh_host_rsa_key
 COPY --chmod=644 keys/certificate_ca.pub /etc/ssh/test-user-ca.pub
 
 EXPOSE 22

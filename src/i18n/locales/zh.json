@@ -39,7 +39,20 @@
     "loadFailed": "无法加载命令片段（{{message}}）",
     "saveFailed": "无法保存更改（{{message}}）",
     "terminalUnavailable": "选中的终端不可用。",
-    "sendFailed": "无法将命令片段发送到所有终端（{{message}}）"
+    "sendFailed": "无法将命令片段发送到所有终端（{{message}}）",
+    "transfer": {
+      "fileType": "命令片段库",
+      "import": "导入命令片段",
+      "export": "导出命令片段",
+      "reportTitle": "命令片段导入结果",
+      "imported_one": "已导入 {{count}} 条命令片段。",
+      "imported_other": "已导入 {{count}} 条命令片段。",
+      "skipped": "已跳过以下重名的命令片段",
+      "close": "关闭",
+      "exported": "已导出命令片段库。",
+      "importFailed": "无法导入命令片段（{{message}}）",
+      "exportFailed": "无法导出命令片段（{{message}}）"
+    }
   },
   "hosts": {
     "title": "Hosts",
@@ -65,6 +78,7 @@
       "identityFile": "私钥文件",
       "identitiesOnly": "仅使用指定密钥",
       "forwardAgent": "SSH agent 转发",
+      "allowLegacyAlgorithms": "允许旧算法",
       "keepaliveSeconds": "保活间隔（秒）",
       "postLoginCommand": "登录后命令",
       "terminalCharset": "终端字符集",
@@ -109,6 +123,7 @@
     "terminalSchemeHint": "给生产环境的 Host 单独配色，避免认错。",
     "defaultDirectoryHint": "文件面板第一次打开时所在的目录。留空则为主目录。",
     "identitiesOnlyHint": "指定密钥文件后，ssh-agent 只提供与该文件匹配的密钥，且跳过默认密钥文件。",
+    "allowLegacyAlgorithmsHint": "较旧的 SSH 算法提供的保护较弱。仅在此主机需要时开启。更改后需重新连接。",
     "forwardAgentHint": "连接期间，远端主机可以通过你的本机 SSH agent 使用你的 SSH 密钥。 更改后需重新连接。",
     "keepaliveHint": "留空则跟随全局设置，输入 0 则关闭保活。更改后需重新连接。",
     "postLoginCommandHint": "每次打开新的 shell 并就绪后执行一次，重连时也会执行。",

@@ -1273,6 +1273,26 @@ async function paletteAction(title: string) {
   await act(async () => item!.click());
 }
 
+it("searches eligible Snippets in the command palette and prompts before sending to the focused Terminal", async () => {
+  const snippet = {
+    id: "logs", name: "Find logs", command: "ls ${path:/var/log}", group: "Production tools", hostIds: [host.id], sendEnter: true,
+  };
+  snippetLibrary = [snippet, { ...snippet, id: "other", name: "Other logs", hostIds: ["other-host"] }];
+  await render(workspace({ type: "open", tabId: "work", pane: remote("shell") }));
+  await openPalette();
+  await search(paletteSearch(), "Production tools");
+  expect(paletteOptions().map((option) => option.textContent)).toEqual(["Run Find logs"]);
+
+  await enter(paletteSearch());
+  expect(dialog()?.querySelector("h2")?.textContent).toBe("Run Find logs");
+  expect(invoke).not.toHaveBeenCalledWith("terminal_write", expect.anything());
+  const input = dialog()!.querySelector("input")!;
+  expect(input.value).toBe("/var/log");
+  await search(input, "/tmp/logs");
+  await act(async () => dialog()!.querySelector<HTMLButtonElement>('button[type="submit"]')!.click());
+  expect(invoke).toHaveBeenCalledWith("terminal_write", { id: expect.any(Number), data: "ls /tmp/logs\r" });
+});
+
 it("masks Host details and tab titles while raw address searches still find the Host", async () => {
   savedHosts = [host, { ...host, id: "unrelated", name: "Other Host", address: "unrelated.test" }];
   await hostsStore.getState().load();
