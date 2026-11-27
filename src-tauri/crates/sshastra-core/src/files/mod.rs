@@ -371,11 +371,11 @@ pub trait RemoteFs: Send + Sync {
         authorized: &'a (dyn Fn() -> bool + Sync),
     ) -> BoxFuture<'a, FsResult<bool>> {
         Box::pin(async move {
-            if !authorized() {
-                return Ok(false);
-            }
             if overwrite {
                 return Err(FsError::AtomicReplacementUnavailable);
+            }
+            if !authorized() {
+                return Ok(false);
             }
             self.rename(from, to).await.map(|()| true)
         })

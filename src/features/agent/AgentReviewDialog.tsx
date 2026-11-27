@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { Button } from "@/components/ui/button";
@@ -47,7 +47,9 @@ export function AgentReviewDialog() {
         </dl>
         {file && <p className="text-muted-foreground text-sm">{t("agentAccess.fileReview.path")}</p>}
         <pre dir="ltr" className="bg-surface text-foreground max-h-[35vh] overflow-auto rounded-md border p-3 text-sm wrap-anywhere whitespace-break-spaces">
-          <code>{file ? request.path : request.command}</code>
+          <code>{file ? request.path.slice(1).split("/").map((segment, index) => (
+            <Fragment key={index}>/<bdi>{segment}</bdi></Fragment>
+          )) : request.command}</code>
         </pre>
         <DialogFooter>
           <Button ref={reject} variant="outline" onClick={decline}>{t("agentAccess.review.reject")}</Button>

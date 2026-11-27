@@ -33,7 +33,8 @@
       "approve": "仅批准本次",
       "notification": "打开 SSH Astra 审核远程文件写入请求。",
       "written": "已写入远程文件。",
-      "writeFailed": "无法确认远程文件已写入。"
+      "writeFailed": "无法确认远程文件已写入。",
+      "writeUnconfirmed": "服务器可能已更改文件。SSH Astra 无法确认本次写入。"
     },
     "enabled": "代理访问已开启",
     "turnOff": "关闭代理访问",
@@ -55,7 +56,8 @@
         "allowed": "允许",
         "denied": "拒绝",
         "timedOut": "超时",
-        "failed": "失败"
+        "failed": "失败",
+        "unconfirmed": "未确认"
       }
     }
   },

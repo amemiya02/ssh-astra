@@ -3,7 +3,8 @@
 
 mod activity;
 
-use std::sync::LazyLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use regex::Regex;
@@ -67,6 +68,7 @@ pub enum ReviewOutcome {
     TimedOut,
     ClipboardUnavailable,
     WriteFailed,
+    WriteUnconfirmed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -222,8 +224,31 @@ pub trait AgentBackend: Send + Sync {
     ) -> BoxFuture<'a, Result<Vec<u8>, ReadError>>;
 }
 
-pub type ApprovedFileWrite<'a> =
-    Box<dyn FnOnce(Vec<u8>, Instant) -> BoxFuture<'a, ReviewOutcome> + Send + 'a>;
+pub type ApprovedFileWrite<'a> = Box<
+    dyn FnOnce(Vec<u8>, Instant, FileWritePublication) -> BoxFuture<'a, ReviewOutcome> + Send + 'a,
+>;
+
+/// Tracks when a rename can have reached the server even if its reply is lost.
+#[derive(Clone, Default)]
+pub struct FileWritePublication(Arc<AtomicBool>);
+
+impl FileWritePublication {
+    pub fn start(&self) {
+        self.0.store(true, Ordering::Release);
+    }
+
+    pub fn interrupted(&self, before_publication: ReviewOutcome) -> ReviewOutcome {
+        if self.has_started() {
+            ReviewOutcome::WriteUnconfirmed
+        } else {
+            before_publication
+        }
+    }
+
+    fn has_started(&self) -> bool {
+        self.0.load(Ordering::Acquire)
+    }
+}
 
 pub const COMMAND_REVIEW_TOOL: &str = "request_command_review";
 pub const WRITE_FILE_TOOL: &str = "write_file";
@@ -641,9 +666,11 @@ async fn write_file(
         }
         Ok(write) => {
             let deadline = Instant::now() + FILE_WRITE_TIMEOUT;
-            timeout_at(deadline, write(bytes, deadline))
+            let publication = FileWritePublication::default();
+            activity.track_publication(publication.clone());
+            timeout_at(deadline, write(bytes, deadline, publication.clone()))
                 .await
-                .unwrap_or(ReviewOutcome::TimedOut)
+                .unwrap_or_else(|_| publication.interrupted(ReviewOutcome::TimedOut))
         }
     };
     Ok(review_result(outcome))
@@ -655,6 +682,7 @@ fn review_result(outcome: ReviewOutcome) -> (Value, Outcome) {
         ReviewOutcome::Rejected | ReviewOutcome::Unavailable => Outcome::Denied,
         ReviewOutcome::TimedOut => Outcome::TimedOut,
         ReviewOutcome::ClipboardUnavailable | ReviewOutcome::WriteFailed => Outcome::Failed,
+        ReviewOutcome::WriteUnconfirmed => Outcome::Unconfirmed,
     };
     (tool_data(json!({"outcome":outcome})), activity)
 }

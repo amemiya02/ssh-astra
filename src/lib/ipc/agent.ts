@@ -5,7 +5,7 @@ export interface AgentActivity {
   tool: "list_terminals" | "read_terminal" | "list_directory" | "read_file" | "request_command_review" | "write_file" | "unknown";
   host?: string;
   path?: string;
-  outcome: "allowed" | "denied" | "timedOut" | "failed";
+  outcome: "allowed" | "denied" | "timedOut" | "failed" | "unconfirmed";
 }
 
 interface ActivityCursor {

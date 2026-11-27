@@ -12,7 +12,8 @@ use std::time::SystemTime;
 use serde::Serialize;
 use sshastra_core::agent::{
     ActivityCursor, ActivityPage, AgentActivityLog, AgentBackend, ApprovedFileWrite, DirectoryRead,
-    OpenTerminal, ReadError, ReadTarget, ReviewOutcome, TerminalScreen, SCREEN_BYTE_LIMIT,
+    FileWritePublication, OpenTerminal, ReadError, ReadTarget, ReviewOutcome, TerminalScreen,
+    SCREEN_BYTE_LIMIT,
 };
 use sshastra_core::files::{FsError, FsResult, SftpFs, StagedRemoteWrite};
 use sshastra_core::ssh::{BoxFuture, Connection};
@@ -113,6 +114,7 @@ impl DesktopAgent {
         path: String,
         bytes: Vec<u8>,
         authorized: &(dyn Fn() -> bool + Sync),
+        publication: &FileWritePublication,
     ) -> ReviewOutcome {
         if !authorized() {
             return ReviewOutcome::Unavailable;
@@ -139,10 +141,17 @@ impl DesktopAgent {
             return ReviewOutcome::WriteFailed;
         };
         // Publication stays with the original MCP call.
-        match stage.publish(authorized).await {
+        let before_rename = || {
+            if !authorized() {
+                return false;
+            }
+            publication.start();
+            true
+        };
+        match stage.publish(&before_rename).await {
             Ok(true) => ReviewOutcome::Written,
             Ok(false) => ReviewOutcome::Unavailable,
-            Err(_) => ReviewOutcome::WriteFailed,
+            Err(_) => publication.interrupted(ReviewOutcome::WriteFailed),
         }
     }
 }
@@ -310,7 +319,7 @@ impl AgentBackend for DesktopAgent {
                 let _ = answer.completed.send(outcome);
                 return Err(outcome);
             }
-            let write: ApprovedFileWrite<'a> = Box::new(move |bytes, deadline| {
+            let write: ApprovedFileWrite<'a> = Box::new(move |bytes, deadline, publication| {
                 Box::pin(async move {
                     let _review = review;
                     let mut host_changes = permission.clone();
@@ -323,9 +332,10 @@ impl AgentBackend for DesktopAgent {
                     };
                     let outcome = tokio::select! {
                         biased;
-                        _ = host_changes.changed() => unavailable,
-                        _ = terminal_changes.changed() => unavailable,
-                        outcome = self.write_approved_file(connection, path, bytes, &authorized) => outcome,
+                        _ = tokio::time::sleep_until(deadline) => publication.interrupted(ReviewOutcome::TimedOut),
+                        _ = host_changes.changed() => publication.interrupted(unavailable),
+                        _ = terminal_changes.changed() => publication.interrupted(unavailable),
+                        outcome = self.write_approved_file(connection, path, bytes, &authorized, &publication) => outcome,
                     };
                     let _ = answer.completed.send(outcome);
                     outcome

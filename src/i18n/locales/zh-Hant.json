@@ -33,7 +33,8 @@
       "approve": "僅核准這一次",
       "notification": "開啟 SSH Astra 審核遠端檔案寫入要求。",
       "written": "已寫入遠端檔案。",
-      "writeFailed": "無法確認遠端檔案已寫入。"
+      "writeFailed": "無法確認遠端檔案已寫入。",
+      "writeUnconfirmed": "伺服器可能已變更檔案。SSH Astra 無法確認這次寫入。"
     },
     "enabled": "代理存取已開啟",
     "turnOff": "關閉代理存取",
@@ -55,7 +56,8 @@
         "allowed": "允許",
         "denied": "拒絕",
         "timedOut": "逾時",
-        "failed": "失敗"
+        "failed": "失敗",
+        "unconfirmed": "未確認"
       }
     }
   },

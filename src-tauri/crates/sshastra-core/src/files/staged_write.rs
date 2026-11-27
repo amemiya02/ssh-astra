@@ -298,9 +298,6 @@ impl StagedRemoteWrite {
     }
 
     async fn publish_checked(&self, authorized: &(dyn Fn() -> bool + Sync)) -> FsResult<bool> {
-        if !authorized() {
-            return Ok(false);
-        }
         if Self::regular_file(&self.target).await? != self.original {
             return Err(FsError::Protocol(
                 "The destination changed while staging".into(),

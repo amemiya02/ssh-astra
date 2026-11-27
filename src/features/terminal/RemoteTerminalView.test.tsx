@@ -182,12 +182,14 @@ it("shows the exact remote path and byte count and requires approval for each wr
     const { onEvent } = ipc.mock.calls.find(([command]) => command === "remote_terminal_open")![1] as {
       onEvent: { onmessage: (message: TerminalMessage) => void };
     };
-    const request = { kind: "fileWrite" as const, id: 41, terminalId: 7, host: "Production", path: "/sample/ 空格 .txt", byteLength: 6 };
+    const request = { kind: "fileWrite" as const, id: 41, terminalId: 7, host: "Production", path: "/الملفات/ 空格 .txt", byteLength: 6 };
     act(() => onEvent.onmessage({ agentReview: request }));
     const dialog = document.body.querySelector('[role="dialog"]');
     expect(dialog?.textContent).toContain("Production");
     expect(dialog?.textContent).toContain("6 bytes");
     expect(dialog?.querySelector("code")?.textContent).toBe(request.path);
+    expect(Array.from(dialog?.querySelectorAll("code bdi") ?? []).map((segment) => segment.textContent))
+      .toEqual(["الملفات", " 空格 .txt"]);
     expect(ipc).not.toHaveBeenCalledWith("terminal_agent_review_answer", expect.anything());
     const button = (name: string) => Array.from(document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
       .find((candidate) => candidate.textContent === name);

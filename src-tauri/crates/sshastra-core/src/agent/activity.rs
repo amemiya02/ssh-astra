@@ -13,8 +13,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::{
-    bound_metadata, ReadTarget, COMMAND_REVIEW_TOOL, HOST_NAME_BYTE_LIMIT, PATH_BYTE_LIMIT,
-    WRITE_FILE_TOOL,
+    bound_metadata, FileWritePublication, ReadTarget, COMMAND_REVIEW_TOOL, HOST_NAME_BYTE_LIMIT,
+    PATH_BYTE_LIMIT, WRITE_FILE_TOOL,
 };
 use crate::fs_util::write_atomically_private;
 
@@ -59,6 +59,7 @@ pub(super) enum Outcome {
     Denied,
     TimedOut,
     Failed,
+    Unconfirmed,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -72,34 +73,55 @@ struct ActivityDetails {
 }
 
 /// The call's allowlisted metadata, as established by dispatch.
-pub struct ActivityCall(ActivityDetails);
+pub struct ActivityCall {
+    details: ActivityDetails,
+    publication: Option<FileWritePublication>,
+}
 
 impl ActivityCall {
     pub(super) fn new(tool: Tool) -> Self {
-        Self(ActivityDetails {
-            tool,
-            host: None,
-            path: None,
-            // The service can revoke access and cancel a call before it finishes.
-            outcome: Outcome::Denied,
-        })
+        Self {
+            details: ActivityDetails {
+                tool,
+                host: None,
+                path: None,
+                // The service can revoke access and cancel a call before it finishes.
+                outcome: Outcome::Denied,
+            },
+            publication: None,
+        }
     }
 
     pub(super) fn set_target(&mut self, target: &ReadTarget, path: Option<&str>) {
-        self.0.host = Some(bound_metadata(
+        self.details.host = Some(bound_metadata(
             target.host_name.clone(),
             HOST_NAME_BYTE_LIMIT,
         ));
-        self.0.path = path.map(str::to_owned);
+        self.details.path = path.map(str::to_owned);
     }
 
     pub(super) fn finish(&mut self, outcome: Outcome) {
-        self.0.outcome = outcome;
+        self.details.outcome = outcome;
+        self.publication = None;
+    }
+
+    pub(super) fn track_publication(&mut self, publication: FileWritePublication) {
+        self.publication = Some(publication);
+    }
+
+    fn into_details(mut self) -> ActivityDetails {
+        if self
+            .publication
+            .is_some_and(|publication| publication.has_started())
+        {
+            self.details.outcome = Outcome::Unconfirmed;
+        }
+        self.details
     }
 
     /// Called by the local transport when the dispatch deadline expires.
     pub fn timed_out(&mut self) {
-        self.finish(Outcome::TimedOut);
+        self.details.outcome = Outcome::TimedOut;
     }
 }
 
@@ -228,7 +250,7 @@ impl AgentActivityLog {
             0,
             ActivityRecord {
                 timestamp,
-                details: call.0,
+                details: call.into_details(),
             },
         );
         self.write(shard, &records)?;

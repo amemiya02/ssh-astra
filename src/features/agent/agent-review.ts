@@ -45,6 +45,7 @@ export function decideAgentReview(review: PendingReview, choice: AgentReviewChoi
     }
     if (choice === "approve") {
       if (outcome === "written") showToast((t) => t("agentAccess.fileReview.written"));
+      else if (outcome === "writeUnconfirmed") showToast((t) => t("agentAccess.fileReview.writeUnconfirmed"), "error");
       else showToast((t) => t("agentAccess.fileReview.writeFailed"), "error");
     }
   }, () => {

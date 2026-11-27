@@ -21,6 +21,7 @@ struct TestBackend<F> {
     review: Option<ReviewOutcome>,
     file_approval: Option<ReviewOutcome>,
     reconnect_during_approval: bool,
+    lose_publication_reply: bool,
     written: Mutex<Option<Vec<u8>>>,
 }
 
@@ -35,6 +36,7 @@ impl<F> TestBackend<F> {
             review: Some(ReviewOutcome::Unavailable),
             file_approval: Some(ReviewOutcome::Unavailable),
             reconnect_during_approval: false,
+            lose_publication_reply: false,
             written: Mutex::new(None),
         }
     }
@@ -115,9 +117,13 @@ impl<F: Fn() -> Vec<OpenTerminal> + Send + Sync> AgentBackend for TestBackend<F>
                     if self.reconnect_during_approval {
                         self.generation.fetch_add(1, Ordering::Relaxed);
                     }
-                    let write: ApprovedFileWrite<'_> = Box::new(|bytes, _| {
+                    let write: ApprovedFileWrite<'_> = Box::new(|bytes, _, publication| {
                         Box::pin(async move {
+                            publication.start();
                             *self.written.lock().unwrap() = Some(bytes);
+                            if self.lose_publication_reply {
+                                return std::future::pending().await;
+                            }
                             ReviewOutcome::Written
                         })
                     });
@@ -360,6 +366,52 @@ async fn approval_cannot_write_to_a_reconnected_terminal() {
     .await;
     assert_eq!(response_data(&reply), json!({"outcome":"unavailable"}));
     assert_eq!(*backend.written.lock().unwrap(), None);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_missing_publication_reply_is_reported_and_audited_as_unconfirmed() {
+    let directory = tempfile::tempdir().unwrap();
+    let log = AgentActivityLog::new(directory.path().join("agent-activity"));
+    let now = UNIX_EPOCH + Duration::from_secs(1_790_000_000);
+    let mut backend = TestBackend::new(Vec::new);
+    backend.permission = AgentPermission::Approval;
+    backend.file_approval = Some(ReviewOutcome::Written);
+    backend.lose_publication_reply = true;
+    let frame = json!({"jsonrpc":"2.0","id":9,"method":"tools/call","params":{
+        "name":"write_file","arguments":{"terminalId":4,"path":"/sample/ log.bin","data":"//5h"}
+    }})
+    .to_string();
+    let mut activity = None;
+    let reply = dispatch_recording(frame.as_bytes(), || true, &backend, &mut activity)
+        .await
+        .unwrap();
+    assert_eq!(
+        *backend.written.lock().unwrap(),
+        Some(vec![0xff, 0xfe, b'a'])
+    );
+    assert_eq!(response_data(&reply), json!({"outcome":"writeUnconfirmed"}));
+    log.record(activity.unwrap(), now).unwrap();
+    let records = serde_json::to_value(log.list(now, None).unwrap().records).unwrap();
+    assert_eq!(records[0]["outcome"], "unconfirmed");
+
+    let mut interrupted = None;
+    {
+        let pending = dispatch_recording(frame.as_bytes(), || true, &backend, &mut interrupted);
+        tokio::select! {
+            biased;
+            _ = pending => panic!("the rename reply is still pending"),
+            _ = tokio::task::yield_now() => {}
+        }
+    }
+    log.record(interrupted.unwrap(), now + Duration::from_secs(1))
+        .unwrap();
+    let records = serde_json::to_value(
+        log.list(now + Duration::from_secs(1), None)
+            .unwrap()
+            .records,
+    )
+    .unwrap();
+    assert_eq!(records[0]["outcome"], "unconfirmed");
 }
 
 #[tokio::test]

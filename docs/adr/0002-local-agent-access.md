@@ -33,9 +33,9 @@ The MCP result contains only `outcome`, one of `copied`, `rejected`, `unavailabl
 
 `write_file` takes a `terminalId`, an absolute remote `path`, and `data` as standard padded base64. The decoded data is limited to 44 KiB and the entire request, including its newline, must fit within the existing 64 KiB MCP frame limit. The path must be printable, at most 4,096 UTF-8 bytes, and use explicit segments. The review shows the saved Host, Terminal ID, exact path, and decoded byte count. The Window and two-minute decision limit apply to every call. Choose **Approve once** to write the supplied bytes or **Reject** to decline.
 
-An approved call stages a private sibling file on the Terminal's current SFTP Connection, then publishes it with one rename. Atomic replacement support is required for an existing regular file. The original file stays intact if staging fails. The app verifies permission and the Connection again before publication. A lost rename reply can leave publication unconfirmed.
+An approved call stages a private sibling file on the Terminal's current SFTP Connection, then publishes it with one rename. Atomic replacement support is required for an existing regular file. The original file stays intact if staging fails. The app verifies permission and the Connection again immediately before starting publication.
 
-The result contains only `outcome`. It can be `written`, `rejected`, `unavailable`, `timedOut`, or `writeFailed`.
+The result contains only `outcome`. It can be `written`, `rejected`, `unavailable`, `timedOut`, `writeFailed`, or `writeUnconfirmed`. The unconfirmed outcome means the app could not verify what happened after attempting the rename. The server may have published the new file.
 
 ## Activity
 

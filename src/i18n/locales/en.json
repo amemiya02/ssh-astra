@@ -33,7 +33,8 @@
       "approve": "Approve once",
       "notification": "Open SSH Astra to review a remote file write.",
       "written": "Remote file written.",
-      "writeFailed": "Could not confirm the remote file write."
+      "writeFailed": "Could not confirm the remote file write.",
+      "writeUnconfirmed": "The server may have changed the file. SSH Astra could not confirm the write."
     },
     "enabled": "Agent access on",
     "turnOff": "Turn off Agent access",
@@ -55,7 +56,8 @@
         "allowed": "Allowed",
         "denied": "Denied",
         "timedOut": "Timed out",
-        "failed": "Failed"
+        "failed": "Failed",
+        "unconfirmed": "Unconfirmed"
       }
     }
   },
