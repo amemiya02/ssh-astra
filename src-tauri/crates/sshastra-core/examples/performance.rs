@@ -71,14 +71,15 @@ async fn listings(remote: &dyn RemoteFs, link: &str) {
         json!({"sftp_stat": link, "median_ms": median(stat_ms), "samples_ms": stat_ms})
     );
 
-    for (name, count) in [("many", 10_000), ("regular", 1000), ("links", 1000)] {
+    for (name, path, count) in [
+        ("many", "/srv/files/many", 10_000),
+        ("regular", "/srv/performance/regular", 1000),
+        ("links", "/srv/performance/links", 1000),
+    ] {
         let mut samples_ms = [0.0; 5];
         for ms in &mut samples_ms {
             let start = Instant::now();
-            let entries = remote
-                .list_dir(&format!("/srv/files/{name}"))
-                .await
-                .unwrap();
+            let entries = remote.list_dir(path).await.unwrap();
             *ms = start.elapsed().as_secs_f64() * 1000.0;
             assert_eq!(entries.len(), count, "fixture {name}");
             if name == "links" {

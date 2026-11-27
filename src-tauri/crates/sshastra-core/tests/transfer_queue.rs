@@ -42,6 +42,8 @@ struct MemoryFs {
     /// Fail writes once this many bytes have reached a file.
     fail_write_after: Mutex<Option<usize>>,
     deny_creation: Mutex<HashSet<String>>,
+    stage_open_gate: Mutex<Option<Arc<Semaphore>>>,
+    stage_open_started: Notify,
     pause_after_first: Mutex<Option<Arc<Notify>>>,
 }
 
@@ -254,6 +256,14 @@ impl MemoryFs {
             Some(Node::File(..)) if dir => return Err(FsError::NotADirectory(path.to_owned())),
             _ => {}
         }
+        let parent = path
+            .rsplit_once('/')
+            .map(|(parent, _)| parent)
+            .unwrap_or("");
+        let parent = if parent.is_empty() { "/" } else { parent };
+        if self.deny_creation.lock().unwrap().contains(parent) {
+            return Err(FsError::PermissionDenied(path.to_owned()));
+        }
         let prefix = format!("{path}/");
         if dir && nodes.keys().any(|p| p.starts_with(&prefix)) {
             return Err(FsError::Protocol("directory not empty".into()));
@@ -264,6 +274,11 @@ impl MemoryFs {
 
     fn rename_path(&self, from: &str, to: &str, overwrite: bool) -> FsResult<()> {
         let mut nodes = self.nodes.lock().unwrap();
+        let parent = to.rsplit_once('/').map(|(parent, _)| parent).unwrap_or("");
+        let parent = if parent.is_empty() { "/" } else { parent };
+        if self.deny_creation.lock().unwrap().contains(parent) {
+            return Err(FsError::PermissionDenied(to.to_owned()));
+        }
         if !overwrite && nodes.contains_key(to) {
             return Err(FsError::AlreadyExists(to.to_owned()));
         }
@@ -478,7 +493,14 @@ impl RemoteFs for MemoryFs {
         Box::pin(async move { self.stat_path(path) })
     }
     fn create_new<'a>(&'a self, path: &'a str, _: bool) -> BoxFuture<'a, FsResult<FileWriter>> {
-        Box::pin(async move { self.create_write_path(path, true) })
+        Box::pin(async move {
+            let gate = self.stage_open_gate.lock().unwrap().clone();
+            if let Some(gate) = gate {
+                self.stage_open_started.notify_one();
+                gate.acquire().await.unwrap().forget();
+            }
+            self.create_write_path(path, true)
+        })
     }
     fn create_dir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>> {
         Box::pin(async move { self.create_dir_path(path) })
@@ -981,6 +1003,93 @@ async fn a_writable_file_in_a_read_only_directory_is_overwritten_with_a_warning(
 }
 
 #[tokio::test]
+async fn a_stale_partial_does_not_block_a_warned_overwrite_in_a_read_only_directory() {
+    let h = Harness::new();
+    h.local.file("/file", vec![1; 10_000]);
+    h.remote.dir("/up");
+    h.remote.file("/up/file", "old");
+    h.local.break_reads("/file", Break::Fail);
+
+    let id = h.upload("/file", "/up");
+    next_conflict(&h, id).await;
+    h.queue.answer(id, ConflictAnswer::Overwrite);
+    h.until_settled().await;
+    assert!(matches!(h.transfer(id).state, TransferState::Failed { .. }));
+    assert_eq!(h.remote.tree("/up").len(), 2);
+
+    let replacement = vec![2; 10_000];
+    h.local.break_reads.lock().unwrap().clear();
+    h.local.file("/file", replacement.clone());
+    h.remote.deny_creation.lock().unwrap().insert("/up".into());
+    h.queue.retry(id);
+    next_conflict(&h, id).await;
+    h.queue.answer(id, ConflictAnswer::Overwrite);
+    h.until_state(id, TransferState::Done).await;
+
+    assert_eq!(h.remote.read("/up/file"), Some(replacement));
+    assert!(h.transfer(id).unprotected);
+}
+
+#[tokio::test]
+async fn cancelling_while_staging_opens_does_not_fall_back_to_truncating_the_target() {
+    let h = Harness::new();
+    h.local.file("/file", "new");
+    h.remote.file("/file", "original");
+    h.remote.deny_creation.lock().unwrap().insert("/".into());
+    let gate = Arc::new(Semaphore::new(0));
+    *h.remote.stage_open_gate.lock().unwrap() = Some(gate.clone());
+
+    let id = h.upload("/file", "/");
+    next_conflict(&h, id).await;
+    h.queue.answer(id, ConflictAnswer::Overwrite);
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        h.remote.stage_open_started.notified(),
+    )
+    .await
+    .unwrap();
+    h.queue.cancel(id);
+    gate.add_permits(1);
+    h.until_state(id, TransferState::Cancelled).await;
+
+    assert_eq!(h.remote.read("/file").as_deref(), Some(&b"original"[..]));
+    assert!(h.events_for(id).iter().all(|t| !t.unprotected));
+}
+
+#[tokio::test]
+async fn separate_queues_can_overwrite_the_same_destination_without_sharing_an_active_stage() {
+    let remote = MemoryFs::new();
+    remote.file("/file", "original");
+    let first = Harness::with(MemoryFs::new(), remote.clone());
+    let second = Harness::with(MemoryFs::new(), remote.clone());
+    let gate = Arc::new(Notify::new());
+    *first.local.pause_after_first.lock().unwrap() = Some(gate.clone());
+    let first_bytes = vec![1; 10_000];
+    let second_bytes = vec![2; 10_000];
+    first.local.file("/file", first_bytes.clone());
+    second.local.file("/file", second_bytes.clone());
+
+    let a = first.upload("/file", "/");
+    next_conflict(&first, a).await;
+    first.queue.answer(a, ConflictAnswer::Overwrite);
+    first
+        .until("first copy to have written", |all| all[0].bytes_done > 0)
+        .await;
+    assert_eq!(remote.read("/file").as_deref(), Some(&b"original"[..]));
+
+    let b = second.upload("/file", "/");
+    next_conflict(&second, b).await;
+    second.queue.answer(b, ConflictAnswer::Overwrite);
+    second.until_state(b, TransferState::Done).await;
+    assert_eq!(remote.read("/file"), Some(second_bytes));
+
+    gate.notify_one();
+    first.until_state(a, TransferState::Done).await;
+    assert_eq!(remote.read("/file"), Some(first_bytes));
+    assert_eq!(remote.list_path("/").unwrap().len(), 1);
+}
+
+#[tokio::test]
 async fn an_interrupted_overwrite_keeps_the_original_in_both_directions() {
     let h = Harness::new();
     h.local.dir("/up");
@@ -1063,6 +1172,11 @@ async fn an_interrupted_upload_and_download_resume_from_their_staged_bytes() {
         assert!(events[attempt..]
             .iter()
             .any(|t| t.state == TransferState::Running && t.bytes_done == 300_000));
+        assert!(
+            events[attempt..].iter().all(|t| t.bytes_done > 0),
+            "the retry briefly reset progress: {:?}",
+            &events[attempt..]
+        );
         assert_eq!(h.transfer(id).bytes_done, 400_000);
         assert_eq!(target.tree("/to").len(), 1);
     }
@@ -1092,6 +1206,33 @@ async fn a_retry_copies_the_new_source_when_the_old_prefix_is_invalid() {
             new_size
         );
     }
+}
+
+#[tokio::test]
+async fn failing_to_open_a_changed_source_does_not_relabel_the_old_partial() {
+    let h = Harness::new();
+    let original = vec![1; 100_000];
+    h.local.file("/file", original.clone());
+    *h.remote.fail_write_after.lock().unwrap() = Some(80_000);
+    let id = h.upload("/file", "/");
+    h.until_settled().await;
+    assert!(matches!(h.transfer(id).state, TransferState::Failed { .. }));
+
+    // The source metadata changed, although the entire sampled tail matches.
+    let mut replacement = original;
+    replacement[0] = 2;
+    h.local.file("/file", replacement.clone());
+    h.local.set_mode("/file", 0o600).unwrap();
+    h.local.fail_next_read("/file");
+    *h.remote.fail_write_after.lock().unwrap() = None;
+
+    h.queue.retry(id);
+    h.until_settled().await;
+    assert!(matches!(h.transfer(id).state, TransferState::Failed { .. }));
+
+    h.queue.retry(id);
+    h.until_state(id, TransferState::Done).await;
+    assert!(h.remote.read("/file") == Some(replacement));
 }
 
 #[tokio::test]

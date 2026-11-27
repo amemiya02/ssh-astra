@@ -11,6 +11,7 @@ use std::time::Duration;
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncReadExt;
 use tokio::sync::Mutex as AsyncMutex;
+use uuid::Uuid;
 
 use super::{
     join, FileEntry, FileKind, FileReader, FileStat, FileWriter, FsError, FsResult, LocalFs,
@@ -130,23 +131,36 @@ impl Side {
     }
 
     pub(super) fn sibling(&self) -> FsResult<Self> {
+        let basename = match self {
+            Self::Local(_, path) => path
+                .file_name()
+                .ok_or_else(|| invalid_name(self))?
+                .as_encoded_bytes(),
+            Self::Remote(_, path) => path.rsplit('/').next().unwrap().as_bytes(),
+        };
+        Ok(self.with_name(&staging_name(basename)))
+    }
+
+    fn with_name(&self, name: &str) -> Self {
         match self {
-            Self::Local(fs, path) => {
-                let name = path.file_name().ok_or_else(|| invalid_name(self))?;
-                Ok(Self::Local(
-                    fs.clone(),
-                    path.with_file_name(staging_name(name.as_encoded_bytes())),
-                ))
-            }
+            Self::Local(fs, path) => Self::Local(fs.clone(), path.with_file_name(name)),
             Self::Remote(fs, path) => {
-                let basename = path.rsplit('/').next().expect("split always yields a name");
-                let name = staging_name(basename.as_bytes());
                 let sibling = path
                     .rsplit_once('/')
-                    .map_or_else(|| name.clone(), |(parent, _)| join(parent, &name));
-                Ok(Self::Remote(fs.clone(), sibling))
+                    .map_or_else(|| name.to_owned(), |(parent, _)| join(parent, name));
+                Self::Remote(fs.clone(), sibling)
             }
         }
+    }
+
+    fn active_stage(&self) -> Self {
+        let name = match self {
+            Self::Local(_, path) => path.file_name().and_then(|name| name.to_str()),
+            Self::Remote(_, path) => path.rsplit('/').next(),
+        }
+        .expect("a retained staging name");
+        let stem = name.strip_suffix(".part").expect("a retained staging name");
+        self.with_name(&format!("{stem}-{}.part", Uuid::new_v4()))
     }
 
     async fn create_new(&self, private: bool) -> FsResult<FileWriter> {
@@ -176,6 +190,18 @@ impl Side {
             Self::Remote(fs, path) => fs.remove_file(path).await,
         }
     }
+
+    async fn publish(&self, target: &Self, overwrite: bool) -> FsResult<()> {
+        match (self, target) {
+            (Self::Local(fs, from), Self::Local(_, to)) => {
+                fs.publish_transfer(from, to, overwrite).await
+            }
+            (Self::Remote(fs, from), Self::Remote(_, to)) => {
+                fs.publish_transfer(from, to, overwrite).await
+            }
+            _ => unreachable!("a staging file and its destination share a filesystem"),
+        }
+    }
 }
 
 fn staging_name(name: &[u8]) -> String {
@@ -192,7 +218,7 @@ fn invalid_name(side: &Side) -> FsError {
     FsError::Io(format!("{}: missing file name", side.display()))
 }
 
-#[derive(PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 enum StageKey {
     Local(PathBuf),
     Remote(Option<String>, String),
@@ -200,7 +226,7 @@ enum StageKey {
 
 pub(super) type StageSlot = AsyncMutex<Option<Arc<Partial>>>;
 
-/// Serializes copies and cleanup using the same deterministic staging path.
+/// Serializes copies and cleanup of known partials within a queue.
 #[derive(Default)]
 pub(super) struct StageSlots {
     slots: Mutex<HashMap<StageKey, Weak<StageSlot>>>,
@@ -223,14 +249,28 @@ impl StageSlots {
 /// Records which copy owns the bytes and how to reach the staging path again.
 /// In particular, it does not hold an old SFTP session open after a failure.
 pub(super) struct Partial {
-    source: StageKey,
-    source_stat: FileStat,
+    source: Option<(StageKey, FileStat)>,
     location: PartialLocation,
+    parked_stat: Option<FileStat>,
 }
 
 enum PartialLocation {
     Local(Arc<dyn LocalFs>, PathBuf),
     Remote(OpenRemote, Option<String>, String),
+}
+
+impl Partial {
+    fn at(&self, current: &Side) -> Side {
+        match (&self.location, current) {
+            (PartialLocation::Local(_, path), Side::Local(fs, _)) => {
+                Side::Local(fs.clone(), path.clone())
+            }
+            (PartialLocation::Remote(_, _, path), Side::Remote(fs, _)) => {
+                Side::Remote(fs.clone(), path.clone())
+            }
+            _ => unreachable!("a partial stays on its destination filesystem"),
+        }
+    }
 }
 
 pub(super) struct StageLease {
@@ -250,19 +290,22 @@ impl StageLease {
         }
         match &self.partial.location {
             PartialLocation::Local(fs, path) => {
-                let _ = fs.remove_file(path).await;
+                let expected = self.partial.parked_stat.as_ref();
+                if expected.is_none() || fs.lstat(path).await.as_ref().ok() == expected {
+                    let _ = fs.remove_file(path).await;
+                }
             }
             PartialLocation::Remote(open, namespace, path) => {
                 if let Some(fs) = live.filter(|fs| fs.transfer_namespace() == namespace.as_deref())
                 {
-                    if !connection_error(&fs.remove_file(path).await) {
+                    if !connection_error(&self.discard_remote(fs, path).await) {
                         *current = None;
                         return false;
                     }
                 }
                 let result = match tokio::time::timeout(Duration::from_secs(1), open()).await {
                     Ok(Ok(fs)) if fs.transfer_namespace() == namespace.as_deref() => {
-                        fs.remove_file(path).await
+                        self.discard_remote(fs.as_ref(), path).await
                     }
                     Ok(Ok(_)) => Ok(()),
                     Ok(Err(e)) => Err(e),
@@ -275,6 +318,15 @@ impl StageLease {
         }
         *current = None;
         false
+    }
+
+    async fn discard_remote(&self, fs: &dyn RemoteFs, path: &str) -> FsResult<()> {
+        if let Some(expected) = &self.partial.parked_stat {
+            if fs.lstat(path).await? != *expected {
+                return Ok(());
+            }
+        }
+        fs.remove_file(path).await
     }
 }
 
@@ -290,25 +342,72 @@ const CHECK_BYTES: u64 = 64 * 1024;
 
 pub(super) struct WritePlan {
     reader: FileReader,
-    existing: bool,
     offset: u64,
+}
+
+pub(super) enum OpenedWrite {
+    Staged(FileReader, FileWriter, u64),
+    NeedsInPlace(FileReader),
 }
 
 pub(super) struct StagedWrite<'a> {
     target: &'a Side,
-    temp: Option<Side>,
+    temp: Side,
+    parked: Side,
     original: Option<FileStat>,
     claimed: bool,
+    opened: bool,
+    parked_stat: Option<FileStat>,
 }
 
 impl<'a> StagedWrite<'a> {
-    pub(super) fn new(target: &'a Side, temp: Side, original: Option<FileStat>) -> Self {
+    pub(super) fn new(target: &'a Side, parked: Side, original: Option<FileStat>) -> Self {
         Self {
             target,
-            temp: Some(temp),
+            temp: parked.active_stage(),
+            parked,
             original,
             claimed: false,
+            opened: false,
+            parked_stat: None,
         }
+    }
+
+    /// Give the writable path a unique name before reading or changing existing
+    /// bytes. Other processes can claim only quiescent files at the shared name.
+    pub(super) async fn claim(&mut self, previous: Option<&Partial>) -> FsResult<()> {
+        if let Some(previous) = previous.filter(|p| p.parked_stat.is_none()) {
+            let owned = previous.at(&self.temp);
+            match owned.lstat().await {
+                Ok(_) => {
+                    self.temp = owned;
+                    self.claimed = true;
+                    return Ok(());
+                }
+                Err(FsError::NotFound(_)) => {}
+                Err(e) => return Err(e),
+            }
+        }
+        match self.parked.lstat().await {
+            Ok(stat) if matches!(stat.kind, FileKind::File | FileKind::Symlink) => {}
+            Ok(_) => return Err(FsError::AlreadyExists(self.parked.display())),
+            Err(FsError::NotFound(_) | FsError::PermissionDenied(_)) => return Ok(()),
+            Err(e) => return Err(e),
+        }
+        match self.parked.publish(&self.temp, false).await {
+            Ok(()) => self.claimed = true,
+            Err(FsError::NotFound(_) | FsError::PermissionDenied(_)) => {}
+            Err(e) => {
+                // A lost reply can hide a successful move. The UUID path
+                // belongs to us if it appeared, so the retry can check it.
+                self.claimed = matches!(
+                    e,
+                    FsError::NotConnected | FsError::TimedOut | FsError::Protocol(_)
+                );
+                return Err(e);
+            }
+        }
+        Ok(())
     }
 
     pub(super) async fn plan(
@@ -317,41 +416,45 @@ impl<'a> StagedWrite<'a> {
         source_stat: &FileStat,
         previous: Option<&Partial>,
     ) -> FsResult<WritePlan> {
-        let temp = self.temp.as_ref().expect("planning precedes staging");
-        let (existing, offset) = match temp.lstat().await {
-            Ok(stat) if stat.kind == FileKind::File => {
-                let same_source = previous
-                    .is_none_or(|p| p.source == source.key() && p.source_stat == *source_stat);
-                let resume = same_source
-                    && stat.size > 0
-                    && stat.size <= source_stat.size
-                    && matching_tail(temp, source, stat.size).await?;
-                (true, if resume { stat.size } else { 0 })
+        let offset = if self.claimed {
+            match self.temp.lstat().await {
+                Ok(stat) if stat.kind == FileKind::File => {
+                    let same_source = previous
+                        .and_then(|p| p.source.as_ref())
+                        .is_none_or(|(key, meta)| *key == source.key() && meta == source_stat);
+                    let resume = same_source
+                        && stat.size > 0
+                        && stat.size <= source_stat.size
+                        && matching_tail(&self.temp, source, stat.size).await?;
+                    if resume {
+                        stat.size
+                    } else {
+                        0
+                    }
+                }
+                Ok(stat) if stat.kind == FileKind::Symlink => 0,
+                Ok(_) => return Err(FsError::AlreadyExists(self.temp.display())),
+                Err(FsError::NotFound(_)) => 0,
+                Err(e) => return Err(e),
             }
-            Ok(stat) if stat.kind == FileKind::Symlink => (true, 0),
-            Ok(_) => return Err(FsError::AlreadyExists(temp.display())),
-            Err(FsError::NotFound(_)) => (false, 0),
-            Err(e) => return Err(e),
+        } else {
+            0
         };
         let reader = source.open_read_at(offset).await?;
-        Ok(WritePlan {
-            reader,
-            existing,
-            offset,
-        })
+        Ok(WritePlan { reader, offset })
     }
 
     pub(super) async fn begin(
         &mut self,
         source: &Side,
         mut plan: WritePlan,
-    ) -> FsResult<(FileReader, FileWriter, u64)> {
-        let temp = self.temp.as_ref().expect("staging starts once");
+    ) -> FsResult<OpenedWrite> {
+        let temp = &self.temp;
         if plan.offset != 0 {
             match temp.open_write_at(plan.offset).await {
                 Ok(writer) => {
-                    self.claimed = true;
-                    return Ok((plan.reader, writer, plan.offset));
+                    self.opened = true;
+                    return Ok(OpenedWrite::Staged(plan.reader, writer, plan.offset));
                 }
                 Err(FsError::NotFound(_) | FsError::PermissionDenied(_)) => {
                     // A previous attempt may have set the final mode before
@@ -361,20 +464,23 @@ impl<'a> StagedWrite<'a> {
                 Err(e) => return Err(e),
             }
         }
-        if plan.existing {
+        if self.claimed {
             match temp.remove().await {
-                Ok(()) | Err(FsError::NotFound(_)) => {}
+                Ok(()) | Err(FsError::NotFound(_)) => self.claimed = false,
+                Err(FsError::PermissionDenied(_)) if self.original.is_some() => {
+                    return Ok(OpenedWrite::NeedsInPlace(plan.reader));
+                }
                 Err(e) => return Err(e),
             }
         }
         let writer = match temp.create_new(self.original.is_some()).await {
             Ok(writer) => {
                 self.claimed = true;
+                self.opened = true;
                 writer
             }
             Err(FsError::PermissionDenied(_)) if self.original.is_some() => {
-                self.temp = None;
-                self.target.create_write().await?
+                return Ok(OpenedWrite::NeedsInPlace(plan.reader));
             }
             Err(e) => {
                 // A lost SFTP reply may hide a successful creation.
@@ -385,15 +491,34 @@ impl<'a> StagedWrite<'a> {
                 return Err(e);
             }
         };
-        Ok((plan.reader, writer, 0))
+        Ok(OpenedWrite::Staged(plan.reader, writer, 0))
     }
 
     pub(super) fn target(&self) -> &Side {
         self.target
     }
 
-    pub(super) fn unprotected(&self) -> bool {
-        self.temp.is_none()
+    pub(super) async fn begin_in_place(&self) -> FsResult<FileWriter> {
+        self.target.create_write().await
+    }
+
+    /// A settled failed copy can be recovered by the next app run. If the
+    /// connection is down or another copy already parked there, this row
+    /// retains the unique name for its own retry and cleanup.
+    pub(super) async fn park(&mut self) {
+        if !self.claimed {
+            return;
+        }
+        let Ok(stat) = self.temp.lstat().await else {
+            return;
+        };
+        if !matches!(stat.kind, FileKind::File | FileKind::Symlink) {
+            return;
+        }
+        if self.temp.publish(&self.parked, false).await.is_ok() {
+            self.temp = self.parked.clone();
+            self.parked_stat = Some(stat);
+        }
     }
 
     pub(super) fn partial(
@@ -401,9 +526,12 @@ impl<'a> StagedWrite<'a> {
         source: &Side,
         source_stat: &FileStat,
         open: &OpenRemote,
+        previous: Option<&Partial>,
     ) -> Option<Partial> {
-        let temp = self.temp.as_ref().filter(|_| self.claimed)?;
-        let location = match temp {
+        if !self.claimed {
+            return None;
+        }
+        let location = match &self.temp {
             Side::Local(fs, path) => PartialLocation::Local(fs.clone(), path.clone()),
             Side::Remote(fs, path) => PartialLocation::Remote(
                 open.clone(),
@@ -412,14 +540,20 @@ impl<'a> StagedWrite<'a> {
             ),
         };
         Some(Partial {
-            source: source.key(),
-            source_stat: source_stat.clone(),
+            // Claiming a partial only moves it. An error before opening the
+            // writer must preserve the identity of the bytes it already held.
+            source: if self.opened {
+                Some((source.key(), source_stat.clone()))
+            } else {
+                previous.and_then(|p| p.source.clone())
+            },
             location,
+            parked_stat: self.parked_stat.clone(),
         })
     }
 
     pub(super) async fn prepare(&self) -> FsResult<()> {
-        let (Some(temp), Some(original)) = (&self.temp, &self.original) else {
+        let Some(original) = &self.original else {
             return Ok(());
         };
         let permissions = match self.target.stat().await {
@@ -433,22 +567,15 @@ impl<'a> StagedWrite<'a> {
         if let Some(mode) = permissions {
             // Set the final mode before publishing, so a chmod failure
             // leaves the original intact.
-            temp.set_permissions(mode).await?;
+            self.temp.set_permissions(mode).await?;
         }
         Ok(())
     }
 
     pub(super) async fn commit(&self) -> FsResult<()> {
-        match (&self.temp, self.target) {
-            (None, _) => Ok(()),
-            (Some(Side::Local(fs, from)), Side::Local(_, to)) => {
-                fs.publish_transfer(from, to, self.original.is_some()).await
-            }
-            (Some(Side::Remote(fs, from)), Side::Remote(_, to)) => {
-                fs.publish_transfer(from, to, self.original.is_some()).await
-            }
-            _ => unreachable!("a staging file and its destination share a filesystem"),
-        }
+        self.temp
+            .publish(self.target, self.original.is_some())
+            .await
     }
 
     pub(super) async fn discard_unprotected(&self) {

@@ -7,6 +7,7 @@ pub mod diagnostics;
 pub mod edit;
 pub mod files;
 pub mod forwards;
+pub mod home;
 pub mod hosts;
 pub mod settings;
 pub mod terminal;
