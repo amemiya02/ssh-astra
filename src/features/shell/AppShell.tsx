@@ -274,7 +274,10 @@ export function AppShell({ sidebar, nav, tabs, workspace, filePanel, fullWorkspa
                   if ("files" in next) setFilesCollapsed(isPanelCollapsed(next, "files"));
                 }}
                 onLayoutChanged={(next, meta) => {
-                  if ("files" in next) saveGroup(workspaceGroup(dock), meta.requestedLayout ?? next);
+                  // A live tab-width preview also resizes the inner group through its ResizeObserver.
+                  if ("files" in next && (previewTabWidth === null || meta.isUserInteraction)) {
+                    saveGroup(workspaceGroup(dock), meta.requestedLayout ?? next);
+                  }
                 }}
               >
                 <ResizablePanel id="terminal" minSize="200px">
