@@ -9,10 +9,10 @@ import { exposeTerminal } from "@/lib/e2e";
 import { openExternalUrl, readClipboardText, writeClipboardText } from "@/lib/ipc/system";
 import { useTheme } from "@/theme/theme-context";
 import { resolveTerminalTheme, terminalSearchDecorations, type TerminalColorScheme } from "@/theme/terminal-themes";
-import { PasteConfirmDialog, type PendingPaste } from "./PasteConfirmDialog";
+import { PasteConfirmDialog } from "./PasteConfirmDialog";
 import { TerminalSearchBar, type SearchDirection, type SearchResults } from "./TerminalSearchBar";
 import { currentPlatform, matchTerminalShortcut } from "@/features/workspace/shortcuts";
-import { planPaste } from "./terminal-input";
+import { planPaste, type PendingPaste } from "./terminal-input";
 import { useTerminalPrefs } from "./terminal-prefs-context";
 
 export const scrollbackLines = 10_000;
@@ -35,8 +35,7 @@ interface XtermViewProps {
 /**
  * xterm.js with everything a Terminal tab shares, whatever it is attached to:
  * the user's font, size, ligatures and colour scheme (live), find in scrollback,
- * clickable links, copy on select, right-click paste and a confirmation before
- * pasting several lines.
+ * clickable links, copy on select, right-click paste and paste confirmation.
  */
 export function XtermView({ label, active, colorScheme, onTitleChange, attach }: XtermViewProps) {
   const { theme } = useTheme();
@@ -62,7 +61,7 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
     onTitleChangeRef.current = onTitleChange;
   });
 
-  /** Pastes through xterm (so bracketed paste works), asking first for several lines if the preference says so. */
+  /** Pastes through xterm (so bracketed paste works), asking first when the plan requires it. */
   const requestPaste = useCallback((text: string) => {
     const plan = planPaste(text, prefsRef.current.confirmMultilinePaste);
     if (!plan) return;
@@ -129,7 +128,7 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
     });
     const onTitle = xterm.onTitleChange((title) => onTitleChangeRef.current?.(title));
 
-    // Every paste (keyboard, menu) goes through the multi-line check; capture runs before xterm's own handler.
+    // Every paste goes through the planner; capture runs before xterm's own handler.
     const onPaste = (event: ClipboardEvent) => {
       event.preventDefault();
       event.stopPropagation();
