@@ -77,6 +77,10 @@ _Avoid_: Sync input, multi-exec
 The SFTP file browser beside a Terminal, browsing the same Host over the same Connection.
 _Avoid_: SFTP browser, file manager, explorer
 
+**Resource panel**:
+The Resources tab beside a remote Terminal shows its Host's CPU, load, memory, swap, disks, network, and uptime.
+_Avoid_: Monitor, dashboard
+
 **Bookmark**:
 A directory saved on a Host so the user can jump to it from the File panel.
 _Avoid_: Favorite, pinned folder

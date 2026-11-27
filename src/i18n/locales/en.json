@@ -444,6 +444,30 @@
       "hosts": "hosts vault start"
     }
   },
+  "resources": {
+    "dock": "Terminal panels",
+    "title": "Resources",
+    "hide": "Hide Resource panel",
+    "connect": "Connect this Terminal to view its resources.",
+    "loading": "Reading resources…",
+    "unsupported": "This system is unsupported.",
+    "unavailable": "Could not read resources.",
+    "waiting": "Measuring…",
+    "cpu": "CPU",
+    "cpuValue_one": "{{usage}} · {{count}} core",
+    "cpuValue_other": "{{usage}} · {{count}} cores",
+    "load": "Load (1 / 5 / 15 min)",
+    "memory": "Memory",
+    "swap": "Swap",
+    "uptime": "Uptime",
+    "usage": "{{used}} / {{total}}",
+    "disks": "Disks",
+    "emptyDisks": "No disk usage available.",
+    "network": "Network",
+    "emptyNetwork": "No non-loopback interfaces.",
+    "rate": "{{size}}/s",
+    "networkValue": "RX {{receive}} · TX {{send}}"
+  },
   "files": {
     "title": "Files",
     "empty": "Open a Terminal on a Host to browse its files here.",

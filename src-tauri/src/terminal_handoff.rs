@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use serde_json::json;
 use sshastra_core::terminal::{ConnectionState, TerminalEvent};
 use tauri::ipc::{Channel, InvokeResponseBody};
-use tokio::sync::watch;
+use tokio::sync::{oneshot, watch, Mutex as AsyncMutex};
 
 use crate::prompts::{PromptEndpoint, PromptRequest};
 
@@ -27,6 +27,13 @@ pub(crate) struct Route {
     pub(crate) delivery: TerminalDelivery,
     pending: Option<PendingOutput>,
     running: bool,
+    resource_subscription: Option<(u32, oneshot::Sender<()>)>,
+    resource_channel: Arc<AsyncMutex<()>>,
+}
+
+pub(crate) struct ResourceSubscription {
+    pub(crate) stopped: oneshot::Receiver<()>,
+    pub(crate) channel: Arc<AsyncMutex<()>>,
 }
 
 struct PendingOutput {
@@ -42,6 +49,8 @@ impl TerminalRoute {
             delivery,
             pending: None,
             running: true,
+            resource_subscription: None,
+            resource_channel: Arc::default(),
         })))
     }
 
@@ -61,6 +70,7 @@ impl TerminalRoute {
                 // Authentication prompts are bound to their originating Window. Leave a
                 // reconnect that starts during the move entirely with the source.
                 if !route.running {
+                    route.stop_resources();
                     route.abort();
                 }
                 if let Some(prompts) = &route.delivery.prompts {
@@ -71,6 +81,7 @@ impl TerminalRoute {
             }
             TerminalEvent::Exit { .. } => {
                 route.running = false;
+                route.stop_resources();
                 route.abort();
             }
             _ => {}
@@ -79,6 +90,32 @@ impl TerminalRoute {
 }
 
 impl Route {
+    pub(crate) fn start_resources(&mut self, subscription: u32) -> Option<ResourceSubscription> {
+        if !self.running || self.pending.is_some() {
+            return None;
+        }
+        let (stop, stopped) = oneshot::channel();
+        self.resource_subscription = Some((subscription, stop));
+        Some(ResourceSubscription {
+            stopped,
+            channel: Arc::clone(&self.resource_channel),
+        })
+    }
+
+    pub(crate) fn stop_resource_subscription(&mut self, subscription: u32) {
+        if self
+            .resource_subscription
+            .as_ref()
+            .is_some_and(|(id, _)| *id == subscription)
+        {
+            self.stop_resources();
+        }
+    }
+
+    pub(crate) fn stop_resources(&mut self) {
+        self.resource_subscription = None;
+    }
+
     pub(crate) fn prepare(&mut self, token: &str, result: &MoveResult) -> bool {
         if !self.running || self.pending.is_some() {
             return false;
@@ -92,6 +129,7 @@ impl Route {
         {
             return false;
         }
+        self.stop_resources();
         self.pending = Some(PendingOutput {
             token: token.into(),
             result: result.clone(),
@@ -181,6 +219,30 @@ mod tests {
             InvokeResponseBody::Raw(bytes) => bytes,
             InvokeResponseBody::Json(_) => panic!("expected terminal output"),
         }
+    }
+
+    #[test]
+    fn sampling_survives_a_stale_stop_but_ends_on_handoff_or_exit() {
+        use tokio::sync::oneshot::error::TryRecvError;
+
+        let (source, _messages) = renderer("source");
+        let route = TerminalRoute::new(source);
+        let mut first = route.lock().start_resources(1).unwrap().stopped;
+        let mut second = route.lock().start_resources(2).unwrap().stopped;
+        assert_eq!(first.try_recv(), Err(TryRecvError::Closed));
+        route.lock().stop_resource_subscription(1);
+        assert_eq!(second.try_recv(), Err(TryRecvError::Empty));
+
+        let (result, _) = watch::channel(None);
+        assert!(route.lock().prepare("move", &result));
+        assert_eq!(second.try_recv(), Err(TryRecvError::Closed));
+        assert!(route.lock().start_resources(3).is_none());
+
+        route.lock().rollback("move");
+        let mut third = route.lock().start_resources(3).unwrap().stopped;
+        route.connection_event(&TerminalEvent::Exit { code: Some(0) });
+        assert_eq!(third.try_recv(), Err(TryRecvError::Closed));
+        assert!(route.lock().start_resources(4).is_none());
     }
 
     #[test]

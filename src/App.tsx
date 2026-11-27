@@ -27,6 +27,7 @@ import { CommandPalette, type PaletteTab } from "@/features/palette/CommandPalet
 import { usePaletteActions, type PaletteAction } from "@/features/palette/palette-actions";
 import { DiagnosticsPaletteActions } from "@/features/settings/diagnostics-section";
 import { AppShell } from "@/features/shell/AppShell";
+import { TerminalDock } from "@/features/resources/TerminalDock";
 import { SnippetsSidebar } from "@/features/snippets/SnippetsSidebar";
 import { zoomTerminalFont } from "@/features/terminal/terminal-prefs";
 import { useTerminalPrefs } from "@/features/terminal/terminal-prefs-context";
@@ -561,14 +562,24 @@ export function App({ initialTabs, startupTabsAcrossWindows, incomingMove }: {
             onEditHost={(host) => hostsController.actions.edit(hosts.find((saved) => saved.id === host.id) ?? host)}
             onConnectRestoredPane={(paneId) => dispatch({ type: "connectRestoredPane", paneId })}
             onTitleChange={retitle}
-            onSavedHostTerminal={(paneId, available) => dispatch({ type: "savedHostTerminal", paneId, available })}
+            onRemoteTerminal={(paneId, id, savedHost) => dispatch({ type: "attachRemoteTerminal", paneId, id, savedHost })}
             onLocalCwd={(paneId, cwd) => dispatch({ type: "localCwd", paneId, cwd })}
             onStatusChange={setStatus}
             onResizeSplit={(tabId, resize) => dispatch({ type: "resizeSplit", tabId, ...resize })}
           />
         }
         fullWorkspace={!focusedPane || focusedPane.kind === "sftp" || focusedPane.kind === "home" || focusedPane.kind === "transfers"}
-        filePanel={<FilePanelContent pane={filePanelPane} peers={filePanelPeers} onOpenSftp={openSftp} />}
+        filePanel={focusedPane?.kind === "remote-terminal" ? (
+          <TerminalDock
+            terminalId={focusedPane.status === "connected" ? focusedPane.terminalId ?? null : null}
+            generation={focusedPane.connectionGeneration}
+            resources={focusedPane.showResources === true}
+            paused={moving}
+            onSelect={(show) => dispatch({ type: "showResources", paneId: focusedPane.id, show })}
+          >
+            <FilePanelContent pane={filePanelPane} peers={filePanelPeers} onOpenSftp={openSftp} tabbed />
+          </TerminalDock>
+        ) : <FilePanelContent />}
         onOpenTransfers={openTransfers}
         status={{
           connected,

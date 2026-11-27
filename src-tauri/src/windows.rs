@@ -431,6 +431,9 @@ pub(crate) fn destroyed(app: &AppHandle, label: &str) {
     };
     if let Some(resources) = resources {
         resources.prompts.close();
+        for route in resources.terminals.values() {
+            route.lock().stop_resources();
+        }
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
             let terminals = app.state::<TerminalRegistry>();
