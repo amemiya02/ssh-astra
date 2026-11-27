@@ -423,6 +423,11 @@
     "followSystemAction": "主题：跟随系统"
   },
   "terminal": {
+    "shellIntegration": {
+      "disabled": "设置中已关闭 Shell 集成。",
+      "unsupported": "当前 Shell 不支持集成。请使用启用了提示符展开的 bash 4.4 或更高版本，或使用 zsh。",
+      "timedOut": "Shell 未响应，集成功能不可用。"
+    },
     "starting": "正在启动 shell…",
     "exited": "进程已退出，退出码 {{code}}",
     "exitedUnknown": "进程已退出",

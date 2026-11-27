@@ -6,6 +6,8 @@
 //!   (also `"connected"`, `"disconnected"` with a `reason`),
 //! - a remote Terminal's shell reporting its directory (ShellIntegration) is
 //!   JSON `{ "cwd": "/abs/path" }`,
+//! - Shell integration markers and availability are JSON
+//!   `{ "shellIntegration": { "type": "promptStart" } }` (or the matching event),
 //! - the final message is JSON `{ "exitCode": number | null }`.
 //!
 //! Local terminals and remote Terminals share every command after `open`.
@@ -16,8 +18,8 @@ use serde::Serialize;
 use sshastra_core::hosts::HostId;
 use sshastra_core::ssh::{ReconnectPolicy, RemoteTerminal, RemoteTerminalOptions};
 use sshastra_core::terminal::{
-    ConnectionState, LocalPty, ShellCommand, TerminalEvent, TerminalId, TerminalRegistry,
-    TerminalSettings, TerminalSize, REPORT_CWD,
+    ConnectionState, LocalPty, ShellCommand, ShellIntegrationEvent, TerminalEvent, TerminalId,
+    TerminalRegistry, TerminalSettings, TerminalSize, REPORT_CWD,
 };
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, State};
@@ -37,6 +39,12 @@ struct ExitMessage {
 #[derive(Serialize)]
 struct CwdMessage {
     cwd: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ShellIntegrationMessage {
+    shell_integration: ShellIntegrationEvent,
 }
 
 #[derive(Serialize)]
@@ -62,6 +70,9 @@ fn channel_sink(on_event: Channel<InvokeResponseBody>) -> impl FnMut(TerminalEve
                 send_json(&on_event, &ConnectionMessage { connection })
             }
             TerminalEvent::Cwd(cwd) => send_json(&on_event, &CwdMessage { cwd }),
+            TerminalEvent::ShellIntegration(shell_integration) => {
+                send_json(&on_event, &ShellIntegrationMessage { shell_integration });
+            }
             TerminalEvent::Exit { code } => send_json(&on_event, &ExitMessage { exit_code: code }),
         }
     }

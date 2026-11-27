@@ -12,10 +12,12 @@ import {
 } from "@/lib/ipc/terminal";
 import type { TerminalColorScheme } from "@/theme/terminal-themes";
 import { XtermView } from "./XtermView";
+import { shellIntegration, useShellIntegration } from "./shellIntegration";
 
 export type OpenTerminal = (size: TerminalSize, onEvent: (event: TerminalEvent) => void) => Promise<TerminalId>;
 
 interface Props {
+  paneId: string;
   /** Starts the backend Terminal. Called once, when the view mounts. */
   open: OpenTerminal;
   /** Called if `open` rejects; the view stays mounted. */
@@ -38,6 +40,7 @@ interface Props {
  * backend so vim/tmux reflow) and close on unmount.
  */
 export function TerminalSurface({
+  paneId,
   open,
   onOpenError,
   onOpened,
@@ -48,6 +51,8 @@ export function TerminalSurface({
   onTitleChange,
 }: Props) {
   const { t } = useTranslation();
+  const { status } = useShellIntegration(paneId);
+  const unavailable = status === "disabled" || status === "unsupported" || status === "timedOut";
   // Read through refs: the Terminal is opened once per mount; later prop changes don't reopen it.
   const openRef = useRef(open);
   const onOpenErrorRef = useRef(onOpenError);
@@ -67,17 +72,31 @@ export function TerminalSurface({
   const attach = useCallback((xterm: XTerm) => {
     let id: TerminalId | undefined;
     let disposed = false;
+    let exited = false;
+    shellIntegration.open(paneId);
     const size = () => ({ cols: xterm.cols, rows: xterm.rows });
 
     openRef
       .current(size(), (event) => {
+        if (disposed || exited) return;
         if (event.type === "output") {
           if (e2eHooks) e2eHooks.trackOutput(xterm, event.data);
           else xterm.write(event.data);
           return;
         }
-        // Remote Terminal views handle their Connection and directory before events reach here.
-        if (event.type === "connection" || event.type === "cwd") return;
+        if (event.type === "shellIntegration") {
+          shellIntegration.event(paneId, event.event, xterm.buffer.active.type === "normal");
+          return;
+        }
+        if (event.type === "connection") {
+          if (event.state.state === "connected") shellIntegration.open(paneId);
+          else shellIntegration.close(paneId);
+          return;
+        }
+        if (event.type !== "exit") return;
+        exited = true;
+        id = undefined;
+        shellIntegration.close(paneId);
         const message =
           event.code === null
             ? tRef.current("terminal.exitedUnknown")
@@ -89,7 +108,7 @@ export function TerminalSurface({
       })
       .then(
         (opened) => {
-          if (disposed) {
+          if (disposed || exited) {
             void closeTerminal(opened);
             return;
           }
@@ -98,13 +117,21 @@ export function TerminalSurface({
           // Catch up on any resize that happened while connecting.
           void resizeTerminal(opened, size());
         },
-        (error: unknown) => onOpenErrorRef.current?.(error),
+        (error: unknown) => {
+          if (disposed) return;
+          shellIntegration.close(paneId);
+          onOpenErrorRef.current?.(error);
+        },
       );
 
     const onData = xterm.onData((data) => {
       if (id === undefined) return;
+      shellIntegration.input(paneId, data);
       const write = writeTerminal(id, data);
       if (e2eHooks) void write.then(() => e2eHooks?.trackInput(xterm, data.length));
+    });
+    const onBufferChange = xterm.buffer.onBufferChange((buffer) => {
+      if (buffer.type === "alternate") shellIntegration.invalidatePrompt(paneId);
     });
     const onResize = xterm.onResize((next) => {
       if (id !== undefined) void resizeTerminal(id, next);
@@ -114,11 +141,22 @@ export function TerminalSurface({
       disposed = true;
       onData.dispose();
       onResize.dispose();
+      onBufferChange.dispose();
+      shellIntegration.close(paneId);
       if (id !== undefined) void closeTerminal(id);
     };
-  }, []);
+  }, [paneId]);
 
   return (
-    <XtermView label={label} active={active} colorScheme={colorScheme} onTitleChange={onTitleChange} attach={attach} />
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="min-h-0 flex-1">
+        <XtermView label={label} active={active} colorScheme={colorScheme} onTitleChange={onTitleChange} attach={attach} />
+      </div>
+      {unavailable && (
+        <p className="border-border text-muted-foreground shrink-0 border-t px-3 py-1 text-xs" role="status">
+          {t(`terminal.shellIntegration.${status}`)}
+        </p>
+      )}
+    </div>
   );
 }

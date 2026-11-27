@@ -50,7 +50,11 @@ fn read_until(pty: &mut LocalPty, rx: &Receiver<TerminalEvent>, needle: &str) ->
                     return text;
                 }
             }
-            Ok(event @ (TerminalEvent::Connection(_) | TerminalEvent::Cwd(_))) => {
+            Ok(
+                event @ (TerminalEvent::Connection(_)
+                | TerminalEvent::Cwd(_)
+                | TerminalEvent::ShellIntegration(_)),
+            ) => {
                 panic!("a Local terminal sent {event:?}")
             }
             Ok(TerminalEvent::Exit { code }) => panic!(
@@ -74,7 +78,9 @@ fn read_to_exit(pty: &mut LocalPty, rx: &Receiver<TerminalEvent>) -> (String, Op
                 answer_queries(pty, &bytes);
                 seen.extend_from_slice(&bytes);
             }
-            event @ (TerminalEvent::Connection(_) | TerminalEvent::Cwd(_)) => {
+            event @ (TerminalEvent::Connection(_)
+            | TerminalEvent::Cwd(_)
+            | TerminalEvent::ShellIntegration(_)) => {
                 panic!("a Local terminal sent {event:?}")
             }
             TerminalEvent::Exit { code } => {
