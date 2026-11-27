@@ -331,7 +331,7 @@ async function requestWindowClose() {
 const appQuits = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === "quit_application");
 const dialog = () => document.querySelector('[role="dialog"]');
 const terminalCloses = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === "terminal_close");
-const tabIds = () => [...document.querySelectorAll('[role="tab"]')].map((tab) => tab.id);
+const tabIds = () => [...document.querySelectorAll('[role="tab"][id^="tab-"]')].map((tab) => tab.id);
 const remoteOpenHostIds = () => vi.mocked(invoke).mock.calls
   .filter(([command]) => command === "remote_terminal_open")
   .map(([, args]) => (args as { hostId: string }).hostId);
@@ -396,7 +396,7 @@ it("opens each startup Host once and leaves a restored split's Host disconnected
   expect(tabIds()).toHaveLength(2);
   expect(document.getElementById("tab-restored-tab")).not.toBeNull();
   expect(document.getElementById("pane-restored-remote")?.textContent).toContain("Connect");
-  expect(document.querySelector('[role="tab"][aria-label="Startup Host (Connected)"]')).not.toBeNull();
+  expect(document.querySelector('[role="tab"][id^="tab-"][aria-label="Startup Host (Connected)"]')).not.toBeNull();
   expect(remoteOpenHostIds()).toEqual([optedIn.id]);
 });
 
@@ -427,7 +427,7 @@ it("connects startup Hosts after restoring connections and continues after an or
 
   expect(remoteOpenHostIds()).toEqual([restored.id, broken.id, optedIn.id]);
   expect(tabIds()).toHaveLength(3);
-  const failedTab = document.querySelector<HTMLButtonElement>('[role="tab"][aria-label="Offline Startup Host (Disconnected)"]')!;
+  const failedTab = document.querySelector<HTMLButtonElement>('[role="tab"][id^="tab-"][aria-label="Offline Startup Host (Disconnected)"]')!;
   await act(async () => failedTab.click());
   const failedPanel = document.getElementById(failedTab.getAttribute("aria-controls")!)!;
   expect(failedPanel.hidden).toBe(false);
@@ -1783,7 +1783,7 @@ it("starts and stops Broadcast from the palette and ends it when its tab or wind
 it("opens one global Transfers tab from the status bar and command palette", async () => {
   await render(workspace({ type: "open", tabId: "home", pane: newPane({ kind: "home" }) }));
   await clickButton("Open Transfers");
-  const globalTab = document.querySelector<HTMLButtonElement>('[role="tab"][aria-label="Transfers"]')!;
+  const globalTab = document.querySelector<HTMLButtonElement>('[role="tab"][id^="tab-"][aria-label="Transfers"]')!;
   const pane = document.getElementById(globalTab.getAttribute("aria-controls")!)!;
   expect(pane.hidden).toBe(false);
   const watch = vi.mocked(invoke).mock.calls.find(([command]) => command === "transfers_watch")?.[1] as {

@@ -23,7 +23,7 @@ const linkPassword = "ignore-link-password";
 const warmLink = { address: "2001:db8::140", port: 2022 };
 const coldLink = { address: "cold.example.test", port: 2222 };
 
-const tabIds = () => $$('[role="tab"]').map((tab) => tab.getAttribute("id"));
+const tabIds = () => $$('[role="tab"][id^="tab-"]').map((tab) => tab.getAttribute("id"));
 
 async function cancelSshLink({ address, port }: typeof coldLink, tabsBeforeLink: (string | null)[]): Promise<void> {
   const prompt = $('[role="dialog"]');
@@ -108,13 +108,13 @@ describe("sshastra", () => {
     await $("button=Save").click();
 
     // Open it from its Home card: a Terminal tab connects.
-    const hostCard = $(`//*[@role='tabpanel' and not(@hidden)]//button[contains(., '${HOST_NAME}')]`);
+    const hostCard = $(`//*[@role='tabpanel' and starts-with(@id,'tabpanel-') and not(@hidden)]//button[contains(., '${HOST_NAME}')]`);
     await hostCard.waitForDisplayed();
     await hostCard.click();
 
     // Decline the first host key question, then retry the same Terminal pane.
     await $("h2=Unknown host key").waitForDisplayed();
-    const tab = $('[role="tab"][aria-selected="true"]');
+    const tab = $('[role="tab"][id^="tab-"][aria-selected="true"]');
     const panelId = await tab.getAttribute("aria-controls");
     if (!panelId) throw new Error("the active tab has no panel");
     await $('[role="dialog"]').$("button=Reject").click();
@@ -190,8 +190,8 @@ describe("sshastra", () => {
 
   it("restores the tab and split layout after restarting and connects only on request", async () => {
     const name = "E2E restored sshd";
-    const firstHostConnected = await $('[role="tab"][aria-selected="true"] [data-status="connected"]').isExisting();
-    await $('[role="tab"][id]').click();
+    const firstHostConnected = await $('[role="tab"][id^="tab-"][aria-selected="true"] [data-status="connected"]').isExisting();
+    await $('[role="tab"][id^="tab-"]').click();
     await $("button=New Host").click();
     await $("#host-form-name").setValue(name);
     await $("#host-form-address").setValue("127.0.0.1");
@@ -199,7 +199,7 @@ describe("sshastra", () => {
     await $("#host-form-port").setValue(String(sshd.port()));
     await $("#host-form-user").setValue(sshd.USER);
     await $("button=Save").click();
-    await $(`//*[@role='tabpanel' and not(@hidden)]//button[contains(., '${name}')]`).click();
+    await $(`//*[@role='tabpanel' and starts-with(@id,'tabpanel-') and not(@hidden)]//button[contains(., '${name}')]`).click();
 
     const password = () => $('[role="dialog"] input[type="password"]');
     const trust = $("button=Save and trust");
@@ -209,7 +209,7 @@ describe("sshastra", () => {
     await password().setValue(sshd.PASSWORD);
     await $('[role="dialog"]').$("button=Connect").click();
 
-    const activeTab = () => $('[role="tab"][aria-selected="true"]');
+    const activeTab = () => $('[role="tab"][id^="tab-"][aria-selected="true"]');
     await activeTab().$('[data-status="connected"]').waitForExist();
     await $('button[aria-label="Split right"]').click();
     await activeTab().$('[data-status="connected"]').waitForExist();
