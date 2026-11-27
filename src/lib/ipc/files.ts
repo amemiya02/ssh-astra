@@ -68,6 +68,11 @@ export function createDir(id: FsId, path: string): Promise<void> {
   return invoke("files_create_dir", { id, path });
 }
 
+/** Creates an empty file at `path`. Rejects with `alreadyExists` when the name is taken. */
+export function createEmptyFile(id: FsId, path: string): Promise<void> {
+  return invoke("files_create_empty", { id, path });
+}
+
 /** Renames (moves) `from` to `to`; rejects with `alreadyExists` rather than replacing `to`. */
 export function renameFile(id: FsId, from: string, to: string): Promise<void> {
   return invoke("files_rename", { id, from, to });

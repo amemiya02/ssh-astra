@@ -20,8 +20,8 @@ import { nameProblem, octalMode, parseOctalMode } from "./fileList";
 
 /** A file operation waiting for the user in a dialog. Names are entries of the directory shown. */
 export type FileOperation =
+  | { kind: "newFile" }
   | { kind: "newFolder" }
-  | { kind: "rename"; name: string }
   | { kind: "delete"; names: string[] }
   | { kind: "permissions"; entry: FileEntry };
 
@@ -39,31 +39,18 @@ export function FileOperationDialog({
   const entries = useStore(store, (s) => s.entries);
   const names = entries.map((e) => e.name);
   switch (operation.kind) {
-    case "newFolder":
+    case "newFile":
+    case "newFolder": {
+      const folder = operation.kind === "newFolder";
       return (
         <NameDialog
-          title={t("files.newFolder")}
-          confirm={t("files.create")}
-          initial=""
+          title={t(folder ? "files.newFolder" : "files.newFile")}
           existing={names}
-          onSubmit={(name) => store.getState().createFolder(name)}
+          onSubmit={(name) => folder ? store.getState().createFolder(name) : store.getState().createFile(name)}
           onClose={onClose}
         />
       );
-    case "rename":
-      return (
-        <NameDialog
-          title={t("files.rename.title", { name: operation.name })}
-          confirm={t("files.rename.confirm")}
-          initial={operation.name}
-          current={operation.name}
-          existing={names}
-          onSubmit={(name) =>
-            name === operation.name ? Promise.resolve(null) : store.getState().rename(operation.name, name)
-          }
-          onClose={onClose}
-        />
-      );
+    }
     case "delete":
       return <DeleteDialog store={store} names={operation.names} onClose={onClose} />;
     case "permissions":
@@ -128,28 +115,22 @@ function OperationDialog({
   );
 }
 
-/** Asks for the name of a new folder, or the new name of an entry. */
+/** Asks for the name of a new entry. */
 function NameDialog({
   title,
-  confirm,
-  initial,
-  current,
   existing,
   onSubmit,
   onClose,
 }: {
   title: string;
-  confirm: string;
-  initial: string;
-  current?: string;
   existing: readonly string[];
   onSubmit(name: string): Promise<CommandError | null>;
   onClose(): void;
 }) {
   const { t } = useTranslation();
-  const [name, setName] = useState(initial);
+  const [name, setName] = useState("");
   const { busy, failure, run } = useOperation(onClose);
-  const problem = nameProblem(name, existing, current);
+  const problem = nameProblem(name, existing);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -168,11 +149,6 @@ function NameDialog({
           autoCorrect="off"
           aria-invalid={problem !== null && problem !== "empty"}
           onChange={(event) => setName(event.target.value)}
-          onFocus={(event) => {
-            // Select the name without its extension, as Finder does.
-            const dot = event.target.value.lastIndexOf(".");
-            event.target.setSelectionRange(0, dot > 0 ? dot : event.target.value.length);
-          }}
         />
         {problem !== null && problem !== "empty" && (
           <p className="text-destructive text-xs">{t(`files.nameProblem.${problem}`, { name })}</p>
@@ -183,7 +159,7 @@ function NameDialog({
             {t("files.cancel")}
           </Button>
           <Button type="submit" size="sm" disabled={problem !== null || busy}>
-            {confirm}
+            {t("files.create")}
           </Button>
         </DialogFooter>
       </form>

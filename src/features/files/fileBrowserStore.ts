@@ -11,7 +11,7 @@ import { childPath, isDirLike, isFileLike, parentPath } from "./fileList";
 /** The SFTP, file operation and remote edit commands a File panel uses (`@/lib/ipc/files`, `@/lib/ipc/edit`); a fake in tests. */
 export type FilesApi = Pick<
   typeof ipc,
-  "openFiles" | "listFiles" | "closeFiles" | "createDir" | "renameFile" | "countFiles" | "deleteFiles" | "chmodFile"
+  "openFiles" | "listFiles" | "closeFiles" | "createDir" | "createEmptyFile" | "renameFile" | "countFiles" | "deleteFiles" | "chmodFile"
 > & EditCommands;
 
 /**
@@ -66,9 +66,11 @@ export interface FileBrowserState {
   /** `order` is the names as displayed, for Shift-click ranges. */
   select(name: string, mode: SelectMode, order: readonly string[]): void;
   // File operations act on entries of `path` by name. Each refreshes the listing and resolves with
-  // why it failed (`null` on success), for the dialog that asked; they leave `error` alone.
+  // why it failed (`null` on success). Failures leave the listing’s `error` alone.
   /** Creates the folder `name` and selects it. */
   createFolder(name: string): Promise<CommandError | null>;
+  /** Creates the empty file `name` without replacing an entry and selects it. */
+  createFile(name: string): Promise<CommandError | null>;
   /** Renames `name` to `newName` (never over an existing entry) and selects it. */
   rename(name: string, newName: string): Promise<CommandError | null>;
   /** How many entries deleting `names` removes, folders' contents included. */
@@ -103,15 +105,21 @@ export function createFileBrowserStore(
   let openGeneration = 0;
   /** Bumped by each listing request; only the latest one is shown. */
   let request = 0;
+  let listingNavigation = false;
   let anchor: string | null = null;
   /** Only successful listings enter history, using the canonical paths returned by the filesystem. */
   const history: string[] = [];
   let historyIndex = -1;
 
   return createStore<FileBrowserState>()((set, get) => {
-    const list = async (path: string, keepSelection: boolean, targetIndex?: number) => {
+    const list = async (
+      path: string,
+      keepSelection: boolean,
+      { targetIndex, preserveError = false }: { targetIndex?: number; preserveError?: boolean } = {},
+    ) => {
       if (fsId === null) return;
       const mine = ++request;
+      listingNavigation = !keepSelection;
       set({ loading: true });
       try {
         const listing = await api.listFiles(fsId, path);
@@ -133,20 +141,20 @@ export function createFileBrowserStore(
           entries: listing.entries,
           selection,
           loading: false,
-          error: null,
+          ...(preserveError ? {} : { error: null }),
           canGoBack: historyIndex > 0,
           canGoForward: historyIndex < history.length - 1,
         });
       } catch (e) {
         if (mine !== request) return;
-        set({ loading: false, error: readCommandError(e) });
+        set({ loading: false, ...(preserveError ? {} : { error: readCommandError(e) }) });
       }
     };
 
     const traverse = async (step: -1 | 1) => {
       const targetIndex = historyIndex + step;
       const target = history[targetIndex];
-      if (target !== undefined) await list(target, false, targetIndex);
+      if (target !== undefined) await list(target, false, { targetIndex });
     };
 
     const remoteEdits = editsForPanel(hostId, (item) => {
@@ -171,15 +179,18 @@ export function createFileBrowserStore(
     ): Promise<CommandError | null> => {
       const dir = get().path;
       if (fsId === null || dir === null) return notOpen;
+      const generation = openGeneration;
       let failure: CommandError | null = null;
       try {
         await run(fsId, dir);
       } catch (e) {
         failure = readCommandError(e);
       }
-      // Unless the user has gone elsewhere meanwhile.
-      if (get().path === dir) await list(dir, true);
-      if (failure === null && select !== undefined && get().entries.some((e) => e.name === select)) {
+      // Leave a newer Connection or pending navigation in charge of the listing.
+      const stillHere = () =>
+        generation === openGeneration && get().path === dir && !(listingNavigation && get().loading);
+      if (stillHere()) await list(dir, true, { preserveError: failure !== null });
+      if (failure === null && select !== undefined && stillHere() && get().entries.some((e) => e.name === select)) {
         anchor = select;
         set({ selection: new Set([select]) });
       }
@@ -294,6 +305,8 @@ export function createFileBrowserStore(
       },
 
       createFolder: async (name) => invalidName(name) ?? operate((id, dir) => api.createDir(id, childPath(dir, name)), name),
+      createFile: async (name) =>
+        invalidName(name) ?? operate((id, dir) => api.createEmptyFile(id, childPath(dir, name)), name),
       rename: async (name, newName) =>
         invalidName(newName) ?? operate((id, dir) => api.renameFile(id, childPath(dir, name), childPath(dir, newName)), newName),
       async countForDelete(names) {
