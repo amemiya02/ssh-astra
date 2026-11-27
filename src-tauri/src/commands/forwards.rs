@@ -10,7 +10,7 @@ use sshastra_core::hosts::HostId;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, State};
 
-use super::connections::connect_host;
+use super::connections::{connect_host, schedule_os_detection};
 use super::hosts::HostsState;
 use crate::error::{CommandError, CommandResult};
 use crate::prompts::{ChannelPrompter, PendingPrompts, PromptRequest};
@@ -97,6 +97,7 @@ pub async fn forward_start(
         channel: on_prompt,
     });
     let connection = connect_host(&app, &hops, &host, prompter).await?;
+    schedule_os_detection(&app, &host.id, &connection);
     forwards
         .forwarder
         .start(connection, &host.id, &rule)

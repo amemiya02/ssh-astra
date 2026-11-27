@@ -269,7 +269,7 @@ Computed in `src/index.css` with `color-mix(in oklab, ...)`; never stored in a t
 - **Selected** (`selected`): primary at 14% over transparent. Selected Host row, current rail destination, checked theme card.
 - **Overlay**: foreground 30% (light) or sidebar 72% (dark). The dialog scrim.
 - **Destructive foreground**: the ground colour, so text reads on light and dark red fills alike.
-- **Host hue tile**: an ANSI hue at 15% (`bg-ansi-*/15`) with an icon or initials in `--ansi-*-ink`. `monogramInk` (`src/theme/monogram-ink.ts`) blends the hue with the theme's text colour (keeping at least 30% hue, pushing towards black or white only when the text colour is too dull) until it reaches 4.6:1 over the ground, sidebar, active tab surface, raised layer and hover and selection fills.
+- **Host hue tile**: an ANSI hue at 15% (`bg-ansi-*/15`) with an icon or initials in `--ansi-*-ink`. The tile uses the selected icon, then the detected operating system's icon, then the Host's initials. `monogramInk` (`src/theme/monogram-ink.ts`) blends the hue with the theme's text colour (keeping at least 30% hue, pushing towards black or white only when the text colour is too dull) until it reaches 4.6:1 over the ground, sidebar, active tab surface, raised layer and hover and selection fills.
 
 ### The thirteen themes
 Light: **Astra Light** (cool blue-grey ground, white panels and Terminal, Astra blue), **GitHub Light** (GitHub's neutral greys and blue), **Catppuccin Latte** (lavender-grey pastel, Terminal on the ground colour), **Solarized Light** (warm cream base3 surfaces, blue accent).

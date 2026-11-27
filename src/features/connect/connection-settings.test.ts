@@ -4,11 +4,11 @@ import { connectionSetting, defaultConnectionSettings } from "./connection-setti
 describe("the connection settings section", () => {
   it("defaults to the system agent with a 30-second keepalive interval", () => {
     expect(connectionSetting.key).toBe("connection");
-    expect(defaultConnectionSettings).toEqual({ keepaliveSeconds: 30, agentPath: "" });
+    expect(defaultConnectionSettings).toEqual({ keepaliveSeconds: 30, agentPath: "", detectOs: true });
   });
 
   it("keeps a valid keepalive interval, including off", () => {
-    expect(connectionSetting.parse({ keepaliveSeconds: 60 })).toEqual({ keepaliveSeconds: 60, agentPath: "" });
+    expect(connectionSetting.parse({ keepaliveSeconds: 60, detectOs: false })).toEqual({ keepaliveSeconds: 60, agentPath: "", detectOs: false });
     expect(connectionSetting.parse({ keepaliveSeconds: 0 }).keepaliveSeconds).toBe(0);
   });
 
@@ -26,6 +26,7 @@ describe("the connection settings section", () => {
     expect(connectionSetting.parse({ keepaliveSeconds: 60, agentPath: socket })).toEqual({
       keepaliveSeconds: 60,
       agentPath: socket,
+      detectOs: true,
     });
     expect(connectionSetting.parse({ agentPath: pipe }).agentPath).toBe(pipe);
     expect(connectionSetting.parse({ agentPath: "  " }).agentPath).toBe("");

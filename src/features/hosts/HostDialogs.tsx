@@ -99,6 +99,7 @@ export function HostFormDialogContent({
   groupName,
   save,
   testConnection,
+  redetectOs,
   onSaved,
   onCancel,
 }: {
@@ -109,6 +110,7 @@ export function HostFormDialogContent({
   groupName?: string;
   save: (draft: HostDraft, id?: HostId) => Promise<Host>;
   testConnection: typeof testHostConnection;
+  redetectOs: (id: HostId) => Promise<void>;
   onSaved: (host: Host) => void;
   onCancel: () => void;
 }) {
@@ -124,6 +126,7 @@ export function HostFormDialogContent({
   const [errors, setErrors] = useState<Extract<HostFormResult, { ok: false }>["errors"]>({});
   const [saveError, setSaveError] = useState<{ message: string; field?: keyof typeof advancedFieldIds } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [osRequest, setOsRequest] = useState<"idle" | "requesting" | "failed">("idle");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [connectionTest, setConnectionTest] = useState<ConnectionTestState | null>(null);
   const [testPrompt, setTestPrompt] = useState<{ prompt: ConnectPrompt; answer(answer: PromptAnswer): void } | null>(null);
@@ -341,13 +344,39 @@ export function HostFormDialogContent({
                   const icon = choice === AUTOMATIC ? undefined : choice;
                   return (
                     <SelectItem key={choice} value={choice} textValue={label}>
-                      <HostMonogram host={{ id: host?.id ?? "", name: values.name, icon, color: values.color }} />
+                      <HostMonogram host={{ id: host?.id ?? "", name: values.name, icon, color: values.color, detectedOs: host?.detectedOs }} />
                       {label}
                     </SelectItem>
                   );
                 })}
               </SelectContent>
             </Select>
+            {host && !temporary && (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-muted-foreground text-xs" role="status">
+                  {host.detectedOs
+                    ? t("hosts.osDetection.result", {
+                      system: host.detectedOs === "debian" || host.detectedOs === "unknown"
+                        ? t(`hosts.osDetection.${host.detectedOs}`)
+                        : t(`hosts.icons.${host.detectedOs}`),
+                    })
+                    : t("hosts.osDetection.pending")}
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={osRequest === "requesting"}
+                  onClick={() => {
+                    setOsRequest("requesting");
+                    redetectOs(host.id).then(() => setOsRequest("idle"), () => setOsRequest("failed"));
+                  }}
+                >
+                  {t("hosts.osDetection.redetect")}
+                </Button>
+                {osRequest === "failed" && <p role="alert" className="text-destructive text-xs">{t("hosts.osDetection.failed")}</p>}
+              </div>
+            )}
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor="host-form-color" className="text-xs">{t("hosts.fields.color")}</Label>
@@ -367,7 +396,7 @@ export function HostFormDialogContent({
                   return (
                     <SelectItem key={choice} value={choice} textValue={label}>
                       {(host || color) && (
-                        <HostMonogram host={{ id: host?.id ?? "", name: values.name, icon: values.icon, color }} />
+                        <HostMonogram host={{ id: host?.id ?? "", name: values.name, icon: values.icon, color, detectedOs: host?.detectedOs }} />
                       )}
                       {label}
                     </SelectItem>

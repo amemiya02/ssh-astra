@@ -88,6 +88,14 @@
       "cloud": "云",
       "router": "路由器"
     },
+    "osDetection": {
+      "result": "识别结果：{{system}}",
+      "pending": "开启识别后，连接时会读取操作系统。",
+      "redetect": "重新识别",
+      "failed": "无法重新识别操作系统。",
+      "debian": "Debian",
+      "unknown": "未知"
+    },
     "colors": {
       "automatic": "自动",
       "red": "红色",
@@ -1198,6 +1206,10 @@
       "showPermissions": "显示权限列"
     },
     "connection": {
+      "osDetection": {
+        "label": "识别 Host 的操作系统",
+        "description": "已保存的 Host 连接成功后读取操作系统，用于自动选择 Host 图标。"
+      },
       "keepalive": {
         "label": "Keepalive 间隔",
         "description": "空闲的 Connection 多久确认一次服务器仍在。连续三次没有回应即视为掉线。对新的 Connection 生效。",

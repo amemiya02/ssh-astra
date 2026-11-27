@@ -48,6 +48,65 @@ pub async fn connect_host(
     Ok(connection)
 }
 
+fn os_detection_enabled(app: &AppHandle) -> bool {
+    app.state::<SettingsState>()
+        .with(|store| {
+            Ok(store
+                .section::<ConnectionSettings>(ConnectionSettings::SECTION)
+                .detect_os)
+        })
+        .unwrap_or(false)
+}
+
+pub(super) fn schedule_os_detection(app: &AppHandle, id: &HostId, connection: &Arc<Connection>) {
+    let (app, id, connection) = (app.clone(), id.clone(), Arc::clone(connection));
+    tauri::async_runtime::spawn(async move {
+        let enabled = os_detection_enabled(&app);
+        let hosts = app.state::<HostsState>();
+        let reserved = hosts
+            .with(|store| Ok(store.begin_os_detection(&id, enabled)))
+            .unwrap_or(false);
+        if !reserved {
+            return;
+        }
+
+        let detected_os = connection.detect_os().await;
+        let _ = hosts.with(|store| {
+            if store.finish_os_detection(&id, detected_os)? {
+                hosts.publish_os_change(id, Some(detected_os));
+            }
+            Ok(())
+        });
+    });
+}
+
+pub(super) fn detect_os_on_current_connection(app: AppHandle, id: HostId) {
+    if os_detection_enabled(&app) {
+        tauri::async_runtime::spawn(async move {
+            if let Some(connection) = app.state::<ConnectionManager>().live(&id).await {
+                schedule_os_detection(&app, &id, &connection);
+            }
+        });
+    }
+}
+
+/// Clears the result and probes a live Connection if one is available.
+#[tauri::command]
+pub fn host_redetect_os(
+    app: AppHandle,
+    hosts: State<'_, HostsState>,
+    id: HostId,
+) -> CommandResult<()> {
+    hosts.with(|store| {
+        if store.clear_os_detection(&id)? {
+            hosts.publish_os_change(id.clone(), None);
+        }
+        Ok(())
+    })?;
+    detect_os_on_current_connection(app, id);
+    Ok(())
+}
+
 fn configured_connections(app: &AppHandle) -> State<'_, ConnectionManager> {
     let connections = app.state::<ConnectionManager>();
     // Applies to the Connections this opens; open ones keep theirs.
@@ -98,13 +157,14 @@ pub fn temporary_host_create(
 /// Saves a Temporary Host while preserving its live Connection and run-only trust.
 #[tauri::command]
 pub fn temporary_host_save(
+    app: AppHandle,
     hosts: State<'_, HostsState>,
     connections: State<'_, ConnectionManager>,
     temporary: State<'_, TemporaryHosts>,
     host_id: HostId,
     draft: HostDraft,
 ) -> CommandResult<Host> {
-    temporary.with(|entries| {
+    let saved = temporary.with(|entries| {
         let route = entries
             .get(&host_id)
             .ok_or_else(CommandError::temporary_host_unavailable)?;
@@ -116,8 +176,10 @@ pub fn temporary_host_save(
             Ok(saved)
         })?;
         entries.remove(&host_id);
-        Ok(saved)
-    })
+        Ok::<_, CommandError>(saved)
+    })?;
+    detect_os_on_current_connection(app, host_id);
+    Ok(saved)
 }
 
 #[tauri::command]
@@ -228,6 +290,7 @@ pub async fn host_connect(
         channel: on_prompt,
     });
     let connection = connect_host(&app, &hops, &host, prompter).await?;
+    schedule_os_detection(&app, &host.id, &connection);
     connections.held.hold(&host.id, connection);
     Ok(())
 }

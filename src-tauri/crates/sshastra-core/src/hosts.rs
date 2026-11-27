@@ -22,7 +22,7 @@ pub use transfer::{ImportSummary, EXPORT_FORMAT};
 /// The file format version this build writes, to the store and to export
 /// files. Bump it together with a migration step in [`migrate`], which reads
 /// both.
-const CURRENT_VERSION: u32 = 16;
+const CURRENT_VERSION: u32 = 17;
 
 const MAX_HOST_TAGS: usize = 10;
 const MAX_TAG_LENGTH: usize = 32;
@@ -121,6 +121,22 @@ pub enum HostIcon {
     Router,
 }
 
+/// The recognised systems we store. Unknown is a completed detection with no usable result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DetectedOs {
+    Linux,
+    Debian,
+    Ubuntu,
+    ArchLinux,
+    AlpineLinux,
+    LinuxMint,
+    Nixos,
+    Freebsd,
+    Macos,
+    Unknown,
+}
+
 /// The ANSI hues a user can choose for a Host.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -145,6 +161,9 @@ pub struct Host {
     /// Absent when the Host uses its automatic icon.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<HostIcon>,
+    /// Absent until a detection has finished for this Host.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detected_os: Option<DetectedOs>,
     /// Absent when the Host uses its automatic ANSI hue.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<HostColor>,
@@ -271,6 +290,7 @@ impl HostDraft {
             name: self.name.trim().to_owned(),
             tags: normalize_tags(&self.tags),
             icon: self.icon,
+            detected_os: None,
             color: self.color,
             address: self.address.trim().to_owned(),
             port: self.port,
@@ -495,6 +515,7 @@ pub struct ImportedProxyCommand {
 pub struct HostStore {
     path: PathBuf,
     library: Library,
+    detecting_os: HashSet<HostId>,
 }
 
 impl HostStore {
@@ -510,7 +531,11 @@ impl HostStore {
             }),
         }
         .inspect_err(|error| error.log_file_error("read"))?;
-        Ok(Self { path, library })
+        Ok(Self {
+            path,
+            library,
+            detecting_os: HashSet::new(),
+        })
     }
 
     pub fn list(&self) -> &[Host] {
@@ -530,6 +555,42 @@ impl HostStore {
 
     pub fn get(&self, id: &HostId) -> Option<&Host> {
         self.library.hosts.iter().find(|h| &h.id == id)
+    }
+
+    /// Reserves the one probe for a saved Host while its result is still absent.
+    pub fn begin_os_detection(&mut self, id: &HostId, enabled: bool) -> bool {
+        enabled
+            && self.get(id).is_some_and(|host| host.detected_os.is_none())
+            && self.detecting_os.insert(id.clone())
+    }
+
+    /// Records the result on the current Host, preserving edits made during the probe.
+    pub fn finish_os_detection(
+        &mut self,
+        id: &HostId,
+        detected_os: DetectedOs,
+    ) -> Result<bool, HostStoreError> {
+        if !self.detecting_os.remove(id) || self.get(id).is_none() {
+            return Ok(false);
+        }
+        let mut library = self.library.clone();
+        library.host_mut(id)?.detected_os = Some(detected_os);
+        self.save(library)?;
+        Ok(true)
+    }
+
+    /// Clears the cached result so this Host can be detected again.
+    pub fn clear_os_detection(&mut self, id: &HostId) -> Result<bool, HostStoreError> {
+        let host = self
+            .get(id)
+            .ok_or_else(|| HostStoreError::NotFound(id.clone()))?;
+        if host.detected_os.is_none() {
+            return Ok(false);
+        }
+        let mut library = self.library.clone();
+        library.host_mut(id)?.detected_os = None;
+        self.save(library)?;
+        Ok(true)
     }
 
     /// The hops to reach Host `id`: its outermost Jump host first, the Host
@@ -572,6 +633,7 @@ impl HostStore {
         let host = Host {
             group_id: slot.group_id.clone(),
             forwards: std::mem::take(&mut slot.forwards),
+            detected_os: slot.detected_os,
             ..draft.into_host(id)?
         };
         *slot = host.clone();
@@ -757,6 +819,7 @@ impl HostStore {
         let mut copy = Host {
             id: HostId::generate(),
             name: required_name(name)?,
+            detected_os: None,
             ..library.hosts[at].clone()
         };
         for forward in &mut copy.forwards {
@@ -940,7 +1003,7 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
         // adds Tags; older Hosts default to an empty list. v15 adds an
         // optional icon; older Hosts use the automatic icon via serde default.
         // v16 adds an optional ANSI hue with the same automatic default.
-        2 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | CURRENT_VERSION => {
+        2 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | CURRENT_VERSION => {
             let FileV2 { groups, hosts } = serde_json::from_str(text).map_err(corrupt)?;
             Ok(Library { groups, hosts })
         }

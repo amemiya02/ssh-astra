@@ -4,7 +4,8 @@ import { readCommandError } from "@/lib/ipc/connect";
 import * as forwardsIpc from "@/lib/ipc/forwards";
 import type { ForwardDraft, ForwardId, PortForward } from "@/lib/ipc/forwards";
 import * as hostsIpc from "@/lib/ipc/hosts";
-import type { Group, GroupId, Host, HostDraft, HostId, HostTree, ImportReport, ImportSummary } from "@/lib/ipc/hosts";
+import type { Group, GroupId, Host, HostDraft, HostId, HostOsChange, HostTree, ImportReport, ImportSummary } from "@/lib/ipc/hosts";
+import { createSnapshotWatch } from "@/lib/ipc/watchSnapshot";
 import type { MoveOp } from "./hostTree";
 
 const ipc = { ...hostsIpc, ...forwardsIpc };
@@ -67,14 +68,32 @@ export interface HostsState {
 export function createHostsStore(api: HostsApi): StoreApi<HostsState> {
   return createStore<HostsState>()((set, get) => {
     const update = (change: (tree: HostTree) => HostTree) => set({ tree: change(get().tree) });
+    // A command reply may describe the tree before an OS update just received on the channel.
+    const osChanges = new Map<HostId, HostOsChange["detectedOs"]>();
+    const withCurrentOs = (host: Host): Host => osChanges.has(host.id)
+      ? { ...host, detectedOs: osChanges.get(host.id) ?? undefined }
+      : host;
+    const replaceTree = (tree: HostTree) => set({ tree: { ...tree, hosts: tree.hosts.map(withCurrentOs) } });
+    const watch = createSnapshotWatch<HostTree, HostOsChange>(
+      api.loadHostTree,
+      (tree) => {
+        osChanges.clear();
+        set({ tree, status: "ready", error: null });
+      },
+      ({ hostId, detectedOs }) => {
+        osChanges.set(hostId, detectedOs);
+        update((tree) => ({ ...tree, hosts: tree.hosts.map((host) => host.id === hostId ? withCurrentOs(host) : host) }));
+      },
+    );
     const publishHost = (saved: Host) => {
+      const host = withCurrentOs(saved);
       update((tree) => ({
         ...tree,
-        hosts: tree.hosts.some((h) => h.id === saved.id)
-          ? tree.hosts.map((h) => (h.id === saved.id ? saved : h))
-          : [...tree.hosts, saved],
+        hosts: tree.hosts.some((h) => h.id === host.id)
+          ? tree.hosts.map((h) => (h.id === host.id ? host : h))
+          : [...tree.hosts, host],
       }));
-      return saved;
+      return host;
     };
     const updateForwards = (hostId: HostId, change: (forwards: PortForward[]) => PortForward[]) =>
       update((tree) => ({
@@ -88,7 +107,7 @@ export function createHostsStore(api: HostsApi): StoreApi<HostsState> {
 
       async load() {
         try {
-          set({ tree: await api.loadHostTree(), status: "ready", error: null });
+          await watch();
         } catch (e) {
           set({ status: "error", error: readCommandError(e).message });
         }
@@ -104,6 +123,7 @@ export function createHostsStore(api: HostsApi): StoreApi<HostsState> {
 
       async deleteHost(id) {
         await api.deleteHost(id);
+        osChanges.delete(id);
         update((tree) => ({ ...tree, hosts: tree.hosts.filter((h) => h.id !== id) }));
       },
 
@@ -119,7 +139,7 @@ export function createHostsStore(api: HostsApi): StoreApi<HostsState> {
 
       async move({ kind, id, parentId, index }) {
         const tree = kind === "host" ? await api.moveHost(id, parentId, index) : await api.moveGroup(id, parentId, index);
-        set({ tree });
+        replaceTree(tree);
       },
 
       async createGroup(name, parentId) {
@@ -135,7 +155,7 @@ export function createHostsStore(api: HostsApi): StoreApi<HostsState> {
       },
 
       async deleteGroup(id) {
-        set({ tree: await api.deleteGroup(id) });
+        replaceTree(await api.deleteGroup(id));
       },
 
       async saveForward(hostId, draft, id) {
@@ -155,7 +175,7 @@ export function createHostsStore(api: HostsApi): StoreApi<HostsState> {
 
       async importSshConfig() {
         const { tree, report } = await api.importSshConfig();
-        set({ tree });
+        replaceTree(tree);
         return report;
       },
 
@@ -165,7 +185,7 @@ export function createHostsStore(api: HostsApi): StoreApi<HostsState> {
 
       async importHosts(path) {
         const { summary, tree } = await api.importHosts(path);
-        set({ tree });
+        replaceTree(tree);
         return summary;
       },
     };
