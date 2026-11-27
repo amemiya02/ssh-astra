@@ -321,7 +321,7 @@ Within a tab, the focused pane splits to the right or down. Nested panes share a
 
 **Gutters are the handles.** The 6px gap is the resize handle itself: a 2px by 28px grip in `border` at rest, `muted-foreground/40` on hover, `ring` while focused or dragging.
 
-**Home.** A centred column (max 72rem, 24px side and 20px top padding): a 36px search field with the New Host, Local terminal and Import buttons beside it, then Recent and each Group as a section of 56px Host cards in an auto-fill grid (min 15rem per card, 8px gaps), 20px between sections.
+**Home.** A centred column (max 72rem, 24px side and 20px top padding) starts with a 36px search field, the Host sort menu and the New Host, Local terminal and Import buttons. Recent and each Group appear as a section of 56px Host cards in an auto-fill grid (min 15rem per card, 8px gaps), 20px between sections. Home and the Host list share the saved sort order for Hosts within each Group. Recent keeps its most recently opened order.
 
 **Status bar.** Left: one segment per connected Host (green dot and name), per reconnecting Host (pulsing amber dot, try count), a Port forwards count (a button that opens the forwards view), transfers with speed, and the update notice. Each segment is 10px padded and closed by a 1px right rule. Right: the focused Host's address in mono, the theme menu and Settings.
 
@@ -382,6 +382,7 @@ Compact and native-feeling; controls recede until hovered, pressed or focused.
 ### Host list rows
 - **Style:** 30px, 10px radius, 2px apart: a 20px monogram tile, the name at 500 (max 65% of the row) with an inline Connection dot, then the address in mono `text-xs` muted, truncated. A row menu button appears on hover. Group rows: chevron, primary folder icon, name in `text-xs` 600; children indent 12px.
 - **States:** `accent` on hover, `selected` when selected; search matches are bolded in foreground.
+- **Sorting:** The header's sort menu offers manual order, name, address and last connected. Only manual order supports drag and drop, and search results keep dragging disabled.
 
 ### Host cards (Home)
 - **Style:** 56px, 10px radius, 1px border, `ground` fill on Home's `surface` panel, 12px padding: a 32px monogram tile with the Connection dot at its corner (ringed 2px in ground), name at 500 over the mono address; a menu button on hover.

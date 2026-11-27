@@ -8,11 +8,13 @@ import { ConnectionDot } from "@/features/connect/ConnectionDot";
 import type { HostConnection } from "@/features/connect/hostConnection";
 import { HostMonogram } from "@/features/hosts/HostMonogram";
 import { Highlighted } from "@/features/hosts/HostList";
+import { HostSortMenu } from "@/features/hosts/HostSortMenu";
+import { recentHostIds, recentHostsSetting } from "@/features/hosts/host-history";
+import { hostSortSetting, sortHostTree } from "@/features/hosts/host-sort";
 import { hostMenuEntries } from "@/features/hosts/hostMenu";
 import { RowContextMenu, RowMoreMenu } from "@/features/hosts/RowMenu";
 import { useHosts } from "@/features/hosts/hostsStore";
 import type { HostsController } from "@/features/hosts/useHostsController";
-import { recentHostsSetting } from "@/features/palette/recent-hosts";
 import { reportHomeFirstPaint } from "@/lib/ipc/home";
 import type { Host, HostId } from "@/lib/ipc/hosts";
 import { useSetting } from "@/lib/storage";
@@ -41,6 +43,7 @@ export function HomeView({ active, controller, connections, onOpenLocalTerminal 
   const status = useHosts((s) => s.status);
   const loadError = useHosts((s) => s.error);
   const [recent] = useSetting(recentHostsSetting);
+  const [sort, setSort] = useSetting(hostSortSetting);
   const [query, setQuery] = useState("");
   const search = useRef<HTMLInputElement>(null);
 
@@ -67,8 +70,10 @@ export function HomeView({ active, controller, connections, onOpenLocalTerminal 
   }, [active, empty]);
 
   const searching = query.trim() !== "";
-  const sections = useMemo(() => homeSections(tree, query), [tree, query]);
-  const recents = useMemo(() => recentHostsOf(tree.hosts, recent, recentLimit), [tree.hosts, recent]);
+  const sortHistory = sort === "recent" ? recent : undefined;
+  const sortedTree = useMemo(() => sortHostTree(tree, sort, sortHistory), [tree, sort, sortHistory]);
+  const sections = useMemo(() => homeSections(sortedTree, query), [sortedTree, query]);
+  const recents = useMemo(() => recentHostsOf(tree.hosts, recentHostIds(recent), recentLimit), [tree.hosts, recent]);
   const { actions, messages } = controller;
 
   return (
@@ -109,6 +114,7 @@ export function HomeView({ active, controller, connections, onOpenLocalTerminal 
               )}
             </div>
           )}
+          {!empty && <HostSortMenu order={sort} onChange={setSort} />}
           <div className={cn("flex flex-wrap items-center gap-2", empty && "flex-1")}>
             <Button size="sm" onClick={controller.newHost}>
               <Plus aria-hidden />
