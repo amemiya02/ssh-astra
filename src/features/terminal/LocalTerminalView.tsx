@@ -10,6 +10,7 @@ import {
   openLocalTerminal,
   resolveWslPaths,
   resizeTerminal,
+  saveClipboardImage,
   writeTerminal,
   type TerminalId,
 } from "@/lib/ipc/terminal";
@@ -45,6 +46,7 @@ export function LocalTerminalView({ active = true, visible = active, initialCwd,
   const [running, setRunning] = useState(false);
   const dropTarget = useRef<HTMLDivElement>(null);
   const pasteDroppedPaths = useRef<((paths: string[]) => Promise<void>) | null>(null);
+  const imagePasteRef = useRef<(() => Promise<void>) | null>(null);
   const drop = useOsFileDrop(dropTarget, visible && running, (paths) => { void pasteDroppedPaths.current?.(paths); });
   const { broadcast, tabId, paneId } = useContext(BroadcastPaneContext) ?? {};
   const { activity, tabId: activityTabId } = useContext(TabActivityContext) ?? {};
@@ -73,6 +75,7 @@ export function LocalTerminalView({ active = true, visible = active, initialCwd,
 
     const offerRestart = () => {
       pasteDroppedPaths.current = null;
+      imagePasteRef.current = null;
       setRunning(false);
       unregisterWriter?.();
       unregisterWriter = undefined;
@@ -129,21 +132,26 @@ export function LocalTerminalView({ active = true, visible = active, initialCwd,
             return;
           }
           id = opened;
+          const isCurrent = () => !disposed && !exited && id === opened;
+          const pastePaths = async (paths: string[]) => {
+            if (!isCurrent()) return;
+            const input = wslDistribution ? await resolveWslPaths(wslDistribution, paths) : { shellProgram, paths };
+            if (!isCurrent()) return;
+            const text = input && quoteDroppedPaths(input.shellProgram, input.paths);
+            if (text === null) throw new Error("Cannot quote these paths for the shell");
+            const bracketed = xterm.modes.bracketedPasteMode && !xterm.options.ignoreBracketedPasteMode;
+            await writeTerminal(opened, terminalPasteInput(text, bracketed, false));
+          };
           pasteDroppedPaths.current = async (paths) => {
-            const isCurrent = () => !disposed && !exited && id === opened;
-            const failed = () => {
-              if (isCurrent()) showToast((t) => t("terminal.fileDrop.pasteFailed"), "error");
-            };
             try {
-              const input = wslDistribution ? await resolveWslPaths(wslDistribution, paths) : { shellProgram, paths };
-              if (!isCurrent()) return;
-              const text = input && quoteDroppedPaths(input.shellProgram, input.paths);
-              if (text === null) return failed();
-              const bracketed = xterm.modes.bracketedPasteMode && !xterm.options.ignoreBracketedPasteMode;
-              await writeTerminal(opened, terminalPasteInput(text, bracketed, false));
+              await pastePaths(paths);
             } catch {
-              failed();
+              if (isCurrent()) showToast((t) => t("terminal.fileDrop.pasteFailed"), "error");
             }
+          };
+          imagePasteRef.current = async () => {
+            const path = await saveClipboardImage(opened);
+            if (path !== null) await pastePaths([path]);
           };
           setRunning(true);
           output?.attach(opened);
@@ -191,6 +199,7 @@ export function LocalTerminalView({ active = true, visible = active, initialCwd,
     return () => {
       disposed = true;
       pasteDroppedPaths.current = null;
+      imagePasteRef.current = null;
       releaseOutput?.();
       unregisterWriter?.();
       pendingInput = "";
@@ -209,7 +218,7 @@ export function LocalTerminalView({ active = true, visible = active, initialCwd,
         </p>
       )}
       <div className="min-h-0 flex-1">
-        <XtermView active={active} onTitleChange={onTitleChange} attach={attach} />
+        <XtermView active={active} onTitleChange={onTitleChange} imagePasteRef={imagePasteRef} attach={attach} />
       </div>
       {drop.over && <span aria-hidden className="ring-primary pointer-events-none absolute inset-1 z-10 rounded-md ring-2 ring-inset" />}
     </div>

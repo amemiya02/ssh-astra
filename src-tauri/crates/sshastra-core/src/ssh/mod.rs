@@ -838,11 +838,20 @@ impl ConnectionManager {
     /// gets a new session. Never connects ([`FsError::NotConnected`]).
     pub async fn live_sftp(&self, id: &HostId) -> Result<Arc<SftpFs>, FsError> {
         let connection = self.live(id).await.ok_or(FsError::NotConnected)?;
+        self.sftp_for_connection(id, &connection).await
+    }
+
+    /// Reuses the Host's shared SFTP session for this exact transport.
+    pub async fn sftp_for_connection(
+        &self,
+        id: &HostId,
+        connection: &Arc<Connection>,
+    ) -> Result<Arc<SftpFs>, FsError> {
         let mut sessions = self.sftp.lock().await;
         sessions.retain(|_, (on, session)| on.strong_count() > 0 && session.strong_count() > 0);
         if let Some((on, session)) = sessions.get(id) {
             if let (Some(on), Some(session)) = (on.upgrade(), session.upgrade()) {
-                if Arc::ptr_eq(&on, &connection) {
+                if Arc::ptr_eq(&on, connection) {
                     return Ok(session);
                 }
             }
@@ -850,7 +859,7 @@ impl ConnectionManager {
         let session = Arc::new(connection.open_sftp().await?);
         sessions.insert(
             id.clone(),
-            (Arc::downgrade(&connection), Arc::downgrade(&session)),
+            (Arc::downgrade(connection), Arc::downgrade(&session)),
         );
         Ok(session)
     }

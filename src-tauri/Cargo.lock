@@ -5474,6 +5474,7 @@ dependencies = [
 name = "sshastra"
 version = "0.3.0"
 dependencies = [
+ "arboard",
  "block2",
  "chrono",
  "futures-util",
@@ -5481,6 +5482,7 @@ dependencies = [
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
+ "png",
  "regex",
  "serde",
  "serde_json",
