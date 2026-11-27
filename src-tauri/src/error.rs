@@ -128,6 +128,9 @@ impl From<HostStoreError> for CommandError {
                 Self::new("notFound", &err)
             }
             InvalidBookmarkPath => Self::new("invalid", &err),
+            TagLimit { host } => {
+                Self::new("hostTagLimit", &err).with_details(json!({ "host": host }))
+            }
             DuplicateId(_) => Self::new("duplicateHostId", &err),
             InvalidMove => Self::new("invalidMove", &err),
             JumpHostCycle(names) => {

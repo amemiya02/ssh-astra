@@ -48,6 +48,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
       target?: QuickConnectTarget;
       hostId?: string;
       id?: string;
+      ids?: string[];
       shellId?: string;
       source?: HostImportSource;
       draft?: HostDraft;
@@ -86,6 +87,10 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
         const saved = { ...args!.draft!, id: previous.id, groupId: previous.groupId, forwards: previous.forwards };
         savedHosts = savedHosts.map((candidate) => candidate.id === saved.id ? saved : candidate);
         return saved;
+      }
+      if (command === "hosts_batch_delete") {
+        savedHosts = savedHosts.filter((candidate) => !args?.ids?.includes(candidate.id));
+        return { hosts: savedHosts, groups: [] };
       }
       if (command === "files_open" && args?.hostId && panelListings.has(args.hostId)) return args.hostId;
       if (command === "files_open" || command === "files_connect" || command === "files_local_open") return command;
@@ -1513,6 +1518,69 @@ it("filters the Host list and Home by Tag and keeps the selection when narrowing
   await openPalette();
   await search(paletteSearch(), "tag:24");
   expect(paletteOptions().map((option) => option.textContent)).toEqual([expect.stringContaining("Backup Node")]);
+});
+
+async function renderHostsForBatch() {
+  savedHosts = Array.from({ length: 6 }, (_, index) => ({
+    ...host, id: `batch-${index}`, name: `Batch Host ${index + 1}`,
+  }));
+  await hostsStore.getState().load();
+  await render(workspace({ type: "open", tabId: "home", pane: newPane({ kind: "home" }) }));
+  const rows = [...document.querySelectorAll<HTMLButtonElement>('ul[aria-label="Hosts"] button[aria-pressed]')];
+  expect(rows).toHaveLength(6);
+  return (index: number) => rows[index]!;
+}
+
+async function hostBatchAction(label: string) {
+  const actions = document.querySelector<HTMLElement>('button[aria-label="Actions for selected Hosts"]')!;
+  await enter(actions);
+  await act(async () => contextMenuItem(label).click());
+}
+
+it("confirms one deletion for the selected Hosts and sends one batch", async () => {
+  const row = await renderHostsForBatch();
+  const [first, second, third] = [row(0), row(1), row(2)];
+  await act(async () => first.click());
+  await act(async () => third.dispatchEvent(new MouseEvent("click", { bubbles: true, metaKey: true })));
+  expect(first.getAttribute("aria-pressed")).toBe("true");
+  expect(second.getAttribute("aria-pressed")).toBe("false");
+  expect(third.getAttribute("aria-pressed")).toBe("true");
+  expect(remoteOpenHostIds()).toEqual([]);
+
+  await hostBatchAction("Delete");
+  expect(dialog()?.querySelector("h2")?.textContent).toBe("Delete 2 Hosts?");
+  expect(invoke).not.toHaveBeenCalledWith("hosts_batch_delete", expect.anything());
+  await clickButton("Cancel", dialog()!);
+  expect(dialog()).toBeNull();
+  await hostBatchAction("Delete");
+  await clickButton("Delete", dialog()!);
+  expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === "hosts_batch_delete"))
+    .toEqual([["hosts_batch_delete", { ids: ["batch-0", "batch-2"] }]]);
+  expect(hostsStore.getState().tree.hosts.map((host) => host.id)).toEqual(["batch-1", "batch-3", "batch-4", "batch-5"]);
+});
+
+it("requires confirmation only when connecting more than five selected Hosts", { timeout: 15_000 }, async () => {
+  const row = await renderHostsForBatch();
+  await act(async () => row(0).click());
+  await act(async () => row(5).dispatchEvent(new KeyboardEvent("keydown", {
+    key: " ", bubbles: true, cancelable: true, shiftKey: true,
+  })));
+
+  await hostBatchAction("Connect all");
+  expect(dialog()?.querySelector("h2")?.textContent).toBe("Connect to 6 Hosts?");
+  expect(remoteOpenHostIds()).toEqual([]);
+  await clickButton("Cancel", dialog()!);
+  expect(remoteOpenHostIds()).toEqual([]);
+
+  await act(async () => row(5).dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true })));
+  await hostBatchAction("Connect all");
+  expect(dialog()).toBeNull();
+  expect(remoteOpenHostIds()).toEqual(["batch-0", "batch-1", "batch-2", "batch-3", "batch-4"]);
+
+  await act(async () => row(5).dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true })));
+  await hostBatchAction("Connect all");
+  await clickButton("Connect all", dialog()!);
+  expect(remoteOpenHostIds().slice(5)).toEqual(["batch-0", "batch-1", "batch-2", "batch-3", "batch-4", "batch-5"]);
 });
 
 it("switches Home layouts with the keyboard and restores the choice after restarting", async () => {

@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use sshastra_core::agent::AgentPermission;
 use sshastra_core::credentials::{CredentialKind, CredentialVault, MemoryVault};
 use sshastra_core::forward::{ForwardDraft, ForwardKind};
 use sshastra_core::hosts::{
@@ -14,6 +15,64 @@ fn store() -> (tempfile::TempDir, HostStore) {
     let dir = tempfile::tempdir().unwrap();
     let store = HostStore::open(dir.path().join("hosts.json")).unwrap();
     (dir, store)
+}
+
+#[test]
+fn selected_export_round_trips_only_selected_hosts_their_transitive_jump_hosts_and_groups() {
+    let (dir, mut store) = populated();
+    let web = store
+        .list()
+        .iter()
+        .find(|h| h.name == "web")
+        .unwrap()
+        .id
+        .clone();
+    let worker = store
+        .upsert(
+            None,
+            HostDraft {
+                jump_host: Some(web),
+                agent_access: AgentPermission::Approval,
+                ..draft("worker")
+            },
+        )
+        .unwrap()
+        .id;
+    let direct = store.upsert(None, draft("direct")).unwrap().id;
+    let path = dir.path().join("selected.json");
+    store
+        .export_selection_to(&[worker.clone(), direct, worker], &path)
+        .unwrap();
+    let exported = std::fs::read_to_string(&path).unwrap();
+    assert!(!exported.contains("agentAccess"));
+    assert!(matches!(
+        store.export_selection_to(&[HostId::from("missing".to_owned())], &path),
+        Err(HostStoreError::NotFound(_))
+    ));
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), exported);
+    let mut imported = HostStore::open(dir.path().join("imported.json")).unwrap();
+    let summary = imported.import_from(&path).unwrap();
+    assert_eq!(summary.hosts_added, 4);
+    assert_eq!(summary.groups_added, 2);
+    assert_eq!(
+        imported
+            .groups()
+            .iter()
+            .map(|g| g.name.as_str())
+            .collect::<Vec<_>>(),
+        ["prod", "eu"]
+    );
+    let worker = imported.list().iter().find(|h| h.name == "worker").unwrap();
+    let chain = imported.jump_chain(&worker.id).unwrap();
+    assert_eq!(
+        chain
+            .iter()
+            .map(|host| host.name.as_str())
+            .collect::<Vec<_>>(),
+        ["bastion", "web", "worker"]
+    );
+    assert!(imported.list().iter().any(|h| h.name == "direct"));
+    assert!(imported.list().iter().all(|h| h.name != "loose"));
 }
 
 fn draft(name: &str) -> HostDraft {

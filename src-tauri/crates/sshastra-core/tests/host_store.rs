@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::thread;
 
 use sshastra_core::hosts::{
-    Bookmark, Host, HostAuth, HostDraft, HostId, HostStore, HostStoreError,
+    Bookmark, GroupId, Host, HostAuth, HostDraft, HostId, HostStore, HostStoreError, HostTagChange,
 };
 
 fn draft(name: &str) -> HostDraft {
@@ -586,4 +586,148 @@ fn hosts_saved_before_jump_hosts_existed_still_load() {
     let store = HostStore::open(&path).unwrap();
 
     assert_eq!(store.list()[0].jump_host, None);
+}
+
+#[test]
+fn batch_move_appends_hosts_in_saved_order_and_keeps_the_whole_tree() {
+    let (_dir, path) = store_path();
+    let mut store = HostStore::open(&path).unwrap();
+    let group = store.create_group("work", None).unwrap();
+    let a = store.upsert(None, draft("a")).unwrap().id;
+    let b = store.upsert(None, draft("b")).unwrap().id;
+    let c = store.upsert(None, draft("c")).unwrap().id;
+    let d = store.upsert(None, draft("d")).unwrap().id;
+    store.move_host(&c, Some(group.id.clone()), 0).unwrap();
+    let before = fs::read(&path).unwrap();
+
+    let missing = HostId::from("missing".to_owned());
+    assert!(store
+        .move_hosts(&[a.clone(), missing], Some(group.id.clone()))
+        .is_err());
+    let missing_group = GroupId::from("missing".to_owned());
+    assert!(store
+        .move_hosts(&[a.clone(), b.clone()], Some(missing_group))
+        .is_err());
+    assert_eq!(fs::read(&path).unwrap(), before);
+
+    let tree = store
+        .move_hosts(&[b.clone(), a.clone(), a.clone()], Some(group.id.clone()))
+        .unwrap();
+    assert_eq!(tree, HostStore::open(&path).unwrap().tree());
+    assert_eq!(tree.groups, [group.clone()]);
+    let under_group: Vec<_> = tree
+        .hosts
+        .iter()
+        .filter(|h| h.group_id.as_ref() == Some(&group.id))
+        .map(|h| h.id.clone())
+        .collect();
+    assert_eq!(under_group, [c, a, b]);
+    assert_eq!(
+        tree.hosts.iter().find(|h| h.id == d).unwrap().group_id,
+        None
+    );
+}
+
+#[test]
+fn batch_tag_changes_normalize_and_reject_the_entire_change_if_any_host_is_full() {
+    let (_dir, path) = store_path();
+    let mut store = HostStore::open(&path).unwrap();
+    store.create_group("work", None).unwrap();
+    let a = store.upsert(None, draft("a")).unwrap().id;
+    let b = store
+        .upsert(
+            None,
+            HostDraft {
+                tags: (0..10).map(|i| format!("tag-{i}")).collect(),
+                ..draft("b")
+            },
+        )
+        .unwrap()
+        .id;
+    let before = store.tree();
+    let bytes = fs::read(&path).unwrap();
+    let ids = [a.clone(), b.clone()];
+
+    assert!(matches!(
+        store.edit_host_tags(&ids, HostTagChange::Add, "on-call"),
+        Err(HostStoreError::TagLimit { .. })
+    ));
+    assert_eq!(store.tree(), before);
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+
+    let tree = store
+        .edit_host_tags(&ids, HostTagChange::Add, " TaG-0 ")
+        .unwrap();
+    assert_eq!(tree, HostStore::open(&path).unwrap().tree());
+    assert_eq!(tree.groups, before.groups);
+    assert_eq!(store.get(&a).unwrap().tags, ["TaG-0"]);
+    assert_eq!(store.get(&b).unwrap().tags.len(), 10);
+    let tree = store
+        .edit_host_tags(&ids, HostTagChange::Remove, " TAG-0 ")
+        .unwrap();
+    assert_eq!(tree, HostStore::open(&path).unwrap().tree());
+    assert_eq!(tree.groups, before.groups);
+    assert!(store.get(&a).unwrap().tags.is_empty());
+    assert_eq!(store.get(&b).unwrap().tags.len(), 9);
+    assert_eq!(store.get(&b).unwrap().tags[0], "tag-1");
+}
+
+#[test]
+fn batch_delete_allows_a_jump_host_with_its_dependents_and_rejects_partial_deletion() {
+    let (_dir, path) = store_path();
+    let mut store = HostStore::open(&path).unwrap();
+    let group = store.create_group("work", None).unwrap();
+    let jump = store.upsert(None, draft("jump")).unwrap().id;
+    let web = store
+        .upsert(
+            None,
+            HostDraft {
+                jump_host: Some(jump.clone()),
+                ..draft("web")
+            },
+        )
+        .unwrap()
+        .id;
+    let unrelated = store.upsert(None, draft("unrelated")).unwrap().id;
+    let before = store.tree();
+    let bytes = fs::read(&path).unwrap();
+
+    assert!(
+        matches!(store.delete_hosts(&[unrelated.clone(), jump.clone()]), Err(HostStoreError::InUseAsJumpHost { by }) if by == "web")
+    );
+    let missing = HostId::from("missing".to_owned());
+    assert!(store.delete_hosts(&[web.clone(), missing]).is_err());
+    assert_eq!(store.tree(), before);
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+
+    let tree = store.delete_hosts(&[jump, web]).unwrap();
+    assert_eq!(tree, HostStore::open(&path).unwrap().tree());
+    assert_eq!(tree.groups, [group]);
+    assert_eq!(tree.hosts, [store.get(&unrelated).unwrap().clone()]);
+}
+
+#[test]
+fn unsuccessful_batch_writes_leave_the_saved_tree_and_memory_unchanged() {
+    let (_dir, path) = store_path();
+    let mut store = HostStore::open(&path).unwrap();
+    let group = store.create_group("work", None).unwrap();
+    let a = store.upsert(None, draft("a")).unwrap().id;
+    let b = store.upsert(None, draft("b")).unwrap().id;
+    let ids = [a, b];
+    let before = store.tree();
+    let bytes = fs::read(&path).unwrap();
+    let backup = path.with_extension("previous");
+    fs::rename(&path, &backup).unwrap();
+    fs::create_dir(&path).unwrap();
+
+    let results = [
+        store.move_hosts(&ids, Some(group.id)),
+        store.edit_host_tags(&ids, HostTagChange::Add, "on-call"),
+        store.delete_hosts(&ids),
+    ];
+    for result in results {
+        assert!(matches!(result, Err(HostStoreError::Io { .. })));
+    }
+    assert_eq!(store.tree(), before);
+    assert_eq!(fs::read(&backup).unwrap(), bytes);
 }

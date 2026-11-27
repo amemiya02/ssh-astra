@@ -85,6 +85,14 @@ const localTerminal: PaneKind = { kind: "local-terminal" };
 /** Updates come from the installed app's updater: not in a plain browser, nor in the E2E build. */
 const updatable = isTauri() && import.meta.env.VITE_E2E !== "1";
 
+function nextQueuedOrder(tabs: readonly Tab[]): number {
+  let order = 0;
+  for (const { restoreConnection } of tabs.flatMap(tabPanes)) {
+    if (typeof restoreConnection === "object") order = Math.max(order, restoreConnection.order + 1);
+  }
+  return order;
+}
+
 /**
  * Composes one Window. Each slot of `AppShell` is owned by a feature:
  * Host list (features/hosts), tabs and splits (features/workspace), File panel (features/files).
@@ -194,7 +202,9 @@ export function App({ initialTabs, startupTabsAcrossWindows, incomingMove }: {
     (kind: PaneKind, startupOrder?: number) => {
       const pane = newPane(kind);
       if (startupOrder !== undefined) pane.restoreConnection = { order: startupOrder };
-      dispatch({ type: "open", tabId: crypto.randomUUID(), pane });
+      const tabId = crypto.randomUUID();
+      dispatch({ type: "open", tabId, pane });
+      return tabId;
     },
     [],
   );
@@ -202,11 +212,21 @@ export function App({ initialTabs, startupTabsAcrossWindows, incomingMove }: {
   const openRemoteTerminal = useCallback(
     (host: Host, startupOrder?: number, expectedTarget?: SshLinkTarget) => {
       if (!isTemporaryHost(host)) rememberHostOpened(host.id);
-      openTab({ kind: "remote-terminal", host, expectedTarget }, startupOrder);
+      return openTab({ kind: "remote-terminal", host, expectedTarget }, startupOrder);
     },
     [openTab],
   );
   useTray(openRemoteTerminal);
+  const openSelectedHosts = (hosts: readonly Host[]) => {
+    // Queue these like restored Terminals so each Host can show its prompts in turn.
+    let order = nextQueuedOrder(tabs);
+    let firstTabId: string | undefined;
+    for (const host of hosts) {
+      const tabId = openRemoteTerminal(host, order++);
+      firstTabId ??= tabId;
+    }
+    if (firstTabId) dispatch({ type: "activate", id: firstTabId });
+  };
   const startupHostsOpened = useRef(false);
   useEffect(() => {
     if (startupHostsOpened.current || startupTabsAcrossWindows === null) return;
@@ -215,14 +235,11 @@ export function App({ initialTabs, startupTabsAcrossWindows, incomingMove }: {
     const { status, tree } = hostsStore.getState();
     if (status !== "ready") return;
     const opened = new Set<HostId>();
-    let order = 0;
+    let order = nextQueuedOrder(initialTabs.tabs);
     for (const workspace of startupTabsAcrossWindows ?? [initialTabs]) {
       for (const pane of workspace.tabs.flatMap(tabPanes)) {
         if ("host" in pane) opened.add(pane.host.id);
       }
-    }
-    for (const pane of initialTabs.tabs.flatMap(tabPanes)) {
-      if (typeof pane.restoreConnection === "object") order = Math.max(order, pane.restoreConnection.order + 1);
     }
     for (const host of tree.hosts) {
       if (!host.openOnStartup || opened.has(host.id) || isTemporaryHost(host)) continue;
@@ -473,7 +490,7 @@ export function App({ initialTabs, startupTabsAcrossWindows, incomingMove }: {
     }
     previousTemporaryHosts.current = new Set(temporaryHosts);
   }, [temporaryHosts]);
-  const hostsController = useHostsController({ open: openRemoteTerminal, openSftp, openForwards }, (host) => {
+  const hostsController = useHostsController({ open: openRemoteTerminal, openAll: openSelectedHosts, openSftp, openForwards }, (host) => {
     // Saving already moved the backend entry out of the temporary registry.
     previousTemporaryHosts.current.delete(host.id);
     dispatch({ type: "saveTemporaryHost", host });

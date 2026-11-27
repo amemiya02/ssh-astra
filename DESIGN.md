@@ -327,6 +327,8 @@ Within a tab, the focused pane splits to the right or down. Nested panes share a
 
 **Home.** A centred column (max 72rem, 24px side and 20px top padding) starts with a 36px search field, the Host sort menu, the Cards and List control and the New Host, Local terminal and Import buttons. Recent and each Group use the selected layout, with 20px between sections. The default Cards layout uses an auto-fill grid with a minimum width of 15rem per card and 8px gaps. List uses a single column with 6px gaps. Home remembers the layout across restarts. Home and the Host list share the saved sort order for Hosts within each Group. Recent keeps its most recently opened order.
 
+**Host list selection.** Click a Host or press Space to select it. Cmd or Ctrl toggles a Host and Shift selects a range in the displayed Host order. The sidebar footer shows the selection count and opens actions for the selection. Enter or double-click opens a Terminal on the focused Host.
+
 **Quick connect.** A valid SSH address adds an outline action above the Hosts on Home and the first result in the command palette. Both read “Connect to …” and switch to “Quick connect” in privacy mode. An exact saved Host name takes priority in either search.
 
 **Save as Host.** A Temporary Host offers this action in its tab menu and, when focused, at the right of the status bar. The Host editor fills in the connection details and asks for a name. Saving keeps the same Connection, Terminals and File panels.

@@ -17,9 +17,11 @@ use crate::host_import::{ImportIssue, ParsedConfig};
 use crate::proxy::HostProxy;
 use crate::terminal::{TerminalBackspace, TerminalCharset};
 
+mod batch;
 mod bookmarks;
 mod open_ssh;
 mod transfer;
+pub use batch::HostTagChange;
 pub use bookmarks::Bookmark;
 pub use open_ssh::{diff_open_ssh, OpenSshDiff, OpenSshReadReport, OpenSshSource};
 pub use transfer::{ImportSummary, EXPORT_FORMAT};
@@ -397,6 +399,8 @@ pub enum HostStoreError {
     BookmarkNotFound,
     #[error("a Bookmark requires a valid remote path")]
     InvalidBookmarkPath,
+    #[error("{host} has reached the maximum number of Tags")]
+    TagLimit { host: String },
     #[error("a group cannot move into itself or a group inside it")]
     InvalidMove,
     /// Following the Jump hosts leads back to where it started; the names
@@ -711,23 +715,7 @@ impl HostStore {
     }
 
     pub fn delete(&mut self, id: &HostId) -> Result<(), HostStoreError> {
-        if let Some(user) = self
-            .library
-            .hosts
-            .iter()
-            .find(|h| h.jump_host.as_ref() == Some(id))
-        {
-            return Err(HostStoreError::InUseAsJumpHost {
-                by: user.name.clone(),
-            });
-        }
-        let mut library = self.library.clone();
-        let before = library.hosts.len();
-        library.hosts.retain(|h| &h.id != id);
-        if library.hosts.len() == before {
-            return Err(HostStoreError::NotFound(id.clone()));
-        }
-        self.save(library)
+        self.delete_selection(std::slice::from_ref(id))
     }
 
     /// Adds a Port forward rule to Host `host` (`id: None`, at the end) or
