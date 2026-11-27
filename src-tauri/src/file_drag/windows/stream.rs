@@ -92,7 +92,9 @@ impl ISequentialStream_Impl for FileStream_Impl {
                 cursor.close();
                 return WAIT_FOR_DROP;
             }
-            self.drag.read_started.store(true, Ordering::Release);
+            if cursor.read.input.is_some() {
+                self.drag.read_started.store(true, Ordering::Release);
+            }
             if count == 0 {
                 cursor.close();
                 return S_FALSE;
@@ -128,11 +130,12 @@ impl IStream_Impl for FileStream_Impl {
                 .drag
                 .source
                 .length
-                .unwrap_or_default()
-                .checked_add_signed(delta),
+                .and_then(|length| length.checked_add_signed(delta)),
             _ => None,
         }
         .ok_or_else(|| Error::from_hresult(STG_E_INVALIDFUNCTION))?;
+        #[cfg(feature = "e2e")]
+        log::info!("file drag OLE sought from {} to {offset}", cursor.offset);
         if offset != cursor.offset {
             cursor.close();
             cursor.offset = offset;
@@ -204,9 +207,12 @@ impl IStream_Impl for FileStream_Impl {
             return Err(E_POINTER.into());
         }
         let source = &self.drag.source;
+        let length = source
+            .length
+            .ok_or_else(|| Error::from_hresult(STG_E_INVALIDFUNCTION))?;
         let mut stat = STATSTG {
             r#type: STGTY_STREAM.0 as u32,
-            cbSize: source.length.unwrap_or_default(),
+            cbSize: length,
             grfMode: STGM_READ,
             mtime: source.modified.and_then(filetime).unwrap_or_default(),
             ..Default::default()

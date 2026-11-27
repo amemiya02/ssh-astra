@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -20,6 +20,7 @@ use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, Mutex as AsyncMutex};
 use tokio::task::JoinHandle;
+use uuid::Uuid;
 
 use crate::files::{FileKind, FileStat, FsError, RemoteFs, READ_FILE_LIMIT};
 use crate::hosts::HostId;
@@ -103,6 +104,87 @@ const BINARY_SNIFF: usize = 8 * 1024;
 /// uploaded: editors often write a file in several steps.
 const DEFAULT_DEBOUNCE: Duration = Duration::from_millis(500);
 
+/// Owns a group of open edits and prevents a pending open from adding a lease after teardown.
+pub struct EditOwner {
+    id: Uuid,
+    closed: AtomicBool,
+}
+
+impl Default for EditOwner {
+    fn default() -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            closed: AtomicBool::new(false),
+        }
+    }
+}
+
+impl EditOwner {
+    fn ensure_open(&self) -> Result<(), EditError> {
+        if self.closed.load(Ordering::Relaxed) {
+            return Err(EditError::NotOpen);
+        }
+        Ok(())
+    }
+}
+
+type EditSink = Box<dyn Fn(EditEvent) + Send + Sync>;
+
+pub struct EditSubscription<'a> {
+    owner: Option<&'a EditOwner>,
+    sink: EditSink,
+}
+
+impl<'a> EditSubscription<'a> {
+    pub fn new(owner: &'a EditOwner, sink: impl Fn(EditEvent) + Send + Sync + 'static) -> Self {
+        Self {
+            owner: Some(owner),
+            sink: Box::new(sink),
+        }
+    }
+
+    fn unscoped(sink: impl Fn(EditEvent) + Send + Sync + 'static) -> Self {
+        Self {
+            owner: None,
+            sink: Box::new(sink),
+        }
+    }
+
+    fn ensure_open(&self) -> Result<(), EditError> {
+        if let Some(owner) = self.owner {
+            owner.ensure_open()?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+struct EditEvents {
+    sinks: HashMap<Option<Uuid>, EditSink>,
+    latest: Option<EditEvent>,
+}
+
+impl EditEvents {
+    fn subscribe(&mut self, subscription: EditSubscription<'_>) {
+        let Some(owner) = subscription.owner else {
+            self.sinks.entry(None).or_insert(subscription.sink);
+            return;
+        };
+        // Reopening updates this owner's channel. Replay under the same lock as live sends.
+        if let Some(event) = &self.latest {
+            (subscription.sink)(event.clone());
+        }
+        self.sinks.insert(Some(owner.id), subscription.sink);
+    }
+
+    fn send(&mut self, event: EditEvent) {
+        for sink in self.sinks.values() {
+            sink(event.clone());
+        }
+        self.latest = Some(event);
+    }
+}
+
 struct Edit {
     target: Arc<EditTarget>,
     /// Ordinary opens reuse the original edit. Conflict copies have their own lifetime.
@@ -110,6 +192,7 @@ struct Edit {
     allow_binary: bool,
     local_path: PathBuf,
     conflict_id: Arc<AtomicU64>,
+    events: Arc<Mutex<EditEvents>>,
     requests: mpsc::UnboundedSender<UploadRequest>,
     /// Stops watching when dropped.
     _watcher: RecommendedWatcher,
@@ -185,11 +268,29 @@ fn conflicted_edit(
     Ok(edit)
 }
 
+fn owned_edit<'a>(
+    edits: &'a HashMap<EditId, Edit>,
+    id: EditId,
+    owner: &EditOwner,
+) -> Result<&'a Edit, EditError> {
+    owner.ensure_open()?;
+    edits
+        .get(&id)
+        .filter(|edit| {
+            edit.events
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .sinks
+                .contains_key(&Some(owner.id))
+        })
+        .ok_or(EditError::NotOpen)
+}
+
 fn find_open<'a>(
     edits: &'a HashMap<EditId, Edit>,
     host_id: &HostId,
     remote_path: &str,
-) -> Option<(EditId, &'a Path)> {
+) -> Option<(EditId, &'a Edit)> {
     edits
         .iter()
         .find(|(_, edit)| {
@@ -197,7 +298,7 @@ fn find_open<'a>(
                 && &edit.target.host_id == host_id
                 && edit.target.remote_path == remote_path
         })
-        .map(|(id, edit)| (*id, edit.local_path.as_path()))
+        .map(|(id, edit)| (*id, edit))
 }
 
 /// Every open remote edit.
@@ -306,10 +407,32 @@ impl RemoteEditor {
         options: OpenEditOptions<'_>,
         on_event: impl Fn(EditEvent) + Send + Sync + 'static,
     ) -> Result<OpenedEdit, EditError> {
+        self.open_subscribed(
+            fs,
+            host_id,
+            remote_path,
+            options,
+            EditSubscription::unscoped(on_event),
+        )
+        .await
+    }
+
+    pub async fn open_subscribed(
+        &self,
+        fs: Arc<dyn RemoteFs>,
+        host_id: &HostId,
+        remote_path: &str,
+        options: OpenEditOptions<'_>,
+        subscription: EditSubscription<'_>,
+    ) -> Result<OpenedEdit, EditError> {
         // Already open: show it again rather than download over unsaved or
         // not yet uploaded changes.
-        if let Some((id, local_path)) = find_open(&self.lock(), host_id, remote_path) {
-            return self.launch(id, local_path, options.application);
+        {
+            let edits = self.lock();
+            subscription.ensure_open()?;
+            if let Some((id, edit)) = find_open(&edits, host_id, remote_path) {
+                return self.reopen(id, edit, options.application, subscription);
+            }
         }
 
         // A conflict copy can outlive the original. Ordinary opens of that path
@@ -331,8 +454,9 @@ impl RemoteEditor {
         let download = target.download(*writes, options.allow_binary).await?;
         // Another Window may have finished opening the same file while this one was downloading it.
         let mut edits = self.lock();
-        if let Some((id, local_path)) = find_open(&edits, host_id, remote_path) {
-            return self.launch(id, local_path, options.application);
+        subscription.ensure_open()?;
+        if let Some((id, edit)) = find_open(&edits, host_id, remote_path) {
+            return self.reopen(id, edit, options.application, subscription);
         }
         self.register(
             &mut edits,
@@ -340,8 +464,23 @@ impl RemoteEditor {
             download,
             true,
             options,
-            on_event,
+            subscription,
         )
+    }
+
+    fn reopen(
+        &self,
+        id: EditId,
+        edit: &Edit,
+        application: Option<&Path>,
+        subscription: EditSubscription<'_>,
+    ) -> Result<OpenedEdit, EditError> {
+        let opened = self.launch(id, &edit.local_path, application)?;
+        edit.events
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .subscribe(subscription);
+        Ok(opened)
     }
 
     /// Opens the current remote version in a second live edit. The original stays paused
@@ -353,16 +492,35 @@ impl RemoteEditor {
         application: Option<&Path>,
         on_event: impl Fn(EditEvent) + Send + Sync + 'static,
     ) -> Result<OpenedEdit, EditError> {
-        let (target, allow_binary) = {
-            let edits = self.lock();
-            let edit = conflicted_edit(&edits, id, conflict_id)?;
-            (Arc::clone(&edit.target), edit.allow_binary)
+        self.open_conflict_copy_subscribed(
+            id,
+            conflict_id,
+            application,
+            EditSubscription::unscoped(on_event),
+        )
+        .await
+    }
+
+    pub async fn open_conflict_copy_subscribed(
+        &self,
+        id: EditId,
+        conflict_id: u64,
+        application: Option<&Path>,
+        subscription: EditSubscription<'_>,
+    ) -> Result<OpenedEdit, EditError> {
+        let check = |edits: &HashMap<EditId, Edit>| {
+            if let Some(owner) = subscription.owner {
+                owned_edit(edits, id, owner)?;
+            }
+            let edit = conflicted_edit(edits, id, conflict_id)?;
+            Ok::<_, EditError>((Arc::clone(&edit.target), edit.allow_binary))
         };
+        let (target, allow_binary) = check(&self.lock())?;
         let writes = target.writes.lock().await;
-        conflicted_edit(&self.lock(), id, conflict_id)?;
+        check(&self.lock())?;
         let download = target.download(*writes, allow_binary).await?;
         let mut edits = self.lock();
-        conflicted_edit(&edits, id, conflict_id)?;
+        check(&edits)?;
         let options = OpenEditOptions {
             allow_binary,
             application,
@@ -373,7 +531,7 @@ impl RemoteEditor {
             download,
             false,
             options,
-            on_event,
+            subscription,
         )
     }
 
@@ -384,7 +542,7 @@ impl RemoteEditor {
         download: DownloadedEdit,
         primary: bool,
         options: OpenEditOptions<'_>,
-        on_event: impl Fn(EditEvent) + Send + Sync + 'static,
+        subscription: EditSubscription<'_>,
     ) -> Result<OpenedEdit, EditError> {
         let id = EditId(self.next_id.fetch_add(1, Ordering::Relaxed) + 1);
         let dir = self
@@ -430,6 +588,9 @@ impl RemoteEditor {
 
         let (requests, pending) = mpsc::unbounded_channel();
         let conflict_id = Arc::new(AtomicU64::new(0));
+        let mut events = EditEvents::default();
+        events.subscribe(subscription);
+        let events = Arc::new(Mutex::new(events));
         let uploads = tokio::spawn(
             Uploader {
                 id,
@@ -440,7 +601,7 @@ impl RemoteEditor {
                 conflict_id: conflict_id.clone(),
                 next_conflict: 0,
                 debounce: self.debounce,
-                on_event: Box::new(on_event),
+                events: Arc::clone(&events),
             }
             .run(changed, pending),
         );
@@ -452,6 +613,7 @@ impl RemoteEditor {
                 allow_binary: options.allow_binary,
                 local_path,
                 conflict_id,
+                events,
                 requests,
                 _watcher: watcher,
                 uploads,
@@ -491,18 +653,60 @@ impl RemoteEditor {
     pub fn retry(&self, id: EditId) -> Result<(), EditError> {
         let edits = self.lock();
         let edit = edits.get(&id).ok_or(EditError::NotOpen)?;
-        edit.requests
-            .send(UploadRequest::Retry)
-            .map_err(|_| EditError::NotOpen)
+        Self::request(edit, UploadRequest::Retry)
+    }
+
+    pub fn retry_owned(&self, id: EditId, owner: &EditOwner) -> Result<(), EditError> {
+        Self::request(owned_edit(&self.lock(), id, owner)?, UploadRequest::Retry)
+    }
+
+    fn request(edit: &Edit, request: UploadRequest) -> Result<(), EditError> {
+        edit.requests.send(request).map_err(|_| EditError::NotOpen)
     }
 
     /// Uploads the latest local save despite the reported conflict.
     pub fn overwrite(&self, id: EditId, conflict_id: u64) -> Result<(), EditError> {
         let edits = self.lock();
         let edit = conflicted_edit(&edits, id, conflict_id)?;
-        edit.requests
-            .send(UploadRequest::Overwrite(conflict_id))
-            .map_err(|_| EditError::NotOpen)
+        Self::request(edit, UploadRequest::Overwrite(conflict_id))
+    }
+
+    pub fn overwrite_owned(
+        &self,
+        id: EditId,
+        conflict_id: u64,
+        owner: &EditOwner,
+    ) -> Result<(), EditError> {
+        let edits = self.lock();
+        owned_edit(&edits, id, owner)?;
+        Self::request(
+            conflicted_edit(&edits, id, conflict_id)?,
+            UploadRequest::Overwrite(conflict_id),
+        )
+    }
+
+    pub fn release(&self, id: EditId, owner: &EditOwner) {
+        let mut edits = self.lock();
+        Self::release_locked(&mut edits, id, owner.id);
+    }
+
+    pub fn close_owner(&self, owner: &EditOwner) {
+        let mut edits = self.lock();
+        owner.closed.store(true, Ordering::Relaxed);
+        let ids: Vec<_> = edits.keys().copied().collect();
+        for id in ids {
+            Self::release_locked(&mut edits, id, owner.id);
+        }
+    }
+
+    fn release_locked(edits: &mut HashMap<EditId, Edit>, id: EditId, owner: Uuid) {
+        let Some(edit) = edits.get(&id) else { return };
+        let mut events = edit.events.lock().unwrap_or_else(|p| p.into_inner());
+        let last_owner = events.sinks.remove(&Some(owner)).is_some() && events.sinks.is_empty();
+        drop(events);
+        if last_owner {
+            Self::discard(edits.remove(&id).expect("the edit is open"));
+        }
     }
 
     /// Stops watching and uploading, and deletes the temp file; `false` if
@@ -511,6 +715,11 @@ impl RemoteEditor {
         let Some(edit) = self.lock().remove(&id) else {
             return false;
         };
+        Self::discard(edit);
+        true
+    }
+
+    fn discard(edit: Edit) {
         edit.uploads.abort();
         if let Some(dir) = edit.local_path.parent() {
             let _ = std::fs::remove_dir_all(dir);
@@ -519,7 +728,6 @@ impl RemoteEditor {
                 let _ = std::fs::remove_dir(host_dir);
             }
         }
-        true
     }
 
     /// Closes every edit and deletes the whole temp directory, also what an
@@ -557,7 +765,7 @@ struct Uploader {
     conflict_id: Arc<AtomicU64>,
     next_conflict: u64,
     debounce: Duration,
-    on_event: Box<dyn Fn(EditEvent) + Send + Sync>,
+    events: Arc<Mutex<EditEvents>>,
 }
 
 enum UploadRequest {
@@ -567,6 +775,13 @@ enum UploadRequest {
 }
 
 impl Uploader {
+    fn send(&self, event: EditEvent) {
+        self.events
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .send(event);
+    }
+
     async fn run(
         mut self,
         mut changed: mpsc::UnboundedReceiver<()>,
@@ -617,7 +832,7 @@ impl Uploader {
         }
         let target = self.target.clone();
         let mut writes = target.writes.lock().await;
-        (self.on_event)(EditEvent::Uploading);
+        self.send(EditEvent::Uploading);
         let remote = match target.revision(*writes).await {
             Ok(revision) => revision,
             Err(e) => {
@@ -643,7 +858,7 @@ impl Uploader {
                     .filter(|revision| revision.size == contents.len() as u64);
                 self.uploaded = contents;
                 self.conflict_id.store(0, Ordering::Relaxed);
-                (self.on_event)(EditEvent::Uploaded);
+                self.send(EditEvent::Uploaded);
             }
             Err(e) => self.upload_failed(&e.into(), overwrite),
         }
@@ -659,7 +874,7 @@ impl Uploader {
         if overwrite {
             self.conflict(Some(error.to_string()));
         } else {
-            (self.on_event)(EditEvent::UploadFailed {
+            self.send(EditEvent::UploadFailed {
                 reason: error.to_string(),
             });
         }
@@ -669,7 +884,7 @@ impl Uploader {
         self.next_conflict += 1;
         self.conflict_id
             .store(self.next_conflict, Ordering::Relaxed);
-        (self.on_event)(EditEvent::Conflict {
+        self.send(EditEvent::Conflict {
             conflict_id: self.next_conflict,
             reason,
         });

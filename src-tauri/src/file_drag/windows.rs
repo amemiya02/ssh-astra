@@ -39,7 +39,7 @@ use windows::Win32::UI::Shell::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{GetClientRect, GetCursorPos};
 
-use super::{PointerState, Report, Source};
+use super::{Handoff, PointerState, Report, Source};
 
 mod stream;
 use stream::{Cursor, FileStream};
@@ -52,6 +52,7 @@ pub(super) fn start(
     window: WebviewWindow,
     source: Arc<Source>,
     report: Arc<Report>,
+    handoff: Handoff,
 ) -> tauri::Result<()> {
     let owner = window.clone();
     // This task is queued to the UI STA after the WebView2 IPC handler returns.
@@ -59,14 +60,20 @@ pub(super) fn start(
         let result = owner
             .hwnd()
             .map_err(|error| FsError::Io(error.to_string()))
-            .and_then(|hwnd| run(hwnd, source, report.clone()).map_err(win_error));
+            .and_then(|hwnd| run(&owner, hwnd, source, report.clone(), handoff).map_err(win_error));
         if let Err(error) = result {
             report.finish(Err(error));
         }
     })
 }
 
-fn run(hwnd: HWND, source: Arc<Source>, report: Arc<Report>) -> Result<()> {
+fn run(
+    window: &WebviewWindow,
+    hwnd: HWND,
+    source: Arc<Source>,
+    report: Arc<Report>,
+    handoff: Handoff,
+) -> Result<()> {
     if DRAG.with(Cell::get) || physical_pointer(hwnd)? != PointerState::Outside {
         return Ok(());
     }
@@ -84,7 +91,7 @@ fn run(hwnd: HWND, source: Arc<Source>, report: Arc<Report>) -> Result<()> {
         },
         finished,
     )?;
-    if physical_pointer(hwnd)? != PointerState::Outside {
+    if physical_pointer(hwnd)? != PointerState::Outside || !handoff.claim(window, 0) {
         return Ok(());
     }
     let drop_source: IDropSource = DropSource {
@@ -96,6 +103,7 @@ fn run(hwnd: HWND, source: Arc<Source>, report: Arc<Report>) -> Result<()> {
     let mut effect = DROPEFFECT_NONE;
     #[cfg(feature = "e2e")]
     log::info!("file drag started OLE session");
+    handoff.started();
     let status = unsafe { DoDragDrop(&data, &drop_source, DROPEFFECT_COPY, &mut effect) };
     #[cfg(feature = "e2e")]
     log::info!(
@@ -105,7 +113,8 @@ fn run(hwnd: HWND, source: Arc<Source>, report: Arc<Report>) -> Result<()> {
     );
     drag.in_drag_loop.store(false, Ordering::Release);
     if status == DRAGDROP_S_DROP && effect.contains(DROPEFFECT_COPY) {
-        if !drag.extracting.load(Ordering::Acquire) && drag.read_started.load(Ordering::Acquire) {
+        if !drag.async_started.load(Ordering::Acquire) && drag.read_started.load(Ordering::Acquire)
+        {
             // A synchronous consumer finished its Drop call. A stream already handed
             // to the consumer remains valid independently of the IDataObject.
             drag.report.finish(Ok(true));
@@ -198,6 +207,7 @@ struct Drag {
     accepted: AtomicBool,
     in_drag_loop: AtomicBool,
     async_mode: AtomicBool,
+    async_started: AtomicBool,
     extracting: AtomicBool,
     read_started: AtomicBool,
     streams: Mutex<Vec<Weak<Mutex<Cursor>>>>,
@@ -214,6 +224,7 @@ impl Drag {
             accepted: AtomicBool::new(false),
             in_drag_loop: AtomicBool::new(true),
             async_mode: AtomicBool::new(true),
+            async_started: AtomicBool::new(false),
             extracting: AtomicBool::new(false),
             read_started: AtomicBool::new(false),
             streams: Mutex::default(),
@@ -382,10 +393,6 @@ impl IDataObject_Impl for DataObject_Impl {
         if requested == self.formats.contents {
             #[cfg(feature = "e2e")]
             log::info!("file drag OLE target requested a content stream");
-            if self.drag.accepted.load(Ordering::Acquire) && self.drag.source.length.is_none() {
-                // The target can complete an empty stream without calling Read.
-                self.drag.read_started.store(true, Ordering::Release);
-            }
             return Ok(STGMEDIUM {
                 tymed: TYMED_ISTREAM.0 as u32,
                 u: STGMEDIUM_0 {
@@ -479,6 +486,9 @@ impl IDataObjectAsyncCapability_Impl for DataObject_Impl {
         if !self.drag.accepted.load(Ordering::Acquire) {
             return Err(E_FAIL.into());
         }
+        if self.drag.async_started.swap(true, Ordering::AcqRel) {
+            return Err(E_FAIL.into());
+        }
         self.drag.extracting.store(true, Ordering::Release);
         #[cfg(feature = "e2e")]
         log::info!("file drag OLE asynchronous extraction began");
@@ -490,14 +500,17 @@ impl IDataObjectAsyncCapability_Impl for DataObject_Impl {
     }
 
     fn EndOperation(&self, status: HRESULT, _: Ref<IBindCtx>, effect: u32) -> Result<()> {
-        self.drag.extracting.store(false, Ordering::Release);
+        if !self.drag.extracting.swap(false, Ordering::AcqRel) {
+            return Err(E_FAIL.into());
+        }
         self.drag.stop_reading();
         #[cfg(feature = "e2e")]
         log::info!("file drag OLE asynchronous extraction ended");
-        let result: FsResult<bool> = status
-            .ok()
-            .map_err(win_error)
-            .map(|()| DROPEFFECT(effect).contains(DROPEFFECT_COPY) && status != S_FALSE);
+        let result: FsResult<bool> = status.ok().map_err(win_error).map(|()| {
+            DROPEFFECT(effect).contains(DROPEFFECT_COPY)
+                && status != S_FALSE
+                && self.drag.read_started.load(Ordering::Acquire)
+        });
         self.drag.report.finish(result);
         Ok(())
     }
@@ -566,6 +579,24 @@ mod tests {
     use std::io::Cursor;
 
     use super::*;
+
+    #[test]
+    fn unknown_size_stream_never_reports_an_empty_file_from_metadata() {
+        use windows::Win32::System::Com::{STATFLAG_NONAME, STATSTG};
+
+        let (sender, _) = tokio::sync::oneshot::channel();
+        let source = Arc::new(Source {
+            name: "unknown.bin".into(),
+            length: None,
+            modified: None,
+            open: Box::new(|_| panic!("metadata must not open the remote file")),
+        });
+        let (drag, _) = Drag::new(source, Arc::new(Report(Mutex::new(Some(sender)))));
+        let stream: IStream = FileStream::new(drag.clone(), 0).into();
+        let mut stat = STATSTG::default();
+        assert!(unsafe { stream.Stat(&mut stat, STATFLAG_NONAME) }.is_err());
+        assert!(!drag.read_started.load(Ordering::Acquire));
+    }
 
     #[test]
     fn ole_offers_metadata_on_hover_and_marshals_a_seekable_stream_after_release() {

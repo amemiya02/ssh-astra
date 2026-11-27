@@ -29,8 +29,13 @@ export function createTabActivity() {
     store.setState({ flashing: new Set() });
   }
 
+  function prepareSound(event: Event) {
+    if (event.isTrusted && getSetting(terminalSetting).bell === "sound") sound.prepare();
+  }
+
   return {
     store,
+    prepareSound,
     listen() {
       let mode = getSetting(terminalSetting).bell;
       const unwatch = watchSetting(terminalSetting, ({ bell }) => {
@@ -41,15 +46,10 @@ export function createTabActivity() {
         // Settings changes run synchronously inside the gesture that selects the option.
         if (bell === "sound") sound.prepare();
       });
-      const prepareSound = (event: Event) => {
-        if (event.isTrusted && mode === "sound") sound.prepare();
-      };
       window.addEventListener("click", prepareSound, true);
-      window.addEventListener("keydown", prepareSound, true);
       return () => {
         unwatch();
         window.removeEventListener("click", prepareSound, true);
-        window.removeEventListener("keydown", prepareSound, true);
         clearFlashes();
         sound.close();
       };

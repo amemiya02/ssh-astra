@@ -384,6 +384,7 @@ it("handles warm SSH links individually and uses Quick connect only after approv
   expect(dialog()).toBeNull();
   expect(invoke).toHaveBeenCalledWith("temporary_host_create", { target: second });
   expect(remoteOpenHostIds()).toEqual([expect.stringMatching(/^temporary-/)]);
+  expect(invoke).toHaveBeenCalledWith("remote_terminal_open", expect.objectContaining({ expectedTarget: second }));
 });
 
 it("opens each startup Host once and leaves a restored split's Host disconnected in layout-only mode", async () => {
@@ -697,6 +698,15 @@ it("opens the update dialog from the status bar and keeps the offer after Later"
   expect(dialog()).toBeNull();
   expect(downloadAndInstall).toHaveBeenCalledTimes(1);
   expect(relaunch).toHaveBeenCalledTimes(1);
+});
+
+it("counts Connections in other Windows before restarting", async () => {
+  enableDesktopWindow();
+  liveConnectionCount = 2;
+  offerUpdate();
+  await showUpdateNotice();
+  await clickButton("SSH Astra 1.2.3 is available");
+  expect(dialog()?.textContent).toContain("2 Connections");
 });
 
 it("counts live Connections, unfinished transfers, and running Port forwards before restarting", async () => {

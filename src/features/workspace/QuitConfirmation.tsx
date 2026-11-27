@@ -1,16 +1,19 @@
-import { invoke, isTauri } from "@tauri-apps/api/core";
+import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { quitApplication, tryCloseWindow, windowSettingsSaved } from "@/lib/ipc/windows";
+import { countLiveConnections, localizeQuitMenu, quitApplication, tryCloseWindow, windowSettingsSaved } from "@/lib/ipc/windows";
 import { flushSettings, getSetting } from "@/lib/storage";
 import { InterruptionList } from "./InterruptionList";
 import type { InterruptionCounts } from "./interruption-counts";
 import { workspaceSetting } from "./workspace-prefs";
 
-export function QuitConfirmation({ interruptions }: { interruptions: InterruptionCounts }) {
+export function QuitConfirmation({ interruptions, onWindowClosed }: {
+  interruptions: InterruptionCounts;
+  onWindowClosed(): void;
+}) {
   const { t } = useTranslation();
   const [connectionsAtQuit, setConnectionsAtQuit] = useState<number | null>(null);
   const checking = useRef(false);
@@ -30,11 +33,14 @@ export function QuitConfirmation({ interruptions }: { interruptions: Interruptio
     try {
       if (closeWindow) {
         await flushSettings();
-        if (!await tryCloseWindow()) return;
+        if (!await tryCloseWindow()) {
+          onWindowClosed();
+          return;
+        }
       }
       if (getSetting(workspaceSetting).confirmQuit) {
         // A transfer can hold a Connection after its last visible Terminal or File panel closes.
-        const live = await invoke<number>("quit_live_connection_count").catch((error: unknown) => {
+        const live = await countLiveConnections().catch((error: unknown) => {
           console.warn("Could not count live Connections before quitting", error);
         });
         const connections = live ?? interruptions.connections;
@@ -81,7 +87,7 @@ export function QuitConfirmation({ interruptions }: { interruptions: Interruptio
 
   useEffect(() => {
     if (isTauri()) {
-      void invoke("quit_menu_localize", { file: t("quit.menuFile"), quit: t("quit.menuQuit") })
+      void localizeQuitMenu(t("quit.menuFile"), t("quit.menuQuit"))
         .catch((error: unknown) => console.warn("Could not translate the quit menu", error));
     }
   }, [t]);

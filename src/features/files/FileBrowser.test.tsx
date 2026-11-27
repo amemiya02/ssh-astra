@@ -5,7 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { hostsStore } from "@/features/hosts/hostsStore";
 import { settingsPageSections } from "@/features/settings/sections";
 import { startI18n } from "@/i18n";
-import { dragFileOut, waitForFileDragExit, type FileEntry, type Listing } from "@/lib/ipc/files";
+import { dragFileOut, type FileEntry, type Listing } from "@/lib/ipc/files";
 import * as hostsIpc from "@/lib/ipc/hosts";
 import { pickOpenPath } from "@/lib/ipc/system";
 import { localStorageBackend, openSettings, setSetting, startSettings } from "@/lib/storage";
@@ -16,7 +16,6 @@ import { filesSetting } from "./file-prefs";
 
 vi.mock("@/lib/ipc/files", async (original) => ({
   ...(await original<typeof import("@/lib/ipc/files")>()),
-  waitForFileDragExit: vi.fn(() => Promise.resolve(false)),
   cancelFileDragExit: vi.fn(() => Promise.resolve()),
   dragFileOut: vi.fn(() => Promise.resolve(false)),
 }));
@@ -503,21 +502,25 @@ describe("FileBrowser", () => {
     );
     vi.useFakeTimers();
     vi.stubGlobal("__sshastraFilePromises", true);
-    let leftWindow: (outside: boolean) => void = () => {};
-    vi.mocked(waitForFileDragExit).mockImplementationOnce(() => new Promise((resolve) => { leftWindow = resolve; }));
+    let startNativeDrag: () => void = () => {};
+    let finishDrag: (copied: boolean) => void = () => {};
+    vi.mocked(dragFileOut).mockImplementationOnce((_file, _gesture, onStart) => {
+      startNativeDrag = onStart;
+      return new Promise((resolve) => { finishDrag = resolve; });
+    });
     try {
       act(() => pointer(file!, "pointerdown", 10, 36));
       act(() => pointer(document, "pointermove", 10, 46));
       act(() => pointer(folder!, "pointermove", 10, 10));
-      expect(dragFileOut).not.toHaveBeenCalled();
-
-      // WebKit can stop delivering pointer moves at the Window boundary.
-      await act(async () => leftWindow(true));
       expect(dragFileOut).toHaveBeenCalledExactlyOnceWith({
         id: 1, directory: "/move", name: "a.txt", size: 2048, modified: 1_704_164_645,
-      });
+      }, expect.any(Number), expect.any(Function));
+
+      // WebKit can stop delivering pointer moves at the Window boundary.
+      await act(async () => startNativeDrag());
       await act(async () => pointer(folder!, "pointerup", 10, 10));
       expect(api.renameFile).not.toHaveBeenCalled();
+      await act(async () => finishDrag(false));
     } finally {
       // The dnd-kit sensor deliberately keeps its click listener for one turn after cancellation.
       act(() => vi.advanceTimersByTime(50));

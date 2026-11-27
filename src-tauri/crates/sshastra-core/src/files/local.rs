@@ -121,6 +121,7 @@ impl LocalFs for DiskFs {
                     })?,
                     kind,
                     size,
+                    size_unknown: false,
                     modified,
                     permissions,
                     uid: None,

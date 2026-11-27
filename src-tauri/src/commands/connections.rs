@@ -34,20 +34,50 @@ pub async fn connect_host(
     host: &Host,
     prompter: Arc<dyn Prompter>,
 ) -> Result<Arc<Connection>, ConnectError> {
+    connect_saved(app, hops, host, prompter, None).await
+}
+
+async fn connect_saved(
+    app: &AppHandle,
+    hops: &[Host],
+    host: &Host,
+    prompter: Arc<dyn Prompter>,
+    approved: Option<&QuickConnectTarget>,
+) -> Result<Arc<Connection>, ConnectError> {
+    if approved.is_some_and(|target| !target.matches_host(host)) {
+        return Err(ConnectError::SshLinkTargetChanged);
+    }
+
     let connections = configured_connections(app);
     let connection = connections.connect_through(hops, host, prompter).await?;
+    // The manager may have waited for an older handshake in the same Host slot.
+    // Validate the transport that actually won before starting forwards or opening a PTY.
+    verify_connection(&connection, approved)?;
     let forwards = app.state::<ForwardsState>();
     let starts = app.state::<HostsState>().with(|store| {
-        Ok(store.get(&host.id).map(|saved| {
-            forwards
-                .forwarder
-                .start_auto(Arc::clone(&connection), saved)
-        }))
+        Ok(store
+            .get(&host.id)
+            .filter(|saved| approved.is_none_or(|target| target.matches_host(saved)))
+            .map(|saved| {
+                forwards
+                    .forwarder
+                    .start_auto(Arc::clone(&connection), saved)
+            }))
     });
     if let Ok(Some(starts)) = starts {
         starts.await;
     }
     Ok(connection)
+}
+
+fn verify_connection(
+    connection: &Connection,
+    approved: Option<&QuickConnectTarget>,
+) -> Result<(), ConnectError> {
+    if approved.is_some_and(|target| !connection.matches_target(target)) {
+        return Err(ConnectError::SshLinkTargetChanged);
+    }
+    Ok(())
 }
 
 fn os_detection_enabled(app: &AppHandle) -> bool {
@@ -198,15 +228,16 @@ pub(crate) enum HostRoute {
 }
 
 impl HostRoute {
-    pub fn lookup(app: &AppHandle, id: &HostId) -> CommandResult<Self> {
+    pub async fn lookup(app: &AppHandle, id: &HostId) -> CommandResult<Self> {
         if let Some(entry) = app
             .state::<TemporaryHosts>()
             .with(|entries| entries.get(id).cloned())
         {
             return Ok(Self::Temporary(entry));
         }
-        app.state::<HostsState>()
-            .with(|store| Ok(Self::Saved(store.jump_chain(id)?)))
+        let hosts = app.state::<HostsState>();
+        hosts.open_ssh().wait_for_startup().await;
+        hosts.with(|store| Ok(Self::Saved(store.jump_chain(id)?)))
     }
 
     pub fn host(&self) -> &Host {
@@ -220,20 +251,26 @@ impl HostRoute {
         &self,
         app: &AppHandle,
         prompter: Arc<dyn Prompter>,
+        approved: Option<&QuickConnectTarget>,
     ) -> Result<Arc<Connection>, ConnectError> {
         let hops = match self {
             Self::Saved(hops) => hops,
             Self::Temporary(entry) => match entry.saved.get() {
                 Some(hops) => hops,
                 None => {
-                    return configured_connections(app)
+                    if approved.is_some_and(|target| !target.matches_host(entry.host.host())) {
+                        return Err(ConnectError::SshLinkTargetChanged);
+                    }
+                    let connection = configured_connections(app)
                         .connect_temporary(&entry.host, prompter)
-                        .await
+                        .await?;
+                    verify_connection(&connection, approved)?;
+                    return Ok(connection);
                 }
             },
         };
         let (host, jumps) = hops.split_last().expect("a saved route has a target");
-        connect_host(app, jumps, host, prompter).await
+        connect_saved(app, jumps, host, prompter, approved).await
     }
 }
 
@@ -291,6 +328,7 @@ pub async fn host_connect(
     on_prompt: Channel<PromptRequest>,
 ) -> CommandResult<()> {
     let app = window.app_handle();
+    hosts.open_ssh().wait_for_startup().await;
     let mut hops = hosts.with(|store| Ok(store.jump_chain(&host_id)?))?;
     let host = hops.pop().expect("a jump chain ends with the Host itself");
     let prompter = Arc::new(ChannelPrompter::new(windows::prompts(&window)?, on_prompt));
@@ -310,6 +348,7 @@ pub async fn host_test_connection(
     on_prompt: Channel<PromptRequest>,
 ) -> CommandResult<()> {
     let app = window.app_handle();
+    hosts.open_ssh().wait_for_startup().await;
     let mut hops = hosts.with(|store| Ok(store.draft_jump_chain(id, draft)?))?;
     let host = hops.pop().expect("a jump chain ends with the draft Host");
     let prompter = Arc::new(ChannelPrompter::new(windows::prompts(&window)?, on_prompt));

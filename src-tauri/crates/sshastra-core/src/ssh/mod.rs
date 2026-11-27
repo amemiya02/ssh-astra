@@ -297,6 +297,8 @@ pub enum ConnectError {
     /// and none is configured or in the agent).
     #[error("no usable authentication method (the server accepts: {})", methods.join(", "))]
     NoSupportedMethod { methods: Vec<String> },
+    #[error("the approved SSH destination does not match the Connection target")]
+    SshLinkTargetChanged,
     #[error("cancelled")]
     Cancelled,
     #[error("SSH error: {0}")]
@@ -338,6 +340,7 @@ impl ConnectError {
             Self::KeyRejected { .. } => "keyRejected",
             Self::AgentKeysRejected => "agentKeysRejected",
             Self::NoSupportedMethod { .. } => "noSupportedMethod",
+            Self::SshLinkTargetChanged => "sshLinkTargetChanged",
             Self::Cancelled => "cancelled",
             Self::Protocol(_) => "protocol",
             Self::JumpHost { source, .. } => source.log_kind(),
@@ -409,6 +412,16 @@ pub struct QuickConnectTarget {
     pub address: String,
     pub port: u16,
     pub user: Option<String>,
+}
+
+impl QuickConnectTarget {
+    fn matches(&self, address: &str, port: u16, user: &str) -> bool {
+        self.address == address && self.port == port && self.user.as_deref() == Some(user)
+    }
+
+    pub fn matches_host(&self, host: &Host) -> bool {
+        self.matches(&host.address, host.port, &host.user)
+    }
 }
 
 /// Ephemeral connection settings and key trust, held while their tabs are open.
@@ -1050,6 +1063,7 @@ impl ConnectionManager {
             endpoint,
             routes,
             agent_forwarding,
+            authenticated_user: host.user.clone(),
             file_namespace,
             reconnect_failure_reported: Arc::default(),
             _proxy_command: None,
@@ -1099,6 +1113,7 @@ pub struct Connection {
     handle: Handle<ClientHandler>,
     keepalive_rtt: Option<watch::Receiver<Option<Duration>>>,
     endpoint: Arc<Endpoint>,
+    authenticated_user: String,
     file_namespace: String,
     /// Ports the server listens on for us, and who gets their connections.
     routes: Routes,
@@ -1119,6 +1134,15 @@ impl std::fmt::Debug for Connection {
 }
 
 impl Connection {
+    /// Compares the requested destination with the settings used to authenticate this transport.
+    pub fn matches_target(&self, target: &QuickConnectTarget) -> bool {
+        target.matches(
+            &self.endpoint.address,
+            self.endpoint.port,
+            &self.authenticated_user,
+        )
+    }
+
     /// The most recent scheduled keepalive's round-trip time and future updates.
     /// Returns no stream when keepalives are disabled for this Connection.
     pub fn watch_keepalive_rtt(&self) -> Option<watch::Receiver<Option<Duration>>> {

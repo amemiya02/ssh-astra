@@ -14,7 +14,8 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use sshastra_core::edit::{
-    EditError, EditEvent, OpenEditOptions, Opener, RemoteEditor, MAX_EDIT_SIZE,
+    EditError, EditEvent, EditOwner, EditSubscription, OpenEditOptions, Opener, RemoteEditor,
+    MAX_EDIT_SIZE,
 };
 use sshastra_core::files::{
     FileEntry, FileKind, FileReader, FileStat, FileWriter, FsError, FsResult, RemoteFs,
@@ -706,6 +707,81 @@ async fn opening_a_file_that_is_already_open_shows_the_same_edit_again() {
     let local = s.editor.local_path(first).unwrap();
     assert_eq!(std::fs::read_to_string(&local).unwrap(), "unsaved upload\n");
     assert_eq!(*s.opener.opened.lock().unwrap(), [local.clone(), local]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_shared_edit_replays_conflicts_and_survives_the_first_owner_closing() {
+    let s = setup();
+    let path = "/etc/app.conf";
+    let fs = FakeFs::with(path, "original");
+    let first_owner = EditOwner::default();
+    let second_owner = EditOwner::default();
+    let unrelated = EditOwner::default();
+    let (first_sink, mut first_events) = events();
+    let first = s
+        .editor
+        .open_subscribed(
+            fs.clone(),
+            &host(),
+            path,
+            OpenEditOptions::default(),
+            EditSubscription::new(&first_owner, first_sink),
+        )
+        .await
+        .unwrap();
+    let local = s.editor.local_path(first.id).unwrap();
+
+    fs.change_remote(path, "remote", Some(2));
+    save(&local, "local work").await;
+    assert_eq!(next(&mut first_events).await, EditEvent::Uploading);
+    let conflict = next(&mut first_events).await;
+    let EditEvent::Conflict { conflict_id, .. } = conflict else {
+        panic!("expected a conflict");
+    };
+    assert_eq!(
+        s.editor.overwrite_owned(first.id, conflict_id, &unrelated),
+        Err(EditError::NotOpen)
+    );
+
+    let (second_sink, mut second_events) = events();
+    let second = s
+        .editor
+        .open_subscribed(
+            fs.clone(),
+            &host(),
+            path,
+            OpenEditOptions::default(),
+            EditSubscription::new(&second_owner, second_sink),
+        )
+        .await
+        .unwrap();
+    assert_eq!(first.id, second.id);
+    assert_eq!(next(&mut second_events).await, conflict);
+    s.editor.close_owner(&first_owner);
+    assert!(local.exists());
+    assert!(first_events.recv().await.is_none());
+
+    s.editor
+        .overwrite_owned(second.id, conflict_id, &second_owner)
+        .unwrap();
+    assert_eq!(next(&mut second_events).await, EditEvent::Uploading);
+    assert_eq!(next(&mut second_events).await, EditEvent::Uploaded);
+    assert_eq!(fs.contents(path), "local work");
+    s.editor.release(second.id, &second_owner);
+    assert!(!local.exists());
+
+    assert!(matches!(
+        s.editor
+            .open_subscribed(
+                fs,
+                &host(),
+                path,
+                OpenEditOptions::default(),
+                EditSubscription::new(&first_owner, |_| {}),
+            )
+            .await,
+        Err(EditError::NotOpen)
+    ));
 }
 
 #[tokio::test(flavor = "multi_thread")]

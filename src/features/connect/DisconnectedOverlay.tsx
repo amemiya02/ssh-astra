@@ -33,7 +33,11 @@ export function DisconnectedOverlay({ host, state, steps, onReconnect }: Props) 
               {t("connect.lost.reconnecting", { attempt: state.attempt, attempts: state.attempts })}
             </p>
           ) : (
-            <p className="text-muted-foreground text-xs break-all">{state.reason || t("connect.lost.failed")}</p>
+            <p className="text-muted-foreground text-xs break-all">
+              {state.kind === "sshLinkTargetChanged"
+                ? t("connect.errors.sshLinkTargetChanged")
+                : state.reason || t("connect.lost.failed")}
+            </p>
           )}
         </div>
         {state.state === "disconnected" && (

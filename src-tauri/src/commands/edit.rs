@@ -5,15 +5,19 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde::Deserialize;
-use sshastra_core::edit::{EditEvent, EditId, OpenEditOptions, OpenedEdit, Opener, RemoteEditor};
+use sshastra_core::edit::{
+    EditEvent, EditId, EditOwner, EditSubscription, OpenEditOptions, OpenedEdit, Opener,
+    RemoteEditor,
+};
 use sshastra_core::files::LiveHostFs;
 use sshastra_core::hosts::HostId;
 use tauri::ipc::Channel;
-use tauri::{AppHandle, State};
+use tauri::{Manager, State, WebviewWindow};
 
 use super::files::live_sftp;
 use super::settings::SettingsState;
 use crate::error::CommandResult;
+use crate::windows;
 
 #[derive(Default, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -118,6 +122,10 @@ fn open_application(path: &Path, application: &Path) -> Result<(), String> {
     open_with_plugin(path, application)
 }
 
+fn edit_owner(window: &WebviewWindow) -> CommandResult<Arc<EditOwner>> {
+    windows::with_resources(window, |resources| Arc::clone(&resources.edits))
+}
+
 /// Downloads `path` from `host_id` over its live Connection and opens it in
 /// the chosen or default application. Upload and conflict events go to `on_event`. Opening a
 /// file that is already open shows it again and returns the same id. Only
@@ -125,7 +133,7 @@ fn open_application(path: &Path, application: &Path) -> Result<(), String> {
 /// fails with `binary` unless `allow_binary`.
 #[tauri::command]
 pub async fn edit_open(
-    app: AppHandle,
+    window: WebviewWindow,
     editor: State<'_, RemoteEditor>,
     settings: State<'_, SettingsState>,
     host_id: HostId,
@@ -135,57 +143,77 @@ pub async fn edit_open(
 ) -> CommandResult<OpenedEdit> {
     // An edit outlives File panel sessions and Connections: each save goes
     // over whatever Connection the Host has then.
-    let fs = Arc::new(LiveHostFs::new(live_sftp(app, host_id.clone())));
+    let owner = edit_owner(&window)?;
+    let fs = Arc::new(LiveHostFs::new(live_sftp(
+        window.app_handle().clone(),
+        host_id.clone(),
+    )));
     let files = files_settings(&settings);
     let options = OpenEditOptions {
         allow_binary,
         application: files.remote_edit_application.as_deref(),
     };
     Ok(editor
-        .open_with(fs, &host_id, &path, options, send_events(on_event))
+        .open_subscribed(
+            fs,
+            &host_id,
+            &path,
+            options,
+            EditSubscription::new(&owner, send_events(on_event)),
+        )
         .await?)
 }
 
 /// Opens the current remote version alongside a conflicted edit, using the same editor preference.
 #[tauri::command]
 pub async fn edit_open_conflict_copy(
+    window: WebviewWindow,
     editor: State<'_, RemoteEditor>,
     settings: State<'_, SettingsState>,
     id: EditId,
     conflict_id: u64,
     on_event: Channel<EditEvent>,
 ) -> CommandResult<OpenedEdit> {
+    let owner = edit_owner(&window)?;
     let files = files_settings(&settings);
     Ok(editor
-        .open_conflict_copy(
+        .open_conflict_copy_subscribed(
             id,
             conflict_id,
             files.remote_edit_application.as_deref(),
-            send_events(on_event),
+            EditSubscription::new(&owner, send_events(on_event)),
         )
         .await?)
 }
 
 #[tauri::command]
 pub fn edit_overwrite(
+    window: WebviewWindow,
     editor: State<'_, RemoteEditor>,
     id: EditId,
     conflict_id: u64,
 ) -> CommandResult<()> {
-    Ok(editor.overwrite(id, conflict_id)?)
+    let owner = edit_owner(&window)?;
+    Ok(editor.overwrite_owned(id, conflict_id, &owner)?)
 }
 
 /// Uploads the edit's temp file now (after a failed upload).
 #[tauri::command]
-pub fn edit_retry(editor: State<'_, RemoteEditor>, id: EditId) -> CommandResult<()> {
-    Ok(editor.retry(id)?)
+pub fn edit_retry(
+    window: WebviewWindow,
+    editor: State<'_, RemoteEditor>,
+    id: EditId,
+) -> CommandResult<()> {
+    let owner = edit_owner(&window)?;
+    Ok(editor.retry_owned(id, &owner)?)
 }
 
-/// Stops uploading and deletes the temp file; closing one that is already
-/// gone is fine.
+/// Releases this Window's lease. The last lease stops uploads and deletes the temp file.
 #[tauri::command]
-pub fn edit_close(editor: State<'_, RemoteEditor>, id: EditId) {
-    editor.close(id);
+pub fn edit_close(window: WebviewWindow, editor: State<'_, RemoteEditor>, id: EditId) {
+    if let Ok(owner) = edit_owner(&window) {
+        editor.release(id, &owner);
+    }
 }
 
 #[cfg(test)]

@@ -419,6 +419,12 @@ export function shortcutLabels(name: ShortcutName, source: ResolvedShortcuts): s
   return source.bindings.filter((b) => b.name === name).map((b) => chordLabel(b, source.platform));
 }
 
+export function operatingSystem(): "mac" | "windows" | "other" {
+  const agent = typeof navigator !== "undefined" ? navigator.userAgent : "";
+  if (/Mac|iPhone|iPad/.test(agent)) return "mac";
+  return /Windows/.test(agent) ? "windows" : "other";
+}
+
 export function currentPlatform(): Platform {
-  return typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent) ? "mac" : "other";
+  return operatingSystem() === "mac" ? "mac" : "other";
 }

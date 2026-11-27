@@ -11,7 +11,10 @@ use sshastra_core::files::{FileReader, FsError, FsId, FsResult};
 use sshastra_core::ssh::BoxFuture;
 use tokio::io::AsyncReadExt;
 #[cfg(any(windows, target_os = "macos"))]
-use tokio::sync::oneshot;
+use {
+    tauri::{ipc::Channel, WebviewWindow},
+    tokio::sync::oneshot,
+};
 
 #[cfg(target_os = "macos")]
 mod macos;
@@ -28,7 +31,7 @@ pub struct FilePromise {
     pub id: FsId,
     directory: String,
     name: String,
-    size: u64,
+    size: Option<u64>,
     modified: Option<u64>,
 }
 
@@ -91,7 +94,7 @@ type OpenReader = dyn Fn(u64) -> BoxFuture<'static, FsResult<FileReader>> + Send
 
 struct Source {
     name: String,
-    // SFTP listings represent a missing size as zero, which may also be an empty file.
+    // A missing SFTP size is distinct from a known empty file.
     length: Option<u64>,
     #[cfg(windows)]
     modified: Option<u64>,
@@ -185,6 +188,10 @@ impl GestureWatch {
         true
     }
 
+    pub(crate) fn claim(&mut self, gesture: u64) -> bool {
+        self.latest == gesture && self.stop.take().is_some()
+    }
+
     pub(crate) fn stop(&mut self, gesture: u64) {
         // A late cancel from a superseded web gesture cannot stop the new one.
         if gesture >= self.latest {
@@ -197,7 +204,7 @@ impl GestureWatch {
 /// A native view may stop delivering pointer moves to its page at the window
 /// boundary. Track the physical mouse while the page's drag sensor is active.
 #[cfg(any(windows, target_os = "macos"))]
-pub(crate) async fn wait_for_exit(window: tauri::WebviewWindow) -> bool {
+pub(crate) async fn wait_for_exit(window: WebviewWindow) -> Option<isize> {
     let mut down = None;
     #[cfg(feature = "e2e")]
     log::info!("file drag is watching the native pointer");
@@ -209,17 +216,17 @@ pub(crate) async fn wait_for_exit(window: tauri::WebviewWindow) -> bool {
         let Some((gesture, state)) = sample else {
             #[cfg(feature = "e2e")]
             log::info!("file drag native gesture ended before handoff");
-            return false;
+            return None;
         };
         if *down.get_or_insert(gesture) != gesture {
-            return false;
+            return None;
         }
         match state {
-            PointerState::Released => return false,
+            PointerState::Released => return None,
             PointerState::Outside => {
                 #[cfg(feature = "e2e")]
                 log::info!("file drag native pointer left the Window");
-                return true;
+                return Some(gesture);
             }
             PointerState::Inside => tokio::time::sleep(std::time::Duration::from_millis(20)).await,
         }
@@ -227,13 +234,36 @@ pub(crate) async fn wait_for_exit(window: tauri::WebviewWindow) -> bool {
 }
 
 #[cfg(any(windows, target_os = "macos"))]
+pub(crate) struct Handoff {
+    pub web_gesture: u64,
+    pub native_gesture: isize,
+    pub on_start: Channel<()>,
+}
+
+#[cfg(any(windows, target_os = "macos"))]
+impl Handoff {
+    fn claim(&self, window: &WebviewWindow, native_gesture: isize) -> bool {
+        native_gesture == self.native_gesture
+            && crate::windows::with_resources(window, |resources| {
+                resources.file_drag_watch.claim(self.web_gesture)
+            })
+            .unwrap_or(false)
+    }
+
+    fn started(&self) {
+        let _ = self.on_start.send(());
+    }
+}
+
+#[cfg(any(windows, target_os = "macos"))]
 pub(crate) async fn start(
-    window: tauri::WebviewWindow,
+    window: WebviewWindow,
     file: FilePromise,
     fs: Arc<SftpFs>,
+    handoff: Handoff,
 ) -> crate::error::CommandResult<bool> {
     let path = Arc::<str>::from(file.path(cfg!(windows))?);
-    let length = (file.size != 0).then_some(file.size);
+    let length = file.size;
     let modified = file.modified;
     let session = Session(Some(fs));
     let source = Arc::new(Source {
@@ -253,9 +283,9 @@ pub(crate) async fn start(
     let (sender, done) = oneshot::channel();
     let report = Arc::new(Report(Mutex::new(Some(sender))));
     #[cfg(target_os = "macos")]
-    let started = macos::start(window, source, report);
+    let started = macos::start(window, source, report, handoff);
     #[cfg(windows)]
-    let started = windows::start(window, source, report);
+    let started = windows::start(window, source, report, handoff);
     started.map_err(|error| FsError::Io(error.to_string()))?;
     Ok(done.await.unwrap_or(Ok(false))?)
 }
@@ -289,6 +319,21 @@ mod tests {
         sync::atomic::{AtomicUsize, Ordering},
     };
 
+    #[cfg(any(windows, target_os = "macos"))]
+    #[test]
+    fn a_superseded_or_cancelled_gesture_cannot_claim_the_native_drag() {
+        let mut watch = GestureWatch::default();
+        assert!(watch.start(10, oneshot::channel().0));
+        assert!(watch.start(11, oneshot::channel().0));
+        assert!(!watch.claim(10));
+        watch.stop(10);
+        assert!(watch.claim(11));
+        assert!(!watch.claim(11));
+        assert!(watch.start(12, oneshot::channel().0));
+        watch.stop(12);
+        assert!(!watch.claim(12));
+    }
+
     #[test]
     fn rejects_path_syntax_and_windows_devices_but_keeps_unicode() {
         for name in ["../file", "a/b", "a\\b", "..", "a:b", "a\0b"] {
@@ -302,13 +347,13 @@ mod tests {
             id: serde_json::from_str("1").unwrap(),
             directory: "/home/me".into(),
             name: "資料.txt".into(),
-            size: 0,
+            size: Some(0),
             modified: None,
         };
         assert_eq!(file.path(true), Ok("/home/me/資料.txt".into()));
         assert_eq!(
             (file.id, file.size, file.modified),
-            (serde_json::from_str("1").unwrap(), 0, None)
+            (serde_json::from_str("1").unwrap(), Some(0), None)
         );
     }
 

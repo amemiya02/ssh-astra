@@ -1,5 +1,8 @@
 //! App-local desktop notifications, with native window activation on a click.
 
+use serde::Deserialize;
+use serde_json::Value;
+use std::sync::LazyLock;
 #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
 use tauri::AppHandle;
 use tauri::{Manager, WebviewWindow};
@@ -53,6 +56,10 @@ pub async fn notification_request_attention(window: WebviewWindow) {
 
 #[tauri::command]
 pub async fn notification_show(window: WebviewWindow, title: String, body: String) {
+    show_in_background(window, title, body);
+}
+
+pub(super) fn show_in_background(window: WebviewWindow, title: String, body: String) {
     // Never put notifications on a desktop running the automated E2E smoke tests.
     if cfg!(feature = "e2e") || !is_background(&window) {
         return;
@@ -87,4 +94,61 @@ fn show(
 #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 fn show(_: WebviewWindow, _: String, _: String) -> Result<(), &'static str> {
     Ok(())
+}
+
+/// The same locale identifiers and strings used by the Interface language setting.
+#[derive(Clone, Copy, Default, Deserialize)]
+pub(crate) enum NotificationLocale {
+    #[default]
+    #[serde(rename = "en")]
+    English,
+    #[serde(rename = "zh")]
+    SimplifiedChinese,
+    #[serde(rename = "zh-Hant")]
+    TraditionalChinese,
+}
+
+impl NotificationLocale {
+    pub(super) fn named(name: &str) -> Option<Self> {
+        match name {
+            "en" => Some(Self::English),
+            "zh" => Some(Self::SimplifiedChinese),
+            "zh-Hant" => Some(Self::TraditionalChinese),
+            _ => None,
+        }
+    }
+
+    pub(super) fn transfer_batch(
+        self,
+        completed: usize,
+        failed: usize,
+        cancelled: usize,
+    ) -> (String, String) {
+        static EN: LazyLock<Value> =
+            LazyLock::new(|| locale(include_str!("../../../src/i18n/locales/en.json")));
+        static ZH: LazyLock<Value> =
+            LazyLock::new(|| locale(include_str!("../../../src/i18n/locales/zh.json")));
+        static ZH_HANT: LazyLock<Value> =
+            LazyLock::new(|| locale(include_str!("../../../src/i18n/locales/zh-Hant.json")));
+        let localized = match self {
+            Self::English => &*EN,
+            Self::SimplifiedChinese => &*ZH,
+            Self::TraditionalChinese => &*ZH_HANT,
+        };
+        let title = localized["title"]
+            .as_str()
+            .expect("transfer notification title");
+        let body = localized["body"]
+            .as_str()
+            .expect("transfer notification body")
+            .replace("{{completed}}", &completed.to_string())
+            .replace("{{failed}}", &failed.to_string())
+            .replace("{{cancelled}}", &cancelled.to_string());
+        (title.to_owned(), body)
+    }
+}
+
+fn locale(source: &str) -> Value {
+    let mut messages: Value = serde_json::from_str(source).expect("bundled UI messages are JSON");
+    messages["notifications"]["transfers"].take()
 }

@@ -248,10 +248,10 @@ export function App({ initialTabs, startupTabsAcrossWindows, incomingMove }: {
     }
   }, [initialTabs, openRemoteTerminal, startupTabsAcrossWindows]);
   const [quickConnectFailed, setQuickConnectFailed] = useState(false);
-  const openQuickConnect = useCallback(async (target: QuickConnectTarget) => {
+  const openQuickConnect = useCallback(async (target: QuickConnectTarget, approved?: SshLinkTarget) => {
     setQuickConnectFailed(false);
     try {
-      openRemoteTerminal(await createTemporaryHost(target));
+      openRemoteTerminal(await createTemporaryHost(target), undefined, approved);
     } catch {
       setQuickConnectFailed(true);
     }
@@ -448,7 +448,7 @@ export function App({ initialTabs, startupTabsAcrossWindows, incomingMove }: {
       }
     }
   }
-  const shortcutCapture = useWorkspaceShortcuts(platform, runWorkspaceCommand);
+  const shortcutCapture = useWorkspaceShortcuts(platform, runWorkspaceCommand, tabActivity.prepareSound);
 
   const hosts = useHosts((s) => s.tree.hosts);
   const forwardStates = useForwards((s) => s.states);
@@ -645,7 +645,7 @@ export function App({ initialTabs, startupTabsAcrossWindows, incomingMove }: {
       <ConflictDialog />
       <SshLinkConfirmation onConnect={(target, host) => {
         if (host) openRemoteTerminal(host, undefined, target);
-        else void openQuickConnect(target);
+        else void openQuickConnect(target, target);
       }} />
       {pendingClose && (
         <CloseTerminalsDialog
@@ -700,7 +700,7 @@ export function App({ initialTabs, startupTabsAcrossWindows, incomingMove }: {
         onActivateTab={activateTab}
       />
       <AgentReviewDialog />
-      <QuitConfirmation interruptions={interruptions} />
+      <QuitConfirmation interruptions={interruptions} onWindowClosed={broadcast.stop} />
     </ShortcutCaptureContext.Provider>
   );
 }

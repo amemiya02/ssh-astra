@@ -154,6 +154,7 @@ impl<F: Fn() -> Vec<OpenTerminal> + Send + Sync> AgentBackend for TestBackend<F>
                     name: format!("entry-{i}{suffix}"),
                     kind: FileKind::File,
                     size: 19,
+                    size_unknown: false,
                     modified: None,
                     permissions: None,
                     uid: None,

@@ -382,8 +382,6 @@ pub fn run() {
             commands::files::files_local_open_path,
             commands::files::files_list,
             #[cfg(any(windows, target_os = "macos"))]
-            commands::files::files_wait_for_drag_exit,
-            #[cfg(any(windows, target_os = "macos"))]
             commands::files::files_cancel_drag_exit,
             #[cfg(any(windows, target_os = "macos"))]
             commands::files::files_drag_out,

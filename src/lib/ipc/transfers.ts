@@ -2,6 +2,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { e2eHooks } from "@/lib/e2e";
+import { resolveLanguage } from "@/i18n/language";
 import { isTemporaryHost, type Host, type HostId } from "./hosts";
 
 /** Mirrors `sshastra_core::files::TransferId`. */
@@ -58,7 +59,8 @@ export type ConflictAnswer = "overwrite" | "skip" | "overwriteAll" | "skipAll";
  * resolves with every transfer now. One watcher at a time: a new call replaces the old.
  */
 export function watchTransfers(onEvent: (transfer: Transfer) => void): Promise<Transfer[]> {
-  return invoke<Transfer[]>("transfers_watch", { onEvent: new Channel<Transfer>(onEvent) });
+  const systemLocale = resolveLanguage(navigator.languages ?? [navigator.language]);
+  return invoke<Transfer[]>("transfers_watch", { onEvent: new Channel<Transfer>(onEvent), systemLocale });
 }
 
 /** Queues uploading local files or folders into `remoteDir` over the Host's live Connection. */

@@ -309,6 +309,7 @@ async fn after_the_retries_fail_only_a_manual_reconnect_brings_it_back() {
     let ConnectionState::Disconnected {
         reason,
         report_reconnect_failure,
+        ..
     } = events.state(EVENT_WAIT).await
     else {
         panic!("expected Disconnected after the last retry");

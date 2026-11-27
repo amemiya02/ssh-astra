@@ -92,6 +92,7 @@ pub async fn forward_start(
     on_prompt: Channel<PromptRequest>,
 ) -> CommandResult<()> {
     let app = window.app_handle();
+    hosts.open_ssh().wait_for_startup().await;
     let mut hops = hosts.with(|store| {
         let hops = store.jump_chain(&host_id)?;
         if !hops

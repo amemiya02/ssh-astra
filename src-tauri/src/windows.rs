@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use sshastra_core::edit::{EditOwner, RemoteEditor};
 use sshastra_core::files::{FsId, FsRegistry};
 use sshastra_core::hosts::HostId;
 use sshastra_core::settings::SettingsStore;
@@ -142,6 +143,7 @@ pub(crate) struct Windows {
 #[derive(Default)]
 pub(crate) struct WindowResources {
     pub(crate) terminals: HashMap<TerminalId, Arc<TerminalRoute>>,
+    pub(crate) edits: Arc<EditOwner>,
     /// Remote entries refer to the same SFTP session as the File panel's registry entry.
     pub(crate) files: HashMap<FsId, Option<std::sync::Weak<sshastra_core::files::SftpFs>>>,
     #[cfg(any(windows, target_os = "macos"))]
@@ -524,6 +526,7 @@ pub(crate) fn destroyed(app: &AppHandle, label: &str) {
         }
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
+            app.state::<RemoteEditor>().close_owner(&resources.edits);
             let terminals = app.state::<TerminalRegistry>();
             for id in resources.terminals.into_keys() {
                 let _ = terminals.close(id);

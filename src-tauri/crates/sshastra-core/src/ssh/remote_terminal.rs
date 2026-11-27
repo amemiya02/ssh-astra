@@ -780,15 +780,20 @@ impl Runner {
                 }
                 delay = delay.saturating_mul(2);
             }
-            let (reason, connection_failed, eligible) = failure.map_or_else(
-                || (String::new(), false, false),
-                |(e, connection_failed)| (e.to_string(), connection_failed, is_transient(&e)),
+            let (reason, kind, connection_failed, eligible) = failure.map_or_else(
+                || (String::new(), None, false, false),
+                |(e, connection_failed)| {
+                    let kind =
+                        matches!(e, ConnectError::SshLinkTargetChanged).then(|| e.log_kind());
+                    (e.to_string(), kind, connection_failed, is_transient(&e))
+                },
             );
             let report_reconnect_failure =
                 connection_failed && !reported.swap(true, Ordering::Relaxed);
             self.retry_on_focus_or_wake.send_replace(eligible);
             self.report(ConnectionState::Disconnected {
                 reason,
+                kind,
                 report_reconnect_failure,
             });
             self.wait_for_reconnect(eligible).await?;

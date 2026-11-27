@@ -64,6 +64,9 @@ pub struct FileEntry {
     pub name: String,
     pub kind: FileKind,
     pub size: u64,
+    /// SFTP omitted the size. Display and count paths continue to use zero.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub size_unknown: bool,
     pub modified: Option<u64>,
     pub permissions: Option<u32>,
     pub uid: Option<u32>,
