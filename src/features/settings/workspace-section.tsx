@@ -1,20 +1,24 @@
+import { useContext } from "react";
 import { useTranslation } from "react-i18next";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { restoreTabsOptions, tabOrientations, workspaceSetting } from "@/features/workspace/workspace-prefs";
 import { useSetting } from "@/lib/storage";
 import { SettingRow } from "./SettingRow";
+import { settingRows } from "./setting-rows";
+import { SettingsViewContext } from "./settings-view";
 
 export function WorkspaceSection() {
   const { t } = useTranslation();
   const [prefs, setPrefs] = useSetting(workspaceSetting);
-  const restoreLabel = t("settings.restoreTabs.label");
-  const orientationLabel = t("settings.tabOrientation.label");
-  const groupTabsLabel = t("settings.groupTabsByHost.label");
-  const confirmCloseLabel = t("settings.confirmClose.label");
+  const searching = useContext(SettingsViewContext)?.searching ?? false;
+  const restoreLabel = t(settingRows.restoreTabs.title);
+  const orientationLabel = t(settingRows.tabOrientation.title);
+  const groupTabsLabel = t(settingRows.groupTabsByHost.title);
+  const confirmCloseLabel = t(settingRows.confirmClose.title);
 
   return (
     <>
-      <SettingRow label={orientationLabel} description={t("settings.tabOrientation.description")}>
+      <SettingRow setting={settingRows.tabOrientation}>
         <SegmentedControl
           label={orientationLabel}
           value={prefs.tabOrientation}
@@ -23,7 +27,7 @@ export function WorkspaceSection() {
         />
       </SettingRow>
       {prefs.tabOrientation === "vertical" && (
-        <SettingRow label={groupTabsLabel} description={t("settings.groupTabsByHost.description")}>
+        <SettingRow setting={settingRows.groupTabsByHost}>
           <SegmentedControl
             label={groupTabsLabel}
             value={prefs.groupTabsByHost ? "on" : "off"}
@@ -35,7 +39,10 @@ export function WorkspaceSection() {
           />
         </SettingRow>
       )}
-      <SettingRow label={restoreLabel} description={t("settings.restoreTabs.description")}>
+      {prefs.tabOrientation === "horizontal" && searching && (
+        <SettingRow setting={settingRows.groupTabsByHost} description={t("settings.groupTabsRequiresVertical")} />
+      )}
+      <SettingRow setting={settingRows.restoreTabs}>
         <SegmentedControl
           label={restoreLabel}
           value={prefs.restoreTabs}
@@ -43,7 +50,7 @@ export function WorkspaceSection() {
           onChange={(restoreTabs) => setPrefs({ ...prefs, restoreTabs })}
         />
       </SettingRow>
-      <SettingRow label={confirmCloseLabel} description={t("settings.confirmClose.description")}>
+      <SettingRow setting={settingRows.confirmClose}>
         <SegmentedControl
           label={confirmCloseLabel}
           value={prefs.confirmClose ? "on" : "off"}

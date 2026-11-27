@@ -696,13 +696,17 @@
     "title": "Settings",
     "lead": "Changes apply right away and are kept after a restart.",
     "open": "Settings",
+    "search": {
+      "categories": "Settings categories",
+      "placeholder": "Search settings",
+      "clear": "Clear settings search",
+      "noResults": "No matching settings."
+    },
     "sections": {
-      "workspace": "Workspace",
       "appearance": "Appearance",
       "terminal": "Terminal",
       "files": "Files",
       "connection": "Connection",
-      "language": "Language",
       "transfers": "Transfers",
       "updates": "Updates",
       "diagnostics": "Diagnostics"
@@ -723,6 +727,7 @@
       "label": "Group tabs by Host",
       "description": "Show multiple tabs for the same Host in a collapsible group."
     },
+    "groupTabsRequiresVertical": "Choose Vertical under Tab orientation to use this setting.",
     "restoreTabs": {
       "label": "Restore tabs",
       "description": "Choose what happens to your tabs and panes the next time SSH Astra starts.",
@@ -737,6 +742,7 @@
         "label": "Follow system appearance",
         "description": "Switch between a light and a dark theme with your computer's setting."
       },
+      "gallery": "Theme gallery",
       "lightGroup": "Light themes",
       "darkGroup": "Dark themes",
       "usedWhenLight": "Used when your computer is light",
