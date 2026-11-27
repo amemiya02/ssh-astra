@@ -1330,8 +1330,10 @@ async fn an_unreachable_second_jump_host_is_named_in_the_error() {
 
 #[tokio::test]
 async fn resource_panel_samples_and_stops_its_process_when_hidden() {
-    use sshastra_core::monitor::{watch_resources, ResourceEvent, ResourceSnapshot};
-    use tokio::sync::{mpsc, oneshot};
+    use sshastra_core::monitor::{
+        watch_resources, ResourceEvent, ResourceInterval, ResourceSnapshot,
+    };
+    use tokio::sync::{mpsc, oneshot, watch};
 
     let Some(sshd) = support::sshd(Service::Ssh) else {
         return;
@@ -1351,10 +1353,11 @@ async fn resource_panel_samples_and_stops_its_process_when_hidden() {
     done
     true"#;
     let (stop, stopped) = oneshot::channel();
+    let (set_interval, interval) = watch::channel(ResourceInterval::default());
     let (events, mut snapshots) = mpsc::unbounded_channel();
     let live = Arc::clone(&connection);
     let task = tokio::spawn(async move {
-        watch_resources(&live, stopped, |event| events.send(event).is_ok()).await;
+        watch_resources(&live, stopped, interval, |event| events.send(event).is_ok()).await;
     });
 
     async fn snapshot(events: &mut mpsc::UnboundedReceiver<ResourceEvent>) -> ResourceSnapshot {
@@ -1390,12 +1393,26 @@ async fn resource_panel_samples_and_stops_its_process_when_hidden() {
         .iter()
         .all(|link| link.receive_rate.is_some() && link.send_rate.is_some()));
 
+    set_interval.send(ResourceInterval::FiveSeconds).unwrap();
     let running = connection.exec(sampler_pids).await.unwrap();
     assert_eq!(running.status, 0);
-    assert_eq!(
-        String::from_utf8(running.stdout).unwrap().lines().count(),
-        1
+    assert_eq!(String::from_utf8_lossy(&running.stdout).lines().count(), 1);
+
+    assert!(
+        tokio::time::timeout(Duration::from_millis(2500), snapshots.recv())
+            .await
+            .is_err()
     );
+    set_interval.send(ResourceInterval::OneSecond).unwrap();
+    let faster = tokio::time::timeout(Duration::from_millis(1800), snapshot(&mut snapshots))
+        .await
+        .expect("the shorter interval should replace the old deadline");
+    assert!(faster.cpu_percent.is_some());
+    assert_eq!(
+        connection.exec(sampler_pids).await.unwrap().stdout,
+        running.stdout
+    );
+
     drop(stop); // The same cancellation used when the panel hides.
     tokio::time::timeout(Duration::from_secs(5), task)
         .await
