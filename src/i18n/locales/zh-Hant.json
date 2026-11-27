@@ -898,6 +898,9 @@
   },
   "status": {
     "noConnections": "沒有連線",
+    "latency": "延遲 {{milliseconds, number}} 毫秒",
+    "latencyUnavailable": "延遲無法取得",
+    "latencyHint": "上次 SSH 保活的往返時間",
     "connectedTo": "已連線：{{hosts}}",
     "reconnecting": "正在重新連線 {{host}}（{{attempt}}/{{attempts}}）",
     "forwards": "連接埠轉送：{{list}}",
@@ -1389,6 +1392,10 @@
           "shell": "Shell 標題",
           "host": "Host 名稱"
         }
+      },
+      "showLatency": {
+        "label": "顯示連線延遲",
+        "description": "在狀態列顯示目前遠端終端機的 SSH 保活往返時間。"
       },
       "bell": {
         "label": "終端機提示音",

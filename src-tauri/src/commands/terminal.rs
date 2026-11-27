@@ -18,13 +18,14 @@
 use std::{path::PathBuf, sync::Arc};
 
 use serde::Serialize;
+use sshastra_core::files::FsError;
 use sshastra_core::hosts::HostId;
 use sshastra_core::ssh::{QuickConnectTarget, RemoteTerminal, RemoteTerminalOptions};
 use sshastra_core::terminal::{
     local_shell_command, local_shells, local_wsl_paths, ConnectionState, LocalPty, LocalShell,
     OutputKind, OutputStatus, SavedTerminalMetadata, ShellCommand, ShellIntegrationEvent,
-    TerminalEvent, TerminalId, TerminalOutput, TerminalRegistry, TerminalSettings, TerminalSize,
-    REPORT_CWD,
+    TerminalError, TerminalEvent, TerminalId, TerminalOutput, TerminalRegistry, TerminalSettings,
+    TerminalSize, REPORT_CWD,
 };
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{Manager, State, Webview, WebviewWindow};
@@ -440,6 +441,65 @@ pub async fn terminal_resize(
     with_terminal(&window, id, || Ok(registry.resize(id, size)?))
 }
 
+/// Streams the latest scheduled keepalive round-trip time of this Window's Terminal.
+#[tauri::command]
+pub fn terminal_latency_start(
+    window: WebviewWindow,
+    registry: State<'_, TerminalRegistry>,
+    id: TerminalId,
+    on_sample: Channel<Option<u64>>,
+) -> CommandResult<()> {
+    let (samples, mut stopped) =
+        windows::with_resources(&window, |resources| -> CommandResult<_> {
+            let route = resources
+                .terminals
+                .get(&id)
+                .ok_or(TerminalError::NotFound(id))?;
+            let mut route = route.lock();
+            let (_, connection) = registry.connection(id)?.ok_or(FsError::NotConnected)?;
+            let stopped = route
+                .start_latency(on_sample.id())
+                .ok_or(FsError::NotConnected)?;
+            Ok((connection.watch_keepalive_rtt(), stopped))
+        })??;
+    let Some(mut samples) = samples else {
+        let _ = on_sample.send(None);
+        return Ok(());
+    };
+    tauri::async_runtime::spawn(async move {
+        loop {
+            let sample = samples
+                .borrow_and_update()
+                .and_then(|duration| u64::try_from(duration.as_millis()).ok());
+            if on_sample.send(sample).is_err() {
+                return;
+            }
+            tokio::select! {
+                biased;
+                _ = &mut stopped => return,
+                changed = samples.changed() => if changed.is_err() {
+                    let _ = on_sample.send(None);
+                    return;
+                },
+            }
+        }
+    });
+    Ok(())
+}
+
+#[tauri::command]
+pub fn terminal_latency_stop(
+    window: WebviewWindow,
+    id: TerminalId,
+    subscription: u32,
+) -> CommandResult<()> {
+    windows::with_resources(&window, |resources| {
+        if let Some(route) = resources.terminals.get(&id) {
+            route.lock().stop_latency(subscription);
+        }
+    })
+}
+
 #[tauri::command]
 pub async fn terminal_close(
     window: WebviewWindow,
@@ -451,7 +511,7 @@ pub async fn terminal_close(
     {
         {
             let mut route = route.lock();
-            route.stop_resources();
+            route.stop_live_subscriptions();
             route.invalidate_reviews();
         }
         registry.close(id)?;

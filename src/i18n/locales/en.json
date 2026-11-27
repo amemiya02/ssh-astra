@@ -898,6 +898,9 @@
   },
   "status": {
     "noConnections": "No Connections",
+    "latency": "Latency {{milliseconds, number}} ms",
+    "latencyUnavailable": "Latency unavailable",
+    "latencyHint": "Round-trip time of the last SSH keepalive",
     "connectedTo": "Connected to {{hosts}}",
     "reconnecting": "Reconnecting to {{host}} ({{attempt}}/{{attempts}})",
     "forwards": "Port forwards: {{list}}",
@@ -1389,6 +1392,10 @@
           "shell": "Shell title",
           "host": "Host name"
         }
+      },
+      "showLatency": {
+        "label": "Show Connection latency",
+        "description": "Show the focused remote Terminal’s SSH keepalive round-trip time in the status bar."
       },
       "bell": {
         "label": "Terminal bell",

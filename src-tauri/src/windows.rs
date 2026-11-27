@@ -442,7 +442,7 @@ pub(crate) fn destroyed(app: &AppHandle, label: &str) {
         resources.prompts.close();
         for route in resources.terminals.values() {
             let mut route = route.lock();
-            route.stop_resources();
+            route.stop_live_subscriptions();
             route.invalidate_reviews();
         }
         let app = app.clone();

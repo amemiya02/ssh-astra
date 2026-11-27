@@ -30,6 +30,7 @@ pub(crate) struct Route {
     running: bool,
     resource_subscription: Option<ActiveResources>,
     resource_channel: Arc<AsyncMutex<()>>,
+    latency_subscription: Option<(u32, oneshot::Sender<()>)>,
     review_changes: watch::Sender<()>,
 }
 
@@ -60,6 +61,7 @@ impl TerminalRoute {
             running: true,
             resource_subscription: None,
             resource_channel: Arc::default(),
+            latency_subscription: None,
             review_changes: watch::Sender::new(()),
         })))
     }
@@ -80,7 +82,7 @@ impl TerminalRoute {
                 // Authentication prompts are bound to their originating Window. Leave a
                 // reconnect that starts during the move entirely with the source.
                 if !route.running {
-                    route.stop_resources();
+                    route.stop_live_subscriptions();
                     route.invalidate_reviews();
                     route.abort();
                 }
@@ -92,7 +94,7 @@ impl TerminalRoute {
             }
             TerminalEvent::Exit { .. } => {
                 route.running = false;
-                route.stop_resources();
+                route.stop_live_subscriptions();
                 route.invalidate_reviews();
                 route.abort();
             }
@@ -148,6 +150,30 @@ impl Route {
         self.resource_subscription = None;
     }
 
+    pub(crate) fn start_latency(&mut self, subscription: u32) -> Option<oneshot::Receiver<()>> {
+        if !self.running || self.pending.is_some() {
+            return None;
+        }
+        let (stop, stopped) = oneshot::channel();
+        self.latency_subscription = Some((subscription, stop));
+        Some(stopped)
+    }
+
+    pub(crate) fn stop_latency(&mut self, subscription: u32) {
+        if self
+            .latency_subscription
+            .as_ref()
+            .is_some_and(|(id, _)| *id == subscription)
+        {
+            self.latency_subscription = None;
+        }
+    }
+
+    pub(crate) fn stop_live_subscriptions(&mut self) {
+        self.stop_resources();
+        self.latency_subscription = None;
+    }
+
     pub(crate) fn review_delivery(&self) -> Option<(TerminalDelivery, watch::Receiver<()>)> {
         (self.running && self.pending.is_none())
             .then(|| (self.delivery.clone(), self.review_changes.subscribe()))
@@ -171,7 +197,7 @@ impl Route {
         {
             return false;
         }
-        self.stop_resources();
+        self.stop_live_subscriptions();
         self.pending = Some(PendingOutput {
             token: token.into(),
             result: result.clone(),
@@ -310,6 +336,30 @@ mod tests {
             .lock()
             .start_resources(4, ResourceInterval::default())
             .is_none());
+    }
+
+    #[test]
+    fn latency_survives_a_stale_stop_but_ends_on_handoff_or_exit() {
+        use tokio::sync::oneshot::error::TryRecvError;
+
+        let (source, _messages) = renderer("source");
+        let route = TerminalRoute::new(source);
+        let mut first = route.lock().start_latency(1).unwrap();
+        let mut second = route.lock().start_latency(2).unwrap();
+        assert_eq!(first.try_recv(), Err(TryRecvError::Closed));
+        route.lock().stop_latency(1);
+        assert_eq!(second.try_recv(), Err(TryRecvError::Empty));
+
+        let (result, _) = watch::channel(None);
+        assert!(route.lock().prepare("move", &result));
+        assert_eq!(second.try_recv(), Err(TryRecvError::Closed));
+        assert!(route.lock().start_latency(3).is_none());
+
+        route.lock().rollback("move");
+        let mut third = route.lock().start_latency(3).unwrap();
+        route.connection_event(&TerminalEvent::Exit { code: Some(0) });
+        assert_eq!(third.try_recv(), Err(TryRecvError::Closed));
+        assert!(route.lock().start_latency(4).is_none());
     }
 
     #[test]
