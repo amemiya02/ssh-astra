@@ -42,6 +42,8 @@ interface RemoteTerminalViewProps {
   active?: boolean;
   onEditHost(): void;
   onClose(): void;
+  /** Startup restoration can ask sign-in questions before this pane is focused. */
+  showPrompts?: boolean;
   onTitleChange?(title: string): void;
   /**
    * Connecting until the shell runs, then connected; disconnected once it ends or the connect fails.
@@ -64,6 +66,7 @@ export function RemoteTerminalView({
   active = true,
   onEditHost,
   onClose,
+  showPrompts = active,
   onTitleChange,
   onStatusChange,
   onCwd,
@@ -87,7 +90,10 @@ export function RemoteTerminalView({
   });
 
   const open = useCallback<OpenTerminal>(
-    (size, onEvent, signal) => {
+    async (size, onEvent, signal) => {
+      // Strict Mode detaches the first development mount before it can open a shell.
+      await Promise.resolve();
+      signal.throwIfAborted();
       let opening = true;
       return openRemoteTerminal(
         host.id,
@@ -189,7 +195,7 @@ export function RemoteTerminalView({
       {pending && (
         <ConnectPromptDialog
           prompt={pending.prompt}
-          open={active}
+          open={showPrompts}
           onAnswer={(answer) => {
             setPending(null);
             pending.resolve(answer);

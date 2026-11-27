@@ -38,6 +38,7 @@ function renderWorkspace() {
         onFocusPane={(paneId) => dispatch({ type: "focusPane", paneId })}
         onClosePane={(paneId) => dispatch({ type: "closePane", paneId })}
         onEditHost={() => {}}
+        onConnectRestoredPane={(paneId) => dispatch({ type: "connectRestoredPane", paneId })}
         onTitleChange={() => {}}
         onStatusChange={() => {}}
         onResizeSplit={(tabId, resize) => dispatch({ type: "resizeSplit", tabId, ...resize })}

@@ -35,13 +35,13 @@ import {
   newPane,
   reconnectingHosts,
   remoteTerminalPaneIds,
-  startupTabs,
   tabTitle,
   tabsReducer,
   type ConnectionStatus,
   type PaneKind,
   type ReconnectProgress,
   type SplitOrientation,
+  type TabsState,
 } from "@/features/workspace/tabs";
 import { useWorkspaceShortcuts } from "@/features/workspace/use-workspace-shortcuts";
 import { serializeWorkspaceLayout, workspaceLayoutSetting } from "@/features/workspace/workspace-layout";
@@ -57,9 +57,9 @@ const updatable = isTauri() && import.meta.env.VITE_E2E !== "1";
  * Composes the main window. Each slot of `AppShell` is owned by a feature:
  * Host list (features/hosts), tabs and splits (features/workspace), File panel (features/files).
  */
-export function App() {
+export function App({ initialTabs }: { initialTabs: TabsState }) {
   const { t } = useTranslation();
-  const [state, dispatch] = useReducer(tabsReducer, undefined, startupTabs);
+  const [state, dispatch] = useReducer(tabsReducer, initialTabs);
   const { tabs, activeId } = state;
   const focused = activeTab(state);
   const canSplitFocused = focused !== undefined && canSplit(focused);
@@ -289,6 +289,7 @@ export function App() {
             onFocusPane={(paneId) => dispatch({ type: "focusPane", paneId })}
             onClosePane={(paneId) => dispatch({ type: "closePane", paneId })}
             onEditHost={(host) => hostsController.actions.edit(hosts.find((saved) => saved.id === host.id) ?? host)}
+            onConnectRestoredPane={(paneId) => dispatch({ type: "connectRestoredPane", paneId })}
             onTitleChange={retitle}
             onStatusChange={setStatus}
             onResizeSplit={(tabId, resize) => dispatch({ type: "resizeSplit", tabId, ...resize })}
