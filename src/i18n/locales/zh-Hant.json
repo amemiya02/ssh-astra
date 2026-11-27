@@ -718,6 +718,10 @@
       "failed": "無法寫入終端機錄製檔案。{{message}}"
     },
     "pressEnterToRestart": "按 Enter 啟動新的 shell。",
+    "menu": {
+      "label": "終端機選單",
+      "clear": "清除畫面"
+    },
     "search": {
       "label": "在終端機中尋找",
       "placeholder": "尋找",
@@ -1173,8 +1177,12 @@
         "failed": "無法選擇終端機輸出資料夾。{{message}}"
       },
       "rightClickPaste": {
-        "label": "右鍵貼上",
-        "description": "啟用時，在終端機按一下滑鼠右鍵會貼上剪貼簿內容。停用時，會開啟終端機選單。"
+        "label": "右鍵操作",
+        "description": "選擇在終端機中按下滑鼠右鍵時執行的操作。",
+        "options": {
+          "menu": "開啟選單",
+          "paste": "直接貼上"
+        }
       },
       "confirmMultilinePaste": {
         "label": "多行貼上前確認",

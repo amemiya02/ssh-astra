@@ -1,4 +1,6 @@
-import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { ClipboardPaste, Columns2, Copy, Eraser, Rows2, Search, SquareDashed } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { FitAddon } from "@xterm/addon-fit";
 import { LigaturesAddon } from "@xterm/addon-ligatures";
 import { SearchAddon } from "@xterm/addon-search";
@@ -7,7 +9,10 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { exposeTerminal } from "@/lib/e2e";
-import { notifyCopied } from "@/features/toasts/copyFeedback";
+import { SnippetMenu } from "@/features/snippets/SnippetMenu";
+import { useSnippetRunner } from "@/features/snippets/use-snippet-runner";
+import { showToast } from "@/features/toasts/toastStore";
+import { copyTextWithToast, notifyCopied } from "@/features/toasts/copyFeedback";
 import { externalLinkDestination } from "@/lib/external-link";
 import { openExternalUrl, readClipboardText, writeClipboardText } from "@/lib/ipc/system";
 import { cn } from "@/lib/utils";
@@ -20,6 +25,7 @@ import { BroadcastPaneContext, type Broadcast } from "@/features/workspace/broad
 import { getResolvedShortcuts } from "@/features/workspace/shortcut-settings";
 import { currentPlatform, matchTerminalShortcut } from "@/features/workspace/shortcuts";
 import { planPaste, type PendingPaste } from "./terminal-input";
+import { TerminalPaneMenuContext } from "./terminal-pane-menu";
 import { selectAllEvent } from "./terminal-selection";
 import { zoomTerminalFont, type TerminalPrefs } from "./terminal-prefs";
 import { useTerminalPrefs } from "./terminal-prefs-context";
@@ -57,13 +63,17 @@ function appearanceOptions(
  * clickable links, copy on select, right-click paste and paste confirmation.
  */
 export function XtermView({ label, active, colorScheme, onTitleChange, attach }: XtermViewProps) {
+  const { t } = useTranslation();
   const { theme } = useTheme();
   const { broadcast, paneId } = useContext(BroadcastPaneContext) ?? {};
+  const paneMenu = useContext(TerminalPaneMenuContext);
   const { prefs } = useTerminalPrefs();
   const containerRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const applyingPaste = useRef(false);
   const fitRef = useRef<FitAddon | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const menuFocus = useRef<"terminal" | "search" | "managed">("terminal");
   const searchRef = useRef<SearchAddon | null>(null);
   const rendererRef = useRef<Renderer | null>(null);
   const imagesRef = useRef<ReturnType<typeof attachTerminalImages> | null>(null);
@@ -72,10 +82,21 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
   const themeRef = useRef(xtermTheme);
   const attachRef = useRef(attach);
   const onTitleChangeRef = useRef(onTitleChange);
+  const [canCopy, setCanCopy] = useState(false);
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<SearchResults | null>(null);
   const [pendingPaste, setPendingPaste] = useState<{ preview: PendingPaste; recipients: BroadcastRecipients } | null>(null);
   const [linkDestination, setLinkDestination] = useState<string | null>(null);
+
+  const restoreTerminalFocus = (event: Event) => {
+    event.preventDefault();
+    if (active) xtermRef.current?.focus();
+  };
+  const snippetRunner = useSnippetRunner({
+    broadcast, paneId, hostId: paneMenu?.hostId,
+    reportError: (message) => { if (message) showToast(() => message, "error"); },
+    onCloseAutoFocus: restoreTerminalFocus,
+  });
 
   useEffect(() => {
     prefsRef.current = prefs;
@@ -105,6 +126,15 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
     if ("ask" in plan) setPendingPaste({ preview: plan.ask, recipients });
     else applyPaste(plan.paste, recipients);
   }, [applyPaste]);
+
+  const captureRecipients = useCallback(() => paneId === undefined ? undefined : broadcast?.capture(paneId), [broadcast, paneId]);
+  const pasteFromClipboard = useCallback(() => {
+    const xterm = xtermRef.current;
+    const recipients = captureRecipients();
+    void readClipboardText().then((text) => {
+      if (xtermRef.current === xterm) requestPaste(text, recipients);
+    }, () => undefined);
+  }, [captureRecipients, requestPaste]);
 
   const fitIfVisible = useCallback(() => {
     // A hidden pane has no size. Fitting it would shrink the shell to a sliver.
@@ -154,9 +184,21 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
 
     const platform = currentPlatform();
     xterm.attachCustomKeyEventHandler((event) => {
-      if (event.type !== "keydown" || event.isComposing || matchTerminalShortcut(event, getResolvedShortcuts(platform)) !== "find") return true;
+      if (event.type !== "keydown" || event.isComposing) return true;
+      if (matchTerminalShortcut(event, getResolvedShortcuts(platform)) === "find") {
+        event.preventDefault();
+        setSearching(true);
+        searchInputRef.current?.focus();
+        return false;
+      }
+      const menuKey = !event.altKey && !event.ctrlKey && !event.metaKey &&
+        (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey));
+      if (!menuKey || prefsRef.current.rightClickPaste) return true;
       event.preventDefault();
-      setSearching(true);
+      const { left, top } = container.getBoundingClientRect();
+      container.dispatchEvent(new MouseEvent("contextmenu", {
+        bubbles: true, cancelable: true, clientX: left + 8, clientY: top + 8,
+      }));
       return false;
     });
     const onResults = search.onDidChangeResults(({ resultIndex, resultCount }) =>
@@ -187,8 +229,6 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
     };
     const onTitle = xterm.onTitleChange((title) => onTitleChangeRef.current?.(title));
 
-    const captureRecipients = () => paneId === undefined ? undefined : broadcast?.capture(paneId);
-
     // Every paste goes through the planner; capture runs before xterm's own handler.
     const onPaste = (event: ClipboardEvent) => {
       event.preventDefault();
@@ -198,10 +238,7 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
     const onContextMenu = (event: MouseEvent) => {
       if (!prefsRef.current.rightClickPaste) return;
       event.preventDefault();
-      const recipients = captureRecipients();
-      void readClipboardText().then((text) => {
-        if (xtermRef.current === xterm) requestPaste(text, recipients);
-      }, () => undefined);
+      pasteFromClipboard();
     };
     const onZoomWheel = (event: WheelEvent) => {
       if ((!event.ctrlKey && !event.metaKey) || event.altKey || event.shiftKey || event.deltaY === 0) return;
@@ -246,7 +283,7 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
       rendererRef.current = null;
       imagesRef.current = null;
     };
-  }, [broadcast, fitIfVisible, paneId, requestPaste]);
+  }, [broadcast, captureRecipients, fitIfVisible, pasteFromClipboard, requestPaste]);
 
   useEffect(() => {
     const xterm = xtermRef.current;
@@ -302,20 +339,75 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
 
   return (
     <div className="relative h-full w-full">
-      <ContextMenu>
-        <ContextMenuTrigger asChild disabled={prefs.rightClickPaste || paneId === undefined}>
+      <ContextMenu onOpenChange={(open) => {
+        if (open) {
+          menuFocus.current = "terminal";
+          setCanCopy(xtermRef.current?.hasSelection() ?? false);
+          xtermRef.current?.focus();
+        }
+      }}>
+        <ContextMenuTrigger asChild disabled={prefs.rightClickPaste}>
           <div
             ref={containerRef}
             className={cn("h-full w-full py-2 pr-1 pl-3", !prefs.inlineImages && "[&_.xterm-image-layer]:hidden")}
             aria-label={label}
           />
         </ContextMenuTrigger>
-        {!prefs.rightClickPaste && paneId !== undefined && (
-          <ContextMenuContent onCloseAutoFocus={(event) => {
+        {!prefs.rightClickPaste && (
+          <ContextMenuContent aria-label={t("terminal.menu.label")} onCloseAutoFocus={(event) => {
             event.preventDefault();
-            xtermRef.current?.focus();
+            if (!active || pendingPaste) return;
+            if (menuFocus.current === "search") searchInputRef.current?.focus();
+            if (menuFocus.current === "terminal") xtermRef.current?.focus();
           }}>
-            <TerminalOutputMenuItems paneId={paneId} />
+            <ContextMenuItem disabled={!canCopy} onSelect={() => {
+              const text = xtermRef.current?.getSelection();
+              if (text) void copyTextWithToast(text).catch(() => undefined);
+            }}>
+              <Copy />{t("macosMenu.copy")}
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={pasteFromClipboard}>
+              <ClipboardPaste />{t("macosMenu.paste")}
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => xtermRef.current?.selectAll()}>
+              <SquareDashed />{t("macosMenu.selectAll")}
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuItem onSelect={() => {
+              menuFocus.current = "search";
+              setSearching(true);
+            }}>
+              <Search />{t("terminal.search.placeholder")}
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => xtermRef.current?.clear()}>
+              <Eraser />{t("terminal.menu.clear")}
+            </ContextMenuItem>
+            {paneMenu && (
+              <>
+                <ContextMenuSeparator />
+                <ContextMenuItem disabled={!paneMenu.split} onSelect={() => {
+                  menuFocus.current = "managed";
+                  paneMenu.split?.("horizontal");
+                }}>
+                  <Columns2 />{t("tabs.splitRight")}
+                </ContextMenuItem>
+                <ContextMenuItem disabled={!paneMenu.split} onSelect={() => {
+                  menuFocus.current = "managed";
+                  paneMenu.split?.("vertical");
+                }}>
+                  <Rows2 />{t("tabs.splitDown")}
+                </ContextMenuItem>
+              </>
+            )}
+            {paneId !== undefined && (
+              <>
+                <ContextMenuSeparator />
+                {broadcast && <SnippetMenu broadcast={broadcast} paneId={paneId} hostId={paneMenu?.hostId} onRun={(snippet) => {
+                  if (snippetRunner.run(snippet)) menuFocus.current = "managed";
+                }} />}
+                <TerminalOutputMenuItems paneId={paneId} />
+              </>
+            )}
           </ContextMenuContent>
         )}
       </ContextMenu>
@@ -328,9 +420,11 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
           {linkDestination}
         </div>
       )}
-      {searching && <TerminalSearchBar results={results} onFind={find} onClose={closeSearch} />}
+      {searching && <TerminalSearchBar inputRef={searchInputRef} results={results} onFind={find} onClose={closeSearch} />}
+      {snippetRunner.dialog}
       <PasteConfirmDialog
         paste={pendingPaste?.preview ?? null}
+        onCloseAutoFocus={restoreTerminalFocus}
         onConfirm={() => {
           if (pendingPaste) applyPaste(pendingPaste.preview.text, pendingPaste.recipients);
           setPendingPaste(null);

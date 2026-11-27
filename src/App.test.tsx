@@ -21,11 +21,17 @@ import type { ConnectPrompt } from "@/lib/ipc/connect";
 import type { Listing } from "@/lib/ipc/files";
 import type { ForwardEvent, PortForward } from "@/lib/ipc/forwards";
 import type { Host, HostDraft, QuickConnectTarget } from "@/lib/ipc/hosts";
+import type { Snippet } from "@/lib/ipc/snippets";
 import type { TerminalMessage } from "@/lib/ipc/terminal";
 import type { Transfer } from "@/lib/ipc/transfers";
 import { getSetting, startSettings, type SettingsBackend } from "@/lib/storage";
 import { ThemeProvider } from "@/theme/ThemeProvider";
 import { App } from "./App";
+
+vi.hoisted(() => {
+  // The Terminal renderer detects canvas support at import time.
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+});
 
 vi.mock("@tauri-apps/api/core", async (importOriginal) => {
   let nextTerminalId = 0;
@@ -75,6 +81,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
           proxyCommands: [{ host: "Imported Host", command: 'nc "%h" %p' }],
         },
       };
+      if (command === "snippets_list") return snippetLibrary;
       if (command === "host_tree") return { hosts: savedHosts, groups: [] };
     }),
   };
@@ -98,8 +105,10 @@ vi.mock("@tauri-apps/api/webview", () => ({
 
 // Exercise the real app and Terminal lifecycle without a renderer or native backend.
 const testTerminals = new Set<Terminal>();
-vi.mock("@/features/terminal/XtermView", () => ({
-  XtermView: ({ attach }: { attach(terminal: Terminal): () => void }) => {
+let renderTerminalMenu = false;
+vi.mock("@/features/terminal/XtermView", async (importOriginal) => {
+  const { XtermView } = await importOriginal<typeof import("@/features/terminal/XtermView")>();
+  function TestTerminal({ attach }: { attach(terminal: Terminal): () => void }) {
     useEffect(() => {
       const terminal = new Terminal();
       testTerminals.add(terminal);
@@ -111,14 +120,17 @@ vi.mock("@/features/terminal/XtermView", () => ({
       };
     }, [attach]);
     return null;
-  },
-}));
+  }
+  return { XtermView: (props: React.ComponentProps<typeof XtermView>) =>
+    renderTerminalMenu ? <XtermView {...props} /> : <TestTerminal {...props} /> };
+});
 
 const host: Host = {
   id: "test-host", name: "Test Host", address: "example.com", port: 22, user: "deploy",
   auth: { type: "password" }, jumpHost: null, groupId: null, forwards: [],
 };
 let savedHosts: Host[] = [];
+let snippetLibrary: Snippet[] = [];
 let initialTransfers: Transfer[] = [];
 let initialForwards: ForwardEvent[] = [];
 let initialHeld: string[] = [];
@@ -152,7 +164,9 @@ beforeAll(() => {
     media: query,
     addEventListener() {},
     removeEventListener() {},
-  })) as unknown as typeof window.matchMedia;
+    addListener() {},
+    removeListener() {},
+  })) as typeof window.matchMedia;
   HTMLElement.prototype.scrollIntoView ??= () => {};
   startI18n();
 });
@@ -173,6 +187,8 @@ async function unmount() {
 
 afterEach(async () => {
   await unmount();
+  renderTerminalMenu = false;
+  snippetLibrary = [];
   if (savedHosts.length > 0) {
     savedHosts = [];
     await hostsStore.getState().load();
@@ -296,12 +312,28 @@ async function closePaneShortcut() {
   })));
 }
 
+function contextMenuItem(label: string) {
+  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent === label);
+  expect(item, label).toBeDefined();
+  return item!;
+}
+
+async function openedTerminalId(command: "remote_terminal_open" | "local_terminal_open") {
+  const ipc = vi.mocked(invoke);
+  const opened = ipc.mock.calls.findIndex(([name]) => name === command);
+  return await ipc.mock.results[opened]?.value as number;
+}
+
+function openTerminalMenu(paneId: string) {
+  return act(async () => document.querySelector(`#pane-${paneId} .xterm`)!.dispatchEvent(new MouseEvent("contextmenu", {
+    button: 2, bubbles: true, cancelable: true,
+  })));
+}
+
 async function selectTabMenu(tabId: string, label: string) {
   const tab = document.getElementById(`tab-${tabId}`)!;
   await act(async () => tab.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })));
-  const menuItem = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent === label);
-  expect(menuItem, label).toBeDefined();
-  await act(async () => menuItem!.click());
+  await act(async () => contextMenuItem(label).click());
 }
 
 async function clickButton(label: string, scope: ParentNode = document) {
@@ -511,6 +543,65 @@ it("splits the focused remote Terminal on the same Host and in its reported dire
 
   expect(remoteOpens()).toHaveLength(3);
   expect(remoteOpens()[2]).toMatchObject({ hostId: host.id, cwd });
+});
+
+it.each([
+  ["Split right", "width", "25%", "50%"],
+  ["Split down", "height", "50%", "100%"],
+] as const)("applies %s to the clicked Terminal pane using its Host and working directory", async (label, axis, clickedSize, siblingSize) => {
+  renderTerminalMenu = true;
+  await render(workspace(
+    { type: "open", tabId: "work", pane: remote("clicked") },
+    { type: "split", orientation: "horizontal", pane: local("sibling") },
+  ));
+  await sendTerminalMessage({ cwd: "/srv/clicked" });
+  const clicked = document.getElementById("pane-clicked")!;
+  const sibling = document.getElementById("pane-sibling")!;
+  expect(document.activeElement?.closest("#pane-sibling")).toBe(sibling);
+  await openTerminalMenu("clicked");
+  await act(async () => contextMenuItem(label).click());
+  expect(clicked.style[axis]).toBe(clickedSize);
+  expect(sibling.style[axis]).toBe(siblingSize);
+  const remoteOpens = vi.mocked(invoke).mock.calls.filter(([command]) => command === "remote_terminal_open");
+  expect(remoteOpens).toHaveLength(2);
+  expect(remoteOpens[1]?.[1]).toMatchObject({ hostId: host.id, cwd: "/srv/clicked" });
+  await vi.waitFor(() => {
+    const activePane = document.querySelector('[data-pane-focus]')?.parentElement;
+    expect(activePane).toBeTruthy();
+    expect(activePane).not.toBe(clicked);
+    expect(activePane?.querySelector("textarea")).toBe(document.activeElement);
+  });
+});
+
+it("offers only the clicked Host's Snippets and runs one in that Terminal after prompting", async () => {
+  renderTerminalMenu = true;
+  snippetLibrary = [
+    { id: "a", name: "Show files", command: "ls", group: null, hostIds: [], sendEnter: true },
+    { id: "b", name: "Choose folder", command: "cd ${path:/srv}", group: null, hostIds: [host.id], sendEnter: true },
+    { id: "c", name: "Check services", command: "systemctl status", group: null, hostIds: ["other-host"], sendEnter: true },
+  ];
+  await render(workspace(
+    { type: "open", tabId: "work", pane: remote("clicked") },
+    { type: "split", orientation: "horizontal", pane: local("sibling") },
+  ));
+  const ipc = vi.mocked(invoke);
+  const remoteId = await openedTerminalId("remote_terminal_open");
+  const writes = () => ipc.mock.calls.filter(([command]) => command === "terminal_write");
+
+  await openTerminalMenu("clicked");
+  const snippets = contextMenuItem("Snippets");
+  await act(async () => {
+    snippets.focus();
+    snippets.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+  });
+  contextMenuItem("Show files");
+  expect([...document.querySelectorAll('[role="menuitem"]')].some((item) => item.textContent === "Check services")).toBe(false);
+  await act(async () => contextMenuItem("Choose folder").click());
+  expect(writes()).toEqual([]);
+  expect(document.activeElement).toBe(dialog()?.querySelector("input"));
+  await clickButton("Run", dialog()!);
+  expect(writes()).toEqual([["terminal_write", { id: remoteId, data: "cd /srv\r" }]]);
+  await vi.waitFor(() => expect(document.activeElement).toBe(document.querySelector("#pane-clicked textarea")));
 });
 
 it("starts a new Local terminal directly in the focused pane's directory", async () => {
@@ -1423,7 +1514,24 @@ it("shows the Terminal log marker for an unfocused split even while its Host rec
   expect(tab.getAttribute("aria-label")).not.toContain("Terminal log active");
 });
 
+it("starts and stops the Terminal log for the clicked split pane", async () => {
+  renderTerminalMenu = true;
+  await render(workspace(
+    { type: "open", tabId: "log", pane: remote("clicked") },
+    { type: "split", pane: local("sibling"), orientation: "horizontal" },
+  ));
+  const remoteId = await openedTerminalId("remote_terminal_open");
+  await openTerminalMenu("clicked");
+  await act(async () => contextMenuItem("Start Terminal log").click());
+  expect(invoke).toHaveBeenCalledWith("terminal_log_start", { id: remoteId });
+  await sendTerminalMessage({ terminalLog: { state: "active" } });
+  await openTerminalMenu("clicked");
+  await act(async () => contextMenuItem("Stop Terminal log").click());
+  expect(invoke).toHaveBeenCalledWith("terminal_log_stop", { id: remoteId });
+});
+
 it("starts a Recording from the Terminal menu and stops it from the command palette independently of its log", async () => {
+  renderTerminalMenu = true;
   await render(workspace({ type: "open", tabId: "recording", pane: local("recording-pane") }));
   const tab = document.getElementById("tab-recording")!;
   const terminal = document.querySelector('[aria-label="Local terminal"]')!;

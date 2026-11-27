@@ -98,7 +98,7 @@ export const settingRows = {
     { en: "clipboard selection auto copy", zh: "剪贴板 选择 自动复制", "zh-Hant": "剪貼簿 選擇 自動複製" }, "settings.terminal.copyOnSelect.description",
   ),
   rightClickPaste: row("terminal", "settings.terminal.rightClickPaste.label",
-    { en: "clipboard mouse secondary click", zh: "剪贴板 鼠标 辅助点击", "zh-Hant": "剪貼簿 滑鼠 輔助點按" }, "settings.terminal.rightClickPaste.description",
+    { en: "clipboard mouse secondary click context menu paste", zh: "剪贴板 鼠标 辅助点击 菜单 粘贴", "zh-Hant": "剪貼簿 滑鼠 輔助點按 選單 貼上" }, "settings.terminal.rightClickPaste.description",
   ),
   confirmMultilinePaste: row("terminal", "settings.terminal.confirmMultilinePaste.label",
     { en: "clipboard warning multiple lines", zh: "剪贴板 警告 多行", "zh-Hant": "剪貼簿 警告 多行" }, "settings.terminal.confirmMultilinePaste.description",
