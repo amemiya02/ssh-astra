@@ -46,6 +46,8 @@ fn endpoint(sshd: &Sshd, dir: &Path) -> (ConnectionManager, Host) {
         forward_agent: false,
         keepalive_seconds: None,
         post_login_command: None,
+        terminal_charset: None,
+        terminal_backspace: None,
         default_directory: None,
         forwards: Vec::new(),
     };

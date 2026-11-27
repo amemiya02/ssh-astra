@@ -33,6 +33,8 @@
       "forwardAgent": "Agent forwarding",
       "keepaliveSeconds": "Keepalive interval (seconds)",
       "postLoginCommand": "Post-login command",
+      "terminalCharset": "Terminal character set",
+      "terminalBackspace": "Backspace sends",
       "terminalScheme": "Terminal colours",
       "defaultDirectory": "File panel folder"
     },

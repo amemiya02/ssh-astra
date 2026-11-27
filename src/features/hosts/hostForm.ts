@@ -1,4 +1,4 @@
-import type { Host, HostAuth, HostDraft } from "@/lib/ipc/hosts";
+import type { Host, HostAuth, HostDraft, TerminalBackspace, TerminalCharset } from "@/lib/ipc/hosts";
 import { isTerminalColorScheme, type TerminalColorScheme } from "@/theme/terminal-themes";
 
 /** The Host form's raw input values. */
@@ -18,6 +18,8 @@ export interface HostFormValues {
   keepaliveSeconds?: string;
   /** Blank leaves the shell at its first prompt. */
   postLoginCommand?: string;
+  terminalCharset: TerminalCharset;
+  terminalBackspace: TerminalBackspace;
   /** The Host's own Terminal colour scheme; absent follows the global one. */
   terminalScheme?: TerminalColorScheme;
   /** Where the File panel opens first; blank is the home directory. */
@@ -27,7 +29,8 @@ export interface HostFormValues {
 /** The free-text fields, validated here. */
 export type HostFormField = Exclude<
   keyof HostFormValues,
-  "jumpHost" | "authType" | "identitiesOnly" | "forwardAgent" | "terminalScheme" | "defaultDirectory" | "postLoginCommand"
+  "jumpHost" | "authType" | "identitiesOnly" | "forwardAgent" | "terminalScheme" | "defaultDirectory" |
+  "postLoginCommand" | "terminalCharset" | "terminalBackspace"
 >;
 /** Error codes; the UI maps them to copy under `hosts.errors.*`. */
 export type HostFormError = "required" | "port" | "keepaliveSeconds";
@@ -46,6 +49,8 @@ export const emptyHostForm: HostFormValues = {
   identityFile: "",
   identitiesOnly: false,
   forwardAgent: false,
+  terminalCharset: "utf8",
+  terminalBackspace: "del",
 };
 
 export function hostFormFrom(host: Host): HostFormValues {
@@ -59,6 +64,8 @@ export function hostFormFrom(host: Host): HostFormValues {
     identityFile: host.auth.type === "key" ? host.auth.identityFile : "",
     identitiesOnly: host.identitiesOnly ?? false,
     forwardAgent: host.forwardAgent ?? false,
+    terminalCharset: host.terminalCharset ?? emptyHostForm.terminalCharset,
+    terminalBackspace: host.terminalBackspace ?? emptyHostForm.terminalBackspace,
   };
   if (isTerminalColorScheme(host.terminalScheme)) form.terminalScheme = host.terminalScheme;
   if (host.defaultDirectory) form.defaultDirectory = host.defaultDirectory;
@@ -99,6 +106,8 @@ export function parseHostForm(values: HostFormValues): HostFormResult {
   if (values.terminalScheme) draft.terminalScheme = values.terminalScheme;
   if (keepaliveText) draft.keepaliveSeconds = keepaliveSeconds;
   if (values.postLoginCommand?.trim()) draft.postLoginCommand = values.postLoginCommand;
+  if (values.terminalCharset !== emptyHostForm.terminalCharset) draft.terminalCharset = values.terminalCharset;
+  if (values.terminalBackspace !== emptyHostForm.terminalBackspace) draft.terminalBackspace = values.terminalBackspace;
   const defaultDirectory = values.defaultDirectory?.trim();
   if (defaultDirectory) draft.defaultDirectory = defaultDirectory;
   return { ok: true, draft };

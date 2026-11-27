@@ -70,12 +70,13 @@ const UNSUPPORTED: &[u8] = b"6973;unsupported";
 /// once, when ShellIntegration is off or the shell is not bash/zsh.
 pub const REPORT_CWD: &str = " printf '\\033]7;file://%s%s\\007' \"$(hostname)\" \"$PWD\"\r";
 
-use super::{ShellIntegrationEvent, ShellIntegrationStatus, TerminalEvent};
+use super::{ShellIntegrationEvent, ShellIntegrationStatus, TerminalCharset, TerminalEvent};
 
 /// One remote shell's output on its way to the screen.
 #[derive(Debug, Default)]
 pub struct ShellOutput {
     parser: CwdParser,
+    charset: TerminalCharset,
     integrated: bool,
     /// Output held back since [`Self::hide_until_ready`]; `None` when shown.
     held: Option<Vec<u8>>,
@@ -89,6 +90,13 @@ pub struct Shown {
 }
 
 impl ShellOutput {
+    pub(crate) fn new(charset: TerminalCharset) -> Self {
+        Self {
+            charset,
+            ..Self::default()
+        }
+    }
+
     /// Holds back all output until the [`INJECTION`] ready marker: the
     /// screen keeps the prompt the line was typed at, and the cursor goes
     /// back to its start so the next prompt replaces it.
@@ -125,7 +133,9 @@ impl ShellOutput {
             } else if let Some(cwd) = cwd_from_osc(payload) {
                 events.push(TerminalEvent::Cwd(cwd));
             } else if self.integrated {
-                events.extend(marker_from_osc(payload).map(TerminalEvent::ShellIntegration));
+                events.extend(
+                    marker_from_osc(payload, self.charset).map(TerminalEvent::ShellIntegration),
+                );
             }
         });
         let output = match (&mut self.held, ready_at) {
@@ -216,14 +226,14 @@ impl CwdParser {
     }
 }
 
-fn marker_from_osc(payload: &[u8]) -> Option<ShellIntegrationEvent> {
+fn marker_from_osc(payload: &[u8], charset: TerminalCharset) -> Option<ShellIntegrationEvent> {
     let marker = payload.strip_prefix(b"6973;")?;
     if marker == b"prompt" {
         return Some(ShellIntegrationEvent::PromptStart);
     }
     if let Some(command) = marker.strip_prefix(b"start;1;") {
-        let command_line = (!command.is_empty())
-            .then(|| String::from_utf8_lossy(&percent_decode(command)).into_owned());
+        let command_line =
+            (!command.is_empty()).then(|| charset.decode_command(&percent_decode(command)));
         return Some(ShellIntegrationEvent::CommandStart { command_line });
     }
     let code = marker.strip_prefix(b"end;")?;
