@@ -71,8 +71,9 @@ impl HostStore {
     /// after the existing ones, then saves. Everything gets a new id, with
     /// Group, Jump host and Port forward references following. A Group that
     /// already exists by name under the same parent is reused; a Host whose
-    /// name is already taken is skipped. Nothing changes if the file is
-    /// unreadable or its Jump hosts form a loop.
+    /// name is already taken is skipped. Startup connections are off for
+    /// imported Hosts. Nothing changes if the file is unreadable or its
+    /// Jump hosts form a loop.
     pub fn import(&mut self, text: &str) -> Result<ImportSummary, HostStoreError> {
         let corrupt = |e: serde_json::Error| HostStoreError::Corrupt(e.to_string());
         let FileFormat { format } = serde_json::from_str(text).map_err(corrupt)?;
@@ -103,6 +104,8 @@ impl HostStore {
             }
             let mut copy = host.clone();
             copy.id = HostId::generate();
+            // Automatically connecting can run the Host's ProxyCommand.
+            copy.open_on_startup = false;
             copy.group_id = host.group_id.as_ref().and_then(|g| groups.get(g).cloned());
             for forward in &mut copy.forwards {
                 forward.id = ForwardId::generate();

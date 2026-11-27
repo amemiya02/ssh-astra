@@ -31,6 +31,7 @@ fn draft(name: &str) -> HostDraft {
         identities_only: false,
         forward_agent: false,
         allow_legacy_algorithms: false,
+        open_on_startup: false,
         proxy: Default::default(),
         keepalive_seconds: None,
         post_login_command: None,
@@ -207,13 +208,52 @@ fn exporting_then_importing_into_an_empty_store_gives_the_same_host_list() {
         exported_web["tags"],
         serde_json::json!(["Production", "East Coast"])
     );
-    assert_eq!(exported["version"], 19);
+    assert_eq!(exported["version"], 20);
     assert_eq!(exported_web["icon"], "server");
     assert_eq!(exported_web["color"], "magenta");
     assert_eq!(renamed(&source.tree(), &imported), imported);
     assert_eq!(summary.hosts_added, 3);
     assert_eq!(summary.groups_added, 3);
     assert!(summary.skipped_hosts.is_empty());
+}
+
+#[test]
+fn importing_hosts_cannot_enable_startup_connections() {
+    use sshastra_core::proxy::HostProxy;
+
+    let (_a, mut source) = store();
+    let startup = HostDraft {
+        open_on_startup: true,
+        proxy: HostProxy::ProxyCommand("nc %h %p".into()),
+        ..draft("web")
+    };
+    source.upsert(None, startup.clone()).unwrap();
+    source
+        .upsert(
+            None,
+            HostDraft {
+                name: "existing".into(),
+                ..startup.clone()
+            },
+        )
+        .unwrap();
+
+    let (_b, mut target) = store();
+    target
+        .upsert(
+            None,
+            HostDraft {
+                name: "existing".into(),
+                ..startup
+            },
+        )
+        .unwrap();
+    let report = target.import(&source.export()).unwrap();
+
+    assert_eq!(report.skipped_hosts, ["existing"]);
+    assert!(target.list()[0].open_on_startup);
+    assert_eq!(target.list()[1].name, "web");
+    assert!(!target.list()[1].open_on_startup);
 }
 
 #[test]

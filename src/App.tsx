@@ -15,7 +15,7 @@ import { activeConnections, forwardStatusText, runningRules } from "@/features/f
 import { ForwardsSidebar } from "@/features/forwards/ForwardsSidebar";
 import { HomeView } from "@/features/home/HomeView";
 import { rememberHostOpened, useRecordHostConnections } from "@/features/hosts/host-history";
-import { useHosts } from "@/features/hosts/hostsStore";
+import { hostsStore, useHosts } from "@/features/hosts/hostsStore";
 import { updateSetting } from "@/features/updates/update-settings";
 import { UpdateNotice } from "@/features/updates/UpdateNotice";
 import { checkOnStartup, updatesStore } from "@/features/updates/updatesStore";
@@ -148,17 +148,40 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
   }, [state]);
 
   const openTab = useCallback(
-    (kind: PaneKind) => dispatch({ type: "open", tabId: crypto.randomUUID(), pane: newPane(kind) }),
+    (kind: PaneKind, startupOrder?: number) => {
+      const pane = newPane(kind);
+      if (startupOrder !== undefined) pane.restoreConnection = { order: startupOrder };
+      dispatch({ type: "open", tabId: crypto.randomUUID(), pane });
+    },
     [],
   );
   const openLocalTerminal = useCallback(() => openTab(localTerminal), [openTab]);
   const openRemoteTerminal = useCallback(
-    (host: Host) => {
+    (host: Host, startupOrder?: number) => {
       if (!isTemporaryHost(host)) rememberHostOpened(host.id);
-      openTab({ kind: "remote-terminal", host });
+      openTab({ kind: "remote-terminal", host }, startupOrder);
     },
     [openTab],
   );
+  const startupHostsOpened = useRef(false);
+  useEffect(() => {
+    if (startupHostsOpened.current) return;
+    startupHostsOpened.current = true;
+    // main loads the Host list and restores the workspace before mounting App.
+    const { status, tree } = hostsStore.getState();
+    if (status !== "ready") return;
+    const opened = new Set<HostId>();
+    let order = 0;
+    for (const pane of initialTabs.tabs.flatMap(tabPanes)) {
+      if ("host" in pane) opened.add(pane.host.id);
+      if (typeof pane.restoreConnection === "object") order = Math.max(order, pane.restoreConnection.order + 1);
+    }
+    for (const host of tree.hosts) {
+      if (!host.openOnStartup || opened.has(host.id) || isTemporaryHost(host)) continue;
+      openRemoteTerminal(host, order++);
+      opened.add(host.id);
+    }
+  }, [initialTabs, openRemoteTerminal]);
   const [quickConnectFailed, setQuickConnectFailed] = useState(false);
   const openQuickConnect = useCallback(async (target: QuickConnectTarget) => {
     setQuickConnectFailed(false);

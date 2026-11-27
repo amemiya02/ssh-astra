@@ -49,7 +49,7 @@ export type Pane = {
   title?: string;
   /** Remote Terminals only. */
   status?: ConnectionStatus;
-  /** A restored remote pane waits for a manual click or its turn in the startup queue. */
+  /** A remote pane waiting for a manual click after restore or for its turn in the startup queue. */
   restoreConnection?: "manual" | { order: number };
   /** While a dropped Connection is retried: which try this is, of how many. */
   reconnecting?: ReconnectProgress;
@@ -156,7 +156,7 @@ export function canDuplicateTab(tab: Tab): boolean {
   return tabPanes(tab).every((pane) => singletonKey(pane) === undefined);
 }
 
-/** The next restored remote pane connects only after the previous attempt settles. */
+/** The next pane in the startup queue connects once the previous attempt settles. */
 export function nextRestoreConnection(tabs: readonly Tab[]): string | undefined {
   let next: { id: string; order: number } | undefined;
   for (const { id, restoreConnection } of tabs.flatMap(tabPanes)) {
