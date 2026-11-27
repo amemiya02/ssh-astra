@@ -16,7 +16,7 @@ export type ConnectionState =
   | { state: "connected" }
   | { state: "reconnecting"; attempt: number; attempts: number }
   /** No more automatic tries; `reconnectTerminal` tries again. */
-  | { state: "disconnected"; reason: string };
+  | { state: "disconnected"; reason: string; reportReconnectFailure: boolean };
 
 export type ShellIntegrationStatus = "available" | "disabled" | "unsupported" | "timedOut";
 

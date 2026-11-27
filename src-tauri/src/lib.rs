@@ -52,6 +52,8 @@ pub fn run() {
     // Lets the E2E smoke test (`e2e/`) drive the webview over WebDriver.
     #[cfg(feature = "e2e")]
     let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    let builder = builder.plugin(tauri_plugin_notification::init());
     builder
         // Restores the main window's size, position and maximized state, and
         // saves them on exit (`.window-state.json` in the app config dir).
@@ -75,6 +77,8 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+            commands::notifications::listen(app.handle())?;
             #[cfg(not(feature = "e2e"))]
             let log_dir = app.path().app_log_dir()?;
             #[cfg(feature = "e2e")]
@@ -163,6 +167,7 @@ pub fn run() {
             commands::forwards::forward_stop,
             commands::settings::settings_load,
             commands::settings::settings_set,
+            commands::notifications::notification_show,
             commands::diagnostics::diagnostics_event,
             commands::diagnostics::diagnostics_open_logs,
             commands::diagnostics::diagnostics_report,

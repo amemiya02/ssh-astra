@@ -16,6 +16,7 @@
 
 use std::fmt::Write as _;
 use std::future::Future;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -365,6 +366,11 @@ enum Stop {
     Closed,
 }
 
+enum ReconnectError {
+    Connection(ConnectError),
+    Shell(ConnectError),
+}
+
 /// The task behind a [`RemoteTerminal`]: forwards its shell's events and
 /// replaces the shell when the Connection drops.
 struct Runner {
@@ -392,8 +398,9 @@ impl Runner {
                 return;
             }
             log::warn!("remote Terminal Connection lost");
+            let reported = Arc::clone(&shell.reconnect_failure_reported);
             drop(shell);
-            shell = match self.recover().await {
+            shell = match self.recover(&reported).await {
                 Ok(shell) => shell,
                 Err(Stop::Closed) => return (self.sink)(TerminalEvent::Exit { code: None }),
             };
@@ -515,7 +522,7 @@ impl Runner {
 
     /// A new shell on a new Connection: automatic tries with growing delays,
     /// then single tries whenever the user asks.
-    async fn recover(&mut self) -> std::result::Result<RemoteShell, Stop> {
+    async fn recover(&mut self, reported: &AtomicBool) -> std::result::Result<RemoteShell, Stop> {
         let (mut attempts, mut delay) = (self.policy.attempts.max(1), self.policy.first_delay);
         loop {
             let mut failure = None;
@@ -528,10 +535,14 @@ impl Runner {
                         log::info!("remote Terminal reconnect result=success");
                         return Ok(shell);
                     }
-                    Err(e) => {
+                    Err(failure_kind) => {
+                        let (e, connection_failed) = match failure_kind {
+                            ReconnectError::Connection(e) => (e, true),
+                            ReconnectError::Shell(e) => (e, false),
+                        };
                         log::warn!("remote Terminal reconnect result={}", e.log_kind());
                         let retry = is_transient(&e);
-                        failure = Some(e);
+                        failure = Some((e, connection_failed));
                         if !retry {
                             break;
                         }
@@ -539,8 +550,16 @@ impl Runner {
                 }
                 delay = delay.saturating_mul(2);
             }
-            let reason = failure.map_or_else(String::new, |e| e.to_string());
-            self.report(ConnectionState::Disconnected { reason });
+            let (reason, connection_failed) = failure.map_or_else(
+                || (String::new(), false),
+                |(e, connection_failed)| (e.to_string(), connection_failed),
+            );
+            let report_reconnect_failure =
+                connection_failed && !reported.swap(true, Ordering::Relaxed);
+            self.report(ConnectionState::Disconnected {
+                reason,
+                report_reconnect_failure,
+            });
             self.wait_for_reconnect().await?;
             (attempts, delay) = (1, Duration::ZERO);
         }
@@ -589,14 +608,14 @@ impl Runner {
     /// One connect and shell start, which the user can cut short by closing.
     async fn try_connect(
         &mut self,
-    ) -> std::result::Result<Result<RemoteShell, ConnectError>, Stop> {
+    ) -> std::result::Result<Result<RemoteShell, ReconnectError>, Stop> {
         let connecting = (self.connect)();
         tokio::pin!(connecting);
         let connection = loop {
             tokio::select! {
                 result = &mut connecting => match result {
                     Ok(connection) => break connection,
-                    Err(e) => return Ok(Err(e)),
+                    Err(e) => return Ok(Err(ReconnectError::Connection(e))),
                 },
                 command = self.commands.recv() => {
                     self.idle(command)?;
@@ -610,7 +629,8 @@ impl Runner {
             &self.shell_tx,
             self.progress.as_ref(),
         )
-        .await)
+        .await
+        .map_err(ReconnectError::Shell))
     }
 }
 

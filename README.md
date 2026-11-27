@@ -29,6 +29,7 @@ A modern, good-looking SSH & SFTP client for Windows, macOS and Linux.
 - **Port forwards**: local, remote and SOCKS5; can start when you connect.
 - **Security**: ssh-agent, private keys, OpenSSH user certificates, passwords and 2FA; secrets stay in the OS keychain; shares `known_hosts` with OpenSSH.
 - **Reconnects** on its own after a dropped Connection.
+- **System notifications** report finished transfer batches, failed reconnections, and requests from Terminal programs while the window is in the background. Choose categories in **Settings → Notifications**.
 - **Polish**: ⌘K command palette, light and dark themes, English and 简体中文, in-app updates.
 
 <table>
@@ -58,6 +59,7 @@ SSH Astra uses xterm.js 6.0.0.
 
 - **Synchronized output (DECSET 2026)** is supported. xterm.js batches redraws until the program resets the mode, with a one-second fallback if the program leaves it enabled. [6.0.0 release notes](https://github.com/xtermjs/xterm.js/releases/tag/6.0.0) · [6.0.0 render service](https://github.com/xtermjs/xterm.js/blob/6.0.0/src/browser/services/RenderService.ts#L320-L352)
 - **Kitty keyboard protocol** is unsupported in 6.0.0. Its CSI handlers lack Kitty keyboard negotiation and its keyboard encoder uses legacy sequences. [6.0.0 CSI handlers](https://github.com/xtermjs/xterm.js/blob/6.0.0/src/common/InputHandler.ts#L219-L268) · [6.0.0 keyboard encoder](https://github.com/xtermjs/xterm.js/blob/6.0.0/src/common/input/Keyboard.ts)
+- **Terminal program notifications** accept iTerm2 OSC 9 and rxvt OSC 777 `notify`. Each Terminal can send one notification per second. [Escape sequence formats](https://github.com/wezterm/wezterm/blob/main/docs/escape-sequences.md)
 
 ## Install
 
