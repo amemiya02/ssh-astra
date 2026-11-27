@@ -1727,7 +1727,7 @@ it("saves a Temporary Host in place after canceling and retrying the Host editor
   expect(hostsStore.getState().tree.hosts).toEqual([
     expect.objectContaining({ id, name: "Lab", address: "lab", port: 2200, user: "deploy" }),
   ]);
-  expect(document.querySelector('aside button[aria-current="true"]')?.textContent).toContain("Lab");
+  expect(document.querySelector('aside ul[aria-label="Hosts"] button[aria-pressed="true"]')?.textContent).toContain("Lab");
   expect(tabIds()).toEqual([tab]);
   expect(document.getElementById(tab!)?.getAttribute("aria-label")).toBe("Lab (Connected)");
   expect(document.querySelector('footer button[aria-label="Save as Host"]')).toBeNull();
@@ -1793,7 +1793,7 @@ it("masks Host details and tab titles while raw address searches still find the 
   for (const input of [document.querySelector<HTMLInputElement>('input[aria-label="Search Hosts"]')!, homeSearch()]) {
     await search(input, host.address);
   }
-  expect(document.querySelector('[title="Double-click to connect"]')?.textContent).toContain(host.name);
+  expect(document.querySelector('aside ul[aria-label="Hosts"] button[aria-pressed]')?.textContent).toContain(host.name);
   expect(document.querySelector("#tabpanel-home")?.textContent).toContain(host.name);
   expect(container?.textContent).not.toContain("Other Host");
   expect(container?.textContent).not.toContain(host.address);
