@@ -62,7 +62,8 @@ async function mount(history = Promise.resolve(["echo saved command"])) {
       </TooltipProvider>
     </ThemeContext.Provider>,
   ));
-  const terminal = openXterm.mock.contexts[0]!;
+  const terminal = openXterm.mock.contexts[0];
+  if (!(terminal instanceof Terminal)) throw new Error("Terminal did not open");
   const output = (text: string) => emit({ type: "output", data: new TextEncoder().encode(text) });
   const bytes = () => vi.mocked(invoke).mock.calls.flatMap(([command, args]) => command === "terminal_write" ? [args] : []);
   const key = (key: string, number: number) => {
