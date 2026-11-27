@@ -39,7 +39,20 @@
     "loadFailed": "无法加载命令片段（{{message}}）",
     "saveFailed": "无法保存更改（{{message}}）",
     "terminalUnavailable": "选中的终端不可用。",
-    "sendFailed": "无法将命令片段发送到所有终端（{{message}}）"
+    "sendFailed": "无法将命令片段发送到所有终端（{{message}}）",
+    "transfer": {
+      "fileType": "命令片段库",
+      "import": "导入命令片段",
+      "export": "导出命令片段",
+      "reportTitle": "命令片段导入结果",
+      "imported_one": "已导入 {{count}} 条命令片段。",
+      "imported_other": "已导入 {{count}} 条命令片段。",
+      "skipped": "已跳过以下重名的命令片段",
+      "close": "关闭",
+      "exported": "已导出命令片段库。",
+      "importFailed": "无法导入命令片段（{{message}}）",
+      "exportFailed": "无法导出命令片段（{{message}}）"
+    }
   },
   "hosts": {
     "title": "Hosts",

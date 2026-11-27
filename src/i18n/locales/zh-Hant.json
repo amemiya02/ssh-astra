@@ -39,7 +39,20 @@
     "loadFailed": "無法載入命令片段（{{message}}）",
     "saveFailed": "無法儲存變更（{{message}}）",
     "terminalUnavailable": "所選的終端機無法使用。",
-    "sendFailed": "無法將命令片段傳送到所有終端機（{{message}}）"
+    "sendFailed": "無法將命令片段傳送到所有終端機（{{message}}）",
+    "transfer": {
+      "fileType": "命令片段庫",
+      "import": "匯入命令片段",
+      "export": "匯出命令片段",
+      "reportTitle": "命令片段匯入結果",
+      "imported_one": "已匯入 {{count}} 則命令片段。",
+      "imported_other": "已匯入 {{count}} 則命令片段。",
+      "skipped": "已略過以下名稱重複的命令片段",
+      "close": "關閉",
+      "exported": "已匯出命令片段庫。",
+      "importFailed": "無法匯入命令片段（{{message}}）",
+      "exportFailed": "無法匯出命令片段（{{message}}）"
+    }
   },
   "hosts": {
     "title": "Hosts",

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog } from "@/components/ui/dialog";
 import type { Broadcast } from "@/features/workspace/broadcast";
@@ -22,7 +22,7 @@ export function useSnippetRunner({ broadcast, paneId, hostId, reportError, onClo
   const { t } = useTranslation();
   const [prompt, setPrompt] = useState<Prompt | null>(null);
 
-  async function send(snippet: Snippet, target: InputTarget, text: string) {
+  const send = useCallback(async (snippet: Snippet, target: InputTarget, text: string) => {
     try {
       if (!visibleOnHost(snippet, hostId) || !(await target.send(text, snippet.sendEnter))) {
         reportError(t("snippets.terminalUnavailable"));
@@ -30,10 +30,10 @@ export function useSnippetRunner({ broadcast, paneId, hostId, reportError, onClo
     } catch (error) {
       reportError(t("snippets.sendFailed", { message: readCommandError(error).message }));
     }
-  }
+  }, [hostId, reportError, t]);
 
   /** Returns whether a variable dialog will take focus. */
-  function run(snippet: Snippet): boolean {
+  const run = useCallback((snippet: Snippet): boolean => {
     reportError(null);
     const target = paneId ? broadcast?.captureInput(paneId) : undefined;
     if (!target || !visibleOnHost(snippet, hostId)) {
@@ -48,7 +48,7 @@ export function useSnippetRunner({ broadcast, paneId, hostId, reportError, onClo
     const expanded = template.expand(new Map());
     if ("text" in expanded) void send(snippet, target, expanded.text);
     return false;
-  }
+  }, [broadcast, hostId, paneId, reportError, send, t]);
 
   const close = () => setPrompt(null);
   return {
