@@ -23,7 +23,7 @@ A modern, good-looking SSH & SFTP client for Windows, macOS and Linux.
 
 ## Features
 
-- **Hosts**: groups, search, import from `~/.ssh/config`, CSV, and PuTTY registry exports, Jump hosts.
+- **Hosts**: groups, search, import from `~/.ssh/config`, CSV, PuTTY registry exports, and MobaXterm session exports, Jump hosts.
 - **Terminals**: tabs and split panes; xterm.js with WebGL rendering.
 - **SFTP File panel**: follows your shell's `cd`. Has a transfer queue and drag-and-drop upload. Edited files save back to the server on their own.
 - **Port forwards** can start when you connect and support local, remote, SOCKS5 and HTTP CONNECT rules.

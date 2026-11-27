@@ -23,7 +23,7 @@
 
 ## 功能
 
-- **Host 管理**：分组、搜索，导入 `~/.ssh/config`、CSV 和 PuTTY 注册表导出文件，跳板机
+- **Host 管理**：分组、搜索，导入 `~/.ssh/config`、CSV、PuTTY 注册表导出文件和 MobaXterm 会话导出文件，跳板机
 - **终端**：多标签 + 分屏，xterm.js WebGL 渲染
 - **SFTP 文件面板**：跟随终端 `cd`；传输队列、拖拽上传；远程编辑，保存后自动传回
 - **端口转发**支持本地、远程、SOCKS5 和 HTTP CONNECT，可随连接自动启动。
