@@ -9,6 +9,7 @@ mod live;
 mod local;
 mod registry;
 mod sftp;
+mod staged_write;
 mod transfer;
 
 pub use live::LiveHostFs;
@@ -168,6 +169,25 @@ pub trait RemoteFs: Send + Sync {
     /// permissions), to write it. Finish with `shutdown().await`.
     fn create_write<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileWriter>>;
 
+    /// Exclusively creates a transfer's staging file. Existing paths, including
+    /// symlinks, are never opened. Private files are created with mode `0o600`.
+    fn create_new<'a>(
+        &'a self,
+        path: &'a str,
+        private: bool,
+    ) -> BoxFuture<'a, FsResult<FileWriter>>;
+
+    /// Publishes a staged transfer. This is separate from the non-replacing
+    /// file browser rename operation.
+    fn publish_transfer<'a>(
+        &'a self,
+        from: &'a str,
+        to: &'a str,
+        overwrite: bool,
+    ) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(publish_by_plain_rename(self, from, to, overwrite))
+    }
+
     /// The whole contents of the file `path`, in memory (small files, e.g.
     /// remote editing): [`FsError::TooLarge`] past [`READ_FILE_LIMIT`].
     fn read_file<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<Vec<u8>>> {
@@ -199,6 +219,21 @@ pub trait RemoteFs: Send + Sync {
             writer.shutdown().await.map_err(io)
         })
     }
+}
+
+async fn publish_by_plain_rename(
+    fs: &(impl RemoteFs + ?Sized),
+    from: &str,
+    to: &str,
+    overwrite: bool,
+) -> FsResult<()> {
+    if overwrite {
+        match fs.remove_file(to).await {
+            Ok(()) | Err(FsError::NotFound(_)) => {}
+            Err(error) => return Err(error),
+        }
+    }
+    fs.rename(from, to).await
 }
 
 /// The directory the user asked for, as the File panel shows it: `""` and

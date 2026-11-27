@@ -195,6 +195,12 @@ function TransferRow({ transfer, speed }: { transfer: Transfer; speed: number | 
       <p className={cn("mt-1 truncate text-xs tabular-nums", failed ? "text-destructive" : "text-muted-foreground")}>
         {detail}
       </p>
+      {transfer.unprotected && (
+        <p className="text-warning mt-1 text-xs">
+          <span className="font-medium">{t("transfers.unprotected.label")}</span>{" "}
+          {t("transfers.unprotected.detail")}
+        </p>
+      )}
     </li>
   );
 }

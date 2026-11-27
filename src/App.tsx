@@ -89,7 +89,7 @@ export function App() {
   }, []);
   // A newer release is offered in the status bar; finding none (or failing) says nothing.
   useEffect(() => {
-    if (updatable) void checkOnStartup(updatesStore, getSetting(updateSetting));
+    if (updatable) return checkOnStartup(updatesStore, () => getSetting(updateSetting));
   }, []);
   const retitle = useCallback((paneId: string, title: string) => dispatch({ type: "retitle", paneId, title }), []);
   const setStatus = useCallback(

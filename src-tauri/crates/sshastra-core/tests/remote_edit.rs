@@ -103,6 +103,9 @@ impl RemoteFs for FakeFs {
         })
     }
 
+    fn create_new<'a>(&'a self, _: &'a str, _: bool) -> BoxFuture<'a, FsResult<FileWriter>> {
+        unimplemented!("Remote edit does not stage writes")
+    }
     fn create_write<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileWriter>> {
         Box::pin(async move {
             if *self.failing.lock().unwrap() {

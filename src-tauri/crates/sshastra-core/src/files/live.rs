@@ -85,6 +85,26 @@ impl RemoteFs for LiveHostFs {
             Ok(Box::new(WithSession { file, _fs: fs }) as FileWriter)
         })
     }
+    fn create_new<'a>(
+        &'a self,
+        path: &'a str,
+        private: bool,
+    ) -> BoxFuture<'a, FsResult<FileWriter>> {
+        Box::pin(async move {
+            let fs = self.fs().await?;
+            let file = fs.create_new(path, private).await?;
+            Ok(Box::new(WithSession { file, _fs: fs }) as FileWriter)
+        })
+    }
+
+    fn publish_transfer<'a>(
+        &'a self,
+        from: &'a str,
+        to: &'a str,
+        overwrite: bool,
+    ) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move { self.fs().await?.publish_transfer(from, to, overwrite).await })
+    }
 }
 
 /// An open file plus the session it was opened on, kept open for as long as

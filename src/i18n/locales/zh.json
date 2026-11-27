@@ -287,6 +287,10 @@
       "upload": "上传",
       "download": "下载"
     },
+    "unprotected": {
+      "label": "未受保护",
+      "detail": "目标目录无法创建临时文件，传输中断可能损坏原文件。"
+    },
     "state": {
       "queued": "等待中",
       "conflict": "等待你的选择",
