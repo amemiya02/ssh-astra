@@ -10,8 +10,8 @@ use std::time::{Duration, Instant};
 use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::ssh::{
-    BoxFuture, ConnectionManager, HostKeyPrompt, PasswordPrompt, Prompter, RemoteTerminal,
-    RemoteTerminalOptions, Secret,
+    BoxFuture, ConnectionManager, HostKeyDecision, HostKeyPrompt, PasswordPrompt, Prompter,
+    RemoteTerminal, RemoteTerminalOptions, Secret,
 };
 use sshastra_core::terminal::{
     ConnectionState, ShellIntegrationEvent, ShellIntegrationStatus, Terminal, TerminalBackspace,
@@ -28,8 +28,8 @@ const SIZE: TerminalSize = TerminalSize {
 struct TrustingPrompter;
 
 impl Prompter for TrustingPrompter {
-    fn confirm_host_key(&self, _: HostKeyPrompt) -> BoxFuture<'_, bool> {
-        Box::pin(async { true })
+    fn confirm_host_key(&self, _: HostKeyPrompt) -> BoxFuture<'_, HostKeyDecision> {
+        Box::pin(async { HostKeyDecision::SaveAndTrust })
     }
 
     fn password(&self, _: PasswordPrompt) -> BoxFuture<'_, Option<Secret>> {

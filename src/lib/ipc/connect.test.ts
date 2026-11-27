@@ -5,7 +5,7 @@ describe("answerPrompts", () => {
   it("asks the user and sends the answer back under the prompt's id", async () => {
     const answer = vi.fn(() => Promise.resolve());
     const handle = answerPrompts(async (prompt) => {
-      if (prompt.type === "hostKey") return { type: "hostKey", trust: prompt.fingerprint === "SHA256:abc" };
+      if (prompt.type === "hostKey") return { type: "hostKey", decision: prompt.fingerprint === "SHA256:abc" ? "trustForRun" : "reject" };
       return { type: "password", password: "pw" };
     }, answer);
 
@@ -13,7 +13,7 @@ describe("answerPrompts", () => {
     await handle({ type: "password", id: 8, host: "h", user: "u", retry: false, canSave: true });
 
     expect(answer.mock.calls).toEqual([
-      [7, { type: "hostKey", trust: true }],
+      [7, { type: "hostKey", decision: "trustForRun" }],
       [8, { type: "password", password: "pw" }],
     ]);
   });
@@ -55,7 +55,7 @@ describe("answerPrompts", () => {
     for (const prompt of prompts) await handle(prompt);
 
     expect(answer.mock.calls).toEqual([
-      [1, { type: "hostKey", trust: false }],
+      [1, { type: "hostKey", decision: "reject" }],
       [2, { type: "password", password: null }],
       [3, { type: "passphrase", passphrase: null }],
       [4, { type: "keyboardInteractive", answers: null }],

@@ -17,6 +17,7 @@ export function ConnectErrorPanel({ error }: { error: CommandError }) {
 
   if (error.kind === "hostKeyMismatch" && error.details) {
     const d = error.details;
+    const recordedInFile = d.knownHostsPath !== undefined;
     return (
       <div role="alert" className={alertClass}>
         <h2 className="text-destructive flex items-center gap-2 font-semibold">
@@ -27,7 +28,9 @@ export function ConnectErrorPanel({ error }: { error: CommandError }) {
         <p className="mt-1.5">{t("connect.mismatch.body", { host: d.host })}</p>
         <dl className="mt-3 grid gap-2">
           <div className="bg-muted rounded-lg border px-3.5 py-3">
-            <dt className="text-muted-foreground text-xs">{t("connect.mismatch.recorded", { line: d.line })}</dt>
+            <dt className="text-muted-foreground text-xs">
+              {recordedInFile ? t("connect.mismatch.recorded", { line: d.line }) : t("connect.mismatch.recordedForRun")}
+            </dt>
             <dd className="mt-1 font-mono break-all">{d.knownFingerprint}</dd>
           </div>
           <div className="bg-muted rounded-lg border px-3.5 py-3">
@@ -36,7 +39,7 @@ export function ConnectErrorPanel({ error }: { error: CommandError }) {
           </div>
         </dl>
         <p className="text-muted-foreground mt-3 text-xs">
-          {t("connect.mismatch.fix", { path: d.knownHostsPath, line: d.line })}
+          {recordedInFile ? t("connect.mismatch.fix", { path: d.knownHostsPath, line: d.line }) : t("connect.mismatch.fixForRun")}
         </p>
       </div>
     );

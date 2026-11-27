@@ -14,7 +14,7 @@ use sshastra_core::forward::ForwardKind;
 use sshastra_core::hosts::{HostAuth, HostDraft, HostStore, ImportReport};
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::ssh::{
-    BoxFuture, ConnectionManager, HostKeyPrompt, PasswordPrompt, Prompter, Secret,
+    BoxFuture, ConnectionManager, HostKeyDecision, HostKeyPrompt, PasswordPrompt, Prompter, Secret,
 };
 use sshastra_core::ssh_config::{
     parse, parse_user_config, ImportIssue, ImportProblem, ParseContext,
@@ -323,8 +323,8 @@ struct Trusting {
 }
 
 impl Prompter for Trusting {
-    fn confirm_host_key(&self, _prompt: HostKeyPrompt) -> BoxFuture<'_, bool> {
-        Box::pin(async { true })
+    fn confirm_host_key(&self, _prompt: HostKeyPrompt) -> BoxFuture<'_, HostKeyDecision> {
+        Box::pin(async { HostKeyDecision::SaveAndTrust })
     }
 
     fn password(&self, _prompt: PasswordPrompt) -> BoxFuture<'_, Option<Secret>> {

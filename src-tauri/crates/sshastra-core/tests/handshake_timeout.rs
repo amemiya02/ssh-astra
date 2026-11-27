@@ -11,7 +11,8 @@ use std::time::{Duration, Instant};
 use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::ssh::{
-    BoxFuture, ConnectError, ConnectionManager, HostKeyPrompt, PasswordPrompt, Prompter, Secret,
+    BoxFuture, ConnectError, ConnectionManager, HostKeyDecision, HostKeyPrompt, PasswordPrompt,
+    Prompter, Secret,
 };
 use support::{Service, Sshd};
 
@@ -21,10 +22,10 @@ struct Slow {
 }
 
 impl Prompter for Slow {
-    fn confirm_host_key(&self, _: HostKeyPrompt) -> BoxFuture<'_, bool> {
+    fn confirm_host_key(&self, _: HostKeyPrompt) -> BoxFuture<'_, HostKeyDecision> {
         Box::pin(async move {
             tokio::time::sleep(self.delay).await;
-            true
+            HostKeyDecision::SaveAndTrust
         })
     }
 

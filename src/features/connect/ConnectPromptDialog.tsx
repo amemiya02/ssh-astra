@@ -230,11 +230,14 @@ function HostKeyQuestion({
       </dl>
       <p className="text-muted-foreground text-xs">{t("connect.hostKey.hint")}</p>
       <DialogFooter>
-        <Button variant="outline" size="sm" onClick={() => onAnswer({ type: "hostKey", trust: false })}>
-          {t("connect.cancel")}
+        <Button variant="outline" size="sm" autoFocus onClick={() => onAnswer(refusal(prompt))}>
+          {t("connect.hostKey.reject")}
         </Button>
-        <Button size="sm" autoFocus onClick={() => onAnswer({ type: "hostKey", trust: true })}>
-          {t("connect.hostKey.trust")}
+        <Button variant="outline" size="sm" onClick={() => onAnswer({ type: "hostKey", decision: "trustForRun" })}>
+          {t("connect.hostKey.trustForRun")}
+        </Button>
+        <Button size="sm" onClick={() => onAnswer({ type: "hostKey", decision: "saveAndTrust" })}>
+          {t("connect.hostKey.saveAndTrust")}
         </Button>
       </DialogFooter>
     </>

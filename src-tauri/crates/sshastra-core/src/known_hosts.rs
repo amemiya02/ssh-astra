@@ -48,7 +48,7 @@ impl HostKey {
             .join(" ")
     }
 
-    fn same_key(&self, other: &HostKey) -> bool {
+    pub(crate) fn same_key(&self, other: &HostKey) -> bool {
         self.0.key_data() == other.0.key_data()
     }
 }
