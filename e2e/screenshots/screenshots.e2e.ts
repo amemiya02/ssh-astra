@@ -73,6 +73,9 @@ async function domClick(selector: string): Promise<void> {
 
 async function hostRow(name: string) {
   const row = $(`//aside//button[.//*[normalize-space()="${name}"]]`);
+  // On Home the Host list is hidden; the Hosts button on the rail opens it for the visit.
+  const hosts = $('nav button[aria-label="Hosts"]');
+  if ((await hosts.getAttribute("aria-pressed")) !== "true") await hosts.click();
   await row.waitForDisplayed();
   return row;
 }
