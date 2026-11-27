@@ -17,6 +17,8 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, State, WebviewWindow};
 
 use crate::error::CommandResult;
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+use crate::transfer_activity::Activity;
 
 use super::files::live_sftp;
 
@@ -24,20 +26,31 @@ use super::files::live_sftp;
 pub struct TransfersState {
     queue: TransferQueue,
     watcher: Arc<Watcher<Transfer>>,
-}
-
-impl Default for TransfersState {
-    fn default() -> Self {
-        let watcher: Arc<Watcher<Transfer>> = Arc::default();
-        let sink = Arc::clone(&watcher);
-        let queue = TransferQueue::new(Arc::new(DiskFs), move |transfer| {
-            sink.send(transfer.clone());
-        });
-        Self { queue, watcher }
-    }
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    pub(crate) activity: Arc<Activity>,
 }
 
 impl TransfersState {
+    pub(crate) fn new(_app: &AppHandle) -> Self {
+        let watcher: Arc<Watcher<Transfer>> = Arc::default();
+        let sink = Arc::clone(&watcher);
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        let activity = Activity::start(_app);
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        let observe = Arc::clone(&activity);
+        let queue = TransferQueue::new(Arc::new(DiskFs), move |transfer| {
+            #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+            observe.changed(transfer);
+            sink.send(transfer.clone());
+        });
+        Self {
+            queue,
+            watcher,
+            #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+            activity,
+        }
+    }
+
     pub(crate) fn unwatch(&self, label: &str) {
         self.watcher.unsubscribe(label);
     }
@@ -48,6 +61,8 @@ impl TransfersState {
 
     /// Applies the `transfers` settings section.
     pub fn apply(&self, settings: &TransferSettings) {
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        self.activity.set_prevent_sleep(settings.prevent_sleep);
         self.queue.set_concurrency(settings.concurrency());
     }
 }

@@ -15,6 +15,8 @@ mod prompts;
 mod quit;
 mod terminal_handoff;
 #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+mod transfer_activity;
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
 mod wake;
 mod windows;
 
@@ -147,6 +149,7 @@ pub fn run() {
             app.manage(known_hosts.clone());
             let settings =
                 SettingsStore::open(config_dir.join("settings.json")).map_err(Into::into);
+            app.manage(TransfersState::new(app.handle()));
             if let Ok(store) = &settings {
                 app.state::<TransfersState>()
                     .apply(&store.section(TransferSettings::SECTION));
@@ -233,7 +236,6 @@ pub fn run() {
         .manage(ConnectionsState::default())
         .manage(TemporaryHosts::default())
         .manage(FsRegistry::default())
-        .manage(TransfersState::default())
         .manage(Arc::new(PendingScreens::default()))
         .manage(Arc::new(PendingReviews::default()))
         .on_window_event(|window, event| match event {
@@ -402,6 +404,8 @@ pub fn run() {
                 tauri::RunEvent::Exit => {
                     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
                     drop(wake_listener.take());
+                    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+                    app.state::<TransfersState>().activity.stop(app);
                     app.state::<AgentService>().stop();
                     // Remote edits and pasted images' temp files go with the app.
                     app.state::<RemoteEditor>().close_all();

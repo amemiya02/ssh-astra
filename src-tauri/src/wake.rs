@@ -6,6 +6,10 @@ use tauri::{AppHandle, Manager};
 pub(crate) use platform::Listener;
 
 fn resumed(app: &AppHandle) {
+    #[cfg(windows)]
+    app.state::<crate::commands::transfers::TransfersState>()
+        .activity
+        .resumed(app);
     log::info!("system resumed, checking for disconnected Terminals");
     app.state::<TerminalRegistry>().reconnect_disconnected();
 }

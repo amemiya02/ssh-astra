@@ -224,7 +224,10 @@ fn build(app: &AppHandle, label: &str, focus: bool) -> tauri::Result<WebviewWind
         .unwrap()
         .insert(label.into(), WindowResources::default());
     let result = builder.build();
-    if result.is_err() {
+    if let Ok(window) = &result {
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        app.state::<TransfersState>().activity.window_opened(window);
+    } else {
         windows.resources.lock().unwrap().remove(label);
     }
     result

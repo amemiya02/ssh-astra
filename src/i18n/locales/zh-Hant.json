@@ -1587,6 +1587,10 @@
       "concurrency": {
         "label": "同時傳輸數",
         "description": "同時進行的上傳和下載數量，其餘的排隊等待。資料夾內的檔案逐個複製。"
+      },
+      "preventSleep": {
+        "label": "傳輸期間阻止系統睡眠",
+        "description": "電腦閒置時繼續上傳、下載和複製檔案。"
       }
     },
     "notifications": {
