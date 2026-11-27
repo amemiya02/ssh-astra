@@ -252,7 +252,7 @@ fn delete_saved_hosts(
     // Best effort: an entry left behind is unreachable, never shown again.
     tauri::async_runtime::spawn(async move {
         for id in ids {
-            vault.clear(id).await;
+            let _ = vault.clear(id).await;
         }
     });
     Ok(tree)
