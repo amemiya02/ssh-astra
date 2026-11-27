@@ -16,5 +16,6 @@ pub mod settings;
 pub mod snippets;
 pub mod ssh;
 pub mod ssh_config;
+pub mod ssh_config_export;
 pub mod terminal;
 mod wildcard;

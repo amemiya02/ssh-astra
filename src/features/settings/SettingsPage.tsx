@@ -1,3 +1,4 @@
+import { isTauri } from "@tauri-apps/api/core";
 import { Search, X } from "lucide-react";
 import { useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -10,7 +11,7 @@ import { filterSettingsRows } from "./settings-search";
 import { SettingsViewContext } from "./settings-view";
 
 const availableRows = [...Object.values(settingRows), ...shortcutRows.values()].filter((row) =>
-  settingsPageSections.some(({ id }) => id === row.category)
+  settingsPageSections.some(({ id }) => id === row.category) && (row !== settingRows.openSshSync || isTauri())
 );
 
 /** The Settings tab. Every change applies at once and is saved to the settings file. */

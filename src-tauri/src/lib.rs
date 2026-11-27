@@ -32,7 +32,7 @@ use sshastra_core::hosts::HostStore;
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::settings::SettingsStore;
 use sshastra_core::snippets::SnippetStore;
-use sshastra_core::ssh::{Agent, ConnectionManager};
+use sshastra_core::ssh::{Agent, ConnectionManager, ConnectionSettings};
 use sshastra_core::terminal::{CommandHistory, TerminalRegistry};
 use tauri::Manager;
 use tauri_plugin_window_state::StateFlags;
@@ -50,6 +50,7 @@ use commands::home::StartupMeasurement;
 use commands::hosts::HostsState;
 use commands::settings::SettingsState;
 use commands::snippets::SnippetsState;
+use commands::ssh_config_export::{OpenSshSettings, OpenSshSync};
 use commands::terminal::TerminalOutputDirectory;
 use commands::transfers::TransfersState;
 
@@ -157,7 +158,30 @@ pub fn run() {
             let vault = credentials::system_vault();
             #[cfg(feature = "e2e")]
             let vault: Arc<dyn credentials::CredentialVault> = Arc::new(credentials::NoVault);
-            let hosts = HostsState::new(hosts);
+            let open_ssh_settings = settings
+                .as_ref()
+                .map(|settings| settings.section::<OpenSshSettings>(OpenSshSettings::SECTION))
+                .unwrap_or_default();
+            let connection_settings = settings
+                .as_ref()
+                .map(|settings| settings.section::<ConnectionSettings>(ConnectionSettings::SECTION))
+                .unwrap_or_default();
+            #[cfg(not(feature = "e2e"))]
+            let home = app.path().home_dir().ok();
+            #[cfg(feature = "e2e")]
+            let home = std::env::var_os("SSHASTRA_E2E_HOME").map(std::path::PathBuf::from);
+            let settings = SettingsState::new(settings);
+            let open_ssh = OpenSshSync::new(
+                home,
+                open_ssh_settings,
+                connection_settings,
+                settings.changes(),
+            );
+            match &hosts {
+                Ok(store) => open_ssh.rebuild(store.list(), None),
+                Err(_) => open_ssh.unavailable_hosts(),
+            }
+            let hosts = HostsState::new(hosts, open_ssh);
             let agent_activity = Arc::new(AgentActivityLog::new(config_dir.join("agent-activity")));
             if agent_activity.prune(SystemTime::now()).is_err() {
                 log::warn!("Could not expire old Agent access activity");
@@ -170,19 +194,20 @@ pub fn run() {
                 ),
                 Arc::clone(&agent_activity),
             );
-            if let Ok(store) = &settings {
+            let _ = settings.with(|store| {
                 let agent: AgentSettings = store.section(AgentSettings::SECTION);
                 if agent.enabled && agent_service.apply(true, || Ok(())).is_err() {
                     log::warn!("Could not start the local Agent access service");
                 }
-            }
+                Ok(())
+            });
             app.manage(agent_service);
             app.manage(agent_activity);
             app.manage(hosts);
             app.manage(SnippetsState::new(
                 SnippetStore::open(config_dir.join("snippets.json")).map_err(Into::into),
             ));
-            app.manage(SettingsState::new(settings));
+            app.manage(settings);
             let transfers = app.state::<TransfersState>().queue();
             app.manage(
                 ConnectionManager::new(known_hosts)
@@ -278,6 +303,11 @@ pub fn run() {
             commands::settings::settings_load,
             commands::settings::settings_watch,
             commands::settings::settings_set,
+            commands::ssh_config_export::ssh_config_export_preview,
+            commands::ssh_config_export::ssh_config_export_cancel,
+            commands::ssh_config_export::ssh_config_export_enable,
+            commands::ssh_config_export::ssh_config_export_disable,
+            commands::ssh_config_export::ssh_config_export_refresh,
             commands::agent::agent_activity_list,
             commands::agent::agent_activity_clear,
             commands::command_history::command_history_list,

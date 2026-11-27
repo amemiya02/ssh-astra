@@ -1446,6 +1446,38 @@
       }
     },
     "connection": {
+      "openSshSync": {
+        "label": "将 Host 同步到 OpenSSH",
+        "description": "同步更新 OpenSSH 配置片段，便于在命令行使用已保存 Host 的别名连接。",
+        "confirmTitle": "开启 OpenSSH 同步？",
+        "confirmAdd": "SSH Astra 将在 ~/.ssh/config 顶部添加下面这一行，并写入应用专用的配置片段。",
+        "confirmExisting": "已有 Include 会加载 SSH Astra 的配置片段。开启同步后将写入该片段。",
+        "confirm": "开启同步",
+        "cancel": "取消",
+        "refresh": "刷新导出",
+        "removeInclude": "同步已关闭。如果这一行由 SSH Astra 添加，你可以从 ~/.ssh/config 中删除它。",
+        "written_other": "OpenSSH 中有 {{count}} 个可用别名",
+        "problems": {
+          "configChanged": "配置或确认状态已变化。请重新查看 Include。",
+          "missingInclude": "缺少 Include。请关闭再开启同步以查看改动。",
+          "includeConflict": "配置片段被多次引用或位于条件区块内。请将它的 Include 移到 ~/.ssh/config 顶部。",
+          "fragmentExists": "~/.ssh 中已有一个属于你的 ssh-astra.conf 文件。",
+          "hostsUnavailable": "无法读取已保存的 Host。",
+          "homeUnavailable": "无法找到 OpenSSH 的主目录。",
+          "io": "无法读取或写入 OpenSSH 配置文件。请检查文件和权限。"
+        },
+        "issues": {
+          "userAlias": "已存在于你的 OpenSSH 配置中。",
+          "duplicateAlias": "由多个已保存的 Host 名称生成。",
+          "invalidField": "含有无法写入 OpenSSH 的连接设置。",
+          "unsupportedProxy": "使用了此导出功能无法表示的出站代理。",
+          "jumpUnavailable": "依赖的跳板主机别名无法导出。",
+          "httpForward": "有一项 HTTP CONNECT 端口转发已跳过。",
+          "manualForward": "有一项手动启动的端口转发已跳过。",
+          "invalidForward": "有一项端口转发的端点无法写入 OpenSSH。"
+        },
+        "written_one": "OpenSSH 中有 {{count}} 个可用别名"
+      },
       "osDetection": {
         "label": "识别 Host 的操作系统",
         "description": "已保存的 Host 连接成功后读取操作系统，用于自动选择 Host 图标。"
