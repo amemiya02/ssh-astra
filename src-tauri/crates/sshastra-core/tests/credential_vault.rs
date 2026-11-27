@@ -134,6 +134,7 @@ fn host(sshd: &Sshd, auth: HostAuth) -> Host {
         group_id: None,
         forwards: Vec::new(),
         bookmarks: Vec::new(),
+        open_ssh_source: None,
     }
 }
 

@@ -18,14 +18,16 @@ use crate::proxy::HostProxy;
 use crate::terminal::{TerminalBackspace, TerminalCharset};
 
 mod bookmarks;
+mod open_ssh;
 mod transfer;
 pub use bookmarks::Bookmark;
+pub use open_ssh::{diff_open_ssh, OpenSshDiff, OpenSshReadReport, OpenSshSource};
 pub use transfer::{ImportSummary, EXPORT_FORMAT};
 
 /// The file format version this build writes, to the store and to export
 /// files. Bump it together with a migration step in [`migrate`], which reads
 /// both.
-const CURRENT_VERSION: u32 = 22;
+const CURRENT_VERSION: u32 = 23;
 
 const MAX_HOST_TAGS: usize = 10;
 const MAX_TAG_LENGTH: usize = 32;
@@ -232,6 +234,9 @@ pub struct Host {
     /// Saved directories, in the order added. Edited separately from HostDraft.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bookmarks: Vec<Bookmark>,
+    /// Local link to the imported entry in the user's OpenSSH config.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub open_ssh_source: Option<OpenSshSource>,
 }
 
 /// A Host's editable fields, as entered in the Host form.
@@ -346,6 +351,7 @@ impl HostDraft {
             group_id: None,
             forwards: Vec::new(),
             bookmarks: Vec::new(),
+            open_ssh_source: None,
         })
     }
 }
@@ -695,6 +701,7 @@ impl HostStore {
             forwards: std::mem::take(&mut slot.forwards),
             bookmarks: std::mem::take(&mut slot.bookmarks),
             detected_os: slot.detected_os,
+            open_ssh_source: slot.open_ssh_source.take(),
             ..draft.into_host(id)?
         };
         *slot = host.clone();
@@ -770,6 +777,16 @@ impl HostStore {
     /// already taken is skipped, and a Jump host named after a saved Host is that Host.
     pub fn import_config(&mut self, parsed: ParsedConfig) -> Result<ImportReport, HostStoreError> {
         let mut library = self.library.clone();
+        let report = Self::add_config(&mut library, parsed, false)?;
+        self.save(library)?;
+        Ok(report)
+    }
+
+    fn add_config(
+        library: &mut Library,
+        parsed: ParsedConfig,
+        open_ssh: bool,
+    ) -> Result<ImportReport, HostStoreError> {
         let mut report = ImportReport {
             issues: parsed.issues,
             ..ImportReport::default()
@@ -779,9 +796,12 @@ impl HostStore {
             .iter()
             .map(|h| (h.name.clone(), h.id.clone()))
             .collect();
+        let source_ids = open_ssh.then(|| open_ssh::source_ids(&library.hosts));
         let mut added = Vec::new();
         for entry in parsed.hosts {
-            if ids.contains_key(&entry.name) {
+            if ids.contains_key(&entry.name)
+                || source_ids.as_ref().is_some_and(|ids| ids.contains_key(&entry.name.to_ascii_lowercase()))
+            {
                 report.skipped.push(entry.name);
                 continue;
             }
@@ -790,14 +810,13 @@ impl HostStore {
             added.push((id, entry));
         }
         for (id, entry) in added {
-            let jump_host = entry
-                .jump_host
-                .as_ref()
-                .and_then(|name| ids.get(name).cloned());
-            let auth = match entry.identity_file {
-                Some(identity_file) => HostAuth::Key { identity_file },
-                None => HostAuth::Auto,
-            };
+            let jump_host = entry.jump_host.as_ref().and_then(|name| {
+                source_ids.as_ref().and_then(|sources| sources.get(&name.to_ascii_lowercase()))
+                    .or_else(|| ids.get(name))
+                    .cloned()
+            });
+            let previous = open_ssh.then(|| entry.clone());
+            let auth = open_ssh::config_auth(entry.identity_file);
             let mut host = HostDraft {
                 name: entry.name.clone(),
                 tags: Vec::new(),
@@ -833,6 +852,7 @@ impl HostStore {
                         .map_err(HostStoreError::Invalid)?,
                 );
             }
+            host.open_ssh_source = previous.map(|entry| OpenSshSource::new(entry, &host.forwards));
             if let HostProxy::ProxyCommand(command) = &host.proxy {
                 report.proxy_commands.push(ImportedProxyCommand {
                     host: host.name.clone(),
@@ -845,7 +865,6 @@ impl HostStore {
         for name in &report.imported {
             chain(&library.hosts, &ids[name])?;
         }
-        self.save(library)?;
         Ok(report)
     }
 
@@ -882,6 +901,7 @@ impl HostStore {
             name: required_name(name)?,
             detected_os: None,
             agent_access: AgentPermission::Off,
+            open_ssh_source: None,
             ..library.hosts[at].clone()
         };
         for forward in &mut copy.forwards {
@@ -1070,8 +1090,9 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
         // v20 adds startup connections, off by default. v21 adds HTTP
         // CONNECT Port forwards without changing existing rules.
         // v22 adds local Agent access permissions, off by default.
+        // v23 adds the local OpenSSH config source, absent by default.
         2 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21
-        | CURRENT_VERSION => {
+        | 22 | CURRENT_VERSION => {
             let FileV2 { groups, hosts } = serde_json::from_str(text).map_err(corrupt)?;
             Ok(Library { groups, hosts })
         }
@@ -1117,6 +1138,9 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
         }
         if version < 22 {
             host.agent_access = AgentPermission::Off;
+        }
+        if version < 23 {
+            host.open_ssh_source = None;
         }
         host.tags = normalize_tags(&host.tags);
         bookmarks::retain_valid(&mut host.bookmarks);

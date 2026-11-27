@@ -593,6 +593,7 @@ async fn saving_the_temp_file_changes_the_file_on_the_server() {
         default_directory: None,
         forwards: Vec::new(),
         bookmarks: Vec::new(),
+        open_ssh_source: None,
     };
     let connection = manager
         .connect(&host, Arc::new(Trusting(sshd.password)))

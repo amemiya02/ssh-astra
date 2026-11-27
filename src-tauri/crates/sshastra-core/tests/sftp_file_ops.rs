@@ -61,6 +61,7 @@ async fn connect(sshd: &Sshd) -> (Arc<Connection>, tempfile::TempDir) {
         default_directory: None,
         forwards: Vec::new(),
         bookmarks: Vec::new(),
+        open_ssh_source: None,
     };
     let connection = manager
         .connect(&host, Arc::new(Trusting(sshd.password)))

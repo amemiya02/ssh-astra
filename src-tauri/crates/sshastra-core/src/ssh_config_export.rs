@@ -16,7 +16,7 @@ use crate::wildcard;
 
 pub use install::{ConfigExport, ExportError, IncludePlan, INCLUDE_LINE};
 
-const HEADER: &str = "# Managed by SSH Astra.\n";
+pub(crate) const HEADER: &str = "# Managed by SSH Astra.\n";
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct UserAliases(Vec<Vec<String>>);
@@ -116,7 +116,11 @@ pub fn generate(
     user_aliases: &UserAliases,
     settings: &ConnectionSettings,
 ) -> GeneratedConfig {
-    let mut named: Vec<_> = hosts.iter().map(|host| (alias(&host.name), host)).collect();
+    let mut named: Vec<_> = hosts
+        .iter()
+        .filter(|host| host.open_ssh_source.is_none())
+        .map(|host| (alias(&host.name), host))
+        .collect();
     named.sort_by(|(a, _), (b, _)| a.cmp(b));
     let mut seen = HashSet::new();
     let duplicates: HashSet<_> = named

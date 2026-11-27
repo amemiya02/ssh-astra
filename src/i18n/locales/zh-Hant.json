@@ -100,6 +100,7 @@
     }
   },
   "hosts": {
+    "openSshMissing": "OpenSSH 別名已遺失",
     "title": "Hosts",
     "basicInfo": "基本資訊",
     "advanced": "進階",
@@ -1435,16 +1436,34 @@
     },
     "connection": {
       "openSshSync": {
-        "label": "將 Host 同步至 OpenSSH",
-        "description": "同步更新 OpenSSH 設定片段，方便在命令列使用已儲存 Host 的別名連線。",
+        "label": "與 OpenSSH 同步 Host",
+        "description": "將 ~/.ssh/config 中的變更套用到已匯入的 Host，並讓命令列可以使用已儲存 Host 的別名。",
         "confirmTitle": "開啟 OpenSSH 同步？",
         "confirmAdd": "SSH Astra 將在 ~/.ssh/config 頂端加入下方這一行，並寫入應用程式專用的設定片段。",
         "confirmExisting": "現有的 Include 會載入 SSH Astra 的設定片段。開啟同步後會寫入這個片段。",
         "confirm": "開啟同步",
         "cancel": "取消",
-        "refresh": "重新匯出",
+        "refresh": "立即同步",
         "removeInclude": "同步已關閉。如果這一行由 SSH Astra 加入，你可以從 ~/.ssh/config 移除它。",
         "written_other": "OpenSSH 中有 {{count}} 個可用別名",
+        "read": {
+          "review": "檢視匯入內容",
+          "title": "從 OpenSSH 匯入",
+          "description": "檢視要加入 SSH Astra 的設定項目。",
+          "dependencies": "所需的 Jump host",
+          "proxyCommands": "這些 Host 使用的 ProxyCommand",
+          "import": "匯入 Host",
+          "updated": "已依 OpenSSH 設定更新",
+          "missing": "OpenSSH 設定中已遺失的別名",
+          "imported": "已從 OpenSSH 匯入",
+          "awaitingJump": "等待匯入所需 Jump host 的更新",
+          "includeIncomplete": "無法讀取一個 OpenSSH Include，已保留原有設定。",
+          "readFailed": "無法套用 OpenSSH 設定中的變更。",
+          "changed": "設定或可匯入的別名已變更。請重新同步以檢視最新項目。",
+          "failed": "無法匯入 OpenSSH 項目。",
+          "startupOffer": "你的 OpenSSH 設定中有可匯入的項目。",
+          "dismiss": "關閉提示"
+        },
         "problems": {
           "configChanged": "設定或確認狀態已變更。請重新檢視 Include。",
           "missingInclude": "找不到 Include。請關閉再開啟同步以檢視變更。",

@@ -103,6 +103,7 @@ impl Fixture {
             default_directory: None,
             forwards: Vec::new(),
             bookmarks: Vec::new(),
+            open_ssh_source: None,
         };
         Self {
             manager: ConnectionManager::new(KnownHosts::new(dir.path().join("known_hosts"))),
@@ -424,6 +425,7 @@ fn behind(name: &str, jump: &Host) -> Host {
         default_directory: None,
         forwards: Vec::new(),
         bookmarks: Vec::new(),
+        open_ssh_source: None,
     }
 }
 

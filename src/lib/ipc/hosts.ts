@@ -104,6 +104,8 @@ export interface Host extends HostDraft {
   forwards: PortForward[];
   /** Bookmarks in the order added. Changed only through the Bookmark commands. */
   bookmarks?: Bookmark[];
+  /** Local link to a Host alias from the user's OpenSSH config. */
+  openSshSource?: { alias: string; missing?: boolean };
 }
 
 /** The address parsed from Home or the command palette. The app supplies the local user. */
