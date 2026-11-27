@@ -560,6 +560,15 @@
     "turnOn": "Turn on privacy mode",
     "turnOff": "Turn off privacy mode"
   },
+  "toast": {
+    "filesCopied": "Files copied.",
+    "copied": "Copied to clipboard.",
+    "editUploadFailed": "Remote edit upload failed: {{name}}. {{reason}}",
+    "forwardFailed": "Port forward failed. {{reason}}",
+    "dismiss": "Dismiss notification: {{message}}",
+    "transferDone": "Transfer complete: {{name}}",
+    "transferFailed": "Transfer failed: {{name}}. {{reason}}"
+  },
   "status": {
     "noConnections": "No Connections",
     "connectedTo": "Connected to {{hosts}}",
@@ -950,6 +959,10 @@
         "description": "How often an idle Connection checks the server is still there. A dropped Connection is noticed after three missed checks. Applies to new Connections.",
         "off": "Off",
         "seconds": "{{count}} s"
+      },
+      "agentPath": {
+        "label": "Custom agent path",
+        "description": "Enter a local Unix socket or Windows named pipe for SSH authentication and agent forwarding. Leave blank to use the system agent. Applies to new Connections."
       }
     },
     "transfers": {

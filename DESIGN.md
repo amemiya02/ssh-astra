@@ -408,11 +408,19 @@ While Broadcast is active, the first segment shows a warning-colour radio icon a
 
 The privacy toggle sits beside the theme menu. Its pressed state uses the `selected` surface and an eye-off icon. While active, Host cards, rows, tabs, and the status bar show Host names in place of connection details. Address search remains available and the Port forward count stays visible.
 
+### Toasts
+
+The lower-right corner of the workspace stacks up to three in-app toasts above the status bar. Cards use the raised surface, a 1px border, 10px radius and a status icon. They report completed or failed transfers while the Transfers panel is hidden or collapsed, Port forward failures, Remote edit upload failures, import results and explicit copy actions. Terminal copy on select is silent.
+
+Additional toasts queue in arrival order. A normal toast stays on screen for five seconds. An error stays until dismissed with its labeled close button. Persistent live regions announce normal messages politely and errors assertively without moving focus.
+
 ### Settings navigation
 
 The top search field filters settings across all categories. Results keep their category headings and the original controls. Search matches titles, descriptions, and keywords in both English and Simplified Chinese. Clearing the field returns to the selected category. Choosing a category clears the search and scrolls its rows to the top.
 
 The left navigation lists Appearance, Terminal, Files, Connection, Transfers, Updates, and Diagnostics in that order when available. Appearance includes workspace layout and interface language. Updates and Diagnostics use the installed app's native features. The current category uses the `selected` surface, and narrow workspaces place the categories in a horizontally scrolling row above the controls. Shortcuts, Notifications, and Agent access can appear when they have settings available.
+
+Settings → Connection accepts a custom Unix agent socket or Windows named pipe in a text field. The field saves on Enter or blur. Clearing it returns new Connections to the system agent. A Connection uses the same source for authentication and agent forwarding when its Host enables forwarding.
 
 Appearance applies interface zoom immediately and remembers the selected percentage from 90% to 125%. The interface font takes a single local font family name and falls back to the system UI stack when that family is unavailable or the field is blank. The Terminal category has its own font family and size controls.
 

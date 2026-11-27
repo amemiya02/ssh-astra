@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
 import { Button } from "@/components/ui/button";
 import { terminalSetting, type TerminalPrefs } from "@/features/terminal/terminal-prefs";
+import { showToast } from "@/features/toasts/toastStore";
 import { getSetting } from "@/lib/storage";
 import { maxItermColorsKiB, parseItermColors } from "@/theme/iterm-colors";
 import { terminalSchemeName, type ImportedTerminalScheme, type ImportedTerminalSchemeId } from "@/theme/terminal-themes";
@@ -21,27 +22,31 @@ export function TerminalSchemeSettings({ importedSchemes, updatePrefs }: {
   const { t } = useTranslation();
   const fileInput = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
-  const [result, setResult] = useState<ImportResult>();
+  const report = (result: ImportResult) => {
+    showToast(
+      (t) => t(`${messageKey}.${result}`, { max: maxItermColorsKiB }),
+      result === "imported" ? "status" : "error",
+    );
+  };
 
   const importScheme = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0];
     event.currentTarget.value = "";
     if (!file) return;
     if (file.size > maxItermColorsKiB * 1024) {
-      setResult("tooLarge");
+      report("tooLarge");
       return;
     }
     if (!schemeFileExtension.test(file.name)) {
-      setResult("invalid");
+      report("invalid");
       return;
     }
 
     setImporting(true);
-    setResult(undefined);
     try {
       const palette = parseItermColors(new Uint8Array(await file.arrayBuffer()));
       if (!palette) {
-        setResult("invalid");
+        report("invalid");
         return;
       }
       // Use the latest settings because another palette may be removed while the file is read.
@@ -54,9 +59,9 @@ export function TerminalSchemeSettings({ importedSchemes, updatePrefs }: {
       }
       const id = `imported:${crypto.randomUUID()}` as const;
       updatePrefs({ importedSchemes: [...importedSchemes, { id, name, palette }] });
-      setResult("imported");
+      report("imported");
     } catch {
-      setResult("unreadable");
+      report("unreadable");
     } finally {
       setImporting(false);
     }
@@ -65,7 +70,6 @@ export function TerminalSchemeSettings({ importedSchemes, updatePrefs }: {
   const removeScheme = (id: ImportedTerminalSchemeId) => {
     const { importedSchemes } = getSetting(terminalSetting);
     updatePrefs({ importedSchemes: importedSchemes.filter((scheme) => scheme.id !== id) });
-    setResult(undefined);
   };
 
   return (
@@ -98,11 +102,6 @@ export function TerminalSchemeSettings({ importedSchemes, updatePrefs }: {
           <Upload />
           {t(`${messageKey}.import`)}
         </Button>
-        {result && (
-          <p role={result === "imported" ? "status" : "alert"} className={result === "imported" ? "text-muted-foreground text-xs" : "text-destructive text-xs"}>
-            {t(`${messageKey}.${result}`, { max: maxItermColorsKiB })}
-          </p>
-        )}
       </div>
     </SettingRow>
   );

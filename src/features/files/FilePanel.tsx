@@ -21,7 +21,7 @@ interface FilePanelProps {
  */
 export function FilePanel({ actions, children, footer }: FilePanelProps) {
   const { t } = useTranslation();
-  const { collapse, dock } = useFilePanelDock();
+  const { collapse, collapsed, dock } = useFilePanelDock();
   const bottom = dock === "bottom";
   return (
     <>
@@ -41,7 +41,7 @@ export function FilePanel({ actions, children, footer }: FilePanelProps) {
             </div>
           )}
         </div>
-        <TransfersPanel dock={dock} />
+        <TransfersPanel dock={dock} visible={!collapsed} />
       </div>
       {footer}
     </>

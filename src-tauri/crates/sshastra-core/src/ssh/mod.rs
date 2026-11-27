@@ -81,12 +81,15 @@ pub struct ConnectionSettings {
     /// Seconds between keepalives on an idle Connection; 0 sends none. Three
     /// unanswered ones in a row drop the Connection.
     pub keepalive_seconds: u32,
+    /// Unix socket or Windows named pipe; blank uses the system agent.
+    pub agent_path: String,
 }
 
 impl Default for ConnectionSettings {
     fn default() -> Self {
         Self {
             keepalive_seconds: DEFAULT_KEEPALIVE_SECONDS,
+            agent_path: String::new(),
         }
     }
 }
@@ -326,7 +329,7 @@ fn log_hop<T>(id: &HostId, step: &str, result: &Result<T, ConnectError>) {
 pub struct ConnectionManager {
     host_keys: Arc<HostKeys>,
     promoted_host_keys: Mutex<HashMap<HostId, Arc<HostKeys>>>,
-    agent: Agent,
+    agent: Mutex<Agent>,
     home_dir: Option<PathBuf>,
     vault: Arc<dyn CredentialVault>,
     /// Read when a Connection opens; changing it leaves open ones as they are.
@@ -380,7 +383,7 @@ impl ConnectionManager {
         Self {
             host_keys: Arc::new(HostKeys::new(known_hosts)),
             promoted_host_keys: Mutex::default(),
-            agent: Agent::None,
+            agent: Mutex::new(Agent::None),
             home_dir: std::env::var_os("HOME")
                 .or_else(|| std::env::var_os("USERPROFILE"))
                 .map(PathBuf::from),
@@ -406,7 +409,7 @@ impl ConnectionManager {
     /// Offers the keys of `agent` before any other method. The app passes
     /// [`Agent::System`].
     pub fn with_agent(mut self, agent: Agent) -> Self {
-        self.agent = agent;
+        self.agent = Mutex::new(agent);
         self
     }
 
@@ -439,6 +442,13 @@ impl ConnectionManager {
             .keepalive_interval
             .lock()
             .unwrap_or_else(|p| p.into_inner()) = interval;
+    }
+
+    /// Sets the global keepalive and SSH agent for new Connections.
+    pub fn apply_settings(&self, settings: &ConnectionSettings) {
+        self.set_keepalive_interval(settings.keepalive_interval());
+        *self.agent.lock().unwrap_or_else(|p| p.into_inner()) =
+            Agent::from_path(&settings.agent_path, self.home_dir.as_deref());
     }
 
     fn client_config(&self, host: &Host) -> Arc<client::Config> {
@@ -809,10 +819,11 @@ impl ConnectionManager {
         let host_key = progress.start(ConnectStage::HostKey);
         let failure = Arc::new(Mutex::new(None));
         let routes = Routes::default();
+        let agent = self.agent.lock().unwrap_or_else(|p| p.into_inner()).clone();
         let agent_forwarding = (matches!(purpose, ConnectionPurpose::Shared)
             && host.forward_agent
-            && self.agent != Agent::None)
-            .then(|| Arc::new(AgentForwarding::new(self.agent.clone())));
+            && agent != Agent::None)
+            .then(|| Arc::new(AgentForwarding::new(agent.clone())));
         let endpoint = Arc::new(Endpoint {
             id: host.id.clone(),
             address: host.address.clone(),
@@ -855,7 +866,7 @@ impl ConnectionManager {
             &mut handle,
             host,
             auth::AuthSources {
-                agent: &self.agent,
+                agent: &agent,
                 home_dir: self.home_dir.as_deref(),
                 vault: &vault,
             },

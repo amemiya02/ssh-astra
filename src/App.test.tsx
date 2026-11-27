@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { Terminal } from "@xterm/xterm";
 import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -49,10 +50,19 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
       if (command === "files_list") return panelListings.get(args?.id ?? "") ?? { path: "/", entries: [] };
       if (command === "transfers_copy_remote") return [1];
       if (command === "transfers_watch" || command === "forwards_watch" || command === "connections_watch") return [];
+      if (command === "hosts_import_ssh_config") return {
+        tree: { hosts: savedHosts, groups: [] },
+        report: { imported: ["Imported Host"], skipped: [], issues: [] },
+      };
       if (command === "host_tree") return { hosts: savedHosts, groups: [] };
     }),
   };
 });
+
+vi.mock("@tauri-apps/plugin-clipboard-manager", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@tauri-apps/plugin-clipboard-manager")>(),
+  writeText: vi.fn(async () => {}),
+}));
 
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }),
@@ -833,4 +843,88 @@ it("starts and stops Broadcast from the palette and ends it when its tab or wind
   await render(initialTabs);
   expect(broadcastMarks()).toEqual([]);
   expect(document.querySelector('[aria-label="Turn off Broadcast"]')).toBeNull();
+});
+
+it("announces transfer results when the Transfers panel is hidden and offers error dismissal", async () => {
+  await render(workspace(
+    { type: "open", tabId: "home", pane: newPane({ kind: "home" }) },
+    { type: "open", tabId: "sftp", pane: newPane({ kind: "sftp", host }) },
+    { type: "open", tabId: "terminal", pane: local("shell") },
+  ));
+  const watch = vi.mocked(invoke).mock.calls.find(([command]) => command === "transfers_watch")?.[1] as {
+    onEvent: { onmessage(transfer: Transfer): void };
+  };
+  const emit = (id: number, state: Transfer["state"]) => act(async () => watch.onEvent.onmessage({
+    id, direction: "upload", name: `file-${id}`, state,
+    source: "/work/file", target: "/remote/file",
+    bytesDone: 1, bytesTotal: 1, filesDone: 1, filesTotal: 1, unprotected: false,
+  }));
+  const polite = () => document.querySelector('[role="status"][aria-live="polite"]')?.textContent;
+  const assertive = () => document.querySelector('[role="alert"][aria-live="assertive"]')?.textContent;
+
+  await emit(1, { type: "done" });
+  expect(document.querySelector('#files [aria-label="Transfers"]')).not.toBeNull();
+  expect(polite()).toBe("");
+
+  await act(async () => document.querySelector<HTMLButtonElement>("#tab-home")!.click());
+  expect(document.querySelector("#files")).toBeNull();
+  expect(document.querySelector('#tabpanel-sftp[hidden] [aria-label="Transfers"]')).not.toBeNull();
+  await emit(2, { type: "done" });
+  await emit(3, { type: "failed", message: "Permission denied" });
+  await emit(3, { type: "failed", message: "Permission denied" });
+  expect(polite()).toBe("Transfer complete: file-2");
+  expect(assertive()).toBe("Transfer failed: file-3. Permission denied");
+
+  const dismiss = document.querySelector<HTMLButtonElement>(
+    'button[aria-label="Dismiss notification: Transfer failed: file-3. Permission denied"]',
+  );
+  expect(dismiss).not.toBeNull();
+  await act(async () => dismiss!.click());
+  expect(assertive()).toBe("");
+  await act(async () => document.querySelector<HTMLButtonElement>(
+    'button[aria-label="Dismiss notification: Transfer complete: file-2"]',
+  )!.click());
+
+  await act(async () => document.querySelector<HTMLButtonElement>("#tab-sftp")!.click());
+  await emit(4, { type: "done" });
+  expect(polite()).toBe("");
+  await act(async () => document.querySelector<HTMLButtonElement>(
+    '#tabpanel-sftp button[aria-label="Hide transfers"]',
+  )!.click());
+  await emit(5, { type: "done" });
+  expect(polite()).toBe("Transfer complete: file-5");
+  await act(async () => document.querySelector<HTMLButtonElement>(
+    'button[aria-label="Dismiss notification: Transfer complete: file-5"]',
+  )!.click());
+
+});
+
+it("announces the OpenSSH import result and still opens the detailed report", async () => {
+  await render(workspace({ type: "open", tabId: "home", pane: newPane({ kind: "home" }) }));
+  const importButton = [...document.querySelectorAll<HTMLButtonElement>("#tabpanel-home button")]
+    .find((button) => button.textContent === "Import ~/.ssh/config")!;
+  await act(async () => importButton.click());
+  expect(dialog()?.textContent).toContain("Imported Host");
+  expect(document.querySelector('[role="status"][aria-live="polite"]')?.textContent)
+    .toBe("Imported 1, skipped 0, could not import 0.");
+  await act(async () => dialog()!.querySelector("button")!.click());
+  const dismiss = document.querySelector<HTMLButtonElement>('button[aria-label^="Dismiss notification: Imported"]');
+  await act(async () => dismiss!.click());
+});
+
+it("confirms an explicit File panel copy after writing the path to the clipboard", async () => {
+  panelListings.set(host.id, { path: "/work", entries: [] });
+  await render(workspace({ type: "open", tabId: "work", pane: remote("shell") }));
+  const copy = document.querySelector<HTMLButtonElement>('button[aria-label="Copy path"]')!;
+  expect(copy.disabled).toBe(false);
+  await act(async () => copy.click());
+  expect(writeText).toHaveBeenCalledWith("/work");
+  expect(document.querySelector('[role="status"][aria-live="polite"]')?.textContent).toBe("Copied to clipboard.");
+  await act(async () => document.querySelector<HTMLButtonElement>(
+    'button[aria-label="Dismiss notification: Copied to clipboard."]',
+  )!.click());
+
+  vi.mocked(writeText).mockRejectedValueOnce(new Error("Clipboard unavailable"));
+  await act(async () => copy.click());
+  expect(document.querySelector('[role="status"][aria-live="polite"]')?.textContent).toBe("");
 });

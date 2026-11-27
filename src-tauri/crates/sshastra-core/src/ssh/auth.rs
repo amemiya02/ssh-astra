@@ -48,11 +48,34 @@ pub enum Agent {
     /// The agent listening on this Unix socket.
     #[cfg(unix)]
     Socket(PathBuf),
+    /// The agent listening on this Windows named pipe.
+    #[cfg(windows)]
+    NamedPipe(PathBuf),
 }
 
 pub(super) type DynAgent = AgentClient<Box<dyn AgentStream + Send + Unpin + 'static>>;
 
 impl Agent {
+    pub(super) fn from_path(path: &str, home_dir: Option<&Path>) -> Self {
+        if path.trim().is_empty() {
+            return Self::System;
+        }
+        let path = expand_home(Path::new(path), home_dir);
+        #[cfg(unix)]
+        {
+            Self::Socket(path)
+        }
+        #[cfg(windows)]
+        {
+            Self::NamedPipe(path)
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = path;
+            Self::None
+        }
+    }
+
     pub(super) async fn connect(&self) -> Option<DynAgent> {
         match self {
             Agent::None => None,
@@ -77,6 +100,24 @@ impl Agent {
                 .await
                 .ok()
                 .map(|a| a.dynamic()),
+            #[cfg(windows)]
+            Agent::NamedPipe(path) => {
+                // Open only paths in the local named pipe namespace.
+                const PREFIX: &str = r"\\.\pipe\";
+                let path = path.to_str()?;
+                let name = path.get(PREFIX.len()..)?;
+                if !path.get(..PREFIX.len())?.eq_ignore_ascii_case(PREFIX)
+                    || name.is_empty()
+                    || name.contains(['\\', '/', '\0'])
+                    || matches!(name, "." | "..")
+                {
+                    return None;
+                }
+                AgentClient::connect_named_pipe(path)
+                    .await
+                    .ok()
+                    .map(|a| a.dynamic())
+            }
         }
     }
 }

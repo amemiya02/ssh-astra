@@ -6,6 +6,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { exposeTerminal } from "@/lib/e2e";
+import { notifyCopied } from "@/features/toasts/copyFeedback";
 import { openExternalUrl, readClipboardText, writeClipboardText } from "@/lib/ipc/system";
 import { useTheme } from "@/theme/theme-context";
 import { resolveTerminalTheme, terminalSearchDecorations } from "@/theme/terminal-themes";
@@ -162,6 +163,10 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
         }
       }, 150);
     });
+    // xterm fills clipboardData and prevents the default only when it handles a selection.
+    const onCopy = (event: ClipboardEvent) => {
+      if (event.defaultPrevented && event.clipboardData && xterm.hasSelection()) notifyCopied();
+    };
     const onTitle = xterm.onTitleChange((title) => onTitleChangeRef.current?.(title));
 
     const captureRecipients = () => paneId === undefined ? undefined : broadcast?.capture(paneId);
@@ -186,6 +191,7 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
       event.stopPropagation();
       zoomTerminalFont(event.deltaY < 0 ? 1 : -1);
     };
+    container.addEventListener("copy", onCopy);
     container.addEventListener("paste", onPaste, true);
     container.addEventListener("contextmenu", onContextMenu);
     container.addEventListener("wheel", onZoomWheel, { capture: true, passive: false });
@@ -200,6 +206,7 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
       observer.disconnect();
       clearTimeout(copyTimer);
       stopBroadcastInput?.();
+      container.removeEventListener("copy", onCopy);
       container.removeEventListener("paste", onPaste, true);
       container.removeEventListener("contextmenu", onContextMenu);
       container.removeEventListener("wheel", onZoomWheel, true);
