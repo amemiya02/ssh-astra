@@ -3,6 +3,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { startI18n } from "@/i18n";
+import { listFiles } from "@/lib/ipc/files";
+import * as transferIpc from "@/lib/ipc/transfers";
+import { currentPlatform } from "@/features/workspace/shortcuts";
 import { closeRemoteEdit } from "@/lib/ipc/edit";
 import type { Host } from "@/lib/ipc/hosts";
 import { emptyTabs, newPane, remoteTerminalPaneIds, tabsReducer, type TabsState } from "@/features/workspace/tabs";
@@ -31,6 +34,7 @@ vi.mock("@/lib/ipc/files", () => ({
 // No native window to drop files on.
 vi.mock("@/lib/ipc/transfers", async (original) => ({
   ...(await original<typeof import("@/lib/ipc/transfers")>()),
+  copyRemoteFiles: vi.fn(() => Promise.resolve([1])),
   onOsFileDrag: vi.fn(() => Promise.resolve(() => {})),
 }));
 vi.mock("@/lib/ipc/edit", () => ({
@@ -153,6 +157,49 @@ describe("a File panel following its Terminal's cd", () => {
     await act(async () => terminalCwds.report(pane.id, "/srv/www"));
 
     expect(pathBars()).toEqual([["/", "srv", "www"]]);
+    container.remove();
+  });
+});
+
+
+describe("copying between Hosts", () => {
+  const source = { id: "from-pane", host: { ...host, defaultDirectory: "/source" }, status: "connected" } as const;
+  const target = {
+    id: "to-pane",
+    host: { ...host, id: "backup", name: "Backup", defaultDirectory: "/target" },
+    status: "connected",
+  } as const;
+
+  it("pastes the selected absolute paths from the previously focused Host", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    const show = (pane: typeof source | typeof target) => act(async () => root!.render(
+      <FilePanelDockContext value={{ dock: "right", collapsed: false, collapse() {} }}>
+        <TooltipProvider>
+          <FilePanelContent pane={pane} />
+        </TooltipProvider>
+      </FilePanelDockContext>,
+    ));
+    vi.mocked(listFiles).mockResolvedValueOnce({
+      path: "/source", entries: [{ name: "notes.txt", kind: "file", size: 3, modified: null, permissions: null, linkTarget: null }],
+    });
+    const command = (code: string) => {
+      const mac = currentPlatform() === "mac";
+      container.querySelector('[role="grid"]')!.dispatchEvent(new KeyboardEvent("keydown", {
+        code, key: code.at(-1)!.toLowerCase(), bubbles: true, cancelable: true, metaKey: mac, ctrlKey: !mac,
+      }));
+    };
+
+    await show(source);
+    act(() => container.querySelector('[role="rowgroup"] [role="row"]')!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    act(() => command("KeyC"));
+    await show(target);
+    await act(async () => command("KeyV"));
+
+    expect(transferIpc.copyRemoteFiles).toHaveBeenCalledExactlyOnceWith(
+      { id: "web", name: "web" }, ["/source/notes.txt"], { id: "backup", name: "Backup" }, "/target",
+    );
     container.remove();
   });
 });

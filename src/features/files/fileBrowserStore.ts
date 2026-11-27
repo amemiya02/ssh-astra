@@ -104,6 +104,7 @@ export interface FileBrowserState {
   moving: boolean;
   moveFailures: MoveFailure[];
   cutEntries(names: readonly string[]): void;
+  clearCut(): void;
   /** Moves the cut entries into the current directory, keeping only failures available to retry. */
   pasteCutEntries(): Promise<MoveFailure[]>;
   /** Moves dragged entries into a folder in their listing. Other drop targets are ignored. */
@@ -465,6 +466,7 @@ export function createFileBrowserStore(
           set({ cut: { directory: path, names: [...names] } });
         }
       },
+      clearCut: () => set({ cut: null }),
       async pasteCutEntries() {
         const { path, cut, moving } = get();
         if (fsId === null || path === null || cut === null || path === cut.directory || moving) return [];

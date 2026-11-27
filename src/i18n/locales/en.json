@@ -234,6 +234,11 @@
     "dockRight": "Dock File panel on the right",
     "dockBottom": "Dock File panel at the bottom",
     "dockGroup": "File panel position",
+    "copy": "Copy",
+    "peer": {
+      "choose": "Show another Host's File panel",
+      "currentOnly": "Show current Host only"
+    },
     "back": "Back",
     "forward": "Forward",
     "up": "Up one folder",
@@ -420,7 +425,8 @@
     "timeLeft": "{{time}} left",
     "direction": {
       "upload": "Upload",
-      "download": "Download"
+      "download": "Download",
+      "copy": "Copy between Hosts"
     },
     "unprotected": {
       "label": "Unprotected",
