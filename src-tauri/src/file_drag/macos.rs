@@ -7,6 +7,7 @@ use std::path::Path;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use block2::StackBlock;
 use objc2::rc::Retained;
@@ -19,12 +20,15 @@ use objc2_app_kit::{
     NSEvent, NSEventMask, NSEventType, NSImage, NSImageNameMultipleDocuments, NSView,
 };
 use objc2_app_kit::{NSFilePromiseProvider, NSFilePromiseProviderDelegate};
+use objc2_core_graphics::{CGEventSource, CGEventSourceStateID, CGMouseButton};
 use objc2_foundation::{
-    ns_string, NSArray, NSDictionary, NSError, NSLocalizedDescriptionKey, NSObject,
-    NSObjectProtocol, NSOperationQueue, NSPoint, NSRect, NSSize, NSString, NSURL,
+    ns_string, NSArray, NSCocoaErrorDomain, NSDictionary, NSError, NSLocalizedDescriptionKey,
+    NSObject, NSObjectProtocol, NSOperationQueue, NSPoint, NSRect, NSSize, NSString,
+    NSUserCancelledError, NSURL,
 };
 use sshastra_core::files::{FsError, FsResult};
 use tauri::{AppHandle, Manager, WebviewWindow};
+use tokio::sync::watch;
 
 use super::{PointerState, RemoteRead, Report, Source, CHUNK_SIZE};
 
@@ -56,13 +60,92 @@ struct PromiseState {
     source: Arc<Source>,
     report: Arc<Report>,
     queue: Retained<NSOperationQueue>,
-    delivery: Option<Delivery>,
+    delivery: Arc<Delivery>,
+    app: Option<AppHandle>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DropDecision {
+    Pending,
+    Accepted,
+    Cancelled,
+}
+
 struct Delivery {
-    app: AppHandle,
-    started: Arc<AtomicBool>,
+    started: AtomicBool,
+    decision: watch::Sender<DropDecision>,
+}
+
+impl Delivery {
+    fn new() -> Self {
+        Self {
+            started: AtomicBool::new(false),
+            decision: watch::Sender::new(DropDecision::Pending),
+        }
+    }
+
+    fn decide(&self, outcome: DropDecision) -> bool {
+        self.decision.send_if_modified(|decision| {
+            if *decision != DropDecision::Pending {
+                return false;
+            }
+            *decision = outcome;
+            true
+        })
+    }
+
+    fn sample_escape(&self) {
+        const ESCAPE: u16 = 53;
+        let held = CGEventSource::key_state(CGEventSourceStateID::CombinedSessionState, ESCAPE);
+        if held {
+            let _cancelled = self.decide(DropDecision::Cancelled);
+            #[cfg(feature = "e2e")]
+            if _cancelled {
+                log::info!("file drag rejected the AppKit promise because Escape was held");
+            }
+        }
+    }
+
+    fn watch_escape(self: &Arc<Self>) {
+        let delivery = self.clone();
+        tauri::async_runtime::spawn(async move {
+            let mut decision = delivery.decision.subscribe();
+            while *decision.borrow_and_update() == DropDecision::Pending {
+                delivery.sample_escape();
+                if !CGEventSource::button_state(
+                    CGEventSourceStateID::CombinedSessionState,
+                    CGMouseButton::Left,
+                ) {
+                    break;
+                }
+                tokio::select! {
+                    _ = decision.changed() => {},
+                    _ = tokio::time::sleep(Duration::from_millis(20)) => {},
+                }
+            }
+        });
+    }
+
+    async fn wait_for_drop(&self) -> FsResult<bool> {
+        let mut pending = self.decision.subscribe();
+        let decision = tokio::time::timeout(Duration::from_secs(5), async {
+            pending
+                .wait_for(|decision| *decision != DropDecision::Pending)
+                .await
+                .is_ok_and(|decision| *decision == DropDecision::Accepted)
+        })
+        .await;
+        match decision {
+            Ok(accepted) => Ok(accepted),
+            Err(_) => {
+                if self.decide(DropDecision::Cancelled) {
+                    Err(FsError::Io("AppKit did not complete the file drag".into()))
+                } else {
+                    Ok(*self.decision.borrow() == DropDecision::Accepted)
+                }
+            }
+        }
+    }
 }
 
 fn promise_id(report: &Arc<Report>) -> usize {
@@ -109,26 +192,44 @@ define_class!(
         ) {
             #[cfg(feature = "e2e")]
             log::info!("file drag AppKit requested the file contents");
-            let state = self.ivars();
-            if let Some(delivery) = &state.delivery {
-                delivery.started.store(true, Ordering::Release);
-            }
-            // NSFilePromiseReceiver coordinates this callback for the supplied URL.
-            // Taking another write coordination lease on that URL can deadlock Finder.
-            let result = copy_to(url, state.source.clone());
-            let error = result.as_ref().err().map(promise_error);
+            // The drag can end on the main thread while this queue waits for the result.
+            let delegate = self.retain();
+            let state = delegate.ivars();
+            state.delivery.started.store(true, Ordering::Release);
+            let result = tauri::async_runtime::handle()
+                .block_on(state.delivery.wait_for_drop())
+                .and_then(|accepted| {
+                    if accepted {
+                        // NSFilePromiseReceiver already coordinates writes to this URL.
+                        copy_to(url, state.source.clone())?;
+                    }
+                    Ok(accepted)
+                });
+            let error = match &result {
+                Ok(true) => None,
+                // NSCocoaErrorDomain is the Foundation constant for this error code.
+                // The optional user info dictionary is absent.
+                Ok(false) => Some(unsafe {
+                    NSError::errorWithDomain_code_userInfo(
+                        NSCocoaErrorDomain,
+                        NSUserCancelledError,
+                        None,
+                    )
+                }),
+                Err(error) => Some(promise_error(error)),
+            };
             complete.call((error.as_ref().map_or(std::ptr::null_mut(), |error| {
                 Retained::as_ptr(error).cast_mut()
             }),));
             #[cfg(feature = "e2e")]
             log::info!(
                 "file drag AppKit finished writing success={}",
-                result.is_ok()
+                matches!(&result, Ok(true))
             );
-            state.report.finish(result.map(|()| true));
-            if let Some(delivery) = &state.delivery {
+            state.report.finish(result);
+            if let Some(app) = &state.app {
                 let id = promise_id(&state.report);
-                let _ = delivery.app.run_on_main_thread(move || {
+                let _ = app.run_on_main_thread(move || {
                     release_promise(id);
                 });
             }
@@ -137,12 +238,18 @@ define_class!(
 );
 
 impl PromiseDelegate {
-    fn new(source: Arc<Source>, report: Arc<Report>, delivery: Option<Delivery>) -> Retained<Self> {
+    fn new(
+        source: Arc<Source>,
+        report: Arc<Report>,
+        delivery: Arc<Delivery>,
+        app: Option<AppHandle>,
+    ) -> Retained<Self> {
         let this = Self::alloc().set_ivars(PromiseState {
             source,
             report,
             delivery,
             queue: NSOperationQueue::new(),
+            app,
         });
         unsafe { msg_send![super(this), init] }
     }
@@ -186,7 +293,8 @@ pub(super) async fn sample_pointer(window: &WebviewWindow) -> Option<(isize, Poi
 }
 
 struct DragState {
-    delivery: Delivery,
+    app: AppHandle,
+    delivery: Arc<Delivery>,
     report: Arc<Report>,
 }
 
@@ -217,10 +325,11 @@ define_class!(
             );
         }
 
-        #[cfg(feature = "e2e")]
         #[unsafe(method(draggingSession:movedToPoint:))]
-        fn moved(&self, _session: &NSDraggingSession, point: NSPoint) {
-            log::info!("file drag AppKit moved to x={} y={}", point.x, point.y);
+        fn moved(&self, _session: &NSDraggingSession, _point: NSPoint) {
+            self.ivars().delivery.sample_escape();
+            #[cfg(feature = "e2e")]
+            log::info!("file drag AppKit moved to x={} y={}", _point.x, _point.y);
         }
 
         #[unsafe(method(draggingSession:sourceOperationMaskForDraggingContext:))]
@@ -248,13 +357,25 @@ define_class!(
             #[cfg(not(feature = "e2e"))]
             let _ = point;
             let state = self.ivars();
-            if operation.contains(NSDragOperation::Copy) {
-                let Delivery { app, started } = state.delivery.clone();
+            let system_accepted = operation.contains(NSDragOperation::Copy);
+            state.delivery.sample_escape();
+            state.delivery.decide(if system_accepted {
+                DropDecision::Accepted
+            } else {
+                DropDecision::Cancelled
+            });
+            if *state.delivery.decision.borrow() == DropDecision::Cancelled {
+                state.report.finish(Ok(false));
+            }
+            if system_accepted {
+                let app = state.app.clone();
+                let delivery = state.delivery.clone();
                 let report = state.report.clone();
                 tauri::async_runtime::spawn(async move {
                     tokio::time::sleep(std::time::Duration::from_secs(30)).await;
                     let _ = app.run_on_main_thread(move || {
-                        if !started.load(Ordering::Acquire) && release_promise(promise_id(&report))
+                        if !delivery.started.load(Ordering::Acquire)
+                            && release_promise(promise_id(&report))
                         {
                             report.finish(Err(FsError::Io(
                                 "The drop target did not request the file".into(),
@@ -264,7 +385,6 @@ define_class!(
                 });
             } else {
                 release_promise(promise_id(&state.report));
-                state.report.finish(Ok(false));
             }
             DRAG.with_borrow_mut(|active| *active = None);
         }
@@ -293,11 +413,9 @@ pub(super) fn start(
         let Some(event) = MOUSE_DOWN.with_borrow_mut(Option::take) else {
             return;
         };
-        let delivery = Delivery {
-            app,
-            started: Arc::new(AtomicBool::new(false)),
-        };
-        let delegate = PromiseDelegate::new(source, report.clone(), Some(delivery.clone()));
+        let delivery = Arc::new(Delivery::new());
+        let delegate =
+            PromiseDelegate::new(source, report.clone(), delivery.clone(), Some(app.clone()));
         let provider = NSFilePromiseProvider::initWithFileType_delegate(
             NSFilePromiseProvider::alloc(),
             ns_string!("public.data"),
@@ -317,7 +435,8 @@ pub(super) fn start(
         let icon = NSImage::imageNamed(unsafe { NSImageNameMultipleDocuments });
         unsafe { item.setDraggingFrame_contents(frame, icon.as_deref().map(|icon| icon.as_ref())) };
         let this = DragSource::alloc(mtm).set_ivars(DragState {
-            delivery,
+            app,
+            delivery: delivery.clone(),
             report: report.clone(),
         });
         let drag_source: Retained<DragSource> = unsafe { msg_send![super(this), init] };
@@ -341,6 +460,7 @@ pub(super) fn start(
         #[cfg(feature = "e2e")]
         log::info!("file drag started AppKit session");
         session.setAnimatesToStartingPositionsOnCancelOrFail(false);
+        delivery.watch_escape();
     })
 }
 
@@ -412,6 +532,64 @@ mod tests {
 
     use super::*;
 
+    #[tokio::test]
+    async fn waits_for_the_drop_and_keeps_an_earlier_cancellation() {
+        let delivery = Delivery::new();
+        let waiting = delivery.wait_for_drop();
+        tokio::pin!(waiting);
+        assert!(tokio::time::timeout(Duration::ZERO, &mut waiting)
+            .await
+            .is_err());
+
+        assert!(delivery.decide(DropDecision::Cancelled));
+        assert!(!delivery.decide(DropDecision::Accepted));
+        assert!(!waiting.await.unwrap());
+    }
+
+    #[test]
+    fn a_cancelled_file_promise_never_opens_the_remote_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("cancelled.bin");
+        let url = NSURL::fileURLWithPath(&NSString::from_str(path.to_str().unwrap()));
+        let opens = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let source = Arc::new(Source {
+            name: "cancelled.bin".into(),
+            length: Some(1),
+            open: Box::new({
+                let opens = opens.clone();
+                move |_| {
+                    opens.fetch_add(1, Ordering::Relaxed);
+                    Box::pin(async { Err(FsError::Io("Unexpected remote open".into())) })
+                }
+            }),
+        });
+        let (sender, mut reported) = tokio::sync::oneshot::channel();
+        let report = Arc::new(Report(std::sync::Mutex::new(Some(sender))));
+        let delivery = Arc::new(Delivery::new());
+        assert!(delivery.decide(DropDecision::Cancelled));
+        let delegate = PromiseDelegate::new(source, report, delivery, None);
+        let delegate: &ProtocolObject<dyn NSFilePromiseProviderDelegate> =
+            ProtocolObject::from_ref(&*delegate);
+        let provider = NSFilePromiseProvider::initWithFileType_delegate(
+            NSFilePromiseProvider::alloc(),
+            ns_string!("public.data"),
+            delegate,
+        );
+        let code = Rc::new(Cell::new(None));
+        let complete = StackBlock::new({
+            let code = code.clone();
+            move |error: *mut NSError| code.set(unsafe { error.as_ref() }.map(NSError::code))
+        });
+
+        delegate
+            .filePromiseProvider_writePromiseToURL_completionHandler(&provider, &url, &complete);
+
+        assert_eq!(reported.try_recv(), Ok(Ok(false)));
+        assert_eq!(code.get(), Some(NSUserCancelledError));
+        assert_eq!(opens.load(Ordering::Relaxed), 0);
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+    }
+
     #[test]
     fn writes_the_promise_at_the_system_path_without_overwriting() {
         let directory = tempfile::tempdir().unwrap();
@@ -433,7 +611,9 @@ mod tests {
         });
         let (sender, mut result) = tokio::sync::oneshot::channel();
         let report = Arc::new(Report(std::sync::Mutex::new(Some(sender))));
-        let delegate = PromiseDelegate::new(file, report, None);
+        let delivery = Arc::new(Delivery::new());
+        assert!(delivery.decide(DropDecision::Accepted));
+        let delegate = PromiseDelegate::new(file, report, delivery, None);
         let delegate: &ProtocolObject<dyn NSFilePromiseProviderDelegate> =
             ProtocolObject::from_ref(&*delegate);
         let provider = NSFilePromiseProvider::initWithFileType_delegate(
