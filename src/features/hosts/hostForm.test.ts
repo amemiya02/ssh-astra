@@ -2,15 +2,12 @@ import { describe, expect, it } from "vitest";
 import { emptyHostForm, hostFormFrom, parseHostForm } from "./hostForm";
 
 const valid = {
+  ...emptyHostForm,
   name: " web ",
   address: " 10.0.0.5 ",
   port: "2222",
   user: " deploy ",
-  jumpHost: "",
   authType: "password" as const,
-  identitiesOnly: false,
-  forwardAgent: false,
-  identityFile: "",
 };
 
 describe("parseHostForm", () => {
@@ -74,6 +71,8 @@ describe("hostFormFrom", () => {
       identityFile: "",
       identitiesOnly: false,
       forwardAgent: false,
+      terminalCharset: "utf8",
+      terminalBackspace: "del",
     });
     expect(parseHostForm(form)).toEqual({ ok: true, draft: { ...host, id: undefined, groupId: undefined, forwards: undefined, identitiesOnly: false, forwardAgent: false } });
   });

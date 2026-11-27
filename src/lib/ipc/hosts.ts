@@ -14,6 +14,9 @@ export type GroupId = string;
  */
 export type HostAuth = { type: "auto" } | { type: "password" } | { type: "key"; identityFile: string };
 
+export type TerminalCharset = "utf8" | "gbk" | "big5" | "latin1";
+export type TerminalBackspace = "del" | "ctrlH";
+
 /** A Host's editable fields (`sshastra_core::hosts::HostDraft`). */
 export interface HostDraft {
   name: string;
@@ -29,6 +32,10 @@ export interface HostDraft {
   keepaliveSeconds?: number;
   /** Command typed once into each new Terminal shell. */
   postLoginCommand?: string;
+  /** Character set for Terminal input and output; absent uses UTF-8. */
+  terminalCharset?: TerminalCharset;
+  /** Byte sent by the Terminal's Backspace key; absent uses DEL. */
+  terminalBackspace?: TerminalBackspace;
   /** The Jump host this Host is reached through, or `null` to connect directly. */
   jumpHost: HostId | null;
   /** This Host's Terminal colour scheme id, overriding the global one; absent follows it. */

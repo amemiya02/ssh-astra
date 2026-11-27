@@ -2,10 +2,13 @@
 //! `ssh::RemoteTerminal`, a shell channel over a Connection). Both implement [`Terminal`], so the
 //! IPC layer and the UI treat them the same way.
 
+mod encoding;
 mod local_pty;
 mod registry;
 mod shell_integration;
 
+pub(crate) use encoding::OutputDecoder;
+pub use encoding::{TerminalBackspace, TerminalCharset};
 pub use local_pty::{LocalPty, ShellCommand};
 pub use registry::{TerminalId, TerminalRegistry};
 pub use shell_integration::{CwdParser, ShellOutput, Shown, INJECTION, REPORT_CWD};
@@ -45,7 +48,8 @@ pub struct TerminalSize {
 /// always the last event: no output follows it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TerminalEvent {
-    /// Raw bytes from the shell. May split UTF-8 sequences and escape codes.
+    /// Screen bytes, with legacy remote text transcoded to UTF-8. Chunks may
+    /// split UTF-8 sequences and escape codes.
     Output(Vec<u8>),
     /// A remote Terminal's Connection dropped, is being reopened, or is back
     /// (with a new shell). Local terminals never send it.

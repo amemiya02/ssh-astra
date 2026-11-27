@@ -188,6 +188,34 @@ describe("Host editor", () => {
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ postLoginCommand: command }), "prod");
   });
 
+  it("opens Terminal charset and Backspace settings in Advanced and saves the selected values", async () => {
+    const save = vi.fn<EditorProps["save"]>().mockResolvedValue(host);
+    await renderEditor({ host: { ...host, terminalCharset: "big5" }, save });
+
+    const charset = field("Terminal character set");
+    const backspace = field("Backspace sends");
+    expect(charset.closest("[hidden]")).not.toBeNull();
+    expect(backspace.closest("[hidden]")).not.toBeNull();
+    act(() => button("Advanced").click());
+    expect(charset.textContent).toBe("Big5");
+    expect(backspace.textContent).toBe("DEL");
+
+    function choose(control: HTMLElement, label: string) {
+      act(() => control.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+      const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+        .find((item) => item.textContent === label)!;
+      act(() => option.click());
+    }
+
+    choose(charset, "GBK");
+    choose(backspace, "Ctrl-H");
+    await act(async () => button("Save").click());
+    expect(save).toHaveBeenCalledWith(
+      expect.objectContaining({ terminalCharset: "gbk", terminalBackspace: "ctrlH" }),
+      "prod",
+    );
+  });
+
   it("saves edits to both advanced fields after the section is collapsed again", async () => {
     const save = vi.fn<EditorProps["save"]>().mockResolvedValue(host);
     await renderEditor({ save });

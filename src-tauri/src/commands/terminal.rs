@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use sshastra_core::hosts::HostId;
-use sshastra_core::ssh::{ReconnectPolicy, RemoteTerminal, RemoteTerminalOptions};
+use sshastra_core::ssh::{RemoteTerminal, RemoteTerminalOptions};
 use sshastra_core::terminal::{
     ConnectionState, LocalPty, ShellCommand, ShellIntegrationEvent, TerminalEvent, TerminalId,
     TerminalRegistry, TerminalSettings, TerminalSize, REPORT_CWD,
@@ -138,11 +138,7 @@ pub async fn remote_terminal_open(
         .with(|store| Ok(store.section::<TerminalSettings>(TerminalSettings::SECTION)))
         .unwrap_or_default()
         .shell_integration;
-    let options = RemoteTerminalOptions {
-        reconnect: ReconnectPolicy::default(),
-        shell_integration,
-        post_login_command: host.post_login_command.clone(),
-    };
+    let options = RemoteTerminalOptions::for_host(&host, shell_integration);
     let terminal = RemoteTerminal::open_with_progress(
         connect,
         options,

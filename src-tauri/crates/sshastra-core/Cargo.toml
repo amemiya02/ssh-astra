@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 base64 = "0.22"
+encoding_rs = "0.8"
 hmac = "0.13"
 keyring = "4"
 log.workspace = true

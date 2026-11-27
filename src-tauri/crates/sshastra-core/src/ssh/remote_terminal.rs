@@ -26,8 +26,9 @@ use super::shell::ShellEvent;
 use super::{ConnectError, ConnectStage, Connection, Prompter, RemoteShell};
 use crate::hosts::Host;
 use crate::terminal::{
-    ConnectionState, Result, ShellIntegrationEvent, ShellIntegrationStatus, ShellOutput, Terminal,
-    TerminalError, TerminalEvent, TerminalSize, INJECTION,
+    ConnectionState, OutputDecoder, Result, ShellIntegrationEvent, ShellIntegrationStatus,
+    ShellOutput, Terminal, TerminalBackspace, TerminalCharset, TerminalError, TerminalEvent,
+    TerminalSize, INJECTION,
 };
 
 /// How a [`RemoteTerminal`] retries a dropped Connection.
@@ -58,6 +59,22 @@ pub struct RemoteTerminalOptions {
     pub shell_integration: bool,
     /// Command typed once into every new shell after startup.
     pub post_login_command: Option<String>,
+    /// Character set for the shell's input and output.
+    pub charset: TerminalCharset,
+    /// Byte sent for the Backspace key.
+    pub backspace: TerminalBackspace,
+}
+
+impl RemoteTerminalOptions {
+    pub fn for_host(host: &Host, shell_integration: bool) -> Self {
+        Self {
+            shell_integration,
+            post_login_command: host.post_login_command.clone(),
+            charset: host.terminal_charset.unwrap_or_default(),
+            backspace: host.terminal_backspace.unwrap_or_default(),
+            ..Self::default()
+        }
+    }
 }
 
 enum Command {
@@ -72,6 +89,8 @@ enum Command {
 /// including [`TerminalEvent::Connection`] changes.
 pub struct RemoteTerminal {
     commands: mpsc::UnboundedSender<Command>,
+    charset: TerminalCharset,
+    backspace: TerminalBackspace,
 }
 
 impl RemoteTerminal {
@@ -147,7 +166,7 @@ impl RemoteTerminal {
             .post_login_command
             .filter(|command| !command.trim().is_empty())
             .map(|command| {
-                let mut line = command.into_bytes();
+                let mut line = options.charset.encode_input(command.as_bytes());
                 line.push(b'\r');
                 line
             });
@@ -160,6 +179,7 @@ impl RemoteTerminal {
             progress,
             policy: options.reconnect,
             integration: options.shell_integration,
+            charset: options.charset,
             post_login_input,
             size,
             sink: Box::new(sink),
@@ -168,7 +188,11 @@ impl RemoteTerminal {
             shell_events,
         };
         tokio::spawn(runner.run(shell));
-        Ok(Self { commands })
+        Ok(Self {
+            commands,
+            charset: options.charset,
+            backspace: options.backspace,
+        })
     }
 
     fn send(&self, command: Command) -> Result<()> {
@@ -181,7 +205,14 @@ impl RemoteTerminal {
 impl Terminal for RemoteTerminal {
     /// Input typed while disconnected is dropped.
     fn write(&mut self, data: &[u8]) -> Result<()> {
-        self.send(Command::Data(data.to_vec()))
+        // xterm sends a Backspace key as its own event, optionally with ESC
+        // for Alt. Embedded DEL bytes in pasted text retain their value.
+        let data: &[u8] = match (self.backspace, data) {
+            (TerminalBackspace::CtrlH, b"\x7f") => b"\x08",
+            (TerminalBackspace::CtrlH, b"\x1b\x7f") => b"\x1b\x08",
+            _ => data,
+        };
+        self.send(Command::Data(self.charset.encode_input(data)))
     }
 
     fn resize(&mut self, size: TerminalSize) -> Result<()> {
@@ -301,6 +332,7 @@ struct Runner {
     policy: ReconnectPolicy,
     /// Type the ShellIntegration hook into every new shell.
     integration: bool,
+    charset: TerminalCharset,
     post_login_input: Option<Vec<u8>>,
     size: TerminalSize,
     sink: Box<dyn FnMut(TerminalEvent) + Send>,
@@ -330,7 +362,8 @@ impl Runner {
     /// Runs `shell` until its Connection drops (`Ok`) or it ends (`Err`,
     /// after sending `Exit`).
     async fn serve(&mut self, shell: &mut RemoteShell) -> std::result::Result<(), ()> {
-        let mut output = ShellOutput::default();
+        let mut output = ShellOutput::new(self.charset);
+        let mut decoder = OutputDecoder::new(self.charset);
         if !self.integration {
             self.report_integration(ShellIntegrationStatus::Disabled);
         }
@@ -353,7 +386,9 @@ impl Runner {
                         }
                         // Reports also come from `REPORT_CWD` typed in without the hook.
                         let shown = output.feed(&bytes);
-                        self.show(shown.output);
+                        if !shown.output.is_empty() {
+                            self.show(decoder.decode(shown.output, false));
+                        }
                         for event in shown.events {
                             (self.sink)(event);
                         }
@@ -363,11 +398,14 @@ impl Runner {
                         }
                     }
                     Some(ShellEvent::Exit { code }) => {
-                        self.show(output.reveal());
+                        self.show(decoder.decode(output.reveal(), true));
                         (self.sink)(TerminalEvent::Exit { code });
                         return Err(());
                     }
-                    Some(ShellEvent::Lost) => return Ok(()),
+                    Some(ShellEvent::Lost) => {
+                        self.show(decoder.decode(Vec::new(), true));
+                        return Ok(());
+                    }
                     // Unreachable: `shell_tx` keeps the channel open.
                     None => return Err(()),
                 },
@@ -379,7 +417,7 @@ impl Runner {
                     } else {
                         if matches!(startup, Startup::InstallingHook(_)) {
                             // The shell never printed the marker: show what it did.
-                            self.show(output.reveal());
+                            self.show(decoder.decode(output.reveal(), false));
                             self.report_integration(ShellIntegrationStatus::TimedOut);
                         }
                         self.finish_startup(shell, std::mem::take(&mut typed));
