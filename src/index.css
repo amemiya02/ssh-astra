@@ -9,75 +9,62 @@
  */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * One theme paints the whole window. src/theme/theme.ts (`applyTheme`) writes the active
+ * theme's colours from src/theme/themes.ts onto <html> as `--ui-*` (the chrome),
+ * `--terminal-background` / `--terminal-foreground` and `--ansi-*` (the Terminal's palette).
+ * Every token below derives from them, so no colour literal lives in this file.
+ */
 :root {
   --radius: 0.625rem;
 
-  /* Chrome: the tinted ground behind the Host list, tab strip and status bar. */
-  --background: oklch(0.972 0.003 255);
-  --foreground: oklch(0.22 0.012 255);
+  /* Chrome: the ground behind the Host list, tab strip and status bar. */
+  --background: var(--ui-ground);
+  --foreground: var(--ui-foreground);
+  /* The nav rail and Host list column. */
+  --sidebar: var(--ui-sidebar);
   /* Raised work panels (File panel, cards). */
-  --surface: oklch(0.995 0.001 255);
+  --surface: var(--ui-surface);
   --card: var(--surface);
   --card-foreground: var(--foreground);
-  --popover: oklch(1 0 0);
+  --popover: var(--ui-raised);
   --popover-foreground: var(--foreground);
 
-  --primary: oklch(0.55 0.17 258);
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.945 0.004 255);
+  --primary: var(--ui-primary);
+  --primary-foreground: var(--ui-primary-foreground);
+  --muted: color-mix(in oklab, var(--ui-foreground) 6%, var(--ui-ground));
+  --secondary: var(--muted);
   --secondary-foreground: var(--foreground);
-  --muted: oklch(0.945 0.004 255);
-  --muted-foreground: oklch(0.5 0.012 255);
-  --accent: oklch(0.93 0.006 255);
+  --muted-foreground: var(--ui-muted-foreground);
+  --accent: color-mix(in oklab, var(--ui-foreground) 9%, var(--ui-ground));
   --accent-foreground: var(--foreground);
-  --selected: oklch(0.55 0.17 258 / 0.1);
+  --selected: color-mix(in oklab, var(--ui-primary) 14%, transparent);
 
-  --border: oklch(0.905 0.005 255);
-  --input: oklch(0.875 0.006 255);
-  --ring: oklch(0.55 0.17 258);
+  --border: var(--ui-border);
+  --input: color-mix(in oklab, var(--ui-foreground) 22%, var(--ui-ground));
+  --ring: var(--ui-primary);
 
-  --destructive: oklch(0.55 0.2 25);
-  --destructive-foreground: oklch(0.99 0 0);
-  --success: oklch(0.6 0.14 155);
-  --warning: oklch(0.7 0.15 70);
+  --destructive: var(--ui-destructive);
+  /* Text on a destructive fill: the ground reads on light and dark fills alike. */
+  --destructive-foreground: var(--ui-ground);
+  --success: var(--ui-success);
+  --warning: var(--ui-warning);
 
-  /* Must equal the xterm theme in src/theme/terminal-themes.ts (checked by a test). */
-  --terminal-background: #ffffff;
-  --terminal-foreground: #2b2f37;
-
-  --elevation-panel: 0 1px 2px oklch(0.2 0.02 255 / 0.05), 0 2px 8px oklch(0.2 0.02 255 / 0.04);
-  --elevation-overlay: 0 12px 32px oklch(0.2 0.02 255 / 0.16), 0 2px 6px oklch(0.2 0.02 255 / 0.06);
-  --overlay: oklch(0.2 0.01 255 / 0.28);
+  /* Light themes lift panels with a soft shadow; dark themes (below) rely on borders. */
+  --elevation-panel:
+    0 1px 2px color-mix(in oklab, var(--ui-foreground) 7%, transparent),
+    0 2px 8px color-mix(in oklab, var(--ui-foreground) 5%, transparent);
+  --elevation-overlay:
+    0 12px 32px color-mix(in oklab, var(--ui-foreground) 18%, transparent),
+    0 2px 6px color-mix(in oklab, var(--ui-foreground) 8%, transparent);
+  --overlay: color-mix(in oklab, var(--ui-foreground) 30%, transparent);
 }
 
 .dark {
-  --background: oklch(0.15 0.006 255);
-  --foreground: oklch(0.93 0.005 255);
-  --surface: oklch(0.205 0.007 255);
-  --popover: oklch(0.225 0.008 255);
-
-  --primary: oklch(0.7 0.14 258);
-  --primary-foreground: oklch(0.17 0.02 258);
-  --secondary: oklch(0.245 0.008 255);
-  --muted: oklch(0.245 0.008 255);
-  --muted-foreground: oklch(0.7 0.01 255);
-  --accent: oklch(0.255 0.008 255);
-  --selected: oklch(0.7 0.14 258 / 0.14);
-
-  --border: oklch(1 0 0 / 0.08);
-  --input: oklch(1 0 0 / 0.13);
-  --ring: oklch(0.7 0.14 258);
-
-  --destructive: oklch(0.68 0.18 25);
-  --success: oklch(0.72 0.14 155);
-  --warning: oklch(0.8 0.14 75);
-
-  --terminal-background: #131519;
-  --terminal-foreground: #d9dce3;
-
-  --elevation-panel: 0 1px 2px oklch(0 0 0 / 0.3);
-  --elevation-overlay: 0 16px 40px oklch(0 0 0 / 0.5), 0 0 0 1px oklch(1 0 0 / 0.06);
-  --overlay: oklch(0 0 0 / 0.5);
+  --elevation-panel: 0 0 0 1px var(--ui-border);
+  --elevation-overlay:
+    0 16px 40px color-mix(in oklab, var(--ui-sidebar) 85%, transparent), 0 0 0 1px var(--ui-border);
+  --overlay: color-mix(in oklab, var(--ui-sidebar) 72%, transparent);
 }
 
 @theme inline {
@@ -105,6 +92,7 @@
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-sidebar: var(--sidebar);
   --color-surface: var(--surface);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
@@ -129,6 +117,18 @@
   --color-overlay: var(--overlay);
   --color-terminal-background: var(--terminal-background);
   --color-terminal-foreground: var(--terminal-foreground);
+  --color-ansi-red: var(--ansi-red);
+  --color-ansi-red-ink: var(--ansi-red-ink);
+  --color-ansi-green: var(--ansi-green);
+  --color-ansi-green-ink: var(--ansi-green-ink);
+  --color-ansi-yellow: var(--ansi-yellow);
+  --color-ansi-yellow-ink: var(--ansi-yellow-ink);
+  --color-ansi-blue: var(--ansi-blue);
+  --color-ansi-blue-ink: var(--ansi-blue-ink);
+  --color-ansi-magenta: var(--ansi-magenta);
+  --color-ansi-magenta-ink: var(--ansi-magenta-ink);
+  --color-ansi-cyan: var(--ansi-cyan);
+  --color-ansi-cyan-ink: var(--ansi-cyan-ink);
 }
 
 @layer base {

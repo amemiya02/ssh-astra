@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
+import { usePaletteActions, type PaletteAction } from "@/features/palette/palette-actions";
 import { useSetting } from "@/lib/storage";
-import { appearanceSetting, applyTheme, darkQuery, resolveTheme, systemPrefersDark, type ThemePreference } from "./theme";
-import { ThemeContext } from "./theme-context";
+import { appearanceSetting, applyTheme, darkQuery, resolveTheme, systemPrefersDark } from "./theme";
+import { ThemeContext, type ThemeContextValue } from "./theme-context";
+import { appThemeList, appThemes, type AppThemeId } from "./themes";
 
 function subscribeToSystemTheme(onChange: () => void): () => void {
   const media = window.matchMedia(darkQuery);
@@ -9,20 +12,44 @@ function subscribeToSystemTheme(onChange: () => void): () => void {
   return () => media.removeEventListener("change", onChange);
 }
 
-/** Follows the system light/dark setting unless the user picked one; repaints live on either change. */
+/** Paints the chosen theme (following the system's light/dark when asked) and repaints live on any change, a preview included. */
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [appearance, setAppearance] = useSetting(appearanceSetting);
-  const preference = appearance.theme;
+  const { t } = useTranslation();
+  const [settings, setSettings] = useSetting(appearanceSetting);
   const systemDark = useSyncExternalStore(subscribeToSystemTheme, systemPrefersDark);
-  const theme = resolveTheme(preference, systemDark);
+  const [previewId, preview] = useState<AppThemeId | null>(null);
+  const theme = previewId ? appThemes[previewId] : resolveTheme(settings, systemDark);
 
   useEffect(() => applyTheme(document.documentElement, theme), [theme]);
 
-  const setPreference = useCallback(
-    (next: ThemePreference) => setAppearance({ ...appearance, theme: next }),
-    [appearance, setAppearance],
+  const value = useMemo<ThemeContextValue>(
+    () => ({
+      settings,
+      theme,
+      setTheme: (next) => setSettings({ ...settings, theme: next }),
+      setLightTheme: (lightTheme) => setSettings({ ...settings, lightTheme }),
+      setDarkTheme: (darkTheme) => setSettings({ ...settings, darkTheme }),
+      preview,
+    }),
+    [settings, theme, setSettings],
   );
 
-  const value = useMemo(() => ({ preference, theme, setPreference }), [preference, theme, setPreference]);
+  const { setTheme } = value;
+  const keywords = t("palette.keywords.theme");
+  usePaletteActions(
+    useMemo(
+      (): PaletteAction[] => [
+        ...appThemeList.map((entry) => ({
+          id: `theme.${entry.id}`,
+          title: t("theme.paletteAction", { name: entry.name }),
+          keywords: [keywords],
+          run: () => setTheme(entry.id),
+        })),
+        { id: "theme.system", title: t("theme.followSystemAction"), keywords: [keywords], run: () => setTheme("system") },
+      ],
+      [t, keywords, setTheme],
+    ),
+  );
+
   return <ThemeContext value={value}>{children}</ThemeContext>;
 }

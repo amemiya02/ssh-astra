@@ -1,7 +1,5 @@
-import { SquareTerminal } from "lucide-react";
-import { Fragment } from "react";
+import { Fragment, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { PortForwardsPanel } from "@/features/forwards/PortForwardsPanel";
 import { SettingsPage } from "@/features/settings/SettingsPage";
@@ -15,7 +13,8 @@ import { tabId, tabPanelId, type ConnectionStatus, type Pane, type ReconnectProg
 interface TabPanelsProps {
   tabs: Tab[];
   activeId: string | null;
-  onNewLocalTerminal(): void;
+  /** Home, drawn for the Home tab (or when no tab is open). `active`: it is the pane shown. */
+  renderHome(active: boolean): ReactNode;
   onFocusPane(paneId: string): void;
   /** A program in the pane set its title (empty string clears it). */
   onTitleChange(paneId: string, title: string): void;
@@ -27,23 +26,10 @@ interface TabPanelsProps {
  * hidden); only the active tab is shown. A split tab lays its panes out in a resizable group,
  * which is always rendered so splitting or closing a pane never remounts its neighbours.
  */
-export function TabPanels({ tabs, activeId, onNewLocalTerminal, ...paneProps }: TabPanelsProps) {
-  const { t } = useTranslation();
+export function TabPanels({ tabs, activeId, ...paneProps }: TabPanelsProps) {
 
-  if (tabs.length === 0) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-        <SquareTerminal className="text-muted-foreground size-6" aria-hidden />
-        <div className="space-y-1">
-          <p className="text-foreground font-medium">{t("workspace.emptyTitle")}</p>
-          <p className="text-muted-foreground max-w-72 text-balance">{t("workspace.emptyBody")}</p>
-        </div>
-        <Button variant="outline" size="sm" onClick={onNewLocalTerminal}>
-          {t("tabs.newLocalTerminal")}
-        </Button>
-      </div>
-    );
-  }
+  // Closing the last tab leaves Home, never an empty stage.
+  if (tabs.length === 0) return <div className="absolute inset-0">{paneProps.renderHome(true)}</div>;
 
   return tabs.map((tab) => {
     const active = tab.id === activeId;
@@ -62,7 +48,7 @@ export function TabPanels({ tabs, activeId, onNewLocalTerminal, ...paneProps }: 
   });
 }
 
-type PaneCallbacks = Omit<TabPanelsProps, "tabs" | "activeId" | "onNewLocalTerminal">;
+type PaneCallbacks = Omit<TabPanelsProps, "tabs" | "activeId">;
 
 function SplitPanes({ tab, active, ...callbacks }: { tab: Tab; active: boolean } & PaneCallbacks) {
   const { t } = useTranslation();
@@ -78,7 +64,7 @@ function SplitPanes({ tab, active, ...callbacks }: { tab: Tab; active: boolean }
               <div
                 role={split ? "group" : undefined}
                 aria-label={split ? t("tabs.pane", { index: index + 1, count: tab.panes.length }) : undefined}
-                className={cn("h-full transition-opacity", split && !focused && "opacity-70")}
+                className={cn("relative h-full transition-opacity", split && !focused && "opacity-70")}
                 onFocusCapture={() => {
                   if (!focused) callbacks.onFocusPane(pane.id);
                 }}
@@ -87,6 +73,10 @@ function SplitPanes({ tab, active, ...callbacks }: { tab: Tab; active: boolean }
                 }}
               >
                 <PaneContent pane={pane} active={active && focused} {...callbacks} />
+                {/* An overlay, not the pane's own ring: a Terminal's canvas paints over an inset shadow. The dim on the others is real but faint on a dark theme. */}
+                {split && focused && (
+                  <span aria-hidden data-pane-focus className="ring-primary/50 pointer-events-none absolute inset-0 z-10 ring-1 ring-inset" />
+                )}
               </div>
             </ResizablePanel>
           </Fragment>
@@ -101,8 +91,11 @@ function PaneContent({
   active,
   onTitleChange,
   onStatusChange,
+  renderHome,
 }: { pane: Pane; active: boolean } & PaneCallbacks) {
   switch (pane.kind) {
+    case "home":
+      return renderHome(active);
     case "local-terminal":
       return <LocalTerminalView active={active} onTitleChange={(title) => onTitleChange(pane.id, title)} />;
     case "remote-terminal":

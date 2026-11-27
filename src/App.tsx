@@ -1,20 +1,22 @@
 import { isTauri } from "@tauri-apps/api/core";
-import { ArrowDownUp, Server } from "lucide-react";
+import { Server } from "lucide-react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { connectionsStore, useConnections } from "@/features/connect/connectionsStore";
+import { hostConnections } from "@/features/connect/hostConnection";
 import { CommandDialog, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { FilePanelContent, type FilePanelPane } from "@/features/files/FilePanelContent";
 import { useRetainRemoteFilePanels } from "@/features/files/use-retain-remote-file-panels";
 import { fileBrowsers } from "@/features/files/fileBrowsers";
-import { formatSize } from "@/features/files/fileList";
 import { forwardsStore, runningForwards, useForwards } from "@/features/forwards/forwardsStore";
 import { activeConnections, forwardStatusText, runningRules } from "@/features/forwards/status";
+import { ForwardsSidebar } from "@/features/forwards/ForwardsSidebar";
+import { HomeView } from "@/features/home/HomeView";
 import { useHosts } from "@/features/hosts/hostsStore";
 import { updateSetting } from "@/features/updates/update-settings";
-import { UpdateNotice } from "@/features/updates/UpdateNotice";
 import { checkOnStartup, updatesStore } from "@/features/updates/updatesStore";
 import { HostsPanel } from "@/features/hosts/HostsPanel";
+import { useHostsController } from "@/features/hosts/useHostsController";
 import { CommandPalette, type PaletteTab } from "@/features/palette/CommandPalette";
 import { usePaletteActions, type PaletteAction } from "@/features/palette/palette-actions";
 import { rememberHostOpened } from "@/features/palette/recent-hosts";
@@ -27,18 +29,18 @@ import { TabStrip } from "@/features/workspace/TabStrip";
 import {
   activePane,
   activeTab,
+  canSplit,
   connectedHosts,
-  emptyTabs,
   newPane,
   reconnectingHosts,
   remoteTerminalPaneIds,
+  startupTabs,
   tabTitle,
   tabsReducer,
   type ConnectionStatus,
   type PaneKind,
   type ReconnectProgress,
   type SplitOrientation,
-  type TabsState,
 } from "@/features/workspace/tabs";
 import { useWorkspaceShortcuts } from "@/features/workspace/use-workspace-shortcuts";
 import type { Host } from "@/lib/ipc/hosts";
@@ -49,17 +51,13 @@ const localTerminal: PaneKind = { kind: "local-terminal" };
 /** Updates come from the installed app's updater: not in a plain browser, nor in the E2E build. */
 const updatable = isTauri() && import.meta.env.VITE_E2E !== "1";
 
-function initialTabs(): TabsState {
-  return tabsReducer(emptyTabs, { type: "open", tabId: crypto.randomUUID(), pane: newPane(localTerminal) });
-}
-
 /**
  * Composes the main window. Each slot of `AppShell` is owned by a feature:
  * Host list (features/hosts), tabs and splits (features/workspace), File panel (features/files).
  */
 export function App() {
   const { t } = useTranslation();
-  const [state, dispatch] = useReducer(tabsReducer, undefined, initialTabs);
+  const [state, dispatch] = useReducer(tabsReducer, undefined, startupTabs);
   const { tabs, activeId } = state;
 
   const openTab = useCallback(
@@ -80,6 +78,7 @@ export function App() {
   }, [openTab]);
   const [sftpPickerOpen, setSftpPickerOpen] = useState(false);
   const pickSftpHost = useCallback(() => setSftpPickerOpen(true), []);
+  const openHome = useCallback(() => openTab({ kind: "home" }), [openTab]);
   const openSettings = useCallback(() => openTab({ kind: "settings" }), [openTab]);
   const openForwards = useCallback((host: Host) => openTab({ kind: "port-forwards", host }), [openTab]);
   // Port forward states and transfers are pushed by the backend for the app's lifetime.
@@ -106,7 +105,7 @@ export function App() {
    */
   const split = (orientation: SplitOrientation) => {
     const tab = activeTab(state);
-    if (!tab || activePane(tab).kind === "sftp") return;
+    if (!tab || !canSplit(activePane(tab))) return;
     const pane = activePane(tab);
     const kind: PaneKind = pane.kind === "remote-terminal" ? { kind: pane.kind, host: pane.host } : localTerminal;
     dispatch({ type: "split", orientation, pane: newPane(kind) });
@@ -137,6 +136,7 @@ export function App() {
           shortcut: shortcutLabel("newTab", platform),
           run: openLocalTerminal,
         },
+        { id: "home.open", title: t("palette.actions.goHome"), keywords: [t("palette.keywords.hosts")], run: openHome },
         { id: "files.openSftp", title: t("sftp.open"), run: pickSftpHost },
         {
           id: "workspace.splitRight",
@@ -168,7 +168,7 @@ export function App() {
             ]
           : []),
       ],
-      [t, openLocalTerminal, openSettings, pickSftpHost],
+      [t, openLocalTerminal, openHome, openSettings, pickSftpHost],
     ),
   );
 
@@ -202,8 +202,10 @@ export function App() {
   });
 
   const hosts = useHosts((s) => s.tree.hosts);
+  const hostsController = useHostsController({ open: openRemoteTerminal, openSftp, openForwards });
   const forwardStates = useForwards((s) => s.states);
   const held = useConnections((s) => s.held);
+  const connectingHeld = useConnections((s) => s.connecting);
   const running = runningForwards({ states: forwardStates });
   const connected = activeConnections(connectedHosts(state), running, hosts, held);
   const forwards = runningRules(running, hosts).map(({ rule }) => forwardStatusText(rule, t));
@@ -224,6 +226,7 @@ export function App() {
   const transferList = useTransfers((s) => s.transfers);
   const transferSpeeds = useTransfers((s) => s.speeds);
   const transfers = transferSummary(transferList, transferSpeeds);
+  const connections = useMemo(() => hostConnections(connected, state, connectingHeld), [connected, state, connectingHeld]);
   const focused = activeTab(state);
   const focusedPane = focused && activePane(focused);
   const filePanelPane: FilePanelPane | undefined =
@@ -235,14 +238,17 @@ export function App() {
   return (
     <>
       <AppShell
-        sidebar={
-          <HostsPanel
-            onOpen={openRemoteTerminal}
-            onOpenSftp={openSftp}
-            onOpenForwards={openForwards}
-            onOpenLocalTerminal={openLocalTerminal}
-          />
-        }
+        sidebar={{
+          hosts: <HostsPanel controller={hostsController} connections={connections} />,
+          forwards: <ForwardsSidebar onOpenForwards={openForwards} />,
+        }}
+        nav={{
+          activeKind: focusedPane?.kind ?? null,
+          onHome: openHome,
+          onSftp: pickSftpHost,
+          onLocalTerminal: openLocalTerminal,
+          onSettings: openSettings,
+        }}
         tabs={
           <TabStrip
             tabs={tabs}
@@ -252,7 +258,6 @@ export function App() {
             onClose={(id) => dispatch({ type: "close", id })}
             onMove={(id, to) => dispatch({ type: "move", id, to })}
             onNewLocalTerminal={openLocalTerminal}
-            onOpenSftp={pickSftpHost}
             onSplit={split}
           />
         }
@@ -260,49 +265,30 @@ export function App() {
           <TabPanels
             tabs={tabs}
             activeId={activeId}
-            onNewLocalTerminal={openLocalTerminal}
+            renderHome={(active) => (
+              <HomeView
+                active={active}
+                controller={hostsController}
+                connections={connections}
+                onOpenLocalTerminal={openLocalTerminal}
+              />
+            )}
             onFocusPane={(paneId) => dispatch({ type: "focusPane", paneId })}
             onTitleChange={retitle}
             onStatusChange={setStatus}
           />
         }
-        fullWorkspace={focusedPane?.kind === "sftp"}
+        fullWorkspace={!focusedPane || focusedPane.kind === "sftp" || focusedPane.kind === "home"}
         filePanel={<FilePanelContent pane={filePanelPane} onOpenSftp={openSftp} />}
-        onOpenSettings={openSettings}
-        status={
-          <span role="status" className="flex min-w-0 items-center gap-3.5">
-            <span className="truncate">
-              {connected.length === 0
-                ? t("status.noConnections")
-                : t("status.connectedTo", { hosts: connected.map((host) => host.name).join(", ") })}
-            </span>
-            {reconnecting.length > 0 && (
-              <span className="truncate">
-                {reconnecting
-                  .map(({ host, attempt, attempts }) =>
-                    t("status.reconnecting", { host: host.name, attempt, attempts }),
-                  )
-                  .join(", ")}
-              </span>
-            )}
-            {forwards.length > 0 && (
-              <span className="truncate">{t("status.forwards", { list: forwards.join(", ") })}</span>
-            )}
-            {transfers.count > 0 && (
-              <span className="flex shrink-0 items-center gap-1 tabular-nums">
-                <ArrowDownUp className="size-3" aria-hidden />
-                {transfers.bytesPerSecond > 0
-                  ? t("status.transfersSpeed", {
-                      count: transfers.count,
-                      speed: formatSize(Math.round(transfers.bytesPerSecond)),
-                    })
-                  : t("status.transfers", { count: transfers.count })}
-              </span>
-            )}
-            <UpdateNotice />
-          </span>
-        }
+        status={{
+          connected,
+          reconnecting,
+          forwards,
+          transfers,
+          activeRemote: focusedPane?.kind === "remote-terminal" ? focusedPane.host : null,
+        }}
       />
+      {hostsController.dialogs}
       <ConflictDialog />
       <CommandDialog
         open={sftpPickerOpen}

@@ -4,8 +4,10 @@
   },
   "shell": {
     "workspace": "Terminals",
-    "showSidebar": "Show Host list",
-    "hideSidebar": "Hide Host list"
+    "navigation": "Navigation",
+    "sidebar": "Sidebar",
+    "showHosts": "Show Hosts",
+    "showForwards": "Show Port forwards"
   },
   "hosts": {
     "title": "Hosts",
@@ -129,11 +131,8 @@
       "disconnected": "Disconnected"
     },
     "settings": "Settings",
-    "portForwards": "Port forwards"
-  },
-  "workspace": {
-    "emptyTitle": "No open Terminals",
-    "emptyBody": "Open a Host from the list, or start a Local terminal on this computer."
+    "portForwards": "Port forwards",
+    "home": "Home"
   },
   "palette": {
     "title": "Command palette",
@@ -148,10 +147,13 @@
     },
     "actions": {
       "openSettings": "Open Settings",
-      "disconnectHost": "Disconnect {{name}}"
+      "disconnectHost": "Disconnect {{name}}",
+      "goHome": "Go to Home"
     },
     "keywords": {
-      "preferences": "preferences"
+      "preferences": "preferences",
+      "theme": "theme",
+      "hosts": "hosts vault start"
     }
   },
   "files": {
@@ -388,13 +390,20 @@
       "dynamic": "SOCKS5"
     },
     "autoStartHint": "Runs whenever this Host connects: opening a Terminal, starting another Port forward, or Connect only.",
-    "autoStartBadge": "Auto"
+    "autoStartBadge": "Auto",
+    "sidebar": {
+      "emptyTitle": "No Host has Port forwards",
+      "emptyBody": "Open a Host's menu in the Host list, choose Port forwards, and add a rule. Hosts with rules are listed here with how many are running.",
+      "runningOf": "{{running}} of {{total}} running"
+    }
   },
   "status": {
     "noConnections": "No Connections",
     "connectedTo": "Connected to {{hosts}}",
     "reconnecting": "Reconnecting to {{host}} ({{attempt}}/{{attempts}})",
     "forwards": "Port forwards: {{list}}",
+    "forwardsCount_one": "{{count}} Port forward",
+    "forwardsCount_other": "{{count}} Port forwards",
     "forwardsLocal": "{{from}} → {{to}}",
     "forwardsRemote": "on the Host {{from}} → {{to}}",
     "forwardsDynamic": "SOCKS {{from}}",
@@ -402,11 +411,12 @@
     "transfersSpeed": "Transfers: {{count}} · {{speed}}/s"
   },
   "theme": {
-    "title": "Appearance",
     "menuLabel": "Appearance: {{current}}",
-    "system": "System",
+    "followSystem": "Follow system",
     "light": "Light",
-    "dark": "Dark"
+    "dark": "Dark",
+    "paletteAction": "Theme: {{name}}",
+    "followSystemAction": "Theme: Follow system"
   },
   "terminal": {
     "starting": "Starting shell…",
@@ -432,11 +442,19 @@
     },
     "schemes": {
       "app": "Match app theme",
-      "light": "Light",
-      "dark": "Dark",
+      "light": "Astra Light",
+      "dark": "Astra Dark",
+      "githubLight": "GitHub Light",
+      "catppuccinLatte": "Catppuccin Latte",
       "solarizedLight": "Solarized Light",
-      "solarizedDark": "Solarized Dark",
+      "tokyoNight": "Tokyo Night",
+      "oneDark": "One Dark",
       "nord": "Nord",
+      "catppuccinMocha": "Catppuccin Mocha",
+      "dracula": "Dracula",
+      "gruvboxDark": "Gruvbox Dark",
+      "solarizedDark": "Solarized Dark",
+      "githubDark": "GitHub Dark",
       "ember": "Ember (for production)"
     }
   },
@@ -512,8 +530,14 @@
       "updates": "Updates"
     },
     "theme": {
-      "label": "Theme",
-      "description": "System follows your computer's light or dark setting."
+      "follow": {
+        "label": "Follow system appearance",
+        "description": "Switch between a light and a dark theme with your computer's setting."
+      },
+      "lightGroup": "Light themes",
+      "darkGroup": "Dark themes",
+      "usedWhenLight": "Used when your computer is light",
+      "usedWhenDark": "Used when your computer is dark"
     },
     "language": {
       "label": "Interface language",
@@ -599,5 +623,18 @@
     "installFailed": "The update failed: {{reason}}",
     "retry": "Try again",
     "dismiss": "Dismiss"
+  },
+  "rail": {
+    "home": "Home",
+    "hosts": "Hosts",
+    "forwards": "Port forwards"
+  },
+  "home": {
+    "search": "Search Hosts by name, address or user",
+    "recent": "Recent",
+    "hosts": "Hosts",
+    "ungrouped": "Ungrouped",
+    "emptyTitle": "No Hosts yet",
+    "emptyBody": "Add a Host, or import the ones in ~/.ssh/config. Each one appears here as a card; click it to open a Terminal."
   }
 }

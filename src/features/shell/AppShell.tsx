@@ -1,20 +1,25 @@
-import { PanelBottom, PanelLeft, PanelRight } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { isTauri } from "@tauri-apps/api/core";
+import { PanelBottom, PanelRight } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useGroupRef, usePanelRef } from "react-resizable-panels";
 import { IconButton } from "@/components/IconButton";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { usePaletteActions, type PaletteAction } from "@/features/palette/palette-actions";
+import { currentPlatform } from "@/features/workspace/shortcuts";
 import { cn } from "@/lib/utils";
 import { FilePanelDockContext } from "./file-panel-dock";
-import { isPanelCollapsed, type FilePanelDock } from "./shell-layout";
-import { StatusBar } from "./StatusBar";
+import { NavRail, type NavRailProps } from "./NavRail";
+import { isPanelCollapsed, type FilePanelDock, type SidebarView } from "./shell-layout";
+import { StatusBar, type StatusInfo } from "./StatusBar";
 import { useShellLayout } from "./use-shell-layout";
 
 export interface AppShellProps {
-  /** Left column: the Host list (search, Groups, Hosts) and its actions. */
-  sidebar: ReactNode;
-  /** The tab strip's tabs (role="tablist"); the shell adds its own toggles around them. */
+  /** The sidebar column's views; the nav rail picks which one shows. All stay mounted. */
+  sidebar: Record<SidebarView, ReactNode>;
+  /** The nav rail's destinations (the shell owns the sidebar view toggles). */
+  nav: Omit<NavRailProps, "sidebarView" | "sidebarOpen" | "onSidebarView">;
+  /** The tab strip (tabs, new tab, split buttons); the shell adds the dock buttons beside it. */
   tabs: ReactNode;
   /** The tab panels for the active tab, painted on the Terminal surface. */
   workspace: ReactNode;
@@ -25,10 +30,8 @@ export interface AppShellProps {
   filePanel: ReactNode;
   /** The standalone SFTP tab fills the workspace. */
   fullWorkspace?: boolean;
-  /** Items on the left of the status bar (Connections, Port forwards, transfers). */
-  status?: ReactNode;
-  /** Opens the Settings tab (status bar button). */
-  onOpenSettings(): void;
+  /** What the status bar reports. */
+  status?: StatusInfo;
 }
 
 const shellGroup = "shell";
@@ -36,21 +39,41 @@ const workspaceGroup = (dock: FilePanelDock) => `workspace-${dock}`;
 /** File panel size for a dock with no saved size; it keeps its pixel size when the window resizes. */
 const defaultFilesSize: Record<FilePanelDock, string> = { right: "340px", bottom: "260px" };
 
+/** macOS draws the traffic lights over the window (`titleBarStyle: "Overlay"`); only the app has that title bar. */
+const overlayTitleBar = isTauri() && currentPlatform() === "mac";
+/** How far the first column right of the 48px rail must reach to clear the traffic lights (78px wide). */
+const trafficLightInset = "30px";
+const sidebarSize = "248px";
+
 /**
- * The main window: Host list | (tab strip / Terminal workspace + File panel dock) | status bar.
+ * The main window: nav rail | sidebar view | (tab strip / Terminal workspace + File panel dock), over a status bar.
  * Panel sizes, collapsed panels and the dock position persist across restarts.
  */
-export function AppShell({ sidebar, tabs, workspace, filePanel, fullWorkspace, status, onOpenSettings }: AppShellProps) {
+export function AppShell({ sidebar, nav, tabs, workspace, filePanel, fullWorkspace, status }: AppShellProps) {
   const { t } = useTranslation();
-  const { layout, saveGroup, setDock } = useShellLayout();
-  const { dock } = layout;
+  const { layout, saveGroup, setDock, setSidebarView } = useShellLayout();
+  const { dock, sidebarView } = layout;
 
   const sidebarRef = usePanelRef();
   const filesRef = usePanelRef();
   const workspaceRef = useGroupRef();
 
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
-    isPanelCollapsed(layout.groups[shellGroup], "sidebar"),
+  // On Home the Host list repeats Home's own cards, so the column is closed while Home is the
+  // focused tab and the sidebar shows Hosts. That is a display rule, not the user's collapse: it
+  // saves nothing, and leaving Home reopens the column as it was. `autoHidden` says the rule
+  // closed it; `peek` is the Hosts rail button opening it for this visit.
+  const [peek, setPeek] = useState(false);
+  const homeHosts = nav.activeKind === "home" && sidebarView === "hosts";
+  if (peek && !homeHosts) setPeek(false);
+  const hideList = homeHosts && !peek;
+  // Opened on Home, the column starts closed (no flash of it) unless the user had it closed.
+  const [startsHidden] = useState(() => hideList && !isPanelCollapsed(layout.groups[shellGroup], "sidebar"));
+  const autoHidden = useRef(startsHidden);
+  const [shellLayout] = useState(() =>
+    startsHidden ? { ...layout.groups[shellGroup], sidebar: 0, main: 100 } : layout.groups[shellGroup],
+  );
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => hideList || isPanelCollapsed(layout.groups[shellGroup], "sidebar"),
   );
   const [filesCollapsed, setFilesCollapsed] = useState(() =>
     isPanelCollapsed(layout.groups[workspaceGroup(dock)], "files"),
@@ -107,93 +130,155 @@ export function AppShell({ sidebar, tabs, workspace, filePanel, fullWorkspace, s
     ),
   );
 
+  // The display rule closes and reopens the column; the effect only reacts to the rule changing.
+  useEffect(() => {
+    const panel = sidebarRef.current;
+    if (!panel) return;
+    if (hideList) {
+      if (!panel.isCollapsed()) {
+        autoHidden.current = true;
+        panel.collapse();
+      }
+    } else if (autoHidden.current) {
+      autoHidden.current = false;
+      toggle(sidebarRef, true, sidebarSize);
+    }
+    // `toggle` only reads refs and its arguments.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hideList]);
+
+  /** Shows `view` in the sidebar, opening the column if it is collapsed. */
+  const showSidebarView = (view: SidebarView) => {
+    setSidebarView(view);
+    if (!sidebarCollapsed) return;
+    if (autoHidden.current && view === "hosts") setPeek(true);
+    autoHidden.current = false;
+    toggle(sidebarRef, true, sidebarSize);
+  };
+  /**
+   * The rail's behaviour: the open view's button collapses the column, any other shows its view.
+   * On Home the Hosts button only opens and closes the column for this visit.
+   */
+  const pickSidebarView = (view: SidebarView) => {
+    if (sidebarCollapsed || sidebarView !== view) showSidebarView(view);
+    else if (peek) setPeek(false);
+    else toggle(sidebarRef, false);
+  };
+  const showSidebarViewRef = useRef(showSidebarView);
+  useEffect(() => {
+    showSidebarViewRef.current = showSidebarView;
+  });
+  usePaletteActions(
+    useMemo(
+      (): PaletteAction[] => [
+        { id: "shell.showHosts", title: t("shell.showHosts"), run: () => showSidebarViewRef.current("hosts") },
+        { id: "shell.showForwards", title: t("shell.showForwards"), run: () => showSidebarViewRef.current("forwards") },
+      ],
+      [t],
+    ),
+  );
+
   return (
     <div className="flex h-full flex-col">
       <h1 className="sr-only">{t("app.name")}</h1>
-      <ResizablePanelGroup
-        id={shellGroup}
-        orientation="horizontal"
-        className="min-h-0 flex-1"
-        defaultLayout={layout.groups[shellGroup]}
-        onLayoutChange={(next) => setSidebarCollapsed(isPanelCollapsed(next, "sidebar"))}
-        onLayoutChanged={(next, meta) => saveGroup(shellGroup, meta.requestedLayout ?? next)}
-      >
-        <ResizablePanel
-          id="sidebar"
-          panelRef={sidebarRef}
-          defaultSize="248px"
-          minSize="200px"
-          maxSize="40%"
-          collapsible
-          groupResizeBehavior="preserve-pixel-size"
+      <div className="flex min-h-0 flex-1">
+        <NavRail
+          {...nav}
+          sidebarView={sidebarView}
+          sidebarOpen={!sidebarCollapsed}
+          onSidebarView={pickSidebarView}
+        />
+        <ResizablePanelGroup
+          id={shellGroup}
+          orientation="horizontal"
+          className="min-h-0 flex-1"
+          defaultLayout={shellLayout}
+          onLayoutChange={(next) => setSidebarCollapsed(isPanelCollapsed(next, "sidebar"))}
+          onLayoutChanged={(next, meta) => {
+            if (!autoHidden.current) saveGroup(shellGroup, meta.requestedLayout ?? next);
+          }}
         >
-          <aside aria-label={t("hosts.title")} className="flex h-full min-w-0 flex-col">
-            {sidebar}
-          </aside>
-        </ResizablePanel>
-        <PanelGutter />
-        <ResizablePanel id="main" minSize="320px">
-          <div className="flex h-full min-w-0 flex-col pr-1.5">
-            <div className="flex h-9.5 shrink-0 items-end gap-1">
-              <IconButton
-                label={sidebarCollapsed ? t("shell.showSidebar") : t("shell.hideSidebar")}
-                className="mb-1.5 self-end"
-                onClick={() => toggle(sidebarRef, sidebarCollapsed, "248px")}
-              >
-                <PanelLeft />
-              </IconButton>
-              <div className="flex min-w-0 flex-1 items-end">{tabs}</div>
-              {!fullWorkspace && (
-                <div className="mb-1.5 flex items-center gap-0.5" role="group" aria-label={t("files.dockGroup")}>
-                  <DockButton current={dock} dock="bottom" collapsed={filesCollapsed} onSelect={selectDock} />
-                  <DockButton current={dock} dock="right" collapsed={filesCollapsed} onSelect={selectDock} />
-                </div>
-              )}
-            </div>
-            <ResizablePanelGroup
-              id="workspace"
-              groupRef={workspaceRef}
-              orientation={dock === "right" ? "horizontal" : "vertical"}
-              className="min-h-0 flex-1 pb-1.5"
-              defaultLayout={layout.groups[workspaceGroup(dock)]}
-              onLayoutChange={(next) => {
-                if ("files" in next) setFilesCollapsed(isPanelCollapsed(next, "files"));
-              }}
-              onLayoutChanged={(next, meta) => {
-                if ("files" in next) saveGroup(workspaceGroup(dock), meta.requestedLayout ?? next);
-              }}
+          <ResizablePanel
+            id="sidebar"
+            panelRef={sidebarRef}
+            defaultSize={sidebarSize}
+            minSize="200px"
+            maxSize="40%"
+            collapsible
+            groupResizeBehavior="preserve-pixel-size"
+          >
+            <aside
+              aria-label={t("shell.sidebar")}
+              className="bg-sidebar h-full min-w-0"
+              style={{ "--chrome-inset": overlayTitleBar ? trafficLightInset : "0px" } as CSSProperties}
             >
-              <ResizablePanel id="terminal" minSize="200px">
-                <section
-                  aria-label={t("shell.workspace")}
-                  className="bg-terminal-background text-terminal-foreground shadow-panel relative h-full overflow-hidden rounded-lg border"
-                >
-                  {workspace}
-                </section>
-              </ResizablePanel>
-              {!fullWorkspace && <PanelGutter />}
-              {!fullWorkspace && (
-                <ResizablePanel
-                  id="files"
-                  panelRef={filesRef}
-                  defaultSize={defaultFilesSize[dock]}
-                  minSize={dock === "right" ? "240px" : "140px"}
-                  groupResizeBehavior="preserve-pixel-size"
-                  collapsible
-                >
+              {(Object.keys(sidebar) as SidebarView[]).map((view) => (
+                <div key={view} hidden={view !== sidebarView} className="h-full min-w-0">
+                  {sidebar[view]}
+                </div>
+              ))}
+            </aside>
+          </ResizablePanel>
+          <ResizableHandle className="focus-visible:ring-0" />
+          <ResizablePanel id="main" minSize="320px">
+            <div
+              className="flex h-full min-w-0 flex-col px-1.5"
+              style={{ "--chrome-inset": overlayTitleBar && sidebarCollapsed ? trafficLightInset : "0px" } as CSSProperties}
+            >
+              <div className="flex h-8.5 shrink-0 items-center gap-1 pl-[var(--chrome-inset)]">
+                {tabs}
+                {!fullWorkspace && (
+                  <div className="flex items-center gap-0.5" role="group" aria-label={t("files.dockGroup")}>
+                    <DockButton current={dock} dock="bottom" collapsed={filesCollapsed} onSelect={selectDock} />
+                    <DockButton current={dock} dock="right" collapsed={filesCollapsed} onSelect={selectDock} />
+                  </div>
+                )}
+              </div>
+              <ResizablePanelGroup
+                id="workspace"
+                groupRef={workspaceRef}
+                orientation={dock === "right" ? "horizontal" : "vertical"}
+                className="min-h-0 flex-1 pb-1.5"
+                defaultLayout={layout.groups[workspaceGroup(dock)]}
+                onLayoutChange={(next) => {
+                  if ("files" in next) setFilesCollapsed(isPanelCollapsed(next, "files"));
+                }}
+                onLayoutChanged={(next, meta) => {
+                  if ("files" in next) saveGroup(workspaceGroup(dock), meta.requestedLayout ?? next);
+                }}
+              >
+                <ResizablePanel id="terminal" minSize="200px">
                   <section
-                    aria-label={t("files.title")}
-                    className="bg-surface shadow-panel flex h-full flex-col overflow-hidden rounded-lg border"
+                    aria-label={t("shell.workspace")}
+                    className="bg-terminal-background text-terminal-foreground relative h-full overflow-hidden rounded-lg border"
                   >
-                    <FilePanelDockContext value={filePanelDock}>{filePanel}</FilePanelDockContext>
+                    {workspace}
                   </section>
                 </ResizablePanel>
-              )}
-            </ResizablePanelGroup>
-          </div>
-        </ResizablePanel>
-      </ResizablePanelGroup>
-      <StatusBar onOpenSettings={onOpenSettings}>{status}</StatusBar>
+                {!fullWorkspace && <PanelGutter />}
+                {!fullWorkspace && (
+                  <ResizablePanel
+                    id="files"
+                    panelRef={filesRef}
+                    defaultSize={defaultFilesSize[dock]}
+                    minSize={dock === "right" ? "240px" : "140px"}
+                    groupResizeBehavior="preserve-pixel-size"
+                    collapsible
+                  >
+                    <section
+                      aria-label={t("files.title")}
+                      className="bg-surface flex h-full flex-col overflow-hidden rounded-lg border"
+                    >
+                      <FilePanelDockContext value={filePanelDock}>{filePanel}</FilePanelDockContext>
+                    </section>
+                  </ResizablePanel>
+                )}
+              </ResizablePanelGroup>
+            </div>
+          </ResizablePanel>
+        </ResizablePanelGroup>
+      </div>
+      <StatusBar info={status} onShowForwards={() => showSidebarView("forwards")} onOpenSettings={nav.onSettings} />
     </div>
   );
 

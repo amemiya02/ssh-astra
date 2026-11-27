@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Host } from "@/lib/ipc/hosts";
 import {
+  activePane,
   connectedHosts,
+  canSplit,
   emptyTabs,
   reconnectingHosts,
+  startupTabs,
   newPane,
   tabsReducer,
   tabStatus,
@@ -62,6 +65,25 @@ describe("tabsReducer: tabs", () => {
     const again = tabsReducer(back, { type: "open", tabId: "s2", pane: settings("s2.1") });
     expect(ids(again)).toEqual(["a", "s1"]);
     expect(again.activeId).toBe("s1");
+  });
+
+  it("opening Home again focuses the open Home tab instead of adding a second", () => {
+    const home = (id: string): Pane => ({ id, kind: "home" });
+    const opened = tabsReducer(withTabs(["a"], "a"), { type: "open", tabId: "h1", pane: home("h1.1") });
+    const back = tabsReducer(opened, { type: "activate", id: "a" });
+    const again = tabsReducer(back, { type: "open", tabId: "h2", pane: home("h2.1") });
+    expect(ids(again)).toEqual(["a", "h1"]);
+    expect(again.activeId).toBe("h1");
+  });
+
+  it("does not split beside Home or SFTP", () => {
+    for (const kind of ["home", "sftp"] as const) {
+      const pane = kind === "home" ? ({ id: "x.1", kind } as Pane) : newPane({ kind, host: host("h") }, "x.1");
+      const state: TabsState = { tabs: [tab("x", [pane])], activeId: "x" };
+      expect(canSplit(pane)).toBe(false);
+      expect(tabsReducer(state, { type: "split", orientation: "horizontal", pane: local("x.2") })).toBe(state);
+    }
+    expect(canSplit(local("a.1"))).toBe(true);
   });
 
   it("opens one Port forwards tab per Host, focusing the open one", () => {
@@ -277,8 +299,12 @@ describe("reconnectingHosts", () => {
 });
 
 describe("tabTitle", () => {
-  const names = { "tabs.localTerminal": "Local terminal", "tabs.settings": "Settings", "tabs.portForwards": "Port forwards", "tabs.sftp": "SFTP" };
+  const names = { "tabs.home": "Home", "tabs.localTerminal": "Local terminal", "tabs.settings": "Settings", "tabs.portForwards": "Port forwards", "tabs.sftp": "SFTP" };
   const t = (key: keyof typeof names) => names[key];
+
+  it("names the Home tab", () => {
+    expect(tabTitle(tab("h", [{ id: "h.1", kind: "home" }]), t, 1)).toBe("Home");
+  });
 
   it("names the Settings tab", () => {
     expect(tabTitle(tab("s", [{ id: "s.1", kind: "settings" }]), t, 1)).toBe("Settings");
@@ -322,5 +348,14 @@ describe("tabTitle", () => {
 describe("emptyTabs", () => {
   it("has no tabs and nothing active", () => {
     expect(emptyTabs).toEqual({ tabs: [], activeId: null });
+  });
+});
+
+describe("startupTabs", () => {
+  it("opens with the Home tab and no Terminal", () => {
+    const state = startupTabs();
+    expect(state.tabs).toHaveLength(1);
+    expect(activePane(state.tabs[0]!).kind).toBe("home");
+    expect(state.activeId).toBe(state.tabs[0]!.id);
   });
 });

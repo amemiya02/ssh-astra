@@ -2,22 +2,31 @@ import { useTranslation } from "react-i18next";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { generalSetting, languagePreferences } from "@/i18n/language";
 import { useSetting } from "@/lib/storage";
-import { appearanceSetting, themePreferences } from "@/theme/theme";
+import { useTheme } from "@/theme/theme-context";
 import { SettingRow } from "./SettingRow";
+import { ThemeGallery } from "./theme-gallery";
 
 export function AppearanceSection() {
   const { t } = useTranslation();
-  const [appearance, setAppearance] = useSetting(appearanceSetting);
-  const label = t("settings.theme.label");
+  const { settings, theme, setTheme } = useTheme();
+  const label = t("settings.theme.follow.label");
+  const following = settings.theme === "system";
   return (
-    <SettingRow label={label} description={t("settings.theme.description")}>
-      <SegmentedControl
-        label={label}
-        value={appearance.theme}
-        options={themePreferences.map((value) => ({ value, label: t(`theme.${value}`) }))}
-        onChange={(theme) => setAppearance({ ...appearance, theme })}
-      />
-    </SettingRow>
+    <>
+      <SettingRow label={label} description={t("settings.theme.follow.description")}>
+        <SegmentedControl
+          label={label}
+          value={following ? "on" : "off"}
+          options={[
+            { value: "on", label: t("settings.on") },
+            { value: "off", label: t("settings.off") },
+          ]}
+          // Turning it off keeps the theme being painted, so nothing changes until a card is picked.
+          onChange={(next) => setTheme(next === "on" ? "system" : theme.id)}
+        />
+      </SettingRow>
+      <ThemeGallery />
+    </>
   );
 }
 

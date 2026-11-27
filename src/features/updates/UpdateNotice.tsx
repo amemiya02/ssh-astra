@@ -55,7 +55,7 @@ export function UpdateNotice() {
   const canDismiss = status.type !== "downloading" && status.type !== "restarting" && status.type !== "checking";
 
   return (
-    <span className="flex min-w-0 shrink-0 items-center gap-1 tabular-nums">
+    <span className="flex min-w-0 shrink-0 items-center gap-1 border-r px-2.5 tabular-nums">
       <span className="truncate" title={text}>
         {text}
       </span>

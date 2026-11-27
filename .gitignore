@@ -19,3 +19,4 @@ src-tauri/gen/schemas/
 
 # E2E smoke test screenshots and logs
 e2e/artifacts/
+.impeccable/review/

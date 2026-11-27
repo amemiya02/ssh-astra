@@ -125,7 +125,7 @@ function TransferRow({ transfer, speed }: { transfer: Transfer; speed: number | 
         parts.push(t("transfers.files", { done: transfer.filesDone, total: transfer.filesTotal }));
       if (state.type === "running" && speed !== undefined) parts.push(`${formatSize(Math.round(speed))}/s`);
       if (state.type === "running" && left !== null) parts.push(t("transfers.timeLeft", { time: formatDuration(left) }));
-      detail = parts.join("   ");
+      detail = parts.join(" · ");
     }
   }
 

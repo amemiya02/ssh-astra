@@ -1,7 +1,7 @@
-import { Server, SquareTerminal } from "lucide-react";
+import { Server } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Button } from "@/components/ui/button";
+import { SidebarHeader } from "@/features/shell/SidebarHeader";
 
 interface HostsSidebarProps {
   /** Header actions (e.g. "New Host"), right of the title. */
@@ -10,24 +10,16 @@ interface HostsSidebarProps {
   children?: ReactNode;
   /** Shown under the first-run empty state (e.g. "Import ~/.ssh/config"). */
   emptyAction?: ReactNode;
-  onOpenLocalTerminal(): void;
 }
 
-/** The left column: title, Host list slot, and the Local terminal shortcut pinned at the bottom. */
-export function HostsSidebar({ actions, children, emptyAction, onOpenLocalTerminal }: HostsSidebarProps) {
+/** The sidebar's Hosts view: title and actions over the Host list slot. */
+export function HostsSidebar({ actions, children, emptyAction }: HostsSidebarProps) {
   const { t } = useTranslation();
   return (
-    <div className="flex h-full min-h-0 flex-col py-2.5 pr-1 pl-2.5">
-      <div className="flex h-7 items-center gap-1 px-1">
-        <h2 className="flex-1 truncate font-semibold">{t("hosts.title")}</h2>
-        {actions}
-      </div>
-      <div className="mt-2 min-h-0 flex-1 overflow-y-auto">{children ?? <HostListEmpty action={emptyAction} />}</div>
-      <Button variant="outline" size="sm" className="mt-2 w-full" onClick={onOpenLocalTerminal}>
-        <SquareTerminal aria-hidden />
-        {t("tabs.localTerminal")}
-      </Button>
-    </div>
+    <section aria-label={t("hosts.title")} className="flex h-full min-h-0 flex-col pr-1 pl-2.5">
+      <SidebarHeader title={t("hosts.title")}>{actions}</SidebarHeader>
+      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto pb-2.5">{children ?? <HostListEmpty action={emptyAction} />}</div>
+    </section>
   );
 }
 

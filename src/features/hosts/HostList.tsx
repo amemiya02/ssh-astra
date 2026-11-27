@@ -11,17 +11,21 @@ import {
   type DragMoveEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { ArrowRightLeft, ChevronRight, Copy, Folder, FolderInput, FolderPlus, Pencil, PlugZap, SquareTerminal, Trash2, Unplug } from "lucide-react";
+import { ChevronRight, Folder, FolderInput, FolderPlus, Pencil, Trash2 } from "lucide-react";
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Input } from "@/components/ui/input";
-import type { Group, GroupId, Host, HostTree } from "@/lib/ipc/hosts";
+import type { Group, GroupId, Host, HostId, HostTree } from "@/lib/ipc/hosts";
 import { defineSection, useSetting } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import { dropMove, type DragItem, type DropPosition, type DropTarget, type MoveOp, type TreeNode } from "./hostTree";
+import { ConnectionDot } from "@/features/connect/ConnectionDot";
+import type { HostConnection } from "@/features/connect/hostConnection";
+import { HostMonogram } from "./HostMonogram";
+import { hostMenuEntries } from "./hostMenu";
 import { RowContextMenu, RowMoreMenu, type MenuEntry } from "./RowMenu";
 
-/** What the user can do to rows; HostsPanel owns the dialogs and the store calls. */
+/** What the user can do to rows; `useHostsController` owns the dialogs and the store calls. */
 export interface HostListActions {
   open(host: Host): void;
   openSftp(host: Host): void;
@@ -51,6 +55,8 @@ interface HostListProps {
   selected: DragItem | null;
   onSelect(item: DragItem): void;
   renamingGroupId: GroupId | null;
+  /** Each Host's Connection, for the dot on its row. */
+  connections: ReadonlyMap<HostId, HostConnection>;
   actions: HostListActions;
 }
 
@@ -91,7 +97,16 @@ const keyOf = (item: DragItem | DropTarget) => (item.kind === "root" ? "root" : 
  * and reorder. Dropping on the top or bottom edge of a row places the item
  * before or after it; dropping on the middle of a Group puts it inside.
  */
-export function HostList({ tree, nodes, searching, selected, onSelect, renamingGroupId, actions }: HostListProps) {
+export function HostList({
+  tree,
+  nodes,
+  searching,
+  selected,
+  onSelect,
+  renamingGroupId,
+  connections,
+  actions,
+}: HostListProps) {
   const { t } = useTranslation();
   const { collapsed, toggle } = useCollapsedGroups();
   const [dragging, setDragging] = useState<DragData | null>(null);
@@ -153,30 +168,7 @@ export function HostList({ tree, nodes, searching, selected, onSelect, renamingG
         const item: DragItem = { kind: "host", id: node.host.id };
         const key = keyOf(item);
         const host = node.host;
-        const entries: MenuEntry[] = [
-          { type: "item", label: t("hosts.open"), icon: <SquareTerminal />, onSelect: () => actions.open(host) },
-          { type: "item", label: t("sftp.open"), icon: <ArrowRightLeft />, onSelect: () => actions.openSftp(host) },
-          actions.isHeld(host)
-            ? { type: "item", label: t("hosts.disconnect"), icon: <Unplug />, onSelect: () => actions.disconnect(host) }
-            : { type: "item", label: t("hosts.connectOnly"), icon: <PlugZap />, onSelect: () => actions.connectOnly(host) },
-          {
-            type: "item",
-            label: t("hosts.portForwards"),
-            icon: <ArrowRightLeft />,
-            onSelect: () => actions.openForwards(host),
-          },
-          { type: "item", label: t("hosts.edit"), icon: <Pencil />, onSelect: () => actions.edit(host) },
-          { type: "item", label: t("hosts.duplicate"), icon: <Copy />, onSelect: () => actions.duplicate(host) },
-          { type: "sub", label: t("hosts.moveTo"), icon: <FolderInput />, entries: groupEntries(item) },
-          { type: "separator" },
-          {
-            type: "item",
-            label: t("hosts.delete"),
-            icon: <Trash2 />,
-            destructive: true,
-            onSelect: () => actions.remove({ kind: "host", host }),
-          },
-        ];
+        const entries = hostMenuEntries(host, actions, t, groupEntries(item));
         return (
           <li key={key}>
             <TreeRow
@@ -190,6 +182,7 @@ export function HostList({ tree, nodes, searching, selected, onSelect, renamingG
               <HostRowButton
                 host={host}
                 matches={node.matches}
+                connection={connections.get(host.id)}
                 selected={selected?.kind === "host" && selected.id === host.id}
                 onSelect={() => onSelect(item)}
                 onOpen={() => actions.open(host)}
@@ -257,7 +250,7 @@ export function HostList({ tree, nodes, searching, selected, onSelect, renamingG
             )}
           </TreeRow>
           {open && (
-            <ul role="group" aria-label={group.name} className="grid gap-0.5 pt-0.5 pl-3">
+            <ul role="group" aria-label={group.name} className="grid grid-cols-[minmax(0,1fr)] gap-0.5 pt-0.5 pl-3">
               {node.children.length > 0 ? (
                 render(node.children)
               ) : (
@@ -280,7 +273,7 @@ export function HostList({ tree, nodes, searching, selected, onSelect, renamingG
       onDragCancel={() => endDrag(null)}
     >
       <div className="flex min-h-full flex-col">
-        <ul aria-label={t("hosts.title")} className="grid gap-0.5">
+        <ul aria-label={t("hosts.title")} className="grid grid-cols-[minmax(0,1fr)] gap-0.5">
           {render(nodes)}
         </ul>
         {!searching && <RootDropZone active={drop?.key === "root"} />}
@@ -364,17 +357,10 @@ function TreeRow({
 const rowButton =
   "focus-visible:ring-ring/50 flex w-full min-w-0 items-center rounded-lg text-left outline-none focus-visible:ring-[3px]";
 
-const initials = (name: string) =>
-  name
-    .split(/[\s._-]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("") || "?";
-
 function HostRowButton({
   host,
   matches,
+  connection,
   selected,
   onSelect,
   onOpen,
@@ -383,6 +369,7 @@ function HostRowButton({
 }: {
   host: Host;
   matches?: Extract<TreeNode, { kind: "host" }>["matches"];
+  connection?: HostConnection;
   selected: boolean;
   onSelect(): void;
   onOpen(): void;
@@ -395,7 +382,7 @@ function HostRowButton({
       type="button"
       title={t("hosts.openHint")}
       aria-current={selected || undefined}
-      className={cn(rowButton, "gap-2.5 px-2 py-1.5 pr-8", selected ? "bg-selected" : "hover:bg-accent")}
+      className={cn(rowButton, "h-7.5 gap-2 px-2 pr-8", selected ? "bg-selected" : "hover:bg-accent active:bg-accent/70")}
       onClick={onSelect}
       onDoubleClick={onOpen}
       onKeyDown={(event) => {
@@ -411,24 +398,22 @@ function HostRowButton({
         }
       }}
     >
-      <span
-        aria-hidden
-        className={cn(
-          "grid size-6.5 shrink-0 place-items-center rounded-md text-xs font-semibold",
-          selected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
-        )}
-      >
-        {initials(host.name)}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate font-medium">
+      <HostMonogram host={host} />
+      <span className="flex max-w-[65%] shrink-0 items-center gap-1.5">
+        <span className="truncate font-medium">
           <Highlighted text={host.name} indexes={matches?.name} />
         </span>
-        <span className="text-muted-foreground block truncate text-xs">
-          <Highlighted text={host.user} indexes={matches?.user} />@
-          <Highlighted text={host.address} indexes={matches?.address} />
-          {host.port === 22 ? "" : `:${host.port}`}
-        </span>
+        {connection && (
+          <>
+            <ConnectionDot state={connection} />
+            <span className="sr-only">{t(`tabs.status.${connection}`)}</span>
+          </>
+        )}
+      </span>
+      <span className="text-muted-foreground min-w-0 flex-1 truncate font-mono text-xs">
+        <Highlighted text={host.user} indexes={matches?.user} />@
+        <Highlighted text={host.address} indexes={matches?.address} />
+        {host.port === 22 ? "" : `:${host.port}`}
       </span>
     </button>
   );
@@ -509,7 +494,7 @@ function GroupNameInput({ name, onCommit, onCancel }: { name: string; onCommit(n
 }
 
 /** `text` with the characters at `indexes` emphasised. */
-function Highlighted({ text, indexes }: { text: string; indexes?: number[] }) {
+export function Highlighted({ text, indexes }: { text: string; indexes?: number[] }) {
   if (!indexes?.length) return <>{text}</>;
   const hit = new Set(indexes);
   const runs: { text: string; hit: boolean }[] = [];

@@ -1,6 +1,6 @@
 /**
  * The smoke test: one pass through what a user does first, against the Docker
- * OpenSSH server. New Host → connect → trust the host key → run a command and
+ * OpenSSH server. The app opens on Home (no Terminal). New Host → connect → trust the host key → run a command and
  * see its output → `cd` and see the File panel follow → upload a file and find
  * it on the server.
  */
@@ -73,8 +73,8 @@ describe("sshastra", () => {
   });
 
   it("connects to a new Host, runs a command, follows cd and uploads a file", async () => {
-    // New Host pointing at the Docker sshd.
-    await $('button[aria-label="New Host"]').click();
+    // New Host pointing at the Docker sshd, from Home's own button (the Host list is hidden on Home).
+    await $("button=New Host").click();
     await $("#host-form-name").setValue(HOST_NAME);
     await $("#host-form-address").setValue("127.0.0.1");
     await $("#host-form-port").clearValue();
@@ -82,11 +82,10 @@ describe("sshastra", () => {
     await $("#host-form-user").setValue(sshd.USER);
     await $("button=Save").click();
 
-    // Open it: a Terminal tab connects.
-    const hostRow = $(`button*=${HOST_NAME}`);
-    await hostRow.waitForDisplayed();
-    await hostRow.click();
-    await browser.keys("Enter");
+    // Open it from its Home card: a Terminal tab connects.
+    const hostCard = $(`//*[@role='tabpanel' and not(@hidden)]//button[contains(., '${HOST_NAME}')]`);
+    await hostCard.waitForDisplayed();
+    await hostCard.click();
 
     // First Connection: trust the host key, then sign in with the password.
     await $("h2=Unknown host key").waitForDisplayed();
@@ -104,7 +103,7 @@ describe("sshastra", () => {
 
     // Run a command and see its output.
     await waitForTerminalText(/\$\s*$/m, "a prompt");
-    // Focus the shown Terminal (the remote one; the Local terminal's tab stays mounted, hidden).
+    // Focus the shown Terminal (the app opens on Home, so the remote one is the only Terminal).
     // A WebDriver click does not reach xterm's focus handling, so focus its input directly.
     const shown = await $$(".xterm").filter((xterm) => xterm.isDisplayed());
     expect(shown).toHaveLength(1);
