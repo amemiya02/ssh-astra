@@ -43,6 +43,13 @@ impl CommandError {
         )
     }
 
+    pub fn ssh_link_target_changed() -> Self {
+        Self::new(
+            "sshLinkTargetChanged",
+            "the approved SSH destination changed",
+        )
+    }
+
     fn with_details(mut self, details: Value) -> Self {
         self.details = Some(details);
         self

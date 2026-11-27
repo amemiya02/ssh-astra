@@ -999,6 +999,7 @@
       "hostKeyDeclined": "The host key was not trusted. Not connected.",
       "hostKeyRevoked": "The host key is revoked. Connection blocked.",
       "authenticationFailed": "Authentication failed.",
+      "sshLinkTargetChanged": "The saved Host changed after you confirmed the SSH link. Open the link again to confirm the destination.",
       "proxyInvalidConfiguration": "Check the outbound proxy settings",
       "proxyInvalidTarget": "The Host address is invalid for this proxy",
       "proxyUnreachable": "Could not reach the outbound proxy",
@@ -1492,6 +1493,12 @@
     "home": "Home",
     "hosts": "Hosts",
     "forwards": "Port forwards"
+  },
+  "sshLink": {
+    "title": "Open SSH link?",
+    "savedHost": "Connect using the saved Host {{name}}?",
+    "quickConnect": "Connect using Quick connect?",
+    "connect": "Connect"
   },
   "quickConnect": {
     "action": "Quick connect",

@@ -194,6 +194,7 @@ function PaneContent({
           paneId={pane.id}
           host={pane.host}
           initialCwd={pane.initialCwd}
+          expectedTarget={pane.expectedTarget}
           onClose={() => onClosePane(pane.id)}
           onEditHost={() => onEditHost(pane.host)}
           active={active}

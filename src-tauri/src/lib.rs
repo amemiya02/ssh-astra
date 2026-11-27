@@ -69,7 +69,7 @@ pub fn run() {
     // Secondary launches hand off their arguments before other plugins start.
     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
     let builder = builder
-        .manage(launch::PendingLaunches::default())
+        .manage(launch::startup())
         .plugin(tauri_plugin_single_instance::init(launch::forward));
     let builder = if std::env::var_os("SSHASTRA_MEASURE_STARTUP").is_some() {
         builder
@@ -228,6 +228,8 @@ pub fn run() {
             commands::hosts::group_rename,
             commands::hosts::group_delete,
             commands::hosts::group_move,
+            #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+            launch::take_ssh_links,
             commands::connections::connections_watch,
             commands::connections::host_connect,
             commands::connections::host_test_connection,
@@ -317,6 +319,8 @@ pub fn run() {
                     launch::ready(app);
                     wake_listener = wake::Listener::start(app.clone());
                 }
+                #[cfg(target_os = "macos")]
+                tauri::RunEvent::Opened { urls } => launch::opened(app, urls),
                 #[cfg(target_os = "macos")]
                 tauri::RunEvent::Reopen { .. } => launch::reopen(app),
                 tauri::RunEvent::Exit => {

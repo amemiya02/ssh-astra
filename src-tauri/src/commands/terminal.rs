@@ -19,7 +19,7 @@ use std::{path::PathBuf, sync::Arc};
 
 use serde::Serialize;
 use sshastra_core::hosts::HostId;
-use sshastra_core::ssh::{RemoteTerminal, RemoteTerminalOptions};
+use sshastra_core::ssh::{QuickConnectTarget, RemoteTerminal, RemoteTerminalOptions};
 use sshastra_core::terminal::{
     local_shell_command, local_shells, local_wsl_paths, ConnectionState, LocalPty, LocalShell,
     OutputKind, OutputStatus, SavedTerminalMetadata, ShellCommand, ShellIntegrationEvent,
@@ -33,7 +33,7 @@ use super::agent::PendingScreens;
 use super::command_history;
 use super::connections::{detect_os_on_current_connection, HostRoute};
 use super::settings::SettingsState;
-use crate::error::CommandResult;
+use crate::error::{CommandError, CommandResult};
 use crate::prompts::{ChannelPrompter, PendingPrompts, PromptAnswer, PromptRequest};
 
 #[derive(Serialize)]
@@ -258,15 +258,25 @@ pub async fn remote_terminal_open(
     on_event: Channel<InvokeResponseBody>,
     on_prompt: Channel<PromptRequest>,
     cwd: Option<String>,
+    expected_target: Option<QuickConnectTarget>,
 ) -> CommandResult<OpenedRemoteTerminal> {
     let route = Arc::new(HostRoute::lookup(&app, &host_id)?);
+    let host = route.host();
+    // A saved Host may be edited in another window while link approval is pending.
+    if expected_target.is_some_and(|target| {
+        target.address != host.address
+            || target.port != host.port
+            || target.user.as_deref() != Some(host.user.as_str())
+    }) {
+        return Err(CommandError::ssh_link_target_changed());
+    }
     let saved_host = matches!(route.as_ref(), HostRoute::Saved(_));
     let metadata = saved_host.then(|| {
         let screen = pending_screens.reader(webview.label().to_owned(), on_event.clone());
         Arc::new(SavedTerminalMetadata::new(host_id.clone()).with_screen_reader(screen))
     });
     let observed = metadata.clone();
-    let host = route.host().clone();
+    let host = host.clone();
     let prompter = Arc::new(ChannelPrompter {
         pending: Arc::clone(&pending),
         channel: on_prompt.clone(),

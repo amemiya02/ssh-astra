@@ -11,6 +11,9 @@ const alertClass =
  */
 export function ConnectErrorPanel({ error }: { error: CommandError }) {
   const { t } = useTranslation();
+  if (error.kind === "sshLinkTargetChanged") {
+    return <p role="alert" className={alertClass}>{t("connect.errors.sshLinkTargetChanged")}</p>;
+  }
   // Set when a Jump host on the way failed rather than the Host itself.
   const jumpHost = error.details?.jumpHost;
   const hop = jumpHost === undefined ? null : <p className="mt-1.5 font-medium">{t("connect.atJumpHost", { name: jumpHost })}</p>;
