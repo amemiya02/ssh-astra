@@ -1,6 +1,6 @@
 //! User authentication on a fresh SSH transport. Methods are tried in a fixed
-//! order, each only while the server still lists it: ssh-agent, the Host's
-//! private key file, password, keyboard-interactive. A method the server
+//! order, each only while the server still lists it: ssh-agent, private key
+//! files, password, keyboard-interactive. A method the server
 //! accepts with "partial success" (e.g. key, then OTP) moves on to the next.
 //!
 //! A password or key passphrase saved in the CredentialVault is tried before
@@ -10,6 +10,8 @@
 //! When nothing succeeds, the error describes the last method that failed
 //! (e.g. a rejected key) so the UI can say why.
 
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -142,15 +144,25 @@ struct AuthAttempt<'a, 'step, H: client::Handler> {
     allowed: MethodSet,
 }
 
+pub(super) struct AuthSources<'a> {
+    pub(super) agent: &'a Agent,
+    pub(super) home_dir: Option<&'a Path>,
+    pub(super) vault: &'a Arc<dyn CredentialVault>,
+}
+
 pub(super) async fn authenticate<H: client::Handler>(
     handle: &mut Handle<H>,
     host: &Host,
-    agent: &Agent,
-    vault: &Arc<dyn CredentialVault>,
+    sources: AuthSources<'_>,
     prompter: &dyn Prompter,
     deadline: Arc<Deadline>,
     progress: &mut ActiveStep<'_>,
 ) -> Result<(), ConnectError> {
+    let AuthSources {
+        agent,
+        home_dir,
+        vault,
+    } = sources;
     progress.method(AuthMethod::None);
     log_auth(&host.id, "none", "attempting");
     let none = handle.authenticate_none(&host.user).await;
@@ -183,7 +195,7 @@ pub(super) async fn authenticate<H: client::Handler>(
     ] {
         let (name, step) = match method {
             Method::Agent => ("agent", attempt.agent(agent).await),
-            Method::KeyFile => ("key-file", attempt.key_file().await),
+            Method::KeyFile => ("key-file", attempt.key_files(home_dir).await),
             Method::Password => ("password", attempt.password().await),
             Method::KeyboardInteractive => {
                 ("keyboard-interactive", attempt.keyboard_interactive().await)
@@ -256,9 +268,10 @@ impl<H: client::Handler> AuthAttempt<'_, '_, H> {
     }
 
     async fn agent(&mut self, agent: &Agent) -> Result<Step, ConnectError> {
-        if !self.allows(MethodKind::PublicKey) {
+        if !self.allows(MethodKind::PublicKey) || matches!(agent, Agent::None) {
             return Ok(Step::Skipped);
         }
+        self.progress.method(AuthMethod::Agent);
         let Some(mut client) = agent.connect().await else {
             return Ok(Step::Skipped);
         };
@@ -275,7 +288,6 @@ impl<H: client::Handler> AuthAttempt<'_, '_, H> {
         if keys.is_empty() {
             return Ok(Step::Skipped);
         }
-        self.progress.method(AuthMethod::Agent);
         let rsa_hash = self.rsa_hash().await?;
         for key in keys {
             let hash = key.algorithm().is_rsa().then_some(rsa_hash).flatten();
@@ -301,17 +313,55 @@ impl<H: client::Handler> AuthAttempt<'_, '_, H> {
         Ok(Step::Failed(ConnectError::AgentKeysRejected))
     }
 
-    async fn key_file(&mut self) -> Result<Step, ConnectError> {
-        let HostAuth::Key { identity_file } = &self.host.auth else {
-            return Ok(Step::Skipped);
-        };
+    async fn key_files(&mut self, home_dir: Option<&Path>) -> Result<Step, ConnectError> {
         if !self.allows(MethodKind::PublicKey) {
             return Ok(Step::Skipped);
         }
+        match &self.host.auth {
+            HostAuth::Password => Ok(Step::Skipped),
+            HostAuth::Key { identity_file } => {
+                let path = expand_home(identity_file, home_dir);
+                self.key_file(path, false).await
+            }
+            HostAuth::Auto => {
+                let Some(home_dir) = home_dir else {
+                    return Ok(Step::Skipped);
+                };
+                let ssh_dir = home_dir.join(".ssh");
+                let mut last = Step::Skipped;
+                for name in ["id_ed25519", "id_ecdsa", "id_rsa"] {
+                    match self.key_file(ssh_dir.join(name), true).await? {
+                        Step::Skipped => {}
+                        Step::Done => return Ok(Step::Done),
+                        step => last = step,
+                    }
+                    if !self.allows(MethodKind::PublicKey) {
+                        break;
+                    }
+                }
+                Ok(last)
+            }
+        }
+    }
+
+    async fn key_file(&mut self, path: PathBuf, skip_missing: bool) -> Result<Step, ConnectError> {
+        // A key file is a few KiB: reading it inline is fine.
+        let text = fs::read_to_string(&path);
+        if skip_missing && matches!(&text, Err(error) if error.kind() == io::ErrorKind::NotFound) {
+            return Ok(Step::Skipped);
+        }
         self.progress.method(AuthMethod::KeyFile);
+        let text = match text {
+            Ok(text) => text,
+            Err(error) => {
+                return Ok(Step::Failed(ConnectError::KeyUnreadable {
+                    path,
+                    reason: error.to_string(),
+                }));
+            }
+        };
         log_auth(&self.host.id, "key-file", "attempting");
-        let path = expand_home(identity_file);
-        let key = match load_key(&path, self.prompter, &self.saved).await? {
+        let key = match decode_key(text, &path, self.prompter, &self.saved).await? {
             Ok(key) => key,
             Err(e) => return Ok(Step::Failed(e)),
         };
@@ -463,10 +513,11 @@ impl<H: client::Handler> AuthAttempt<'_, '_, H> {
     }
 }
 
-/// Reads and, if needed, decrypts a private key with the saved passphrase or
+/// Decodes and, if needed, decrypts a private key with the saved passphrase or
 /// else by asking for it. The outer error ends the connect (cancelled); the
 /// inner one only this method.
-async fn load_key(
+async fn decode_key(
+    text: String,
     path: &Path,
     prompter: &dyn Prompter,
     saved: &Saved,
@@ -475,11 +526,7 @@ async fn load_key(
         path: path.to_path_buf(),
         reason,
     };
-    // A key file is a few KiB: reading it inline is fine.
-    let text = match std::fs::read_to_string(path) {
-        Ok(text) => Arc::new(text),
-        Err(e) => return Ok(Err(unreadable(e.to_string()))),
-    };
+    let text = Arc::new(text);
     let mut passphrase: Option<String> = None;
     // The vault is read only once the key turns out to be encrypted.
     let mut vault_tried = false;
@@ -561,14 +608,10 @@ fn is_wrong_passphrase(error: &russh::keys::Error) -> bool {
     )
 }
 
-/// `~/x` → `$HOME/x` (`%USERPROFILE%` on Windows).
-fn expand_home(path: &Path) -> PathBuf {
-    let Ok(rest) = path.strip_prefix("~") else {
-        return path.to_path_buf();
-    };
-    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
-    match home {
-        Some(home) => PathBuf::from(home).join(rest),
-        None => path.to_path_buf(),
+/// `~/x` → the local home directory's `x`.
+fn expand_home(path: &Path, home_dir: Option<&Path>) -> PathBuf {
+    match (home_dir, path.strip_prefix("~")) {
+        (Some(home_dir), Ok(rest)) => home_dir.join(rest),
+        _ => path.to_path_buf(),
     }
 }

@@ -88,6 +88,7 @@ impl Fixture {
     /// A fresh manager, as after an app restart: no live Connections.
     fn manager(&self, vault: &Arc<dyn CredentialVault>) -> ConnectionManager {
         ConnectionManager::new(KnownHosts::new(self.dir.path().join("known_hosts")))
+            .with_home_dir(self.dir.path())
             .with_vault(vault.clone())
     }
 
@@ -255,6 +256,35 @@ async fn a_saved_key_passphrase_that_stopped_working_is_forgotten_and_asked_for(
 
     assert_eq!(prompter.asked(), ["passphrase retry=true can_save=true"]);
     assert_eq!(vault.get(&host.id, CredentialKind::KeyPassphrase), Ok(None));
+}
+
+#[tokio::test]
+async fn a_default_key_passphrase_can_be_saved_and_used_after_reconnect() {
+    let Some(sshd) = support::sshd(Service::KeyOnly) else {
+        return;
+    };
+    let fx = Fixture::new();
+    let ssh_dir = fx.path().join(".ssh");
+    std::fs::create_dir(&ssh_dir).unwrap();
+    std::fs::copy(
+        support::key("id_ed25519_passphrase"),
+        ssh_dir.join("id_ed25519"),
+    )
+    .unwrap();
+    let vault = memory_vault();
+    let host = host(&sshd, HostAuth::Auto);
+
+    let first = ScriptedPrompter::answering([Secret::saved(support::KEY_PASSPHRASE)]);
+    connect(&fx, &vault, &host, first.clone()).await.unwrap();
+    assert_eq!(first.asked(), ["passphrase retry=false can_save=true"]);
+    assert_eq!(
+        vault.get(&host.id, CredentialKind::KeyPassphrase),
+        Ok(Some(support::KEY_PASSPHRASE.to_owned()))
+    );
+
+    let second = ScriptedPrompter::silent();
+    connect(&fx, &vault, &host, second.clone()).await.unwrap();
+    assert!(second.asked().is_empty(), "{:?}", second.asked());
 }
 
 #[tokio::test(flavor = "multi_thread")]

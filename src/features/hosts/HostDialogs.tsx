@@ -172,12 +172,17 @@ export function HostFormDialogContent({
             </Label>
             <Select
               value={values.authType}
-              onValueChange={(value) => setValues((v) => ({ ...v, authType: value === "key" ? "key" : "password" }))}
+              onValueChange={(value) => {
+                if (value === "auto" || value === "password" || value === "key") {
+                  setValues((v) => ({ ...v, authType: value }));
+                }
+              }}
             >
               <SelectTrigger id="host-form-auth" size="sm" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="auto">{t("hosts.auth.auto")}</SelectItem>
                 <SelectItem value="password">{t("hosts.auth.password")}</SelectItem>
                 <SelectItem value="key">{t("hosts.auth.key")}</SelectItem>
               </SelectContent>

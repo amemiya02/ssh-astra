@@ -66,6 +66,7 @@
     "emptyGroup": "Drag Hosts here",
     "actionFailed": "Could not save the change: {{message}}",
     "auth": {
+      "auto": "Automatic",
       "password": "Password",
       "key": "Private key"
     },

@@ -66,6 +66,7 @@
     "emptyGroup": "把 Host 拖到这里",
     "actionFailed": "无法保存更改：{{message}}",
     "auth": {
+      "auto": "自动",
       "password": "密码",
       "key": "私钥"
     },
