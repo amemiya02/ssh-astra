@@ -735,6 +735,9 @@
     "followSystemAction": "Theme: Follow system"
   },
   "terminal": {
+    "imagePaste": {
+      "failed": "Could not save or paste the clipboard image."
+    },
     "fileDrop": {
       "destinationTitle": "Choose an upload folder",
       "destinationBody": "The Terminal on {{host}} has yet to report its current folder. Where should the files go?",
@@ -1250,6 +1253,10 @@
       "confirmMultilinePaste": {
         "label": "Confirm multi-line paste",
         "description": "Ask before pasting more than one line, since the shell runs each line as it arrives."
+      },
+      "pasteImages": {
+        "label": "Paste clipboard images as paths",
+        "description": "When the clipboard contains only an image, save it as a PNG and paste its path. Remote Terminals upload the PNG to the Host’s SSH Astra cache."
       },
       "shellIntegration": {
         "label": "Shell integration",

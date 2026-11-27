@@ -1,5 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import type { TransferHost } from "./transfers";
 
 /** Mirrors `sshastra_core::terminal::TerminalId`. */
 export type TerminalId = number;
@@ -103,8 +104,8 @@ export function resolveWslPaths(distribution: string, paths: string[]): Promise<
   return invoke("local_terminal_wsl_paths", { distribution, paths });
 }
 
-export function writeTerminal(id: TerminalId, data: string): Promise<void> {
-  return invoke("terminal_write", { id, data });
+export function writeTerminal(id: TerminalId, data: string, generation?: number): Promise<void> {
+  return invoke("terminal_write", { id, data, ...(generation !== undefined && { generation }) });
 }
 
 /** Changes directories on the same prompt the File panel observed, if it is still idle. */
@@ -139,4 +140,11 @@ export function setTerminalOutput(id: TerminalId, kind: TerminalOutputKind, acti
 
 export function pickTerminalOutputDirectory(title: string): Promise<string | null> {
   return open({ directory: true, multiple: false, title });
+}
+
+/** Saves an image-only clipboard and returns its local or uploaded PNG path. */
+export function saveClipboardImage(
+  id: TerminalId, target?: { host: TransferHost; generation: number },
+): Promise<string | null> {
+  return invoke("terminal_save_clipboard_image", { id, ...target });
 }

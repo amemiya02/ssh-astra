@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { BroadcastPaneContext, createBroadcast } from "@/features/workspace/broadcast";
-import { openLocalTerminal, writeTerminal } from "@/lib/ipc/terminal";
+import { openLocalTerminal, saveClipboardImage, writeTerminal } from "@/lib/ipc/terminal";
 import { LocalTerminalView } from "./LocalTerminalView";
 import { XtermView } from "./XtermView";
 
@@ -11,6 +11,7 @@ vi.mock("./XtermView", () => ({ XtermView: vi.fn(() => null) }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("@/lib/ipc/terminal", () => ({
   openLocalTerminal: vi.fn(), writeTerminal: vi.fn(), resizeTerminal: vi.fn(), closeTerminal: vi.fn(), resolveWslPaths: vi.fn(),
+  saveClipboardImage: vi.fn(),
 }));
 
 it("forwards the early ConPTY cursor reply and typed input when the local terminal opens", async () => {
@@ -62,6 +63,38 @@ it("sends an explicit Snippet through the open local shell with its bracketed pa
     expect(writeTerminal).not.toHaveBeenCalled();
     await broadcast.captureInput("pane")!.send("echo one\necho two", false);
     expect(writeTerminal).toHaveBeenCalledExactlyOnceWith(8, "\x1b[200~echo one\recho two\x1b[201~");
+  } finally {
+    detach();
+    terminal.dispose();
+    act(() => root.unmount());
+  }
+});
+
+it("pastes the private PNG path into the initiating Local terminal without submitting it", async () => {
+  vi.mocked(writeTerminal).mockClear();
+  vi.mocked(openLocalTerminal).mockResolvedValue({ id: 8, shellProgram: "bash", wslDistribution: null });
+  vi.mocked(saveClipboardImage).mockResolvedValue("/tmp/Astra's images/image-example.png");
+  const broadcast = createBroadcast();
+  const peer = vi.fn();
+  broadcast.register("other-tab", "peer", peer);
+  broadcast.updateWorkspace("pane", ["tab", "other-tab"], ["pane", "peer"]);
+  broadcast.toggle("window", "tab");
+  const root = createRoot(document.createElement("div"));
+  const terminal = new Terminal();
+  act(() => root.render(
+    <BroadcastPaneContext.Provider value={{ broadcast, tabId: "tab", paneId: "pane" }}>
+      <LocalTerminalView />
+    </BroadcastPaneContext.Provider>,
+  ));
+  const view = vi.mocked(XtermView).mock.lastCall![0];
+  const detach = view.attach(terminal);
+  try {
+    await act(async () => {});
+    await new Promise<void>((resolve) => terminal.write("\x1b[?2004h", resolve));
+    await view.imagePasteRef!.current!();
+    expect(saveClipboardImage).toHaveBeenCalledExactlyOnceWith(8);
+    expect(writeTerminal).toHaveBeenCalledExactlyOnceWith(8, "\x1b[200~'/tmp/Astra'\\''s images/image-example.png'\x1b[201~");
+    expect(peer).not.toHaveBeenCalled();
   } finally {
     detach();
     terminal.dispose();

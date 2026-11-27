@@ -154,6 +154,14 @@ pub type Result<T, E = TerminalError> = std::result::Result<T, E>;
 pub trait Terminal: Send {
     /// Sends keystrokes / pasted bytes to the shell.
     fn write(&mut self, data: &[u8]) -> Result<()>;
+    /// The running remote shell's transport and generation, if any.
+    fn connection(&self) -> Option<(u64, std::sync::Arc<crate::ssh::Connection>)> {
+        None
+    }
+    /// Sends input only to the captured generation of a remote shell.
+    fn write_for_connection(&mut self, _generation: u64, _data: &[u8]) -> Result<()> {
+        Err(TerminalError::Io("the remote shell has changed".into()))
+    }
     /// Follows a File panel only while the observed remote prompt is still idle.
     fn follow_file_directory(&mut self, _prompt_id: u64, _path: &str) -> Result<()> {
         Ok(())

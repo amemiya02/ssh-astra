@@ -8,7 +8,7 @@ use std::sync::Arc;
 use russh_sftp::client::error::Error as SftpError;
 use russh_sftp::client::fs::Metadata;
 use russh_sftp::client::{RawSftpSession, SftpSession};
-use russh_sftp::protocol::{File, OpenFlags, Packet, StatusCode};
+use russh_sftp::protocol::{File, FileAttributes, OpenFlags, Packet, StatusCode};
 use tokio::io::AsyncSeekExt;
 use tokio::sync::{oneshot, OnceCell};
 use tokio::task::JoinSet;
@@ -113,9 +113,39 @@ impl SftpFs {
 }
 
 impl SftpFs {
-    /// The high-level session does not expose extended requests. Open at
-    /// most one extra channel on this Connection when an overwrite needs it.
-    async fn rename_session(&self) -> FsResult<Option<RawSftpSession>> {
+    /// Creates or verifies a private cache directory under the remote home.
+    /// Refuses an existing symlink or a directory with broader permissions.
+    pub async fn private_home_directory(&self, name: &str) -> FsResult<String> {
+        if name.is_empty() || matches!(name, "." | "..") || name.contains(['/', '\\', '\0']) {
+            return Err(FsError::InvalidName);
+        }
+        let path = join(&self.home().await?, name);
+        let stat = match self.lstat(&path).await {
+            Ok(stat) => stat,
+            Err(FsError::NotFound(_)) => {
+                let session = self.raw_session().await?;
+                session.init().await.map_err(|e| self.error(&path, e))?;
+                let attrs = FileAttributes {
+                    permissions: Some(0o700),
+                    ..Default::default()
+                };
+                if let Err(error) = session.mkdir(&path, attrs).await {
+                    let error = self.unless_taken(&path, self.error(&path, error)).await;
+                    if !matches!(error, FsError::AlreadyExists(_)) {
+                        return Err(error);
+                    }
+                }
+                self.lstat(&path).await?
+            }
+            Err(error) => return Err(error),
+        };
+        if stat.kind != FileKind::Dir || stat.permissions != Some(0o700) {
+            return Err(FsError::PermissionDenied(path));
+        }
+        Ok(path)
+    }
+
+    async fn raw_session(&self) -> FsResult<RawSftpSession> {
         let channel = self
             .connection
             .open_session_channel()
@@ -124,6 +154,13 @@ impl SftpFs {
         Self::request_sftp(&self.connection, &channel).await?;
         let session = RawSftpSession::new(channel.into_stream());
         session.set_timeout(REQUEST_TIMEOUT_SECS);
+        Ok(session)
+    }
+
+    /// The high-level session does not expose extended requests. Open at
+    /// most one extra channel on this Connection when an overwrite needs it.
+    async fn rename_session(&self) -> FsResult<Option<RawSftpSession>> {
+        let session = self.raw_session().await?;
         let version = session.init().await.map_err(|e| self.error("", e))?;
         match version.extensions.get(POSIX_RENAME).map(String::as_str) {
             Some("1") => Ok(Some(session)),

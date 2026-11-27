@@ -111,15 +111,17 @@ export function TransferRow({ transfer, speed, canReveal = false }: {
         )}
         {failed || state.type === "cancelled" ? (
           <>
-            <Button
-              variant="ghost"
-              size="xs"
-              className="h-6"
-              onClick={() => void transfersStore.getState().retry(transfer.id)}
-            >
-              <RotateCw aria-hidden />
-              {t("transfers.retry")}
-            </Button>
+            {!transfer.privateSource && (
+              <Button
+                variant="ghost"
+                size="xs"
+                className="h-6"
+                onClick={() => void transfersStore.getState().retry(transfer.id)}
+              >
+                <RotateCw aria-hidden />
+                {t("transfers.retry")}
+              </Button>
+            )}
             <IconButton
               label={t("transfers.dismiss")}
               className="size-6"

@@ -8,11 +8,15 @@ import { e2eHooks } from "@/lib/e2e";
 import {
   closeTerminal,
   resizeTerminal,
+  saveClipboardImage,
   writeTerminal,
   type TerminalEvent,
   type TerminalId,
   type TerminalSize,
 } from "@/lib/ipc/terminal";
+import type { TransferHost } from "@/lib/ipc/transfers";
+import { quoteDroppedPaths } from "./dropped-paths";
+import { terminalPasteInput } from "./terminal-input";
 import { XtermView } from "./XtermView";
 import { shellIntegration, useShellIntegration } from "./shellIntegration";
 import { terminalOutputs } from "./terminal-outputs";
@@ -26,6 +30,7 @@ export type OpenTerminal = (
 
 interface Props {
   paneId: string;
+  host: TransferHost;
   /** Starts the backend Terminal. Called once, when the view mounts. */
   open: OpenTerminal;
   /** Called if `open` rejects; the view stays mounted. */
@@ -49,6 +54,7 @@ interface Props {
  */
 export function TerminalSurface({
   paneId,
+  host,
   open,
   onOpenError,
   onOpened,
@@ -65,6 +71,8 @@ export function TerminalSurface({
   const unavailable = status === "disabled" || status === "unsupported" || status === "timedOut";
   // Read through refs: the Terminal is opened once per mount; later prop changes don't reopen it.
   const openRef = useRef(open);
+  const hostRef = useRef(host);
+  const imagePasteRef = useRef<(() => Promise<void>) | null>(null);
   const onOpenErrorRef = useRef(onOpenError);
   const onOpenedRef = useRef(onOpened);
   const onExitRef = useRef(onExit);
@@ -79,6 +87,7 @@ export function TerminalSurface({
     onExitRef.current = onExit;
     onTitleChangeRef.current = onTitleChange;
     labelRef.current = label;
+    hostRef.current = host;
   });
 
   const attach = useCallback((xterm: XTerm) => {
@@ -92,11 +101,24 @@ export function TerminalSurface({
     });
     let exited = false;
     let connected = true;
+    let generation = 0;
     let unregisterWriter: (() => void) | undefined;
-    const sendInput = (id: TerminalId, data: string) => {
+    const sendInput = (id: TerminalId, data: string, generation?: number) => {
       shellIntegration.input(paneId, data);
-      const write = writeTerminal(id, data);
+      const write = writeTerminal(id, data, generation);
       return e2eHooks ? write.then(() => e2eHooks?.trackInput(xterm, data.length)) : write;
+    };
+    const enableImagePaste = (opened: TerminalId) => {
+      const sourceGeneration = generation;
+      const paste = async () => {
+        const path = await saveClipboardImage(opened, { host: hostRef.current, generation: sourceGeneration });
+        if (path === null || imagePasteRef.current !== paste) return;
+        const text = quoteDroppedPaths("sh", [path]);
+        if (text === null) throw new Error("Cannot quote this path for the remote shell");
+        const bracketed = xterm.modes.bracketedPasteMode && !xterm.options.ignoreBracketedPasteMode;
+        await sendInput(opened, terminalPasteInput(text, bracketed, false), sourceGeneration);
+      };
+      imagePasteRef.current = paste;
     };
     const registerWriter = (opened: TerminalId) => {
       if (broadcast && tabId !== undefined && !unregisterWriter) {
@@ -131,9 +153,14 @@ export function TerminalSurface({
         if (event.type === "connection") {
           connected = event.state.state === "connected";
           if (connected) {
+            generation++;
             shellIntegration.open(paneId, id);
-            if (id !== undefined) registerWriter(id);
+            if (id !== undefined) {
+              enableImagePaste(id);
+              registerWriter(id);
+            }
           } else {
+            imagePasteRef.current = null;
             removeWriter();
             shellIntegration.close(paneId);
           }
@@ -145,6 +172,7 @@ export function TerminalSurface({
         }
         if (event.type !== "exit") return;
         exited = true;
+        imagePasteRef.current = null;
         removeWriter();
         output.close();
         if (id !== undefined) void closeTerminal(id).catch(() => undefined);
@@ -168,7 +196,10 @@ export function TerminalSurface({
           id = opened;
           shellIntegration.attach(paneId, opened);
           output.attach(opened);
-          if (connected) registerWriter(opened);
+          if (connected) {
+            enableImagePaste(opened);
+            registerWriter(opened);
+          }
           onOpenedRef.current?.(opened);
           // Catch up on any resize that happened while connecting.
           void resizeTerminal(opened, size());
@@ -195,6 +226,7 @@ export function TerminalSurface({
 
     return () => {
       lifetime.abort();
+      imagePasteRef.current = null;
       output.close();
       stopNotifications();
       removeWriter();
@@ -210,7 +242,7 @@ export function TerminalSurface({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1">
-        <XtermView label={label} active={active} colorScheme={colorScheme} onTitleChange={onTitleChange} attach={attach} />
+        <XtermView label={label} active={active} colorScheme={colorScheme} onTitleChange={onTitleChange} imagePasteRef={imagePasteRef} attach={attach} />
       </div>
       {unavailable && (
         <p className="border-border text-muted-foreground shrink-0 border-t px-3 py-1 text-xs" role="status">

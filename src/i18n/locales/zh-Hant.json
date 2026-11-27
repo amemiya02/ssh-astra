@@ -735,6 +735,9 @@
     "followSystemAction": "主題：依照系統"
   },
   "terminal": {
+    "imagePaste": {
+      "failed": "無法儲存或貼上剪貼簿圖片。"
+    },
     "fileDrop": {
       "destinationTitle": "選擇上傳目錄",
       "destinationBody": "{{host}} 上的終端尚未回報目前目錄。要將檔案上傳到哪裡？",
@@ -1250,6 +1253,10 @@
       "confirmMultilinePaste": {
         "label": "多行貼上前確認",
         "description": "貼上多於一行的內容前先詢問，因為 shell 會逐行立即執行。"
+      },
+      "pasteImages": {
+        "label": "將剪貼簿圖片貼上為路徑",
+        "description": "剪貼簿中只有圖片時，將圖片儲存為 PNG 並貼上其路徑。遠端終端機會將 PNG 上傳至該主機的 SSH Astra 快取目錄。"
       },
       "shellIntegration": {
         "label": "Shell 整合",

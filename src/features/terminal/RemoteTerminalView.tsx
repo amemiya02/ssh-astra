@@ -241,6 +241,7 @@ export function RemoteTerminalView({
         <div className={opened ? "h-full" : "invisible h-full"} inert={!opened}>
           <TerminalSurface
             paneId={paneId}
+            host={transferHost(host)}
             open={open}
             onOpenError={onOpenError}
             onOpened={(id) => {

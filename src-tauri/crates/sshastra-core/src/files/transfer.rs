@@ -129,6 +129,9 @@ pub struct Transfer {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_host: Option<TransferHost>,
     pub state: TransferState,
+    /// The caller owns a private temporary source that is released on completion.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub private_source: bool,
     /// At least one existing file in this transfer was written in place.
     pub unprotected: bool,
     /// Totals are 0 until the source has been walked.
@@ -195,6 +198,7 @@ struct Entry {
     answer: Option<oneshot::Sender<ConflictAnswer>>,
     last_progress: Option<Instant>,
     auto_retry: AutoRetry,
+    completion: Option<oneshot::Sender<FsResult<()>>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -210,6 +214,7 @@ struct Job {
     name: String,
     source: Location,
     target: Location,
+    private: bool,
 }
 
 #[derive(Clone)]
@@ -333,7 +338,7 @@ impl TransferQueue {
     /// Queues copying the local file or folder `local` into the remote
     /// directory `remote_dir`.
     pub fn upload(&self, open: OpenRemote, local: PathBuf, remote_dir: String) -> TransferId {
-        self.enqueue_upload(None, open, local, remote_dir)
+        self.enqueue(Self::upload_job(None, open, local, remote_dir, false), None)
     }
 
     /// Queues an upload that can resume once when this Host reconnects.
@@ -343,27 +348,45 @@ impl TransferQueue {
         local: PathBuf,
         remote_dir: String,
     ) -> TransferId {
-        self.enqueue_upload(Some(host), open, local, remote_dir)
+        self.enqueue(
+            Self::upload_job(Some(host), open, local, remote_dir, false),
+            None,
+        )
     }
 
-    fn enqueue_upload(
+    /// Queues a private, exclusive upload and reports publication to its caller.
+    /// The caller owns the temporary source and must keep it until completion.
+    /// Retry requires a fresh request so an old source cannot be sent later.
+    pub fn upload_private_file(
         &self,
+        RemoteTransfer { host, open }: RemoteTransfer,
+        local: PathBuf,
+        remote_dir: String,
+    ) -> (TransferId, oneshot::Receiver<FsResult<()>>) {
+        let (complete, result) = oneshot::channel();
+        let job = Self::upload_job(Some(host), open, local, remote_dir, true);
+        (self.enqueue(job, Some(complete)), result)
+    }
+
+    fn upload_job(
         host: Option<TransferHost>,
         open: OpenRemote,
         local: PathBuf,
         remote_dir: String,
-    ) -> TransferId {
+        private: bool,
+    ) -> Job {
         let name = local
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| local.display().to_string());
         let path = join(&remote_dir, &name);
-        self.enqueue(Job {
+        Job {
             direction: TransferDirection::Upload,
             name,
             source: Location::Local(local),
             target: Location::Remote { path, open, host },
-        })
+            private,
+        }
     }
 
     /// Queues copying the remote file or folder `remote` into the local
@@ -391,16 +414,20 @@ impl TransferQueue {
     ) -> TransferId {
         let name = remote_name(&remote).to_owned();
         let local = local_dir.join(&name);
-        self.enqueue(Job {
-            direction: TransferDirection::Download,
-            name,
-            source: Location::Remote {
-                path: remote,
-                open,
-                host,
+        self.enqueue(
+            Job {
+                direction: TransferDirection::Download,
+                name,
+                source: Location::Remote {
+                    path: remote,
+                    open,
+                    host,
+                },
+                target: Location::Local(local),
+                private: false,
             },
-            target: Location::Local(local),
-        })
+            None,
+        )
     }
 
     /// Queues copying an absolute path into a directory on another Host.
@@ -418,20 +445,24 @@ impl TransferQueue {
         } else {
             join(&target_dir, &name)
         };
-        self.enqueue(Job {
-            direction: TransferDirection::Copy,
-            name,
-            source: Location::Remote {
-                path: source_path,
-                open: source.open,
-                host: Some(source.host),
+        self.enqueue(
+            Job {
+                direction: TransferDirection::Copy,
+                name,
+                source: Location::Remote {
+                    path: source_path,
+                    open: source.open,
+                    host: Some(source.host),
+                },
+                target: Location::Remote {
+                    path,
+                    open: target.open,
+                    host: Some(target.host),
+                },
+                private: false,
             },
-            target: Location::Remote {
-                path,
-                open: target.open,
-                host: Some(target.host),
-            },
-        })
+            None,
+        )
     }
 
     /// Records a newly established Connection and wakes eligible transfers.
@@ -468,6 +499,9 @@ impl TransferQueue {
         match entry.info.state {
             TransferState::Queued | TransferState::Paused | TransferState::Failed { .. } => {
                 entry.info.state = TransferState::Cancelled;
+                if let Some(completion) = entry.completion.take() {
+                    let _ = completion.send(Err(FsError::Io("transfer cancelled".into())));
+                }
                 if entry.auto_retry == AutoRetry::Waiting {
                     entry.auto_retry = AutoRetry::Used;
                 }
@@ -521,26 +555,29 @@ impl TransferQueue {
 
     /// Queues a paused transfer to continue from its staged bytes.
     pub fn resume(&self, id: TransferId) {
-        self.requeue(id, |state| matches!(state, TransferState::Paused));
+        self.requeue(id, |entry| {
+            matches!(entry.info.state, TransferState::Paused)
+        });
     }
 
     /// Queues a failed or cancelled transfer again. Files it already copied
     /// are not copied again.
     pub fn retry(&self, id: TransferId) {
-        self.requeue(id, |state| {
-            matches!(
-                state,
-                TransferState::Failed { .. } | TransferState::Cancelled
-            )
+        self.requeue(id, |entry| {
+            !entry.job.private
+                && matches!(
+                    entry.info.state,
+                    TransferState::Failed { .. } | TransferState::Cancelled
+                )
         });
     }
 
-    fn requeue(&self, id: TransferId, can_requeue: impl FnOnce(&TransferState) -> bool) {
+    fn requeue(&self, id: TransferId, can_requeue: impl FnOnce(&Entry) -> bool) {
         let mut st = self.inner.lock();
         let Some(entry) = st.entries.get_mut(&id) else {
             return;
         };
-        if !can_requeue(&entry.info.state) {
+        if !can_requeue(entry) {
             return;
         }
         if entry.auto_retry == AutoRetry::Waiting {
@@ -626,7 +663,7 @@ impl TransferQueue {
         }
     }
 
-    fn enqueue(&self, job: Job) -> TransferId {
+    fn enqueue(&self, job: Job, completion: Option<oneshot::Sender<FsResult<()>>>) -> TransferId {
         *self.inner.runtime.lock().unwrap_or_else(|p| p.into_inner()) =
             Some(tokio::runtime::Handle::current());
         let mut st = self.inner.lock();
@@ -641,6 +678,7 @@ impl TransferQueue {
             source_host: job.source.host().cloned(),
             target_host: job.target.host().cloned(),
             state: TransferState::Queued,
+            private_source: job.private,
             unprotected: false,
             bytes_done: 0,
             bytes_total: 0,
@@ -651,6 +689,11 @@ impl TransferQueue {
             id,
             Entry {
                 info: info.clone(),
+                auto_retry: if job.private {
+                    AutoRetry::Used
+                } else {
+                    AutoRetry::Available
+                },
                 job,
                 done: HashSet::new(),
                 completed_bytes: 0,
@@ -658,7 +701,7 @@ impl TransferQueue {
                 control: None,
                 answer: None,
                 last_progress: None,
-                auto_retry: AutoRetry::Available,
+                completion,
             },
         );
         st.pending.push_back(id);
@@ -811,7 +854,9 @@ impl Inner {
         if result.is_err() && *control.borrow() == Control::Cancel {
             result = Err(Stop::Cancelled);
         }
-        if matches!(result, Ok(()) | Err(Stop::Cancelled)) {
+        if matches!(result, Ok(()) | Err(Stop::Cancelled))
+            || (job.private && matches!(result, Err(Stop::Failed(_))))
+        {
             let partials = {
                 let mut st = self.lock();
                 let entry = st
@@ -908,6 +953,16 @@ impl Inner {
                     message: e.to_string(),
                 },
             };
+            if entry.info.state.is_finished() {
+                if let Some(completion) = entry.completion.take() {
+                    let outcome = match &result {
+                        Ok(()) => Ok(()),
+                        Err(Stop::Failed(error)) => Err(error.clone()),
+                        Err(_) => Err(FsError::Io("transfer cancelled".into())),
+                    };
+                    let _ = completion.send(outcome);
+                }
+            }
             let snapshot = entry.info.clone();
             st.events.push_back(snapshot);
             // Authentication may have finished while the attempt was settling.
@@ -940,6 +995,9 @@ impl Inner {
         control: &mut watch::Receiver<Control>,
     ) -> Result<(), Stop> {
         let items = interruptible(control, true, walk(source, job.direction)).await?;
+        if job.private && (items.len() != 1 || items[0].stat.is_none()) {
+            return Err(FsError::InvalidName.into());
+        }
 
         self.update(id, |entry| {
             let files = items
@@ -991,6 +1049,9 @@ impl Inner {
                 interruptible(control, true, async { Ok::<_, FsError>(slot.lock().await) }).await?;
             let (original, copy) = interruptible(control, true, async {
                 match file.stat().await {
+                    Ok(_) if job.private => {
+                        Err(FsError::AlreadyExists(destination.display()).into())
+                    }
                     Ok(stat) if stat.kind == FileKind::Dir => {
                         Err(FsError::NotADirectory(destination.display()).into())
                     }
@@ -1002,7 +1063,7 @@ impl Inner {
             .await?;
             if copy {
                 let source = source.at(&item.rel);
-                let mut stage = StagedWrite::new(&file, parked, original);
+                let mut stage = StagedWrite::new(&file, parked, original, job.private);
                 let reserved = self.lock().entries[&id]
                     .partials
                     .iter()
