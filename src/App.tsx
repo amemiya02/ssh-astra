@@ -22,6 +22,8 @@ import { usePaletteActions, type PaletteAction } from "@/features/palette/palett
 import { rememberHostOpened } from "@/features/palette/recent-hosts";
 import { DiagnosticsPaletteActions } from "@/features/settings/diagnostics-section";
 import { AppShell } from "@/features/shell/AppShell";
+import { zoomTerminalFont } from "@/features/terminal/terminal-prefs";
+import { useTerminalPrefs } from "@/features/terminal/terminal-prefs-context";
 import { paneNeighbors } from "@/features/workspace/pane-layout";
 import { currentPlatform, paneSwapShortcuts, shortcutLabel, type WorkspaceCommand } from "@/features/workspace/shortcuts";
 import { TabPanels } from "@/features/workspace/TabPanels";
@@ -60,6 +62,7 @@ const updatable = isTauri() && import.meta.env.VITE_E2E !== "1";
  */
 export function App({ initialTabs }: { initialTabs: TabsState }) {
   const { t } = useTranslation();
+  const { prefs: { titleSource } } = useTerminalPrefs();
   const [state, dispatch] = useReducer(tabsReducer, initialTabs);
   const { tabs, activeId } = state;
   const focused = activeTab(state);
@@ -137,9 +140,9 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
       tabs.map((tab, index) => {
         const kind = activePane(tab).kind;
         const ordinal = tabs.slice(0, index + 1).filter((other) => activePane(other).kind === kind).length;
-        return { id: tab.id, title: tabTitle(tab, t, ordinal) };
+        return { id: tab.id, title: tabTitle(tab, t, ordinal, titleSource) };
       }),
-    [tabs, t],
+    [tabs, t, titleSource],
   );
   usePaletteActions(
     useMemo(
@@ -235,6 +238,8 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
         return setPaletteOpen((open) => !open);
       case "openSettings":
         return openSettings();
+      case "zoomTerminalFont":
+        return zoomTerminalFont(command.step);
       case "goToTab": {
         const target = tabs.at(command.index);
         if (target) dispatch({ type: "activate", id: target.id });
@@ -296,6 +301,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
             tabs={tabs}
             activeId={activeId}
             platform={platform}
+            titleSource={titleSource}
             onActivate={(id) => dispatch({ type: "activate", id })}
             onClose={(id) => dispatch({ type: "close", id })}
             onCustomize={dispatch}

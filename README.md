@@ -42,6 +42,23 @@ A modern, good-looking SSH & SFTP client for Windows, macOS and Linux.
   </tr>
 </table>
 
+## Terminal shortcuts
+
+| Action | macOS | Windows and Linux |
+| --- | --- | --- |
+| Increase font size | `⌘+` | `Ctrl++` |
+| Decrease font size | `⌘-` | `Ctrl+-` |
+| Zoom with the wheel | Hold Command or Control and scroll over a Terminal | Hold Ctrl and scroll over a Terminal |
+
+Zoom changes the saved font size for all Terminals within 8–32 px. The increase shortcut also accepts the `=` key.
+
+### Terminal protocol support
+
+SSH Astra uses xterm.js 6.0.0.
+
+- **Synchronized output (DECSET 2026)** is supported. xterm.js batches redraws until the program resets the mode, with a one-second fallback if the program leaves it enabled. [6.0.0 release notes](https://github.com/xtermjs/xterm.js/releases/tag/6.0.0) · [6.0.0 render service](https://github.com/xtermjs/xterm.js/blob/6.0.0/src/browser/services/RenderService.ts#L320-L352)
+- **Kitty keyboard protocol** is unsupported in 6.0.0. Its CSI handlers lack Kitty keyboard negotiation and its keyboard encoder uses legacy sequences. [6.0.0 CSI handlers](https://github.com/xtermjs/xterm.js/blob/6.0.0/src/common/InputHandler.ts#L219-L268) · [6.0.0 keyboard encoder](https://github.com/xtermjs/xterm.js/blob/6.0.0/src/common/input/Keyboard.ts)
+
 ## Install
 
 Download from [Releases](https://github.com/amemiya02/ssh-astra/releases): `.msi` (Windows), universal `.dmg` (macOS), `.AppImage` / `.deb` (Linux).
