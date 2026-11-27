@@ -252,6 +252,8 @@ describe("README screenshots", () => {
     await shortcut("Comma", ",");
     await $('[role="radiogroup"][aria-label="Dark themes"]').waitForDisplayed();
     await setFilePanel(false);
+    // Hovering a theme card previews it; keep the pointer off the gallery.
+    await parkPointer();
     await shot("settings");
     await setTheme("Astra Light");
     await setFilePanel(true);
