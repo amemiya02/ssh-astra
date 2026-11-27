@@ -69,6 +69,47 @@ Host bad
 ";
 
 #[test]
+fn imported_hosts_keep_their_server_alive_interval() {
+    let (dir, mut store) = store();
+
+    let report = import(
+        &mut store,
+        "
+Host app
+    ProxyJump ops@gw.example.com:2200
+    ServerAliveInterval 0
+    ServerAliveInterval 60
+Host inherited
+Host *.example.com
+    ServerAliveInterval 1m15.5s
+Host invalid
+    ServerAliveInterval -1
+",
+    );
+    assert_eq!(
+        report.imported,
+        ["app", "ops@gw.example.com:2200", "inherited"]
+    );
+    assert_eq!(
+        report.issues,
+        [ImportIssue {
+            entry: "invalid".into(),
+            dropped: true,
+            problem: ImportProblem::InvalidValue {
+                directive: "ServerAliveInterval".into(),
+                value: "-1".into(),
+            },
+        }]
+    );
+
+    let path = dir.path().join("hosts.json");
+    let saved: serde_json::Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    assert_eq!(saved["hosts"][0]["keepaliveSeconds"], 0);
+    assert_eq!(saved["hosts"][1]["keepaliveSeconds"], 75);
+    assert!(saved["hosts"][2].get("keepaliveSeconds").is_none());
+}
+
+#[test]
 fn imported_hosts_are_saved_with_their_settings_jump_hosts_and_forwards() {
     let (_dir, mut store) = store();
 
@@ -222,6 +263,7 @@ fn a_host_with_a_taken_name_is_skipped_and_its_namesake_used_as_jump_host() {
                 terminal_scheme: None,
                 identities_only: false,
                 forward_agent: false,
+                keepalive_seconds: None,
                 default_directory: None,
             },
         )

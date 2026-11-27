@@ -376,9 +376,8 @@ impl ConnectionManager {
         self
     }
 
-    /// How often Connections opened from now on send a keepalive when
-    /// nothing else arrives (`None`: never). Three unanswered keepalives in a
-    /// row drop the Connection.
+    /// The default interval for new Connections whose Hosts inherit it
+    /// (`None`: never). Three unanswered keepalives in a row drop the Connection.
     pub fn set_keepalive_interval(&self, interval: Option<Duration>) {
         *self
             .keepalive_interval
@@ -386,11 +385,15 @@ impl ConnectionManager {
             .unwrap_or_else(|p| p.into_inner()) = interval;
     }
 
-    fn client_config(&self) -> Arc<client::Config> {
-        let keepalive_interval = *self
-            .keepalive_interval
-            .lock()
-            .unwrap_or_else(|p| p.into_inner());
+    fn client_config(&self, host: &Host) -> Arc<client::Config> {
+        let keepalive_interval = match host.keepalive_seconds {
+            Some(0) => None,
+            Some(seconds) => Some(Duration::from_secs(u64::from(seconds))),
+            None => *self
+                .keepalive_interval
+                .lock()
+                .unwrap_or_else(|p| p.into_inner()),
+        };
         Arc::new(client::Config {
             keepalive_interval,
             keepalive_max: KEEPALIVE_MAX,
@@ -624,7 +627,7 @@ impl ConnectionManager {
             failure: failure.clone(),
         };
         log::info!("connection hop={} step=handshake result=starting", host.id);
-        let handshake = client::connect_stream(self.client_config(), stream, handler)
+        let handshake = client::connect_stream(self.client_config(host), stream, handler)
             .await
             .map_err(|error| {
                 let recorded = failure.lock().ok().and_then(|mut f| f.take());

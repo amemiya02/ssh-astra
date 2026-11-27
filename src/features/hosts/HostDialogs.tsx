@@ -66,6 +66,7 @@ const NO_JUMP_HOST = "none";
 const advancedFieldIds = {
   terminalScheme: "host-form-terminal-scheme",
   defaultDirectory: "host-form-default-directory",
+  keepaliveSeconds: "host-form-keepalive-seconds",
 };
 
 /** The Host editor: a new Host (`host` omitted) or edits to `host`. */
@@ -94,8 +95,9 @@ export function HostFormDialogContent({
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
   useLayoutEffect(() => {
-    if (saveError?.field) document.getElementById(advancedFieldIds[saveError.field])?.focus();
-  }, [saveError]);
+    const field = saveError?.field ?? (errors.keepaliveSeconds ? "keepaliveSeconds" : undefined);
+    if (field) document.getElementById(advancedFieldIds[field])?.focus();
+  }, [errors, saveError]);
 
   const schemeError = saveError?.field === "terminalScheme";
   const directoryError = saveError?.field === "defaultDirectory";
@@ -118,6 +120,7 @@ export function HostFormDialogContent({
           const result = parseHostForm(values);
           if (!result.ok) {
             setErrors(result.errors);
+            if (result.errors.keepaliveSeconds) setAdvancedOpen(true);
             return;
           }
           setErrors({});
@@ -285,6 +288,28 @@ export function HostFormDialogContent({
                     {t("hosts.forwardAgentHint")}
                   </p>
                 </div>
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor={advancedFieldIds.keepaliveSeconds} className="text-xs">
+                  {t("hosts.fields.keepaliveSeconds")}
+                </Label>
+                <Input
+                  id={advancedFieldIds.keepaliveSeconds}
+                  className="h-8"
+                  value={values.keepaliveSeconds ?? ""}
+                  inputMode="numeric"
+                  aria-invalid={errors.keepaliveSeconds ? true : undefined}
+                  aria-describedby={errors.keepaliveSeconds ? "host-form-keepalive-hint host-form-keepalive-error" : "host-form-keepalive-hint"}
+                  onChange={(event) => setValues((v) => ({ ...v, keepaliveSeconds: event.target.value }))}
+                />
+                <p id="host-form-keepalive-hint" className="text-muted-foreground text-xs">
+                  {t("hosts.keepaliveHint")}
+                </p>
+                {errors.keepaliveSeconds && (
+                  <p id="host-form-keepalive-error" className="text-destructive text-xs">
+                    {t("hosts.errors.keepaliveSeconds")}
+                  </p>
+                )}
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor={advancedFieldIds.terminalScheme} className="text-xs">
