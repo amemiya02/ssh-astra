@@ -10,6 +10,7 @@ import { exposeTerminal } from "@/lib/e2e";
 import { notifyCopied } from "@/features/toasts/copyFeedback";
 import { externalLinkDestination } from "@/lib/external-link";
 import { openExternalUrl, readClipboardText, writeClipboardText } from "@/lib/ipc/system";
+import { cn } from "@/lib/utils";
 import { useTheme } from "@/theme/theme-context";
 import { resolveTerminalTheme, terminalSearchDecorations } from "@/theme/terminal-themes";
 import { PasteConfirmDialog } from "./PasteConfirmDialog";
@@ -19,9 +20,11 @@ import { BroadcastPaneContext, type Broadcast } from "@/features/workspace/broad
 import { getResolvedShortcuts } from "@/features/workspace/shortcut-settings";
 import { currentPlatform, matchTerminalShortcut } from "@/features/workspace/shortcuts";
 import { planPaste, type PendingPaste } from "./terminal-input";
+import { selectAllEvent } from "./terminal-selection";
 import { zoomTerminalFont, type TerminalPrefs } from "./terminal-prefs";
 import { useTerminalPrefs } from "./terminal-prefs-context";
 import { attachTerminalHighlighting } from "./xterm-highlighting";
+import { attachTerminalImages } from "./xterm-images";
 
 type BroadcastRecipients = ReturnType<Broadcast["capture"]>;
 
@@ -63,6 +66,7 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
   const fitRef = useRef<FitAddon | null>(null);
   const searchRef = useRef<SearchAddon | null>(null);
   const rendererRef = useRef<Renderer | null>(null);
+  const imagesRef = useRef<ReturnType<typeof attachTerminalImages> | null>(null);
   const prefsRef = useRef(prefs);
   const xtermTheme = resolveTerminalTheme(prefs.colorScheme, colorScheme, theme, prefs.importedSchemes);
   const themeRef = useRef(xtermTheme);
@@ -143,6 +147,8 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
     searchRef.current = search;
     const renderer = loadRenderer(xterm, initial.ligatures);
     rendererRef.current = renderer;
+    const images = attachTerminalImages(xterm, initial.inlineImages);
+    imagesRef.current = images;
 
     fitIfVisible();
 
@@ -170,6 +176,15 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
     const onCopy = (event: ClipboardEvent) => {
       if (event.defaultPrevented && event.clipboardData && xterm.hasSelection()) notifyCopied();
     };
+    // WebKit's edit command enables Copy for xterm's selection even when the
+    // hidden textarea has no native selection.
+    const onBeforeCopy = (event: Event) => {
+      if (xterm.hasSelection()) event.preventDefault();
+    };
+    const onSelectAll = (event: Event) => {
+      event.preventDefault();
+      xterm.selectAll();
+    };
     const onTitle = xterm.onTitleChange((title) => onTitleChangeRef.current?.(title));
 
     const captureRecipients = () => paneId === undefined ? undefined : broadcast?.capture(paneId);
@@ -195,6 +210,10 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
       zoomTerminalFont(event.deltaY < 0 ? 1 : -1);
     };
     container.addEventListener("copy", onCopy);
+    if (platform === "mac") {
+      container.addEventListener("beforecopy", onBeforeCopy);
+      container.addEventListener(selectAllEvent, onSelectAll);
+    }
     container.addEventListener("paste", onPaste, true);
     container.addEventListener("contextmenu", onContextMenu);
     container.addEventListener("wheel", onZoomWheel, { capture: true, passive: false });
@@ -210,6 +229,8 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
       clearTimeout(copyTimer);
       stopBroadcastInput?.();
       container.removeEventListener("copy", onCopy);
+      container.removeEventListener("beforecopy", onBeforeCopy);
+      container.removeEventListener(selectAllEvent, onSelectAll);
       container.removeEventListener("paste", onPaste, true);
       container.removeEventListener("contextmenu", onContextMenu);
       container.removeEventListener("wheel", onZoomWheel, true);
@@ -218,11 +239,12 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
       onTitle.dispose();
       unexpose();
       detach();
-      xterm.dispose();
+      images.disposeTerminal();
       xtermRef.current = null;
       fitRef.current = null;
       searchRef.current = null;
       rendererRef.current = null;
+      imagesRef.current = null;
     };
   }, [broadcast, fitIfVisible, paneId, requestPaste]);
 
@@ -235,6 +257,10 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
     const xterm = xtermRef.current;
     if (active && xterm) return attachTerminalHighlighting(xterm, prefs.highlighting, xtermTheme);
   }, [active, broadcast, paneId, prefs.highlighting, xtermTheme]);
+
+  useEffect(() => {
+    imagesRef.current?.setEnabled(prefs.inlineImages);
+  }, [prefs.inlineImages]);
 
   useEffect(() => {
     fitIfVisible();
@@ -278,7 +304,11 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
     <div className="relative h-full w-full">
       <ContextMenu>
         <ContextMenuTrigger asChild disabled={prefs.rightClickPaste || paneId === undefined}>
-          <div ref={containerRef} className="h-full w-full py-2 pr-1 pl-3" aria-label={label} />
+          <div
+            ref={containerRef}
+            className={cn("h-full w-full py-2 pr-1 pl-3", !prefs.inlineImages && "[&_.xterm-image-layer]:hidden")}
+            aria-label={label}
+          />
         </ContextMenuTrigger>
         {!prefs.rightClickPaste && paneId !== undefined && (
           <ContextMenuContent onCloseAutoFocus={(event) => {

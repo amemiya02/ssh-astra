@@ -5,6 +5,8 @@
 mod commands;
 mod diagnostics;
 mod error;
+#[cfg(target_os = "macos")]
+mod macos_menu;
 mod prompts;
 #[cfg(desktop)]
 mod quit;
@@ -61,6 +63,8 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_notification::init());
     #[cfg(desktop)]
     let builder = builder.menu(quit::menu).on_menu_event(quit::on_menu_event);
+    #[cfg(target_os = "macos")]
+    let builder = builder.on_menu_event(macos_menu::on_menu_event);
     builder
         // Restores the main window's size, position and maximized state, and
         // saves them on exit (`.window-state.json` in the app config dir).
@@ -155,6 +159,8 @@ pub fn run() {
         .manage(TransfersState::default())
         .manage(Arc::new(PendingPrompts::default()))
         .invoke_handler(tauri::generate_handler![
+            #[cfg(target_os = "macos")]
+            macos_menu::macos_menu_set,
             #[cfg(desktop)]
             quit::quit_menu_localize,
             #[cfg(desktop)]

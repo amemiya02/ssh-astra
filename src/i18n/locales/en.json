@@ -1126,6 +1126,10 @@
           "sound": "Sound"
         }
       },
+      "inlineImages": {
+        "label": "Inline images",
+        "description": "Display SIXEL and iTerm2 images from Terminal programs. Turning this off clears displayed images."
+      },
       "highlighting": {
         "label": "Keyword highlighting",
         "builtIn": {
@@ -1282,6 +1286,27 @@
     "confirm": "Quit",
     "menuFile": "File",
     "menuQuit": "Quit SSH Astra"
+  },
+  "macosMenu": {
+    "about": "About SSH Astra",
+    "services": "Services",
+    "hide": "Hide SSH Astra",
+    "hideOthers": "Hide Others",
+    "showAll": "Show All",
+    "edit": "Edit",
+    "view": "View",
+    "window": "Window",
+    "help": "Help",
+    "undo": "Undo",
+    "redo": "Redo",
+    "cut": "Cut",
+    "copy": "Copy",
+    "paste": "Paste",
+    "selectAll": "Select All",
+    "fullscreen": "Toggle Full Screen",
+    "minimize": "Minimize",
+    "zoom": "Zoom",
+    "bringAllToFront": "Bring All to Front"
   },
   "rail": {
     "home": "Home",

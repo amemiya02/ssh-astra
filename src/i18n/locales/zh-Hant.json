@@ -1126,6 +1126,10 @@
           "sound": "聲音"
         }
       },
+      "inlineImages": {
+        "label": "行內圖片",
+        "description": "顯示終端機程式輸出的 SIXEL 和 iTerm2 圖片。關閉後會清除已顯示的圖片。"
+      },
       "highlighting": {
         "label": "關鍵字醒目提示",
         "builtIn": {
@@ -1282,6 +1286,27 @@
     "confirm": "結束",
     "menuFile": "檔案",
     "menuQuit": "結束 SSH Astra"
+  },
+  "macosMenu": {
+    "about": "關於 SSH Astra",
+    "services": "服務",
+    "hide": "隱藏 SSH Astra",
+    "hideOthers": "隱藏其他",
+    "showAll": "顯示全部",
+    "edit": "編輯",
+    "view": "顯示方式",
+    "window": "視窗",
+    "help": "輔助說明",
+    "undo": "還原",
+    "redo": "重做",
+    "cut": "剪下",
+    "copy": "拷貝",
+    "paste": "貼上",
+    "selectAll": "全選",
+    "fullscreen": "切換全螢幕",
+    "minimize": "縮到最小",
+    "zoom": "縮放",
+    "bringAllToFront": "將所有視窗移到最前面"
   },
   "rail": {
     "home": "首頁",
