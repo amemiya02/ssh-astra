@@ -66,6 +66,19 @@ tauri-plugin-wdio-webdriver = { version = "=1.5.1", optional = true }
 [target.'cfg(any(windows, target_os = "macos", target_os = "linux"))'.dependencies]
 tauri-plugin-notification = "=2.8.0"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWorkspace"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "block2", "NSNotification", "NSObject", "NSOperation"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Power", "Win32_UI_WindowsAndMessaging"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+zbus = "5"
+
 [features]
 # The E2E build (`pnpm e2e:build`): embeds the WebDriver server and keeps
 # credentials out of the system keychain. `lib.rs` refuses it in release builds.

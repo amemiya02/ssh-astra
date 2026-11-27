@@ -5474,8 +5474,13 @@ dependencies = [
 name = "sshastra"
 version = "0.3.0"
 dependencies = [
+ "block2",
  "chrono",
+ "futures-util",
  "log",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
  "regex",
  "serde",
  "serde_json",
@@ -5494,6 +5499,8 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "whoami",
+ "windows-sys 0.61.2",
+ "zbus",
 ]
 
 [[package]]

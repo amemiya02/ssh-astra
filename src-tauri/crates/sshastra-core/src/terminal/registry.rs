@@ -116,6 +116,14 @@ impl TerminalRegistry {
         self.with(id, |t| t.reconnect())
     }
 
+    /// Gives each eligible open Terminal one attempt when the app gains focus
+    /// or the system wakes.
+    pub fn reconnect_disconnected(&self) {
+        for terminal in self.lock().values_mut() {
+            terminal.input.reconnect_disconnected();
+        }
+    }
+
     /// Closes the Terminal and forgets it.
     pub fn close(&self, id: TerminalId) -> Result<()> {
         let mut terminal = self.lock().remove(&id).ok_or(TerminalError::NotFound(id))?;

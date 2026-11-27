@@ -25,7 +25,7 @@
 #   counted   reachable from the test process like `ssh`, but only the
 #             Connection lifecycle tests use it, so they can count the TCP
 #             connections it sees (`Sshd::established_connections`).
-#   flaky     published: only the reconnect tests use it; they kill its
+#   flaky     published: tests of reconnect and shell integration kill its
 #             connections (`Sshd::drop_connections`) and freeze it
 #             (`Sshd::pause`) to make Connections drop.
 #   silent    published: accepts TCP connections on port 22 but never says
