@@ -21,6 +21,7 @@ use sshastra_core::files::{FsRegistry, TransferSettings};
 use sshastra_core::hosts::HostStore;
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::settings::SettingsStore;
+use sshastra_core::snippets::SnippetStore;
 use sshastra_core::ssh::{Agent, ConnectionManager};
 use sshastra_core::terminal::TerminalRegistry;
 use tauri::Manager;
@@ -33,6 +34,7 @@ use commands::forwards::ForwardsState;
 use commands::home::StartupMeasurement;
 use commands::hosts::HostsState;
 use commands::settings::SettingsState;
+use commands::snippets::SnippetsState;
 use commands::terminal::TerminalOutputDirectory;
 use commands::transfers::TransfersState;
 use prompts::PendingPrompts;
@@ -125,6 +127,9 @@ pub fn run() {
             #[cfg(feature = "e2e")]
             let vault: Arc<dyn credentials::CredentialVault> = Arc::new(credentials::NoVault);
             app.manage(HostsState::new(hosts));
+            app.manage(SnippetsState::new(
+                SnippetStore::open(config_dir.join("snippets.json")).map_err(Into::into),
+            ));
             app.manage(SettingsState::new(settings));
             let transfers = app.state::<TransfersState>().queue();
             app.manage(
@@ -155,6 +160,9 @@ pub fn run() {
             #[cfg(desktop)]
             quit::quit_live_connection_count,
             commands::home::home_first_paint,
+            commands::snippets::snippets_list,
+            commands::snippets::snippet_save,
+            commands::snippets::snippet_delete,
             commands::hosts::hosts_list,
             commands::hosts::host_save,
             commands::hosts::host_delete,

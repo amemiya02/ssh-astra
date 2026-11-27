@@ -11,6 +11,7 @@ pub mod hosts;
 pub mod known_hosts;
 pub mod proxy;
 pub mod settings;
+pub mod snippets;
 pub mod ssh;
 pub mod ssh_config;
 pub mod terminal;

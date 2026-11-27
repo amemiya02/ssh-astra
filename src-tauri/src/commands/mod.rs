@@ -11,6 +11,7 @@ pub mod home;
 pub mod hosts;
 pub mod notifications;
 pub mod settings;
+pub mod snippets;
 pub mod terminal;
 pub mod transfers;
 mod watch;

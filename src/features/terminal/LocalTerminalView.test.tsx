@@ -2,6 +2,7 @@ import { Terminal } from "@xterm/xterm";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
+import { BroadcastPaneContext, createBroadcast } from "@/features/workspace/broadcast";
 import { openLocalTerminal, writeTerminal } from "@/lib/ipc/terminal";
 import { LocalTerminalView } from "./LocalTerminalView";
 import { XtermView } from "./XtermView";
@@ -31,6 +32,33 @@ it("forwards the early ConPTY cursor reply and typed input when the local termin
     finishOpening(7);
     await opening;
     expect(vi.mocked(writeTerminal).mock.calls).toEqual([[7, "\x1b[1;1Rdir\r"]]);
+  } finally {
+    detach();
+    terminal.dispose();
+    act(() => root.unmount());
+  }
+});
+
+it("sends an explicit Snippet through the open local shell with its bracketed paste mode", async () => {
+  vi.mocked(writeTerminal).mockClear();
+  vi.mocked(openLocalTerminal).mockClear().mockResolvedValue(8);
+  const broadcast = createBroadcast();
+  broadcast.updateWorkspace("pane", ["tab"], ["pane"]);
+  const root = createRoot(document.createElement("div"));
+  const terminal = new Terminal();
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  act(() => root.render(
+    <BroadcastPaneContext.Provider value={{ broadcast, tabId: "tab", paneId: "pane" }}>
+      <LocalTerminalView />
+    </BroadcastPaneContext.Provider>,
+  ));
+  const detach = vi.mocked(XtermView).mock.lastCall![0].attach(terminal);
+  try {
+    await vi.mocked(openLocalTerminal).mock.results[0]!.value;
+    await new Promise<void>((resolve) => terminal.write("\x1b[?2004h", resolve));
+    expect(writeTerminal).not.toHaveBeenCalled();
+    await broadcast.captureInput("pane")!.send("echo one\necho two", false);
+    expect(writeTerminal).toHaveBeenCalledExactlyOnceWith(8, "\x1b[200~echo one\recho two\x1b[201~");
   } finally {
     detach();
     terminal.dispose();

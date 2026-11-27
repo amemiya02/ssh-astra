@@ -100,9 +100,10 @@ export function TerminalSurface({
     };
     const registerWriter = (opened: TerminalId) => {
       if (broadcast && tabId !== undefined && !unregisterWriter) {
-        unregisterWriter = broadcast.register(tabId, paneId, (data) => {
-          void sendInput(opened, data).catch(() => undefined);
-        });
+        unregisterWriter = broadcast.register(
+          tabId, paneId, (data) => sendInput(opened, data),
+          () => xterm.modes.bracketedPasteMode && !xterm.options.ignoreBracketedPasteMode,
+        );
       }
     };
     const removeWriter = () => {

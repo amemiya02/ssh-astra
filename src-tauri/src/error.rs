@@ -6,6 +6,7 @@ use sshastra_core::files::FsError;
 use sshastra_core::forward::ForwardError;
 use sshastra_core::hosts::HostStoreError;
 use sshastra_core::settings::SettingsError;
+use sshastra_core::snippets::SnippetStoreError;
 use sshastra_core::ssh::{ConnectError, HostKeyRecord};
 use sshastra_core::terminal::TerminalError;
 
@@ -93,6 +94,19 @@ impl From<HostStoreError> for CommandError {
             InUseAsJumpHost { by } => {
                 Self::new("inUseAsJumpHost", &err).with_details(json!({ "by": by }))
             }
+        }
+    }
+}
+
+impl From<SnippetStoreError> for CommandError {
+    fn from(err: SnippetStoreError) -> Self {
+        use SnippetStoreError::*;
+        match &err {
+            Io { .. } => Self::new("io", &err),
+            Corrupt(_) => Self::new("snippetStoreCorrupt", &err),
+            UnsupportedVersion(_) => Self::new("snippetStoreUnsupportedVersion", &err),
+            Invalid(field) => Self::new("invalid", &err).with_details(json!({ "field": field })),
+            NotFound(_) => Self::new("notFound", &err),
         }
     }
 }
