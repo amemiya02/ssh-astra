@@ -133,6 +133,13 @@
     "localTerminal": "本地终端",
     "newLocalTerminal": "新建本地终端",
     "close": "关闭 {{title}}",
+    "confirmClose": {
+      "title_one": "关闭 {{count}} 个已连接的终端？",
+      "title_other": "关闭 {{count}} 个已连接的终端？",
+      "description": "这些远程终端中运行的程序可能会停止。",
+      "skip": "不再询问",
+      "confirm": "关闭"
+    },
     "closeTab": "关闭标签",
     "closeOthers": "关闭其他标签",
     "closeRight": "关闭右侧标签",
@@ -626,6 +633,10 @@
       "transfers": "传输",
       "updates": "更新",
       "diagnostics": "诊断"
+    },
+    "confirmClose": {
+      "label": "关闭终端前确认",
+      "description": "关闭已连接的远程终端前询问。"
     },
     "restoreTabs": {
       "label": "恢复标签",

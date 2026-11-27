@@ -1,0 +1,291 @@
+import { invoke } from "@tauri-apps/api/core";
+import { Terminal } from "@xterm/xterm";
+import { act, useEffect } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { currentPlatform } from "@/features/workspace/shortcuts";
+import { emptyTabs, newPane, tabsReducer, type TabsAction, type TabsState } from "@/features/workspace/tabs";
+import i18n, { startI18n } from "@/i18n";
+import type { Host } from "@/lib/ipc/hosts";
+import type { TerminalMessage } from "@/lib/ipc/terminal";
+import { startSettings, type SettingsBackend } from "@/lib/storage";
+import { ThemeProvider } from "@/theme/ThemeProvider";
+import { App } from "./App";
+
+vi.mock("@tauri-apps/api/core", async (importOriginal) => {
+  let nextTerminalId = 0;
+  return {
+    ...await importOriginal<typeof import("@tauri-apps/api/core")>(),
+    Channel: class<T> {
+      constructor(public onmessage: (message: T) => void) {}
+    },
+    invoke: vi.fn(async (command: string) => {
+      if (command === "remote_terminal_open" || command === "local_terminal_open") return ++nextTerminalId;
+      if (command === "transfers_watch" || command === "forwards_watch") return [];
+    }),
+  };
+});
+
+// Exercise the real app and Terminal lifecycle without a renderer or native backend.
+vi.mock("@/features/terminal/XtermView", () => ({
+  XtermView: ({ attach }: { attach(terminal: Terminal): () => void }) => {
+    useEffect(() => {
+      const terminal = new Terminal();
+      const detach = attach(terminal);
+      return () => {
+        detach();
+        terminal.dispose();
+      };
+    }, [attach]);
+    return null;
+  },
+}));
+
+const host: Host = {
+  id: "test-host", name: "Test Host", address: "example.com", port: 22, user: "deploy",
+  auth: { type: "password" }, jumpHost: null, groupId: null, forwards: [],
+};
+const remote = (id: string) => newPane({ kind: "remote-terminal", host }, id);
+const local = (id: string) => newPane({ kind: "local-terminal" }, id);
+
+function workspace(...actions: TabsAction[]) {
+  return actions.reduce(tabsReducer, emptyTabs);
+}
+
+let settingsFile: Record<string, unknown>;
+const settingsBackend: SettingsBackend = {
+  load: async () => settingsFile,
+  save: async (section, value) => { settingsFile[section] = value; },
+};
+let root: Root | undefined;
+let container: HTMLDivElement | undefined;
+
+beforeAll(() => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  globalThis.ResizeObserver ??= class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+  window.matchMedia ??= ((query: string) => ({
+    matches: false,
+    media: query,
+    addEventListener() {},
+    removeEventListener() {},
+  })) as unknown as typeof window.matchMedia;
+  startI18n();
+});
+
+beforeEach(async () => {
+  settingsFile = { workspacePreferences: { restoreTabs: "none" } };
+  await startSettings(settingsBackend);
+  await i18n.changeLanguage("en");
+});
+
+async function unmount() {
+  await act(async () => root?.unmount());
+  container?.remove();
+  root = undefined;
+  container = undefined;
+}
+
+afterEach(async () => {
+  await unmount();
+  vi.mocked(invoke).mockClear();
+});
+
+async function render(initialTabs: TabsState) {
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () => root!.render(
+    <ThemeProvider>
+      <TooltipProvider>
+        <App initialTabs={initialTabs} />
+      </TooltipProvider>
+    </ThemeProvider>,
+  ));
+}
+
+const dialog = () => document.querySelector('[role="dialog"]');
+const terminalCloses = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === "terminal_close");
+const tabIds = () => [...document.querySelectorAll('[role="tab"]')].map((tab) => tab.id);
+
+async function sendTerminalMessage(message: TerminalMessage) {
+  const openCall = vi.mocked(invoke).mock.calls.find(([command]) => command === "remote_terminal_open");
+  const { onEvent } = openCall?.[1] as { onEvent: { onmessage(message: TerminalMessage): void } };
+  await act(async () => onEvent.onmessage(message));
+}
+
+async function closePaneShortcut() {
+  const modifiers = currentPlatform() === "mac" ? { metaKey: true } : { ctrlKey: true, shiftKey: true };
+  await act(async () => document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", {
+    key: "w", code: "KeyW", bubbles: true, cancelable: true, ...modifiers,
+  })));
+}
+
+async function selectTabMenu(tabId: string, label: string) {
+  const tab = document.getElementById(`tab-${tabId}`)!;
+  await act(async () => tab.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })));
+  const menuItem = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent === label);
+  expect(menuItem, label).toBeDefined();
+  await act(async () => menuItem!.click());
+}
+
+async function clickButton(label: string, scope: ParentNode = document) {
+  const button = [...scope.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+    button.getAttribute("aria-label") === label || button.textContent === label
+    || [...(button.labels ?? [])].some((element) => element.textContent === label));
+  expect(button, label).toBeDefined();
+  await act(async () => button!.click());
+}
+
+it("asks before a tab closes its connected remote Terminal and Cancel keeps it running", async () => {
+  await render(workspace({ type: "open", tabId: "work", pane: remote("a") }));
+  expect(document.querySelector("#tab-work")?.getAttribute("aria-label")).toBe("Test Host (Connected)");
+
+  await clickButton("Close Test Host");
+  expect(dialog()?.querySelector("h2")?.textContent).toBe("Close 1 connected Terminal?");
+  expect(terminalCloses()).toHaveLength(0);
+
+  await clickButton("Cancel", dialog()!);
+  expect(dialog()).toBeNull();
+  expect(document.querySelector("#tab-work")).not.toBeNull();
+  expect(terminalCloses()).toHaveLength(0);
+
+  await clickButton("Close Test Host");
+  await clickButton("Close", dialog()!);
+  expect(dialog()).toBeNull();
+  expect(document.querySelector("#tab-work")).toBeNull();
+  expect(terminalCloses()).toHaveLength(1);
+});
+
+
+it.each([
+  ["Close other tabs", "Close 3 connected Terminals?", ["tab-anchor", "tab-locked"], 3],
+  ["Close tabs to the right", "Close 2 connected Terminals?", ["tab-left", "tab-anchor", "tab-locked"], 2],
+] as const)("%s asks once and counts each connected remote pane that would close", async (label, title, survivors, count) => {
+  await render(workspace(
+    { type: "open", tabId: "left", pane: remote("left") },
+    { type: "open", tabId: "anchor", pane: local("anchor") },
+    { type: "open", tabId: "locked", pane: remote("locked") },
+    { type: "setTabLocked", id: "locked", locked: true },
+    { type: "open", tabId: "split", pane: remote("first") },
+    { type: "split", pane: remote("second"), orientation: "horizontal" },
+    { type: "split", pane: local("local"), orientation: "vertical" },
+    { type: "open", tabId: "restored", pane: { ...remote("restored"), restoreConnection: "manual" } },
+  ));
+  expect(document.querySelector("#tab-locked")?.getAttribute("aria-label")).toBe("Test Host (Connected, Locked)");
+
+  await selectTabMenu("anchor", label);
+  expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+  expect(dialog()?.querySelector("h2")?.textContent).toBe(title);
+  expect(terminalCloses()).toHaveLength(0);
+
+  await clickButton("Close", dialog()!);
+  expect(dialog()).toBeNull();
+  expect(tabIds()).toEqual(survivors);
+  expect(terminalCloses()).toHaveLength(count + 1);
+});
+
+it("confirms the close-pane shortcut for one connected split and protects the last pane of a locked tab", async () => {
+  await render(workspace(
+    { type: "open", tabId: "work", pane: remote("first") },
+    { type: "split", pane: remote("second"), orientation: "vertical" },
+    { type: "setTabLocked", id: "work", locked: true },
+  ));
+  await closePaneShortcut();
+  expect(dialog()?.querySelector("h2")?.textContent).toBe("Close 1 connected Terminal?");
+  expect(document.activeElement?.textContent).toBe("Cancel");
+
+  await closePaneShortcut();
+  expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+  await clickButton("Close", dialog()!);
+  expect(document.querySelector("#pane-first")).not.toBeNull();
+  expect(document.querySelector("#pane-second")).toBeNull();
+  expect(terminalCloses()).toHaveLength(1);
+
+  await closePaneShortcut();
+  expect(dialog()).toBeNull();
+  expect(tabIds()).toEqual(["tab-work"]);
+  expect(terminalCloses()).toHaveLength(1);
+});
+
+it("closes a Local terminal and an unconnected restored pane without asking", async () => {
+  await render(workspace(
+    { type: "open", tabId: "restored", pane: { ...remote("restored"), restoreConnection: "manual" } },
+    { type: "open", tabId: "work", pane: local("local") },
+  ));
+  await closePaneShortcut();
+  expect(dialog()).toBeNull();
+  expect(tabIds()).toEqual(["tab-restored"]);
+  expect(terminalCloses()).toHaveLength(1);
+
+  await clickButton("Close Test Host");
+  expect(dialog()).toBeNull();
+  expect(tabIds()).toEqual([]);
+  expect(terminalCloses()).toHaveLength(1);
+});
+
+it.each([
+  ["reconnecting", { connection: { state: "reconnecting", attempt: 1, attempts: 3 } }],
+  ["disconnected", { connection: { state: "disconnected", reason: "Connection closed" } }],
+  ["exited", { exitCode: 0 }],
+] satisfies [string, TerminalMessage][])("closes a %s remote Terminal without asking", async (_, message) => {
+  await render(workspace({ type: "open", tabId: "work", pane: remote("a") }));
+  await sendTerminalMessage(message);
+
+  await clickButton("Close Test Host");
+  expect(dialog()).toBeNull();
+  expect(tabIds()).toEqual([]);
+});
+
+it("saves the confirmation opt-out and lets Settings turn it back on", async () => {
+  const initialTabs = workspace(
+    { type: "open", tabId: "first", pane: remote("first") },
+    { type: "renameTab", id: "first", title: "First" },
+    { type: "open", tabId: "second", pane: remote("second") },
+    { type: "renameTab", id: "second", title: "Second" },
+  );
+  await render(initialTabs);
+  await clickButton("Close First");
+  await clickButton("Don't ask again", dialog()!);
+  await clickButton("Cancel", dialog()!);
+  expect(dialog()).toBeNull();
+  expect(tabIds()).toEqual(["tab-first", "tab-second"]);
+
+  await clickButton("Close First");
+  expect(dialog()?.querySelector('[role="checkbox"]')?.getAttribute("aria-checked")).toBe("false");
+  await clickButton("Don't ask again", dialog()!);
+  await clickButton("Close", dialog()!);
+  expect(settingsFile.workspacePreferences).toEqual({ restoreTabs: "none", confirmClose: false });
+
+  await unmount();
+  await startSettings(settingsBackend);
+  await render(initialTabs);
+  await clickButton("Close First");
+  expect(dialog()).toBeNull();
+  expect(tabIds()).toEqual(["tab-second"]);
+
+  await clickButton("Settings");
+  const setting = document.querySelector('[role="radiogroup"][aria-label="Confirm Terminal close"]')!;
+  expect(setting.querySelector('[aria-checked="true"]')?.textContent).toBe("Off");
+  await clickButton("On", setting);
+  await clickButton("Close Second");
+  expect(dialog()?.querySelector("h2")?.textContent).toBe("Close 1 connected Terminal?");
+  expect(settingsFile.workspacePreferences).toEqual({ restoreTabs: "none", confirmClose: true });
+});
+
+it("shows the count and confirmation controls in Chinese", async () => {
+  await i18n.changeLanguage("zh");
+  await render(workspace({ type: "open", tabId: "work", pane: remote("a") }));
+  await closePaneShortcut();
+
+  const confirmation = dialog()!;
+  expect(confirmation.querySelector("h2")?.textContent).toBe("关闭 1 个已连接的终端？");
+  expect(confirmation.querySelector("label")?.textContent).toBe("不再询问");
+  expect(document.activeElement?.textContent).toBe("取消");
+  await clickButton("关闭", confirmation);
+  expect(tabIds()).toEqual([]);
+});
