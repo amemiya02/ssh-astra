@@ -897,6 +897,7 @@
   "toast": {
     "filesCopied": "已複製檔案。",
     "copied": "已複製到剪貼簿。",
+    "editApplicationFallback": "所選的應用程式無法開啟 {{name}}，已使用系統預設的應用程式開啟。",
     "editUploadFailed": "遠端編輯上傳失敗：{{name}}。{{reason}}",
     "forwardFailed": "連接埠轉送失敗。{{reason}}",
     "dismiss": "關閉通知：{{message}}",
@@ -1510,6 +1511,16 @@
         "label": "讓終端機跟隨檔案面板",
         "description": "對應的終端機處於閒置提示字元且輸入列為空時，隨面板切換目錄。須在遠端 zsh 或已啟用提示字元展開的 bash 4.4 以上版本中成功啟動 Shell 整合。",
         "shellIntegrationOff": "Shell 整合已關閉。請在終端機設定中啟用，再開啟新的遠端終端機。"
+      },
+      "remoteEditApplication": {
+        "label": "遠端編輯開啟程式",
+        "description": "選擇用來開啟遠端編輯檔案的本機應用程式。",
+        "systemDefault": "系統預設",
+        "choose": "選擇應用程式…",
+        "pickTitle": "選擇遠端編輯使用的應用程式",
+        "filter": "應用程式",
+        "reset": "使用系統預設",
+        "changeFailed": "無法更新遠端編輯的開啟程式。"
       }
     },
     "connection": {
