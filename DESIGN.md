@@ -380,6 +380,12 @@ Compact and native-feeling; controls recede until hovered, pressed or focused.
 - **Destination current** (Home, SFTP, Local terminal, Settings while their tab is focused): `selected` tile, primary icon.
 - **View pressed** (Hosts, Port forwards while that column is shown): icon turns foreground and a 2px primary bar marks the rail's left edge, never the tile, so "this tab is focused" and "this column is shown" never read as one state.
 
+### Terminal completion list
+
+Settings → Terminal enables the completion list, which is off by default. Ctrl+Space opens it in the focused remote Terminal at the end of a Shell integration prompt. The list uses the popover surface and monospaced candidate names. Up and Down change the selection, Enter or a click inserts it, and Esc dismisses it. Tab goes to the shell. When the shortcut is enabled but Shell integration or a verified prompt is unavailable, a short message appears in the same area.
+
+The bundled catalog supplies command names, subcommands and options. A path argument lists a single directory through SFTP on the Terminal's existing Connection, using the shell's reported working directory. Picking a completion inserts it in the command line for the user to review and run. See [catalog generation](docs/completion-catalog.md).
+
 ### Tabs
 - **Style:** pill tabs on the ground, 28px tall, 112 to 208px wide, 10px radius, 4px apart. A Host tab leads with its 20px Host tile and a Connection dot at the corner, named in the label and tooltip. Other tabs lead with a 14px kind icon at 70% opacity. The truncated title and 20px close button follow.
 - **Inactive:** muted foreground, transparent border, `accent/60` on hover, close button hidden until hover.

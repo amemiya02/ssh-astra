@@ -48,6 +48,7 @@ export interface TerminalPrefs {
   commandHistory: boolean;
   /** Show a saved command's suffix at the shell prompt when Command history is enabled. */
   inlineSuggestions: boolean;
+  completionList: boolean;
   /** The shell ID used by new Local terminals. Null selects the system default. */
   localShell: string | null;
   /** Log output from newly opened Terminals. Read by the core. */
@@ -95,6 +96,7 @@ export const defaultTerminalPrefs: TerminalPrefs = {
   shellIntegration: true,
   commandHistory: false,
   inlineSuggestions: true,
+  completionList: false,
   localShell: null,
   autoLog: false,
   showLatency: false,
@@ -153,6 +155,7 @@ export function normalizeTerminalPrefs(raw: Partial<Record<keyof TerminalPrefs, 
     shellIntegration: bool(raw.shellIntegration, d.shellIntegration),
     commandHistory: bool(raw.commandHistory, d.commandHistory),
     inlineSuggestions: bool(raw.inlineSuggestions, d.inlineSuggestions),
+    completionList: bool(raw.completionList, d.completionList),
     localShell: parseLocalShellId(raw.localShell) ?? d.localShell,
     autoLog: bool(raw.autoLog, d.autoLog),
     showLatency: bool(raw.showLatency, d.showLatency),

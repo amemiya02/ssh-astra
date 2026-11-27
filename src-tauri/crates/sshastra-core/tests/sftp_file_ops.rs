@@ -624,3 +624,39 @@ async fn failed_extraction_reports_the_new_folder_without_deleting_it() {
         Err(FsError::AlreadyExists(target))
     );
 }
+
+#[tokio::test]
+async fn terminal_path_completion_lists_matching_entries_on_a_live_connection() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let (connection, _dir) = connect(&sshd).await;
+    let (_stop, stopped) = tokio::sync::oneshot::channel();
+    let result = SftpFs::completion_paths(&connection, "/srv/files/", "do", true, stopped)
+        .await
+        .unwrap()
+        .unwrap();
+    let listing = serde_json::to_value(&result).unwrap();
+    assert_eq!(listing["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(listing["entries"][0]["name"], "docs");
+    assert_eq!(listing["entries"][0]["kind"], "dir");
+    assert_eq!(listing["truncated"], false);
+
+    let (_stop, stopped) = tokio::sync::oneshot::channel();
+    let result = SftpFs::completion_paths(&connection, "/srv/files/many", "f", false, stopped)
+        .await
+        .unwrap()
+        .unwrap();
+    let listing = serde_json::to_value(&result).unwrap();
+    assert_eq!(listing["entries"].as_array().unwrap().len(), 128);
+    assert_eq!(listing["truncated"], true);
+
+    let (stop, stopped) = tokio::sync::oneshot::channel();
+    stop.send(()).unwrap();
+    assert!(
+        SftpFs::completion_paths(&connection, "/srv/files/", "", false, stopped)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}

@@ -61,7 +61,7 @@ export const shortcutNames = [
   "nextTab", "previousTab", "nextPane", "previousPane", "moveTabRight", "moveTabLeft",
   ...numberedTabShortcuts,
   "broadcastTab", "broadcastWindow", "commandPalette", "settings", "terminalZoomIn", "terminalZoomOut",
-  "find", "commandHistory", "fileBack", "fileForward", "fileCopy", "fileCut", "filePaste",
+  "find", "commandHistory", "completionList", "fileBack", "fileForward", "fileCopy", "fileCut", "filePaste",
 ] as const;
 
 export type ShortcutName = (typeof shortcutNames)[number];
@@ -175,7 +175,7 @@ const bindings: Record<Platform, Binding[]> = {
 };
 
 /** Shortcuts a focused Terminal handles itself (xterm's key handler), not the window. */
-export type TerminalCommand = "find" | "commandHistory";
+export type TerminalCommand = "find" | "commandHistory" | "completionList";
 
 interface TerminalBinding {
   name: ShortcutName;
@@ -184,15 +184,19 @@ interface TerminalBinding {
   command: TerminalCommand;
 }
 
+const completionList: TerminalBinding = { name: "completionList", code: "Space", mods: ["ctrl"], command: "completionList" };
+
 const terminalBindings: Record<Platform, TerminalBinding[]> = {
   mac: [
     { name: "find", code: "KeyF", mods: ["meta"], command: "find" },
     { name: "commandHistory", code: "KeyH", mods: ["meta", "shift"], command: "commandHistory" },
+    completionList,
   ],
   // Ctrl+F is forward-char in readline, so the shell keeps it.
   other: [
     { name: "find", code: "KeyF", mods: ["ctrl", "shift"], command: "find" },
     { name: "commandHistory", code: "KeyH", mods: ["ctrl", "shift"], command: "commandHistory" },
+    completionList,
   ],
 };
 

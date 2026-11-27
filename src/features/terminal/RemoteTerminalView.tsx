@@ -156,7 +156,7 @@ export function RemoteTerminalView({
       let exited = false;
       const handleEvent: Parameters<OpenTerminal>[1] = (event) => {
         if (signal.aborted) return;
-        if (event.type === "cwd") return onCwdRef.current?.(event.path);
+        if (event.type === "cwd") onCwdRef.current?.(event.path);
         if (event.type === "exit") exited = true;
         onEvent(event);
         if (event.type !== "connection") return;
