@@ -407,6 +407,13 @@ Settings lists every theme as a card (10px radius, 6px padding, auto-fill at min
 - Click the blank space or edit icon to select the path for editing. Enter opens an absolute path, `~` or `~/x`. Escape or leaving the field restores the breadcrumbs. Navigation errors appear below the path bar.
 - Alt+Left and Alt+Right browse history when focus is in the File panel outside text fields. Each panel keeps its own history in memory. Opening a different directory from a previous point in history replaces the forward entries.
 
+### File panel list
+
+- The list always includes Name and Size. Settings → Files remembers whether to show Modified (on by default) and Permissions (off by default). Click a column heading to sort within the directory and file groups. The active heading shows the sort direction. If the sorted column is hidden, the list uses ascending name order until that column returns or another sort is chosen.
+- Right-align sizes, show modification time in the current locale, and show Unix permissions in monospace. Keep column headings above the scrolling rows and let narrow panels scroll sideways to reveal the enabled columns.
+- Use a folder icon in ANSI blue, link icons in cyan, archives in yellow, images in magenta, code in green, and audio and video in red. Documents and other files use muted foreground. Draw coloured icons with the theme's `--ansi-*-ink` tokens. Classify regular files by their extension and use the folder or link shape for those entry kinds.
+- The footer shows item and selected counts after filtering. When selected entries are hidden, show their count alongside the visible selection.
+
 ### Menus, tooltips, dialogs
 - **Menus:** `raised` fill, 1px border, 8px radius, 4px padding, `shadow-overlay`; items 6px radius, `accent` on focus, destructive items red.
 - **Tooltips:** inverted (foreground fill, ground text), `text-xs`, 8px radius.

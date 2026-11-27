@@ -26,6 +26,30 @@ export function isFileLike(entry: FileEntry): boolean {
   return entry.kind === "file" || (entry.kind === "symlink" && entry.linkTarget === "file");
 }
 
+const extensions = {
+  archive: ["7z", "bz2", "gz", "rar", "tar", "tbz", "tgz", "txz", "xz", "zip", "zst"],
+  image: ["avif", "bmp", "gif", "heic", "ico", "jpeg", "jpg", "png", "svg", "tiff", "webp"],
+  code: ["bash", "c", "cpp", "css", "go", "h", "html", "java", "js", "json", "jsx", "php", "py", "rb", "rs", "sh", "sql", "toml", "ts", "tsx", "xml", "yaml", "yml", "zsh"],
+  document: ["csv", "doc", "docx", "log", "md", "odt", "pdf", "rst", "rtf", "txt"],
+  media: ["aac", "avi", "flac", "m4a", "mkv", "mov", "mp3", "mp4", "ogg", "opus", "wav", "webm"],
+};
+type RegularFileIcon = keyof typeof extensions;
+type FileIconKind = "folder" | "folderLink" | "fileLink" | "file" | RegularFileIcon;
+const extensionIcons = new Map(
+  (Object.keys(extensions) as RegularFileIcon[]).flatMap((kind) =>
+    extensions[kind].map((extension) => [extension, kind] as const),
+  ),
+);
+
+/** Classifies a row for display using only its entry kind and filename. */
+export function fileIconKind(entry: FileEntry): FileIconKind {
+  if (entry.kind === "dir") return "folder";
+  if (entry.kind === "symlink") return isDirLike(entry) ? "folderLink" : "fileLink";
+  if (entry.kind !== "file") return "file";
+  const dot = entry.name.lastIndexOf(".");
+  return dot > 0 ? extensionIcons.get(entry.name.slice(dot + 1).toLowerCase()) ?? "file" : "file";
+}
+
 /**
  * The rows the File panel shows, in order: directories first, then files, each sorted by
  * `sort` (ties by name); dotfiles only with `showHidden`.

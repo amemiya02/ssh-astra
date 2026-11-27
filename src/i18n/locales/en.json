@@ -205,6 +205,11 @@
       "permissions": "Permissions"
     },
     "emptyFolder": "This folder is empty.",
+    "entryCount_one": "{{count, number}} item",
+    "entryCount_other": "{{count, number}} items",
+    "selectedCount": "{{count, number}} selected",
+    "hiddenSelectedCount_one": "{{count, number}} hidden selection",
+    "hiddenSelectedCount_other": "{{count, number}} hidden selections",
     "connecting": "Connecting…",
     "disconnected": "The Connection to {{host}} was lost.",
     "retry": "Try again",
@@ -594,6 +599,7 @@
       "workspace": "Workspace",
       "appearance": "Appearance",
       "terminal": "Terminal",
+      "files": "Files",
       "connection": "Connection",
       "language": "Language",
       "transfers": "Transfers",
@@ -663,6 +669,10 @@
         "label": "Shell integration",
         "description": "Remote bash and zsh Terminals opened from now on tell the File panel when you cd, so it follows. Turning it off stops every File panel following at once and types nothing into new shells; Sync to Terminal folder still works."
       }
+    },
+    "files": {
+      "showModified": "Show modified column",
+      "showPermissions": "Show permissions column"
     },
     "connection": {
       "keepalive": {
