@@ -20,6 +20,7 @@ import { useHostsController } from "@/features/hosts/useHostsController";
 import { CommandPalette, type PaletteTab } from "@/features/palette/CommandPalette";
 import { usePaletteActions, type PaletteAction } from "@/features/palette/palette-actions";
 import { rememberHostOpened } from "@/features/palette/recent-hosts";
+import { DiagnosticsPaletteActions } from "@/features/settings/diagnostics-section";
 import { AppShell } from "@/features/shell/AppShell";
 import { currentPlatform, shortcutLabel, type WorkspaceCommand } from "@/features/workspace/shortcuts";
 import { TabPanels } from "@/features/workspace/TabPanels";
@@ -88,7 +89,7 @@ export function App() {
   }, []);
   // A newer release is offered in the status bar; finding none (or failing) says nothing.
   useEffect(() => {
-    if (updatable) void checkOnStartup(updatesStore, getSetting(updateSetting));
+    if (updatable) return checkOnStartup(updatesStore, () => getSetting(updateSetting));
   }, []);
   const retitle = useCallback((paneId: string, title: string) => dispatch({ type: "retitle", paneId, title }), []);
   const setStatus = useCallback(
@@ -237,6 +238,7 @@ export function App() {
 
   return (
     <>
+      <DiagnosticsPaletteActions />
       <AppShell
         sidebar={{
           hosts: <HostsPanel controller={hostsController} connections={connections} />,

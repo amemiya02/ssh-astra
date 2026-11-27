@@ -263,6 +263,40 @@ impl From<russh::Error> for ConnectError {
     }
 }
 
+impl ConnectError {
+    /// Stable errors for logs. Protocol errors can contain peer-supplied text.
+    fn log_kind(&self) -> &'static str {
+        match self {
+            Self::Unreachable(_) => "unreachable",
+            Self::TimedOut => "timedOut",
+            Self::HostKeyMismatch { .. } => "hostKeyMismatch",
+            Self::HostKeyRevoked { .. } => "hostKeyRevoked",
+            Self::HostKeyDeclined => "hostKeyDeclined",
+            Self::HostCertificateUnsupported => "hostCertificateUnsupported",
+            Self::KnownHosts(_) => "knownHosts",
+            Self::AuthenticationFailed => "authenticationFailed",
+            Self::KeyUnreadable { .. } => "keyUnreadable",
+            Self::KeyPassphraseIncorrect { .. } => "keyPassphraseIncorrect",
+            Self::KeyRejected { .. } => "keyRejected",
+            Self::AgentKeysRejected => "agentKeysRejected",
+            Self::NoSupportedMethod { .. } => "noSupportedMethod",
+            Self::Cancelled => "cancelled",
+            Self::Protocol(_) => "protocol",
+            Self::JumpHost { source, .. } => source.log_kind(),
+        }
+    }
+}
+
+fn log_hop<T>(id: &HostId, step: &str, result: &Result<T, ConnectError>) {
+    match result {
+        Ok(_) => log::info!("connection hop={id} step={step} result=success"),
+        Err(error) => log::warn!(
+            "connection hop={id} step={step} result={}",
+            error.log_kind()
+        ),
+    }
+}
+
 /// Hands out one shared [`Connection`] per Host. A Connection lives while
 /// anything (a Terminal, …) holds it, and disconnects when the last holder
 /// drops it. Concurrent connects to the same Host coalesce: the first one
@@ -393,19 +427,36 @@ impl ConnectionManager {
         via: Option<Arc<Connection>>,
         prompter: Arc<dyn Prompter>,
     ) -> Result<Arc<Connection>, ConnectError> {
-        self.shared(&host.id, || async move {
-            match via {
-                None => {
-                    let stream = open_tcp(host).await?;
-                    self.establish(host, stream, prompter, None).await
+        log::info!(
+            "connection identity {}",
+            serde_json::json!({
+                "id": host.id, "name": host.name, "address": host.address, "user": host.user,
+                "port": host.port,
+            })
+        );
+        let result = self
+            .shared(&host.id, || async move {
+                match via {
+                    None => {
+                        log::info!("connection hop={} step=tcp result=starting", host.id);
+                        let stream = open_tcp(host).await;
+                        log_hop(&host.id, "tcp", &stream);
+                        self.establish(host, stream?, prompter, None).await
+                    }
+                    Some(jump) => {
+                        log::info!(
+                            "connection hop={} step=jump-tunnel result=starting",
+                            host.id
+                        );
+                        let stream = jump.open_tunnel(host).await;
+                        log_hop(&host.id, "jump-tunnel", &stream);
+                        self.establish(host, stream?, prompter, Some(jump)).await
+                    }
                 }
-                Some(jump) => {
-                    let stream = jump.open_tunnel(host).await?;
-                    self.establish(host, stream, prompter, Some(jump)).await
-                }
-            }
-        })
-        .await
+            })
+            .await;
+        log_hop(&host.id, "connect", &result);
+        result
     }
 
     /// The Host's live Connection, if it has one, without connecting. While
@@ -461,6 +512,7 @@ impl ConnectionManager {
         let slot = self.slot(id);
         let mut current = slot.lock().await;
         if let Some(live) = current.upgrade().filter(|c| !c.is_closed()) {
+            log::info!("connection hop={id} step=connect result=reused");
             return Ok(live);
         }
         let connection = Arc::new(establish().await?);
@@ -517,21 +569,24 @@ impl ConnectionManager {
         let routes = Routes::default();
         let handler = ClientHandler {
             routes: routes.clone(),
+            id: host.id.clone(),
             host: host.address.clone(),
             port: host.port,
             known_hosts: self.known_hosts.clone(),
             prompter: prompter.clone(),
             failure: failure.clone(),
         };
-        let mut handle = match client::connect_stream(self.client_config(), stream, handler).await {
-            Ok(handle) => handle,
-            Err(e) => {
+        log::info!("connection hop={} step=handshake result=starting", host.id);
+        let handshake = client::connect_stream(self.client_config(), stream, handler)
+            .await
+            .map_err(|error| {
                 let recorded = failure.lock().ok().and_then(|mut f| f.take());
-                return Err(recorded.unwrap_or_else(|| e.into()));
-            }
-        };
+                recorded.unwrap_or_else(|| error.into())
+            });
+        log_hop(&host.id, "handshake", &handshake);
+        let mut handle = handshake?;
 
-        auth::authenticate(
+        let authenticated = auth::authenticate(
             &mut handle,
             host,
             &self.agent,
@@ -539,7 +594,9 @@ impl ConnectionManager {
             prompter.as_ref(),
             deadline,
         )
-        .await?;
+        .await;
+        log_hop(&host.id, "authentication", &authenticated);
+        authenticated?;
         Ok(Connection {
             handle,
             routes,
@@ -658,16 +715,22 @@ impl Connection {
     /// the Connection alive while it is open.
     pub async fn open_sftp(self: &Arc<Self>) -> Result<SftpFs, FsError> {
         let channel = self
-            .handle
-            .channel_open_session()
+            .open_session_channel()
             .await
             .map_err(|e| FsError::Protocol(e.to_string()))?;
         SftpFs::start(Arc::clone(self), channel).await
+    }
+
+    pub(crate) async fn open_session_channel(
+        &self,
+    ) -> Result<russh::Channel<russh::client::Msg>, russh::Error> {
+        self.handle.channel_open_session().await
     }
 }
 
 struct ClientHandler {
     routes: Routes,
+    id: HostId,
     host: String,
     port: u16,
     known_hosts: KnownHosts,
@@ -719,7 +782,10 @@ impl client::Handler for ClientHandler {
         &mut self,
         key: &PublicKeyOrCertificate,
     ) -> Result<bool, Self::Error> {
-        match self.decide(key).await {
+        log::info!("connection hop={} step=host-key result=checking", self.id);
+        let result = self.decide(key).await;
+        log_hop(&self.id, "host-key", &result);
+        match result {
             Ok(()) => Ok(true),
             Err(e) => {
                 if let Ok(mut failure) = self.failure.lock() {

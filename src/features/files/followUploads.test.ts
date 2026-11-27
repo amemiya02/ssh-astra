@@ -14,6 +14,7 @@ const upload = (id: number, target: string, state: Transfer["state"]): Transfer 
   bytesDone: 0,
   bytesTotal: 0,
   filesDone: 0,
+  unprotected: false,
   filesTotal: 0,
 });
 

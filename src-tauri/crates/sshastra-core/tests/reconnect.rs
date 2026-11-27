@@ -1,7 +1,7 @@
 //! A remote Terminal survives its Connection dropping: it reports the drop,
 //! reconnects in the background (a few times, backing off), and carries on
-//! with a new shell. Runs against the `flaky` sshd in Docker, which only these
-//! tests use; they kill and freeze it, so they take turns.
+//! with a new shell. A transfer over a dropped Connection keeps its original.
+//! These tests share the `flaky` sshd in Docker and take turns disrupting it.
 
 mod support;
 
@@ -9,6 +9,10 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use sshastra_core::files::{
+    remove_tree, ConflictAnswer, DiskFs, FsError, OpenRemote, RemoteFs, Transfer, TransferQueue,
+    TransferState,
+};
 use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::ssh::{
@@ -327,4 +331,106 @@ async fn a_held_connection_that_drops_is_reported_and_let_go() {
     assert_eq!(event.host_id, fx.host.id);
     assert!(!event.held);
     assert!(held.list().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn dropping_the_connection_during_upload_keeps_the_remote_original() {
+    let Some(sshd) = support::sshd(Service::Flaky) else {
+        return;
+    };
+    let _turn = SERVER.lock().await;
+    let f = Fixture::new(sshd);
+    let dir = f
+        .sshd
+        .run_as_tester("mktemp -d /home/tester/transfer.XXXXXXXX");
+    let dir = dir.trim();
+    let file = format!("{dir}/report.bin");
+    f.sshd.run_as_tester(&format!(
+        "printf 'original' > '{file}' && chmod 0750 '{file}'"
+    ));
+    let local = f._known_hosts.path().join("report.bin");
+    let bytes = vec![17; 5 * 1024 * 1024];
+    std::fs::write(&local, &bytes).unwrap();
+
+    let (manager, host) = (f.manager.clone(), f.host.clone());
+    let open: OpenRemote = Arc::new(move || {
+        let (manager, host) = (manager.clone(), host.clone());
+        Box::pin(async move {
+            let connection = manager
+                .connect(&host, Arc::new(TrustingPrompter))
+                .await
+                .map_err(|e| FsError::Protocol(e.to_string()))?;
+            let fs: Arc<dyn RemoteFs> = Arc::new(connection.open_sftp().await?);
+            Ok(fs)
+        })
+    });
+
+    let dropped = Arc::new(AtomicBool::new(false));
+    let disconnected = dropped.clone();
+    let sshd = f.sshd.clone();
+    let (tx, mut events) = mpsc::unbounded_channel();
+    let queue = TransferQueue::new(Arc::new(DiskFs), move |t| {
+        if t.state == TransferState::Running
+            && t.bytes_done > 0
+            && t.bytes_done < t.bytes_total
+            && !disconnected.swap(true, Ordering::SeqCst)
+        {
+            sshd.drop_connections();
+        }
+        let _ = tx.send(t.clone());
+    });
+
+    async fn wait_for(
+        events: &mut mpsc::UnboundedReceiver<Transfer>,
+        predicate: impl Fn(&TransferState) -> bool,
+    ) -> Transfer {
+        tokio::time::timeout(EVENT_WAIT, async {
+            loop {
+                let transfer = events.recv().await.unwrap();
+                if predicate(&transfer.state) {
+                    return transfer;
+                }
+            }
+        })
+        .await
+        .expect("expected transfer state")
+    }
+
+    let transfer = queue.upload(open.clone(), local, dir.to_owned());
+    wait_for(&mut events, |state| {
+        matches!(state, TransferState::Conflict { .. })
+    })
+    .await;
+    queue.answer(transfer, ConflictAnswer::Overwrite);
+    let failed = wait_for(&mut events, |state| {
+        matches!(state, TransferState::Failed { .. } | TransferState::Done)
+    })
+    .await;
+    assert!(
+        matches!(failed.state, TransferState::Failed { .. }),
+        "{failed:?}"
+    );
+    assert!(dropped.load(Ordering::SeqCst));
+    // Check directly in the container, independently of reconnect and cleanup.
+    assert_eq!(f.sshd.run_as_tester(&format!("cat '{file}'")), "original");
+
+    queue.retry(transfer);
+    wait_for(&mut events, |state| {
+        matches!(state, TransferState::Conflict { .. })
+    })
+    .await;
+    queue.answer(transfer, ConflictAnswer::Overwrite);
+    let retried = wait_for(&mut events, |state| {
+        matches!(state, TransferState::Failed { .. } | TransferState::Done)
+    })
+    .await;
+    assert_eq!(retried.state, TransferState::Done);
+
+    let fs = open().await.unwrap();
+    assert_eq!(fs.read_file(&file).await.unwrap(), bytes);
+    assert_eq!(fs.stat(&file).await.unwrap().permissions, Some(0o750));
+    let entries = fs.list_dir(dir).await.unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].name, "report.bin");
+    remove_tree(&*fs, dir).await.unwrap();
 }

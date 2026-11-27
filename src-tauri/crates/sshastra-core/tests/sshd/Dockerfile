@@ -12,6 +12,9 @@ RUN apt-get update \
 # Password login: tester / testpass.
 RUN useradd -m -s /bin/bash tester && echo 'tester:testpass' | chpasswd
 
+# A dedicated login for the application log's secret exclusion test.
+RUN useradd -m -s /bin/bash logtester && echo 'logtester:test-password-log-marker' | chpasswd
+
 # A zsh user for the ShellIntegration tests: zester / testpass, with a plain
 # prompt (and a .zshrc, so zsh skips its first-run wizard).
 RUN useradd -m -s /usr/bin/zsh zester && echo 'zester:testpass' | chpasswd \

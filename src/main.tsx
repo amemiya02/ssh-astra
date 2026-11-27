@@ -5,6 +5,7 @@ import "./index.css";
 import { App } from "./App";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { startI18n } from "./i18n";
+import { watchFrontendErrors } from "./lib/ipc/diagnostics";
 import { tauriSettingsBackend } from "./lib/ipc/settings";
 import { browserStore, localStorageBackend, startSettings } from "./lib/storage";
 import { applyInitialTheme } from "./theme/theme";
@@ -32,4 +33,5 @@ async function start() {
   );
 }
 
+if (isTauri()) watchFrontendErrors();
 void start();

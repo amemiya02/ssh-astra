@@ -287,6 +287,10 @@
       "upload": "上传",
       "download": "下载"
     },
+    "unprotected": {
+      "label": "未受保护",
+      "detail": "目标目录无法创建临时文件，传输中断可能损坏原文件。"
+    },
     "state": {
       "queued": "等待中",
       "conflict": "等待你的选择",
@@ -527,7 +531,8 @@
       "connection": "连接",
       "language": "语言",
       "transfers": "传输",
-      "updates": "更新"
+      "updates": "更新",
+      "diagnostics": "诊断"
     },
     "theme": {
       "follow": {
@@ -597,6 +602,17 @@
         "label": "同时传输数",
         "description": "同时进行的上传和下载数量，其余的排队等待。文件夹内的文件逐个复制。"
       }
+    },
+    "diagnostics": {
+      "logs": "日志文件",
+      "logsDescription": "查看保存在本机的应用日志和崩溃文件。",
+      "report": "诊断信息",
+      "reportDescription": "复制一份用代号替换主机和账号信息的报告。",
+      "open": "打开日志文件夹",
+      "copy": "复制诊断信息",
+      "copied": "已复制诊断信息。",
+      "openFailed": "无法打开日志文件夹。",
+      "copyFailed": "无法复制诊断信息。"
     },
     "updates": {
       "version": {

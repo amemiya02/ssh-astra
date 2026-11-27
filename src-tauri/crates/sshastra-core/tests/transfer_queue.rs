@@ -1,6 +1,7 @@
 //! TransferQueue against in-memory local and remote file systems.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::future::Future;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -15,7 +16,7 @@ use sshastra_core::files::{
 };
 use sshastra_core::ssh::BoxFuture;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio::sync::Semaphore;
+use tokio::sync::{futures::OwnedNotified, Notify, Semaphore};
 
 // ---------------------------------------------------------------------------
 // An in-memory file system, usable as either side.
@@ -23,7 +24,7 @@ use tokio::sync::Semaphore;
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Node {
     Dir,
-    File(Vec<u8>),
+    File(Vec<u8>, u32),
 }
 
 #[derive(Default)]
@@ -36,6 +37,10 @@ struct MemoryFs {
     fail_next_read: Mutex<HashSet<String>>,
     /// Reads of these files stop after their first chunk.
     break_reads: Mutex<HashMap<String, Break>>,
+    /// Fail writes once this many bytes have reached a file.
+    fail_write_after: Mutex<Option<usize>>,
+    deny_creation: Mutex<HashSet<String>>,
+    pause_after_first: Mutex<Option<Arc<Notify>>>,
 }
 
 /// How a read stops partway through a file.
@@ -77,12 +82,12 @@ impl MemoryFs {
         self.nodes
             .lock()
             .unwrap()
-            .insert(path.to_owned(), Node::File(data.into()));
+            .insert(path.to_owned(), Node::File(data.into(), 0o644));
     }
 
     fn read(&self, path: &str) -> Option<Vec<u8>> {
         match self.nodes.lock().unwrap().get(path)? {
-            Node::File(data) => Some(data.clone()),
+            Node::File(data, _) => Some(data.clone()),
             Node::Dir => None,
         }
     }
@@ -121,7 +126,7 @@ impl MemoryFs {
         let nodes = self.nodes.lock().unwrap();
         match nodes.get(path) {
             None => return Err(FsError::NotFound(path.to_owned())),
-            Some(Node::File(_)) => return Err(FsError::NotADirectory(path.to_owned())),
+            Some(Node::File(..)) => return Err(FsError::NotADirectory(path.to_owned())),
             Some(Node::Dir) => {}
         }
         let prefix = if path == "/" {
@@ -140,7 +145,7 @@ impl MemoryFs {
                         kind: s.kind,
                         size: s.size,
                         modified: None,
-                        permissions: None,
+                        permissions: s.permissions,
                         link_target: None,
                     }
                 })
@@ -153,7 +158,7 @@ impl MemoryFs {
             return Err(FsError::Protocol("read failed".into()));
         }
         let data = match self.nodes.lock().unwrap().get(path) {
-            Some(Node::File(data)) => data.clone(),
+            Some(Node::File(data, _)) => data.clone(),
             Some(Node::Dir) => return Err(FsError::Protocol("is a directory".into())),
             None => return Err(FsError::NotFound(path.to_owned())),
         };
@@ -166,22 +171,50 @@ impl MemoryFs {
         Ok(Box::new(MemoryReader {
             data: io::Cursor::new(data),
             stop: self.break_reads.lock().unwrap().get(path).copied(),
+            pause: self
+                .pause_after_first
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(|gate| Box::pin(gate.clone().notified_owned())),
             _guard: guard,
         }))
     }
 
-    fn create_write_path(&self, path: &str) -> FsResult<FileWriter> {
+    fn create_write_path(&self, path: &str, exclusive: bool) -> FsResult<FileWriter> {
         let mut nodes = self.nodes.lock().unwrap();
         let parent = path.rsplit_once('/').map(|(p, _)| p).unwrap_or("");
         let parent = if parent.is_empty() { "/" } else { parent };
         if nodes.get(parent) != Some(&Node::Dir) {
             return Err(FsError::NotFound(path.to_owned()));
         }
-        nodes.insert(path.to_owned(), Node::File(Vec::new()));
+        if exclusive && nodes.contains_key(path) {
+            return Err(FsError::AlreadyExists(path.to_owned()));
+        }
+        let mode = match nodes.get(path) {
+            Some(Node::File(_, mode)) => *mode,
+            None if self.deny_creation.lock().unwrap().contains(parent) => {
+                return Err(FsError::PermissionDenied(path.to_owned()));
+            }
+            _ => 0o644,
+        };
+        nodes.insert(path.to_owned(), Node::File(Vec::new(), mode));
         Ok(Box::new(MemoryWriter {
             nodes: Arc::clone(&self.nodes),
             path: path.to_owned(),
+            limit: *self.fail_write_after.lock().unwrap(),
         }))
+    }
+
+    fn set_mode(&self, path: &str, mode: u32) -> FsResult<()> {
+        let mut nodes = self.nodes.lock().unwrap();
+        match nodes.get_mut(path) {
+            Some(Node::File(_, current)) => {
+                *current = mode;
+                Ok(())
+            }
+            _ => Err(FsError::NotFound(path.to_owned())),
+        }
     }
 
     fn create_dir_path(&self, path: &str) -> FsResult<()> {
@@ -198,7 +231,7 @@ impl MemoryFs {
         match nodes.get(path) {
             None => return Err(FsError::NotFound(path.to_owned())),
             Some(Node::Dir) if !dir => return Err(FsError::Protocol("is a directory".into())),
-            Some(Node::File(_)) if dir => return Err(FsError::NotADirectory(path.to_owned())),
+            Some(Node::File(..)) if dir => return Err(FsError::NotADirectory(path.to_owned())),
             _ => {}
         }
         let prefix = format!("{path}/");
@@ -209,9 +242,9 @@ impl MemoryFs {
         Ok(())
     }
 
-    fn rename_path(&self, from: &str, to: &str) -> FsResult<()> {
+    fn rename_path(&self, from: &str, to: &str, overwrite: bool) -> FsResult<()> {
         let mut nodes = self.nodes.lock().unwrap();
-        if nodes.contains_key(to) {
+        if !overwrite && nodes.contains_key(to) {
             return Err(FsError::AlreadyExists(to.to_owned()));
         }
         let moved: Vec<String> = nodes
@@ -231,15 +264,15 @@ impl MemoryFs {
 }
 
 fn stat(node: &Node) -> FileStat {
-    let (kind, size) = match node {
-        Node::Dir => (FileKind::Dir, 0),
-        Node::File(data) => (FileKind::File, data.len() as u64),
+    let (kind, size, permissions) = match node {
+        Node::Dir => (FileKind::Dir, 0, 0o755),
+        Node::File(data, mode) => (FileKind::File, data.len() as u64, *mode),
     };
     FileStat {
         kind,
         size,
         modified: None,
-        permissions: None,
+        permissions: Some(permissions),
     }
 }
 
@@ -254,6 +287,7 @@ impl Drop for Reading {
 struct MemoryReader {
     data: io::Cursor<Vec<u8>>,
     stop: Option<Break>,
+    pause: Option<Pin<Box<OwnedNotified>>>,
     _guard: Reading,
 }
 
@@ -263,6 +297,14 @@ impl AsyncRead for MemoryReader {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
+        if self.data.position() > 0 {
+            if let Some(pause) = &mut self.pause {
+                if pause.as_mut().poll(cx).is_pending() {
+                    return Poll::Pending;
+                }
+                self.pause = None;
+            }
+        }
         match self.stop {
             Some(Break::Stall) if self.data.position() > 0 => return Poll::Pending,
             Some(Break::Fail) if self.data.position() > 0 => {
@@ -274,12 +316,12 @@ impl AsyncRead for MemoryReader {
         let mut chunk = [0u8; 4096];
         let n = std::io::Read::read(&mut self.data, &mut chunk[..buf.remaining().min(4096)])?;
         buf.put_slice(&chunk[..n]);
-        let _ = cx;
         Poll::Ready(Ok(()))
     }
 }
 
 struct MemoryWriter {
+    limit: Option<usize>,
     nodes: Arc<Mutex<BTreeMap<String, Node>>>,
     path: String,
 }
@@ -290,10 +332,18 @@ impl AsyncWrite for MemoryWriter {
         _: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        if let Some(Node::File(data)) = self.nodes.lock().unwrap().get_mut(&self.path) {
-            data.extend_from_slice(buf);
+        let mut nodes = self.nodes.lock().unwrap();
+        let Some(Node::File(data, _)) = nodes.get_mut(&self.path) else {
+            return Poll::Ready(Err(io::Error::other("file disappeared")));
+        };
+        let len = self.limit.map_or(buf.len(), |limit| {
+            buf.len().min(limit.saturating_sub(data.len()))
+        });
+        if len == 0 && !buf.is_empty() {
+            return Poll::Ready(Err(io::Error::other("write failed")));
         }
-        Poll::Ready(Ok(buf.len()))
+        data.extend_from_slice(&buf[..len]);
+        Poll::Ready(Ok(len))
     }
 
     fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
@@ -320,7 +370,21 @@ impl LocalFs for MemoryFs {
         Box::pin(async move { self.open_read_path(&local_str(path)).await })
     }
     fn create_write<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<FileWriter>> {
-        Box::pin(async move { self.create_write_path(&local_str(path)) })
+        Box::pin(async move { self.create_write_path(&local_str(path), false) })
+    }
+    fn create_new<'a>(&'a self, path: &'a Path, _: bool) -> BoxFuture<'a, FsResult<FileWriter>> {
+        Box::pin(async move { self.create_write_path(&local_str(path), true) })
+    }
+    fn publish_transfer<'a>(
+        &'a self,
+        from: &'a Path,
+        to: &'a Path,
+        overwrite: bool,
+    ) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move { self.rename_path(&local_str(from), &local_str(to), overwrite) })
+    }
+    fn set_permissions<'a>(&'a self, path: &'a Path, mode: u32) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move { self.set_mode(&local_str(path), mode) })
     }
     fn create_dir<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<()>> {
         Box::pin(async move { self.create_dir_path(&local_str(path)) })
@@ -347,16 +411,19 @@ impl RemoteFs for MemoryFs {
         Box::pin(self.open_read_path(path))
     }
     fn create_write<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileWriter>> {
-        Box::pin(async move { self.create_write_path(path) })
+        Box::pin(async move { self.create_write_path(path, false) })
     }
     fn lstat<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileStat>> {
         Box::pin(async move { self.stat_path(path) })
+    }
+    fn create_new<'a>(&'a self, path: &'a str, _: bool) -> BoxFuture<'a, FsResult<FileWriter>> {
+        Box::pin(async move { self.create_write_path(path, true) })
     }
     fn create_dir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>> {
         Box::pin(async move { self.create_dir_path(path) })
     }
     fn rename<'a>(&'a self, from: &'a str, to: &'a str) -> BoxFuture<'a, FsResult<()>> {
-        Box::pin(async move { self.rename_path(from, to) })
+        Box::pin(async move { self.rename_path(from, to, false) })
     }
     fn remove_file<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>> {
         Box::pin(async move { self.remove_path(path, false) })
@@ -364,8 +431,8 @@ impl RemoteFs for MemoryFs {
     fn remove_dir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>> {
         Box::pin(async move { self.remove_path(path, true) })
     }
-    fn set_permissions<'a>(&'a self, path: &'a str, _: u32) -> BoxFuture<'a, FsResult<()>> {
-        Box::pin(async move { self.stat_path(path).map(|_| ()) })
+    fn set_permissions<'a>(&'a self, path: &'a str, mode: u32) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move { self.set_mode(path, mode) })
     }
 }
 
@@ -728,26 +795,163 @@ async fn cancelling_a_running_transfer_stops_it_and_frees_its_slot() {
 }
 
 #[tokio::test]
-async fn cancelling_deletes_the_file_being_written_but_keeps_finished_ones() {
-    let h = Harness::new();
-    h.local.dir("/up");
-    h.local.file("/up/a", "small");
+async fn cancelling_overwrite_all_keeps_the_in_progress_original_and_finished_replacements() {
+    let h = conflicting_upload();
     h.local.file("/up/b", vec![7u8; 10_000]);
     h.local.break_reads("/up/b", Break::Stall);
+    h.remote.set_mode("/up/a", 0o750).unwrap();
+
     let id = h.upload("/up", "/");
-    h.until("b to be partly written", |_| {
-        h.remote.read("/up/b").is_some_and(|d| !d.is_empty())
-    })
-    .await;
+    next_conflict(&h, id).await;
+    h.queue.answer(id, ConflictAnswer::OverwriteAll);
+    h.until("b to be partly written", |all| all[0].bytes_done > 3)
+        .await;
 
     h.queue.cancel(id);
-    h.until("the partial b to be deleted", |_| {
-        h.remote.read("/up/b").is_none()
+    h.until_state(id, TransferState::Cancelled).await;
+
+    assert_eq!(
+        h.remote.tree("/up"),
+        [
+            ("a".into(), Node::File(b"new".to_vec(), 0o750)),
+            ("b".into(), Node::File(b"old".to_vec(), 0o644)),
+            ("c".into(), Node::File(b"old".to_vec(), 0o644)),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn a_new_upload_is_visible_at_its_final_name_only_after_completion() {
+    let h = Harness::new();
+    let gate = Arc::new(Notify::new());
+    *h.local.pause_after_first.lock().unwrap() = Some(gate.clone());
+    h.local.file("/upload", vec![7; 10_000]);
+    h.remote.dir("/remote");
+
+    let id = h.upload("/upload", "/remote");
+    h.until("upload to write its first chunk", |all| {
+        all[0].bytes_done > 0
     })
     .await;
+    assert_eq!(h.remote.read("/remote/upload"), None);
+    let entries = h.remote.tree("/remote");
+    assert_eq!(entries.len(), 1);
+    assert!(entries[0].0.starts_with('.'));
 
-    assert_eq!(h.transfer(id).state, TransferState::Cancelled);
-    assert_eq!(h.remote.read("/up/a").unwrap(), b"small");
+    gate.notify_one();
+    h.until_state(id, TransferState::Done).await;
+    assert_eq!(
+        h.remote.tree("/remote"),
+        [("upload".into(), Node::File(vec![7; 10_000], 0o644))]
+    );
+}
+
+#[tokio::test]
+async fn a_new_download_leaves_a_file_created_at_its_final_name_during_copy() {
+    let h = Harness::new();
+    let gate = Arc::new(Notify::new());
+    *h.remote.pause_after_first.lock().unwrap() = Some(gate.clone());
+    h.remote.file("/download", vec![7; 10_000]);
+    h.local.dir("/down");
+
+    let id = h.download("/download", "/down");
+    h.until("download to write its first chunk", |all| {
+        all[0].bytes_done > 0
+    })
+    .await;
+    h.local.file("/down/download", "created during copy");
+    gate.notify_one();
+    h.until_settled().await;
+
+    assert!(matches!(h.transfer(id).state, TransferState::Failed { .. }));
+    assert_eq!(
+        h.local.tree("/down"),
+        [(
+            "download".into(),
+            Node::File(b"created during copy".to_vec(), 0o644)
+        )]
+    );
+}
+
+#[tokio::test]
+async fn a_successful_download_overwrite_preserves_permissions() {
+    let h = Harness::new();
+    h.remote.file("/download", "new");
+    h.local.dir("/down");
+    h.local.file("/down/download", "old");
+    h.local.set_mode("/down/download", 0o640).unwrap();
+
+    let id = h.download("/download", "/down");
+    next_conflict(&h, id).await;
+    h.queue.answer(id, ConflictAnswer::Overwrite);
+    h.until_state(id, TransferState::Done).await;
+
+    assert_eq!(
+        h.local.tree("/down"),
+        [("download".into(), Node::File(b"new".to_vec(), 0o640))]
+    );
+}
+
+#[tokio::test]
+async fn a_writable_file_in_a_read_only_directory_is_overwritten_with_a_warning() {
+    let h = conflicting_upload();
+    h.remote.deny_creation.lock().unwrap().insert("/up".into());
+
+    let id = h.upload("/up", "/");
+    next_conflict(&h, id).await;
+    h.queue.answer(id, ConflictAnswer::OverwriteAll);
+    h.until_state(id, TransferState::Done).await;
+
+    for name in ["a", "b", "c"] {
+        assert_eq!(h.remote.read(&format!("/up/{name}")).unwrap(), b"new");
+    }
+    assert!(h.transfer(id).unprotected);
+    assert!(h
+        .events_for(id)
+        .iter()
+        .any(|t| t.unprotected && t.state == TransferState::Running));
+}
+
+#[tokio::test]
+async fn an_interrupted_overwrite_keeps_the_original_in_both_directions() {
+    let h = Harness::new();
+    h.local.dir("/up");
+    h.local.file("/up/upload", vec![7; 10_000]);
+    h.remote.dir("/remote");
+    h.remote.file("/remote/upload", "old upload");
+    h.remote.file("/remote/download", vec![7; 10_000]);
+    h.local.dir("/down");
+    h.local.file("/down/download", "old download");
+    *h.remote.fail_write_after.lock().unwrap() = Some(5000);
+    *h.local.fail_write_after.lock().unwrap() = Some(5000);
+
+    let upload = h.upload("/up/upload", "/remote");
+    next_conflict(&h, upload).await;
+    h.queue.answer(upload, ConflictAnswer::Overwrite);
+    h.until_settled().await;
+    let download = h.download("/remote/download", "/down");
+    next_conflict(&h, download).await;
+    h.queue.answer(download, ConflictAnswer::Overwrite);
+    h.until_settled().await;
+
+    for id in [upload, download] {
+        let TransferState::Failed { message } = h.transfer(id).state else {
+            panic!("expected write failure");
+        };
+        assert!(message.contains("write failed"), "{message}");
+    }
+    assert_eq!(
+        h.remote.read("/remote/upload").as_deref(),
+        Some(&b"old upload"[..])
+    );
+    assert_eq!(h.remote.tree("/remote").len(), 2);
+    assert_eq!(
+        h.local.tree("/down"),
+        [(
+            "download".into(),
+            Node::File(b"old download".to_vec(), 0o644)
+        )]
+    );
 }
 
 #[tokio::test]

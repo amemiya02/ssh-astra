@@ -61,6 +61,18 @@ pnpm tauri dev      # run
 pnpm tauri build    # package
 ```
 
+## Logs and diagnostics
+
+Open **Settings → Diagnostics** or use **Open log folder** in the command palette. The default location depends on the platform.
+
+- macOS — `~/Library/Logs/dev.sshastra.app/`
+- Linux — `$XDG_DATA_HOME/dev.sshastra.app/logs/` (typically `~/.local/share/dev.sshastra.app/logs/`)
+- Windows — `%LOCALAPPDATA%\dev.sshastra.app\logs\`
+
+SSH Astra keeps four application log files of up to 1 MiB each and the five most recent Rust panic reports. The logs cover startup and app version, SSH connection and authentication steps, reconnects, Port forwards, transfers, Remote edit uploads, Host and settings file errors, update checks, and uncaught interface errors. Panic reports include the error category and source location. Host names, addresses, and SSH usernames appear in the local logs.
+
+SSH Astra never logs Terminal input or output, passwords, key passphrases, private key contents, clipboard contents, or raw frontend error messages and stacks. **Copy diagnostic information** copies the app version, operating system, architecture, and redacted logs. It replaces Host names, addresses and usernames, Jump host references, Port forward destinations, key file paths, the local home directory and username, and IP addresses. All logs are stored locally. SSH Astra never uploads them.
+
 ## Contributing
 
 Issues and PRs are welcome. [`CLAUDE.md`](CLAUDE.md) describes the project layout and conventions, and [`GLOSSARY.md`](GLOSSARY.md) the domain terms.

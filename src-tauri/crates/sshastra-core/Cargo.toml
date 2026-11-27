@@ -10,6 +10,7 @@ repository.workspace = true
 base64 = "0.22"
 hmac = "0.13"
 keyring = "4"
+log.workspace = true
 notify = "8"
 portable-pty = "0.9"
 # `ring` instead of the default aws-lc-rs: no cmake/NASM needed on any platform.
@@ -18,6 +19,7 @@ russh-sftp = "3"
 serde.workspace = true
 serde_json.workspace = true
 sha1 = "0.11"
+sha2 = "0.11"
 thiserror.workspace = true
 tokio = { version = "1", features = ["rt", "net", "sync", "time", "macros", "io-util", "fs"] }
 uuid = { version = "1", features = ["v4", "serde"] }

@@ -39,6 +39,7 @@
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRBRUQxN0EzQzYyQjM4QjkKUldTNU9DdkdveGZ0U2xra0dnT04rdGEvenYvM2hkTVBMS3V0UUgzdnUyUERlV2pqTE5UV0g5a3oK",
+      "requireSignedVersion": true,
       "endpoints": [
         "https://github.com/amemiya02/ssh-astra/releases/latest/download/latest.json"
       ]

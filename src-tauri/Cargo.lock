@@ -3580,6 +3580,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2-system-configuration"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7216bd11cbda54ccabcab84d523dc93b858ec75ecfb3a7d89513fa22464da396"
+dependencies = [
+ "objc2-core-foundation",
+]
+
+[[package]]
 name = "objc2-ui-kit"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5411,6 +5420,9 @@ dependencies = [
 name = "sshastra"
 version = "0.3.0"
 dependencies = [
+ "chrono",
+ "log",
+ "regex",
  "serde",
  "serde_json",
  "sshastra-core",
@@ -5423,8 +5435,10 @@ dependencies = [
  "tauri-plugin-updater",
  "tauri-plugin-wdio-webdriver",
  "tauri-plugin-window-state",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "whoami",
 ]
 
 [[package]]
@@ -5435,6 +5449,7 @@ dependencies = [
  "dunce",
  "hmac",
  "keyring",
+ "log",
  "notify",
  "portable-pty",
  "russh",
@@ -5443,6 +5458,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha1",
+ "sha2 0.11.1",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -6969,6 +6985,18 @@ name = "weezl"
 version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
+
+[[package]]
+name = "whoami"
+version = "2.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "998767ef88740d1f5b0682a9c53c24431453923962269c2db68ee43788c5a40d"
+dependencies = [
+ "libc",
+ "libredox",
+ "objc2-system-configuration",
+ "web-sys",
+]
 
 [[package]]
 name = "winapi"
