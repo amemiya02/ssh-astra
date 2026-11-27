@@ -27,6 +27,7 @@ mod exec;
 mod handshake;
 mod held;
 mod host_keys;
+mod os_detection;
 mod outbound_proxy;
 mod progress;
 mod proxy_command;
@@ -88,6 +89,8 @@ pub struct ConnectionSettings {
     pub keepalive_seconds: u32,
     /// Unix socket or Windows named pipe; blank uses the system agent.
     pub agent_path: String,
+    /// Detect the operating system once after a saved Host connects.
+    pub detect_os: bool,
     /// Outbound proxy for Hosts that inherit the global choice.
     #[serde(deserialize_with = "crate::proxy::deserialize_global_proxy")]
     pub proxy: Option<ProxyConfig>,
@@ -98,6 +101,7 @@ impl Default for ConnectionSettings {
         Self {
             keepalive_seconds: DEFAULT_KEEPALIVE_SECONDS,
             agent_path: String::new(),
+            detect_os: true,
             proxy: None,
         }
     }

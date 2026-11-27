@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { hostHue, hueClasses, monogram } from "./hostHue";
 import alpineLinux from "./icons/alpinelinux.svg";
 import archLinux from "./icons/archlinux.svg";
+import debian from "./icons/debian.svg";
 import freebsd from "./icons/freebsd.svg";
 import linux from "./icons/linux.svg";
 import linuxMint from "./icons/linuxmint.svg";
@@ -20,26 +21,24 @@ const sizes = {
 };
 
 const glyphs = {
-  alpineLinux, archLinux, freebsd, linux, linuxMint, macos, nixos, ubuntu,
+  alpineLinux, archLinux, debian, freebsd, linux, linuxMint, macos, nixos, ubuntu,
   cloud: Cloud, database: Database, router: Router, server: Server,
-} satisfies Record<HostIcon, string | typeof Server>;
+} satisfies Record<HostIcon | "debian", string | typeof Server>;
 
 /** The Host's icon or initials on its hue tile. Children can overlay a state dot. */
 export function HostMonogram({
   host,
-  detectedIcon,
   size = "sm",
   className,
   children,
 }: {
-  host: Pick<Host, "id" | "name" | "icon" | "color">;
-  /** The OS detection feature can supply this hint when no icon was selected. */
-  detectedIcon?: HostIcon;
+  host: Pick<Host, "id" | "name" | "icon" | "color" | "detectedOs">;
   size?: keyof typeof sizes;
   className?: string;
   children?: ReactNode;
 }) {
-  const icon = host.icon ?? detectedIcon;
+  const { detectedOs } = host;
+  const icon = host.icon ?? (detectedOs === "unknown" ? undefined : detectedOs);
   const Glyph = icon && glyphs[icon];
   const glyphSize = size === "sm" ? "size-3.5" : "size-[18px]";
   return (

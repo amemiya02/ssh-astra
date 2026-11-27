@@ -83,6 +83,83 @@ impl Prompter for ScriptedPrompter {
     }
 }
 
+#[tokio::test]
+async fn detects_debian_once_per_saved_host_until_explicit_redetection() {
+    use sshastra_core::hosts::{DetectedOs, HostStore};
+    use sshastra_core::ssh::ConnectionSettings;
+
+    let Some(sshd) = support::sshd(Service::Counted) else {
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("hosts.json");
+    let mut store = HostStore::open(&path).unwrap();
+    let fixture = host(&sshd);
+    let draft = serde_json::to_value(&fixture).unwrap();
+    let target = store
+        .insert(fixture.id, serde_json::from_value(draft.clone()).unwrap())
+        .unwrap();
+    let id = &target.id;
+    let manager = ConnectionManager::new(KnownHosts::new(dir.path().join("known_hosts")));
+    let before = sshd.command_sessions();
+    let connection = manager
+        .connect(&target, ScriptedPrompter::trusting(&sshd))
+        .await
+        .unwrap();
+    let enabled = ConnectionSettings::default().detect_os;
+
+    assert!(!store.begin_os_detection(id, false));
+    assert_eq!(sshd.command_sessions(), before);
+    assert!(store.begin_os_detection(id, enabled));
+    let linked = manager
+        .connect(&target, ScriptedPrompter::trusting(&sshd))
+        .await
+        .unwrap();
+    assert!(Arc::ptr_eq(&connection, &linked));
+    assert!(!store.begin_os_detection(id, enabled));
+
+    let mut edited = draft;
+    edited["name"] = "Edited during detection".into();
+    edited["icon"] = "router".into();
+    store
+        .upsert(Some(id.clone()), serde_json::from_value(edited).unwrap())
+        .unwrap();
+    let detected = connection.detect_os().await;
+    assert!(store.finish_os_detection(id, detected).unwrap());
+    assert_eq!(sshd.command_sessions(), before + 1);
+    drop(linked);
+    drop(connection);
+
+    let mut reopened = HostStore::open(&path).unwrap();
+    let persisted = reopened.get(id).unwrap();
+    assert_eq!(persisted.detected_os, Some(DetectedOs::Debian));
+    assert_eq!(persisted.name, "Edited during detection");
+    assert_eq!(persisted.icon, Some(sshastra_core::hosts::HostIcon::Router));
+    let connection = manager
+        .connect(persisted, ScriptedPrompter::trusting(&sshd))
+        .await
+        .unwrap();
+    assert!(!reopened.begin_os_detection(id, enabled));
+    assert_eq!(sshd.command_sessions(), before + 1);
+
+    assert!(reopened.clear_os_detection(id).unwrap());
+    assert_eq!(
+        HostStore::open(&path).unwrap().get(id).unwrap().detected_os,
+        None
+    );
+    assert!(!reopened.begin_os_detection(id, false));
+    assert_eq!(sshd.command_sessions(), before + 1);
+    assert!(reopened.begin_os_detection(id, enabled));
+    assert!(reopened
+        .finish_os_detection(id, connection.detect_os().await)
+        .unwrap());
+    assert_eq!(
+        HostStore::open(path).unwrap().get(id).unwrap().detected_os,
+        Some(DetectedOs::Debian)
+    );
+    assert_eq!(sshd.command_sessions(), before + 2);
+}
+
 fn host(sshd: &Sshd) -> Host {
     host_at(&sshd.host, sshd.port, sshd.user)
 }
@@ -93,6 +170,7 @@ fn host_at(address: &str, port: u16, user: &str) -> Host {
         name: "docker sshd".into(),
         tags: Vec::new(),
         icon: None,
+        detected_os: None,
         color: None,
         address: address.into(),
         port,
@@ -413,6 +491,7 @@ async fn an_unreachable_address_is_reported() {
         name: "nowhere".into(),
         tags: Vec::new(),
         icon: None,
+        detected_os: None,
         color: None,
         address: "127.0.0.1".into(),
         port,
@@ -978,6 +1057,7 @@ fn behind(name: &str, jump: &Host) -> Host {
         name: name.into(),
         tags: Vec::new(),
         icon: None,
+        detected_os: None,
         color: None,
         address: name.into(),
         port: 22,

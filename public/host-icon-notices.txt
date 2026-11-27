@@ -1,6 +1,6 @@
 SSH Astra third-party notices for Host icons
 
-The Linux, Ubuntu, Arch Linux, Alpine Linux, Linux Mint, NixOS, FreeBSD and
+The Linux, Debian, Ubuntu, Arch Linux, Alpine Linux, Linux Mint, NixOS, FreeBSD and
 macOS SVGs are from Simple Icons 15.18.0, commit
 d03f80d9dd2145ab4e508d0a2f4dc33404b7764d. SSH Astra displays them using the
 same theme colours as Host initials.

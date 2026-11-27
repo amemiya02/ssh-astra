@@ -148,6 +148,15 @@ pub fn project() -> String {
 }
 
 impl Sshd {
+    /// How many exec requests sshd started for the fixture user.
+    pub fn command_sessions(&self) -> usize {
+        compose(&["logs", "--no-color", self.service.name()])
+            .unwrap_or_else(|e| panic!("cannot read {}'s logs: {e}", self.service.name()))
+            .lines()
+            .filter(|line| line.contains("Starting session: command for tester "))
+            .count()
+    }
+
     /// How many established TCP connections the server has on port 22, as
     /// its kernel sees them (`/proc/net/tcp{,6}` inside the container).
     pub fn established_connections(&self) -> usize {

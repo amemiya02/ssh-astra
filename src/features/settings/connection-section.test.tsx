@@ -5,6 +5,29 @@ import { startI18n } from "@/i18n";
 import { startSettings } from "@/lib/storage";
 import { ConnectionSection } from "./connection-section";
 
+it("enables OS detection by default and saves when turned off", async () => {
+  startI18n();
+  const save = vi.fn().mockResolvedValue(undefined);
+  await startSettings({ load: async () => ({}), save });
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(container);
+
+  try {
+    act(() => root.render(<ConnectionSection />));
+    const control = container.querySelector('[aria-label="Detect Host operating systems"]')!;
+    const on = control.querySelector<HTMLButtonElement>('[data-value="on"]')!;
+    const off = control.querySelector<HTMLButtonElement>('[data-value="off"]')!;
+    expect(on.getAttribute("aria-checked")).toBe("true");
+    act(() => off.click());
+    expect(save).toHaveBeenLastCalledWith("connection", { keepaliveSeconds: 30, agentPath: "", detectOs: false });
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("saves and clears the custom agent path alongside the existing keepalive setting", async () => {
   startI18n();
   const save = vi.fn().mockResolvedValue(undefined);
@@ -28,11 +51,11 @@ it("saves and clears the custom agent path alongside the existing keepalive sett
     type(path);
     expect(save).not.toHaveBeenCalled();
     act(() => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
-    expect(save).toHaveBeenLastCalledWith("connection", { keepaliveSeconds: 60, agentPath: path });
+    expect(save).toHaveBeenLastCalledWith("connection", { keepaliveSeconds: 60, agentPath: path, detectOs: true });
 
     type("");
     act(() => input.blur());
-    expect(save).toHaveBeenLastCalledWith("connection", { keepaliveSeconds: 60, agentPath: "" });
+    expect(save).toHaveBeenLastCalledWith("connection", { keepaliveSeconds: 60, agentPath: "", detectOs: true });
   } finally {
     act(() => root.unmount());
     container.remove();
@@ -63,6 +86,7 @@ it("saves the proxy endpoint and username with the other Connection settings", a
     expect(save).toHaveBeenLastCalledWith("connection", {
       keepaliveSeconds: 30,
       agentPath: "~/.ssh/agent",
+      detectOs: true,
       proxy: { ...proxy, username: "proxy-user" },
     });
     expect(username.form!.querySelector('input[type="password"]')).toBeNull();

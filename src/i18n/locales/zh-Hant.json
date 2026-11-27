@@ -88,6 +88,14 @@
       "cloud": "雲端",
       "router": "路由器"
     },
+    "osDetection": {
+      "result": "辨識結果：{{system}}",
+      "pending": "開啟辨識後，連線時會讀取作業系統。",
+      "redetect": "重新辨識",
+      "failed": "無法重新辨識作業系統。",
+      "debian": "Debian",
+      "unknown": "未知"
+    },
     "colors": {
       "automatic": "自動",
       "red": "紅色",
@@ -1191,6 +1199,10 @@
       "showPermissions": "顯示權限欄"
     },
     "connection": {
+      "osDetection": {
+        "label": "辨識 Host 的作業系統",
+        "description": "已儲存的 Host 連線成功後讀取作業系統，用於自動選擇 Host 圖示。"
+      },
       "keepalive": {
         "label": "Keepalive 間隔",
         "description": "設定閒置連線多久確認一次伺服器仍在線上。連續三次未收到回應即視為連線中斷。這項設定適用於新連線。",

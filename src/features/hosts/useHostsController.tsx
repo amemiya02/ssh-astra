@@ -7,7 +7,7 @@ import { usePaletteActions } from "@/features/palette/palette-actions";
 import { showToast } from "@/features/toasts/toastStore";
 import { readCommandError, refusal, type ConnectPrompt, type PromptAnswer } from "@/lib/ipc/connect";
 import { testHostConnection } from "@/lib/ipc/connections";
-import { isTemporaryHost, type Host, type HostDraft, type HostId, type ImportReport, type TemporaryHost } from "@/lib/ipc/hosts";
+import { isTemporaryHost, redetectHostOs, type Host, type HostDraft, type HostId, type ImportReport, type TemporaryHost } from "@/lib/ipc/hosts";
 import { pickOpenPath, pickSavePath } from "@/lib/ipc/system";
 import { ConfirmRemoveDialogContent, HostFormDialogContent, type Removal } from "./HostDialogs";
 import type { HostListActions } from "./HostList";
@@ -242,11 +242,12 @@ export function useHostsController(openers: HostOpeners, onTemporaryHostSaved: (
       <Dialog open={editing !== null} onOpenChange={(open) => !open && setEditing(null)}>
         {editing !== null && (
           <HostFormDialogContent
-            host={editing === "new" ? undefined : editing}
+            host={editing === "new" ? undefined : tree.hosts.find((host) => host.id === editing.id) ?? editing}
             hosts={editing === "new" ? tree.hosts : tree.hosts.filter((h) => h.id !== editing.id)}
             groupName={tree.groups.find((group) => group.id === (editing === "new" ? selectedGroupId : editing.groupId))?.name}
             save={save}
             testConnection={testHostConnection}
+            redetectOs={redetectHostOs}
             onCancel={() => setEditing(null)}
             onSaved={(host) => {
               if (temporary) onTemporaryHostSaved(host);

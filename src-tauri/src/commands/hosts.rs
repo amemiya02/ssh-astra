@@ -5,31 +5,53 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 use sshastra_core::hosts::{
-    Group, GroupId, Host, HostDraft, HostId, HostStore, HostTree, ImportReport, ImportSummary,
+    DetectedOs, Group, GroupId, Host, HostDraft, HostId, HostStore, HostTree, ImportReport,
+    ImportSummary,
 };
 use sshastra_core::ssh_config::{parse_user_config, ParseContext};
-use tauri::State;
+use tauri::{ipc::Channel, State};
 
 use super::connections::ConnectionsState;
 use super::forwards::ForwardsState;
+use super::watch::Watcher;
 use crate::commands::credentials::Vault;
 use crate::error::{CommandError, CommandResult};
 
 /// The HostStore, or why it could not be loaded at startup (e.g. a damaged
 /// file, which is left untouched rather than overwritten).
-pub struct HostsState(Mutex<Result<HostStore, CommandError>>);
+pub struct HostsState {
+    store: Mutex<Result<HostStore, CommandError>>,
+    os_changes: Watcher<HostOsChange>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostOsChange {
+    host_id: HostId,
+    detected_os: Option<DetectedOs>,
+}
 
 impl HostsState {
     pub fn new(store: Result<HostStore, CommandError>) -> Self {
-        Self(Mutex::new(store))
+        Self {
+            store: Mutex::new(store),
+            os_changes: Watcher::default(),
+        }
     }
 
     pub fn with<T>(&self, f: impl FnOnce(&mut HostStore) -> CommandResult<T>) -> CommandResult<T> {
-        let mut guard = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        let mut guard = self.store.lock().unwrap_or_else(|p| p.into_inner());
         match guard.as_mut() {
             Ok(store) => f(store),
             Err(e) => Err(e.clone()),
         }
+    }
+
+    pub(super) fn publish_os_change(&self, host_id: HostId, detected_os: Option<DetectedOs>) {
+        self.os_changes.send(HostOsChange {
+            host_id,
+            detected_os,
+        });
     }
 }
 
@@ -71,6 +93,15 @@ pub fn host_delete(
 #[tauri::command]
 pub fn host_tree(hosts: State<'_, HostsState>) -> CommandResult<HostTree> {
     hosts.with(|store| Ok(store.tree()))
+}
+
+/// Returns the Host tree and streams subsequent changes to its detected operating systems.
+#[tauri::command]
+pub fn host_tree_watch(
+    hosts: State<'_, HostsState>,
+    on_os_change: Channel<HostOsChange>,
+) -> CommandResult<HostTree> {
+    hosts.with(|store| Ok(hosts.os_changes.subscribe(on_os_change, || store.tree())))
 }
 
 /// Saves a copy of a Host as `name`, right after the original.

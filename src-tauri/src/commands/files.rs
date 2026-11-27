@@ -17,7 +17,7 @@ use tokio::sync::oneshot;
 
 use crate::prompts::{ChannelPrompter, PendingPrompts, PromptRequest};
 
-use super::connections::HostRoute;
+use super::connections::{schedule_os_detection, HostRoute};
 use super::edit::SystemOpener;
 
 use crate::error::{CommandError, CommandResult};
@@ -49,7 +49,9 @@ pub async fn files_connect(
         channel: on_prompt,
     });
     let connection = route.connect(&app, prompter).await?;
-    Ok(registry.insert(Arc::new(connection.open_sftp().await?)))
+    let fs = connection.open_sftp().await?;
+    schedule_os_detection(&app, &host_id, &connection);
+    Ok(registry.insert(Arc::new(fs)))
 }
 
 #[tauri::command]
