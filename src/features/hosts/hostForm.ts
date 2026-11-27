@@ -19,6 +19,7 @@ export interface HostFormValues {
   identityFile: string;
   identitiesOnly: boolean;
   forwardAgent: boolean;
+  allowLegacyAlgorithms: boolean;
   proxy?: ProxyFormValues;
   /** Blank follows the global keepalive interval. */
   keepaliveSeconds?: string;
@@ -35,7 +36,7 @@ export interface HostFormValues {
 /** The free-text fields, validated here. */
 type HostInputField = Exclude<
   keyof HostFormValues,
-  "jumpHost" | "authType" | "identitiesOnly" | "forwardAgent" | "terminalScheme" | "defaultDirectory" |
+  "jumpHost" | "authType" | "identitiesOnly" | "forwardAgent" | "allowLegacyAlgorithms" | "terminalScheme" | "defaultDirectory" |
   "postLoginCommand" | "terminalCharset" | "terminalBackspace" | "proxy" | "tags" | "icon" | "color"
 >;
 /** Error codes; the UI maps them to copy under `hosts.errors.*`. */
@@ -58,6 +59,7 @@ export const emptyHostForm: HostFormValues = {
   identityFile: "",
   identitiesOnly: false,
   forwardAgent: false,
+  allowLegacyAlgorithms: false,
   terminalCharset: "utf8",
   terminalBackspace: "del",
 };
@@ -76,6 +78,7 @@ export function hostFormFrom(host: Host, importedSchemes: readonly ImportedTermi
     identityFile: host.auth.type === "key" ? host.auth.identityFile : "",
     identitiesOnly: host.identitiesOnly ?? false,
     forwardAgent: host.forwardAgent ?? false,
+    allowLegacyAlgorithms: host.allowLegacyAlgorithms ?? false,
     terminalCharset: host.terminalCharset ?? emptyHostForm.terminalCharset,
     terminalBackspace: host.terminalBackspace ?? emptyHostForm.terminalBackspace,
   };
@@ -117,6 +120,7 @@ export function parseHostForm(values: HostFormValues, purpose: "save" | "test" =
     name: name || address, address, port, user, auth, jumpHost,
     identitiesOnly: values.identitiesOnly,
     forwardAgent: values.forwardAgent,
+    allowLegacyAlgorithms: values.allowLegacyAlgorithms,
   };
   if (values.tags.length > 0) draft.tags = values.tags;
   if (values.icon) draft.icon = values.icon;

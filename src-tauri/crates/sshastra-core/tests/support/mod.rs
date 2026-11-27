@@ -47,6 +47,10 @@ pub enum Service {
     Certificate,
     /// Accepts only the `id_ed25519` fixture and limits authentication to two tries.
     LimitedAuth,
+    /// Offers only legacy key exchange, host-key and cipher algorithms.
+    Legacy,
+    /// Offers both modern and legacy algorithms and logs what was negotiated.
+    Mixed,
     /// Keyboard-interactive (PAM asks for the password), alone or after a
     /// public key; no password method.
     KbdInt,
@@ -68,6 +72,8 @@ impl Service {
             Service::KeyOnly => "keyonly",
             Service::Certificate => "certificate",
             Service::LimitedAuth => "limitedauth",
+            Service::Legacy => "legacy",
+            Service::Mixed => "mixed",
             Service::KbdInt => "kbdint",
             Service::Counted => "counted",
             Service::Flaky => "flaky",
@@ -108,7 +114,11 @@ pub fn sshd(service: Service) -> Option<Sshd> {
         return None;
     }
     let (host, port) = published_port(service.name(), 22);
-    let host_key = std::fs::read_to_string(sshd_dir().join("ssh_host_ed25519_key.pub")).unwrap();
+    let host_key_file = match service {
+        Service::Legacy => "ssh_host_rsa_key.pub",
+        _ => "ssh_host_ed25519_key.pub",
+    };
+    let host_key = std::fs::read_to_string(sshd_dir().join(host_key_file)).unwrap();
 
     Some(Sshd {
         service,
@@ -148,10 +158,14 @@ pub fn project() -> String {
 }
 
 impl Sshd {
-    /// How many exec requests sshd started for the fixture user.
-    pub fn command_sessions(&self) -> usize {
+    pub fn logs(&self) -> String {
         compose(&["logs", "--no-color", self.service.name()])
             .unwrap_or_else(|e| panic!("cannot read {}'s logs: {e}", self.service.name()))
+    }
+
+    /// How many exec requests sshd started for the fixture user.
+    pub fn command_sessions(&self) -> usize {
+        self.logs()
             .lines()
             .filter(|line| line.contains("Starting session: command for tester "))
             .count()
