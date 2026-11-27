@@ -26,6 +26,7 @@ export interface Transfer {
   source: string;
   target: string;
   state: TransferState;
+  unprotected: boolean;
   /** Totals are 0 until a folder has been walked. */
   bytesDone: number;
   bytesTotal: number;
