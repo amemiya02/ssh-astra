@@ -440,11 +440,15 @@ pub(crate) fn destroyed(app: &AppHandle, label: &str) {
     };
     if let Some(resources) = resources {
         resources.prompts.close();
+        for route in resources.terminals.values() {
+            let mut route = route.lock();
+            route.stop_resources();
+            route.invalidate_reviews();
+        }
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
             let terminals = app.state::<TerminalRegistry>();
-            for (id, route) in resources.terminals {
-                route.lock().invalidate_reviews();
+            for id in resources.terminals.into_keys() {
                 let _ = terminals.close(id);
             }
             let files = app.state::<FsRegistry>();

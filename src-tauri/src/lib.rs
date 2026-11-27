@@ -334,6 +334,8 @@ pub fn run() {
             commands::terminal::terminal_resize,
             commands::terminal::terminal_close,
             commands::terminal::terminal_set_title,
+            commands::resources::terminal_resources_start,
+            commands::resources::terminal_resources_stop,
             commands::agent::terminal_agent_screen,
             commands::agent::review::terminal_agent_review_answer,
             commands::terminal::terminal_log_start,

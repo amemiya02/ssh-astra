@@ -7,7 +7,7 @@ import { terminalOutputs } from "@/features/terminal/terminal-outputs";
 import type { connectPromptChannel } from "@/lib/ipc/connect";
 import { isTemporaryHost } from "@/lib/ipc/hosts";
 import { decodeTerminalMessage, drainTerminalWrites, type TerminalEvent, type TerminalId, type TerminalMessage, type TerminalSize } from "@/lib/ipc/terminal";
-import { tabPanes, type Tab } from "./tabs";
+import { movedTabLayout, tabPanes, type Tab } from "./tabs";
 
 type TerminalState = {
   cwd?: string;
@@ -117,7 +117,7 @@ export async function moveTabToNewWindow(tab: Tab): Promise<void> {
       }),
     ]);
     clearTimeout(deadline);
-    const payload: TabMove = { tab, panes: Object.fromEntries(moving.map(({ paneId, id, xterm, state }) => {
+    const payload: TabMove = { tab: { ...tab, layout: movedTabLayout(tab.layout) }, panes: Object.fromEntries(moving.map(({ paneId, id, xterm, state }) => {
       if (!atParserBoundary(xterm)) throw new Error("The Terminal is parsing a partial sequence");
       const serializer = new SerializeAddon();
       serializer.activate(xterm);

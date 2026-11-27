@@ -1330,3 +1330,81 @@ async fn an_unreachable_second_jump_host_is_named_in_the_error() {
         other => panic!("expected a jump host error, got {other:?}"),
     }
 }
+
+#[tokio::test]
+async fn resource_panel_samples_and_stops_its_process_when_hidden() {
+    use sshastra_core::monitor::{watch_resources, ResourceEvent, ResourceSnapshot};
+    use tokio::sync::{mpsc, oneshot};
+
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let manager = ConnectionManager::new(KnownHosts::new(dir.path().join("known_hosts")));
+    let connection = manager
+        .connect(&host(&sshd), ScriptedPrompter::trusting(&sshd))
+        .await
+        .unwrap();
+    let sampler_pids = r#"for cmd in /proc/[0-9]*/cmdline; do
+        if { mapfile -d '' -t arguments < "$cmd"; } 2>/dev/null &&
+           [[ "${arguments[0]}" == /bin/sh && "${arguments[1]}" == -c &&
+              "${arguments[3]}" == sshastra-resource-sampler ]]; then
+            printf '%s\n' "$cmd"
+        fi
+    done
+    true"#;
+    let (stop, stopped) = oneshot::channel();
+    let (events, mut snapshots) = mpsc::unbounded_channel();
+    let live = Arc::clone(&connection);
+    let task = tokio::spawn(async move {
+        watch_resources(&live, stopped, |event| events.send(event).is_ok()).await;
+    });
+
+    async fn snapshot(events: &mut mpsc::UnboundedReceiver<ResourceEvent>) -> ResourceSnapshot {
+        match tokio::time::timeout(Duration::from_secs(10), events.recv())
+            .await
+            .unwrap()
+        {
+            Some(ResourceEvent::Snapshot { snapshot }) => snapshot,
+            unexpected => panic!("expected a resource snapshot, got {unexpected:?}"),
+        }
+    }
+
+    let first = snapshot(&mut snapshots).await;
+    assert_eq!(first.cpu_percent, None);
+    assert!(first.cores > 0);
+    assert!(first.load.iter().all(|average| *average >= 0.0));
+    assert!(first.memory.total > 1024 * 1024 && first.memory.used <= first.memory.total);
+    assert!(first.swap.used <= first.swap.total);
+    assert!(first
+        .disks
+        .iter()
+        .any(|disk| disk.mount == "/" && disk.usage.total > 1024 * 1024));
+    assert!(first.network.iter().any(|link| link.name == "eth0"));
+    assert!(first.network.iter().all(|link| link.name != "lo"));
+    assert!(first.uptime_seconds > 0.0);
+    let second = snapshot(&mut snapshots).await;
+    assert!(second.uptime_seconds >= first.uptime_seconds + 1.5);
+    assert!(second
+        .cpu_percent
+        .is_some_and(|percent| (0.0..=100.0).contains(&percent)));
+    assert!(second
+        .network
+        .iter()
+        .all(|link| link.receive_rate.is_some() && link.send_rate.is_some()));
+
+    let running = connection.exec(sampler_pids).await.unwrap();
+    assert_eq!(running.status, 0);
+    assert_eq!(
+        String::from_utf8(running.stdout).unwrap().lines().count(),
+        1
+    );
+    drop(stop); // The same cancellation used when the panel hides.
+    tokio::time::timeout(Duration::from_secs(5), task)
+        .await
+        .unwrap()
+        .unwrap();
+    let gone = connection.exec(sampler_pids).await.unwrap();
+    assert_eq!(gone.status, 0);
+    assert!(gone.stdout.is_empty(), "Sampler still running: {gone:?}");
+}

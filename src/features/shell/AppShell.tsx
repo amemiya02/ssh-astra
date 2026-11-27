@@ -302,7 +302,7 @@ export function AppShell({ sidebar, nav, tabs, workspace, filePanel, fullWorkspa
                     collapsible
                   >
                     <section
-                      aria-label={t("files.title")}
+                      aria-label={t(nav.activeKind === "remote-terminal" ? "resources.dock" : "files.title")}
                       className="bg-surface flex h-full flex-col overflow-hidden rounded-lg border"
                     >
                       <FilePanelDockContext value={filePanelDock}>{filePanel}</FilePanelDockContext>
