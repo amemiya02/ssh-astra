@@ -249,6 +249,7 @@ impl RemoteEditor {
         let (retry, retries) = mpsc::unbounded_channel();
         let uploads = tokio::spawn(
             Uploader {
+                id,
                 fs,
                 remote_path: remote_path.to_owned(),
                 local_path: local_path.clone(),
@@ -328,6 +329,7 @@ impl RemoteEditor {
 /// settle for `debounce`, and uploads it if it differs from what the remote
 /// file last received.
 struct Uploader {
+    id: EditId,
     fs: Arc<dyn RemoteFs>,
     remote_path: String,
     local_path: PathBuf,
@@ -375,12 +377,20 @@ impl Uploader {
         (self.on_event)(EditEvent::Uploading);
         match self.fs.write_file(&self.remote_path, &contents).await {
             Ok(()) => {
+                log::info!("Remote edit id={} upload result=success", self.id.0);
                 self.uploaded = contents;
                 (self.on_event)(EditEvent::Uploaded);
             }
-            Err(e) => (self.on_event)(EditEvent::UploadFailed {
-                reason: e.to_string(),
-            }),
+            Err(e) => {
+                log::warn!(
+                    "Remote edit id={} upload result={}",
+                    self.id.0,
+                    e.log_kind()
+                );
+                (self.on_event)(EditEvent::UploadFailed {
+                    reason: e.to_string(),
+                });
+            }
         }
     }
 }

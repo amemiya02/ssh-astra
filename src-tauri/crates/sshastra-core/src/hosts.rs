@@ -226,6 +226,21 @@ pub enum HostStoreError {
     InUseAsJumpHost { by: String },
 }
 
+impl HostStoreError {
+    fn log_file_error(&self, operation: &str) {
+        match self {
+            Self::Io { source, .. } => {
+                log::warn!("Host file {operation} failed: {:?}", source.kind())
+            }
+            Self::Corrupt(_) => log::warn!("Host file {operation} failed: corrupt"),
+            Self::UnsupportedVersion(version) => {
+                log::warn!("Host file {operation} failed: unsupported version {version}");
+            }
+            _ => {}
+        }
+    }
+}
+
 #[derive(Serialize)]
 struct FileRef<'a> {
     /// [`EXPORT_FORMAT`] in export files; absent in the store's own file.
@@ -360,10 +375,14 @@ impl HostStore {
     pub fn open(path: impl Into<PathBuf>) -> Result<Self, HostStoreError> {
         let path = path.into();
         let library = match fs::read_to_string(&path) {
-            Ok(text) => migrate(&text)?,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => Library::default(),
-            Err(source) => return Err(HostStoreError::Io { path, source }),
-        };
+            Ok(text) => migrate(&text),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Library::default()),
+            Err(source) => Err(HostStoreError::Io {
+                path: path.clone(),
+                source,
+            }),
+        }
+        .inspect_err(|error| error.log_file_error("read"))?;
         Ok(Self { path, library })
     }
 
@@ -678,11 +697,14 @@ impl HostStore {
             groups: &library.groups,
             hosts: &library.hosts,
         })
-        .map_err(|e| HostStoreError::Corrupt(e.to_string()))?;
-        write_atomically(&self.path, &json).map_err(|source| HostStoreError::Io {
-            path: self.path.clone(),
-            source,
-        })?;
+        .map_err(|e| HostStoreError::Corrupt(e.to_string()))
+        .inspect_err(|error| error.log_file_error("serialize"))?;
+        write_atomically(&self.path, &json)
+            .map_err(|source| HostStoreError::Io {
+                path: self.path.clone(),
+                source,
+            })
+            .inspect_err(|error| error.log_file_error("write"))?;
         self.library = library;
         Ok(())
     }

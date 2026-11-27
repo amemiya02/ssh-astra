@@ -253,6 +253,7 @@ impl Runner {
             if self.serve(&mut shell).await.is_err() {
                 return;
             }
+            log::warn!("remote Terminal Connection lost");
             drop(shell);
             shell = match self.recover().await {
                 Ok(shell) => shell,
@@ -347,11 +348,16 @@ impl Runner {
         loop {
             let mut failure = None;
             for attempt in 1..=attempts {
+                log::info!("remote Terminal reconnect attempt={attempt} maxAttempts={attempts}");
                 self.report(ConnectionState::Reconnecting { attempt, attempts });
                 self.wait(delay).await?;
                 match self.try_connect().await? {
-                    Ok(shell) => return Ok(shell),
+                    Ok(shell) => {
+                        log::info!("remote Terminal reconnect result=success");
+                        return Ok(shell);
+                    }
                     Err(e) => {
+                        log::warn!("remote Terminal reconnect result={}", e.log_kind());
                         let retry = is_transient(&e);
                         failure = Some(e);
                         if !retry {

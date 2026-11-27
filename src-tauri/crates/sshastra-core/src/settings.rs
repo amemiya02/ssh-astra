@@ -47,6 +47,21 @@ pub enum SettingsError {
     ReservedSection,
 }
 
+impl SettingsError {
+    fn log_file_error(&self, operation: &str) {
+        match self {
+            Self::Io { source, .. } => {
+                log::warn!("settings file {operation} failed: {:?}", source.kind())
+            }
+            Self::Corrupt(_) => log::warn!("settings file {operation} failed: corrupt"),
+            Self::UnsupportedVersion(version) => {
+                log::warn!("settings file {operation} failed: unsupported version {version}");
+            }
+            Self::ReservedSection => {}
+        }
+    }
+}
+
 /// Saved settings, one JSON value per section.
 pub struct SettingsStore {
     path: PathBuf,
@@ -60,10 +75,14 @@ impl SettingsStore {
     pub fn open(path: impl Into<PathBuf>) -> Result<Self, SettingsError> {
         let path = path.into();
         let sections = match fs::read_to_string(&path) {
-            Ok(text) => parse(&text, MIGRATIONS)?,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => Map::new(),
-            Err(source) => return Err(SettingsError::Io { path, source }),
-        };
+            Ok(text) => parse(&text, MIGRATIONS),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Map::new()),
+            Err(source) => Err(SettingsError::Io {
+                path: path.clone(),
+                source,
+            }),
+        }
+        .inspect_err(|error| error.log_file_error("read"))?;
         Ok(Self { path, sections })
     }
 
@@ -99,11 +118,14 @@ impl SettingsStore {
         document.insert(VERSION_KEY.to_owned(), Value::from(CURRENT_VERSION));
         document.extend(sections.clone());
         let json = serde_json::to_vec_pretty(&document)
-            .map_err(|e| SettingsError::Corrupt(e.to_string()))?;
-        write_atomically(&self.path, &json).map_err(|source| SettingsError::Io {
-            path: self.path.clone(),
-            source,
-        })?;
+            .map_err(|e| SettingsError::Corrupt(e.to_string()))
+            .inspect_err(|error| error.log_file_error("serialize"))?;
+        write_atomically(&self.path, &json)
+            .map_err(|source| SettingsError::Io {
+                path: self.path.clone(),
+                source,
+            })
+            .inspect_err(|error| error.log_file_error("write"))?;
         self.sections = sections;
         Ok(())
     }

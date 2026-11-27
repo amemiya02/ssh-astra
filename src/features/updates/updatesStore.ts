@@ -34,12 +34,6 @@ export interface UpdatesState {
   dismiss(): void;
 }
 
-/**
- * The plugin's error when the endpoint has no `latest.json` (HTTP 404): no release is published
- * yet, or only pre-releases, which GitHub's `/releases/latest` skips. Not a failure to the user.
- */
-const noReleasePublished = "Could not fetch a valid release JSON from the remote";
-
 export function errorMessage(error: unknown): string {
   if (typeof error === "string") return error;
   if (error instanceof Error) return error.message;
@@ -67,7 +61,7 @@ export function createUpdatesStore(api: UpdatesApi): StoreApi<UpdatesState> {
       } catch (error) {
         const reason = errorMessage(error);
         if (!manual) set({ status: { type: "idle" } });
-        else if (reason === noReleasePublished) set({ status: { type: "upToDate" } });
+        else if (reason === ipc.noReleasePublished) set({ status: { type: "upToDate" } });
         else set({ status: { type: "checkFailed", reason } });
       }
     },

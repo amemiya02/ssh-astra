@@ -10,6 +10,7 @@ repository.workspace = true
 base64 = "0.22"
 hmac = "0.13"
 keyring = "4"
+log.workspace = true
 notify = "8"
 portable-pty = "0.9"
 # `ring` instead of the default aws-lc-rs: no cmake/NASM needed on any platform.

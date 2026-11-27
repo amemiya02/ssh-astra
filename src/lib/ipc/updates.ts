@@ -1,5 +1,9 @@
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
+import { recordOperationalEvent } from "./diagnostics";
+
+/** The updater's response when GitHub has no published stable release JSON. */
+export const noReleasePublished = "Could not fetch a valid release JSON from the remote";
 
 /** How far an update's download has got. `total` is unknown when the server sends no length. */
 export interface DownloadProgress {
@@ -21,7 +25,12 @@ export interface AvailableUpdate {
  * the plugin's message when the check fails (offline, no release published yet, ...).
  */
 export async function checkForUpdate(): Promise<AvailableUpdate | null> {
-  const update = await check({ timeout: 30_000 });
+  const update = await check({ timeout: 30_000 }).catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : error;
+    recordOperationalEvent({ kind: "updateCheck", result: message === noReleasePublished ? "noRelease" : "failed" });
+    throw error;
+  });
+  recordOperationalEvent({ kind: "updateCheck", result: update ? "available" : "upToDate" });
   if (!update) return null;
   return {
     version: update.version,

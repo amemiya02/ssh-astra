@@ -3,8 +3,12 @@
 //! Tauri channels. Domain logic belongs in `sshastra-core`, not here.
 
 mod commands;
+mod diagnostics;
 mod error;
 mod prompts;
+
+#[cfg(test)]
+mod diagnostics_tests;
 
 use std::sync::Arc;
 
@@ -61,6 +65,21 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            #[cfg(not(feature = "e2e"))]
+            let log_dir = app.path().app_log_dir()?;
+            #[cfg(feature = "e2e")]
+            let log_dir = std::env::var_os("SSHASTRA_E2E_HOME")
+                .map(|home| std::path::PathBuf::from(home).join("logs"))
+                .unwrap_or_else(|| {
+                    std::env::temp_dir().join(format!("sshastra-e2e-logs-{}", std::process::id()))
+                });
+            let logs = diagnostics::Logs::new(log_dir);
+            if let Err(error) = logs.install() {
+                eprintln!("Could not start application logging: {:?}", error.kind());
+            }
+            logs.install_crash_hook();
+            log::info!("application started version={}", app.package_info().version);
+            app.manage(logs);
             let config_dir = app.path().app_config_dir()?;
             let hosts = HostStore::open(config_dir.join("hosts.json")).map_err(Into::into);
             // Shared with the `ssh` command line; without a home directory,
@@ -124,6 +143,9 @@ pub fn run() {
             commands::forwards::forward_stop,
             commands::settings::settings_load,
             commands::settings::settings_set,
+            commands::diagnostics::diagnostics_event,
+            commands::diagnostics::diagnostics_open_logs,
+            commands::diagnostics::diagnostics_report,
             commands::credentials::host_credentials_clear,
             commands::terminal::local_terminal_open,
             commands::terminal::remote_terminal_open,

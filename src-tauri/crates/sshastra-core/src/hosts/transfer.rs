@@ -49,10 +49,12 @@ impl HostStore {
 
     /// Writes [`HostStore::export`] to `path`, replacing it atomically.
     pub fn export_to(&self, path: &Path) -> Result<(), HostStoreError> {
-        write_atomically(path, self.export().as_bytes()).map_err(|source| HostStoreError::Io {
-            path: path.to_owned(),
-            source,
-        })
+        write_atomically(path, self.export().as_bytes())
+            .map_err(|source| HostStoreError::Io {
+                path: path.to_owned(),
+                source,
+            })
+            .inspect_err(|error| error.log_file_error("export"))
     }
 
     /// [`HostStore::import`] of the file at `path`.
@@ -60,8 +62,9 @@ impl HostStore {
         let text = fs::read_to_string(path).map_err(|source| HostStoreError::Io {
             path: path.to_owned(),
             source,
-        })?;
-        self.import(&text)
+        });
+        text.and_then(|text| self.import(&text))
+            .inspect_err(|error| error.log_file_error("import"))
     }
 
     /// Adds the Groups and Hosts of an export file (any supported version),
