@@ -1,4 +1,4 @@
-import { useDraggable } from "@dnd-kit/core";
+import { DndContext, PointerSensor, pointerWithin, useDraggable, useDroppable, useSensor, useSensors } from "@dnd-kit/core";
 import {
   ArrowLeft,
   ArrowRight,
@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  ClipboardPaste,
   Copy,
   Download,
   File,
@@ -22,11 +23,12 @@ import {
   FolderSymlink,
   KeyRound,
   Pencil,
+  Scissors,
   Trash2,
   Upload,
   Search,
 } from "lucide-react";
-import { useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { Input } from "@/components/ui/input";
@@ -37,18 +39,19 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { currentPlatform, matchFileHistoryShortcut, shortcutLabel } from "@/features/workspace/shortcuts";
+import { currentPlatform, matchFileHistoryShortcut, matchFileMoveShortcut, shortcutLabel } from "@/features/workspace/shortcuts";
 import type { CommandError } from "@/lib/ipc/connect";
 import type { FileEntry } from "@/lib/ipc/files";
 import { writeClipboardText } from "@/lib/ipc/system";
 import { useSetting } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import type { FileBrowserStore } from "./fileBrowsers";
-import type { SelectMode } from "./fileBrowserStore";
+import type { FileMove, SelectMode } from "./fileBrowserStore";
 import { errorText, operationErrorText } from "./fileErrors";
-import { FileOperationDialog, type FileOperation } from "./FileOperationDialogs";
+import { FileOperationDialog, MoveFailureDialog, type FileOperation } from "./FileOperationDialogs";
 import { filesSetting } from "./file-prefs";
 import {
   childPath,
@@ -96,22 +99,34 @@ export function FileBrowser({
   hostName,
   onDownload,
   exchange,
+  enableMove = false,
 }: {
   store: FileBrowserStore;
   hostName: string;
   onDownload?(names: string[]): void;
   exchange?: FileExchange;
+  enableMove?: boolean;
 }) {
   const { t } = useTranslation();
   const path = useStore(store, (s) => s.path);
   const error = useStore(store, (s) => s.error);
+  const canPaste = useStore(store, (s) => s.cut !== null && s.cut.directory !== s.path && !s.moving);
   const [operation, setOperation] = useState<FileOperation | null>(null);
+  const moveFailures = useStore(store, (s) => s.moveFailures);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const panel = useRef<HTMLDivElement>(null);
+  const dragged = useRef<FileMove | undefined>(undefined);
   const focusPanel = () => panel.current?.focus({ preventScroll: true });
+  const paste = enableMove && canPaste ? () => void store.getState().pasteCutEntries() : undefined;
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const target = event.target;
     if (event.defaultPrevented || event.nativeEvent.isComposing || !(target instanceof Element) ||
       !event.currentTarget.contains(target) || target.closest("input, textarea, select, [contenteditable]")) return;
+    if (paste && matchFileMoveShortcut(event, currentPlatform()) === "filePaste") {
+      event.preventDefault();
+      if (!event.repeat) paste();
+      return;
+    }
     const command = matchFileHistoryShortcut(event);
     if (!command) return;
     event.preventDefault();
@@ -121,7 +136,7 @@ export function FileBrowser({
     focusPanel();
     void (command === "fileBack" ? state.goBack() : state.goForward());
   };
-  return (
+  const browser = (
     <div ref={panel} tabIndex={-1} onKeyDown={onKeyDown}
       className="focus-visible:ring-ring/50 flex h-full flex-col outline-none focus-visible:ring-[3px] focus-visible:ring-inset">
       {/* Sibling keys must differ: PathBar and FileTable sharing the path as key made React keep the old path bar. */}
@@ -134,10 +149,32 @@ export function FileBrowser({
       {/* Keyed by path: a new directory starts scrolled to the top with nothing focused. */}
       {path !== null && (
         <FileTable key={`table:${path}`} store={store} path={path}
-          onOperation={setOperation} onDownload={onDownload} exchange={exchange} />
+          onOperation={setOperation} onDownload={onDownload} exchange={exchange}
+          enableMove={enableMove} onPaste={paste} />
       )}
       {operation && <FileOperationDialog store={store} operation={operation} onClose={() => setOperation(null)} />}
+      {enableMove && moveFailures.length > 0 && (
+        <MoveFailureDialog failures={moveFailures} onClose={store.getState().clearMoveFailures} />
+      )}
     </div>
+  );
+  if (!enableMove) return browser;
+  return (
+    <DndContext sensors={sensors} collisionDetection={pointerWithin}
+      onDragStart={({ active }) => {
+        // The source row may scroll out of the virtualized list before the drop.
+        dragged.current = active.data.current?.move as FileMove | undefined;
+      }}
+      onDragCancel={() => { dragged.current = undefined; }}
+      onDragEnd={({ over }) => {
+        const source = dragged.current;
+        dragged.current = undefined;
+        const folder = over?.data.current?.folder as string | undefined;
+        if (source && folder !== undefined) void store.getState().dropIntoFolder(source, folder);
+      }}
+    >
+      {browser}
+    </DndContext>
   );
 }
 
@@ -310,17 +347,24 @@ function FileTable({
   onOperation,
   onDownload,
   exchange,
+  enableMove,
+  onPaste,
 }: {
   store: FileBrowserStore;
   path: string;
   onOperation(operation: FileOperation): void;
   onDownload?(names: string[]): void;
   exchange?: FileExchange;
+  enableMove: boolean;
+  onPaste?: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const entries = useStore(store, (s) => s.entries);
   const selection = useStore(store, (s) => s.selection);
   const loading = useStore(store, (s) => s.loading);
+  const cut = useStore(store, (s) => s.cut);
+  const moving = useStore(store, (s) => s.moving);
+  const canStartMove = enableMove && !moving;
   const [prefs, setPrefs] = useSetting(filesSetting);
   const [filter, setFilter] = useState("");
   const columns: SortKey[] = ["name", "size"];
@@ -435,6 +479,7 @@ function FileTable({
   /** The visible selection in display order, for row actions and the footer. */
   const selected = useMemo(() => order.filter((name) => selection.has(name)), [order, selection]);
   const hiddenSelected = selection.size - selected.length;
+  const cutNames = useMemo(() => new Set(cut?.directory === path ? cut.names : []), [cut, path]);
   const askDelete = () => {
     const names = selected;
     if (names.length > 0) onOperation({ kind: "delete", names });
@@ -442,6 +487,11 @@ function FileTable({
 
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.target !== event.currentTarget || event.nativeEvent.isComposing) return;
+    if (canStartMove && selected.length > 0 && matchFileMoveShortcut(event, currentPlatform()) === "fileCut") {
+      event.preventDefault();
+      store.getState().cutEntries(selected);
+      return;
+    }
     const move = (to: number) => {
       const index = Math.max(0, Math.min(rows.length - 1, to));
       const row = rows[index];
@@ -506,99 +556,108 @@ function FileTable({
             }} />
         </div>
       )}
-      <div
-        ref={grid}
-        role="grid"
-        aria-label={t("files.listLabel", { path })}
-        aria-rowcount={rows.length + 1}
-        aria-multiselectable
-        aria-busy={loading}
-        aria-activedescendant={focusIndex >= 0 ? rowId(focusIndex) : undefined}
-        tabIndex={0}
-        onKeyDown={onKeyDown}
-        className="focus-visible:ring-ring/50 isolate flex min-h-0 flex-1 flex-col text-[12.5px] outline-none focus-visible:ring-[3px] focus-visible:ring-inset"
-      >
-        <div
-          ref={scroller}
-          className="min-h-0 flex-1 overflow-auto"
-          onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
-        >
-          <div style={{ minWidth: `${minWidth}rem`, "--file-columns": gridTemplate } as CSSProperties}>
-            <div ref={header} role="row" aria-rowindex={1}
-              className={cn(columnGrid, "bg-surface sticky top-0 z-10 h-6 items-center px-3 pb-1")}
+      <ContextMenu>
+        <ContextMenuTrigger asChild disabled={!onPaste}>
+          <div
+            ref={grid}
+            role="grid"
+            aria-label={t("files.listLabel", { path })}
+            aria-rowcount={rows.length + 1}
+            aria-multiselectable
+            aria-busy={loading || moving}
+            aria-activedescendant={focusIndex >= 0 ? rowId(focusIndex) : undefined}
+            tabIndex={0}
+            onKeyDown={onKeyDown}
+            className="focus-visible:ring-ring/50 isolate flex min-h-0 flex-1 flex-col text-[12.5px] outline-none focus-visible:ring-[3px] focus-visible:ring-inset"
+          >
+            <div
+              ref={scroller}
+              className="min-h-0 flex-1 overflow-auto"
+              onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
             >
-              {columns.map((key) => (
-                <HeaderCell key={key} label={t(`files.columns.${key}`)} sortKey={key}
-                  sort={sort} onSort={sortBy} end={key === "size"} />
-              ))}
-            </div>
-            <div className={cn("px-2 pb-2", loading && "opacity-70")}>
-              {rows.length === 0 ? (
-                <p className="text-muted-foreground p-6 text-center">{filter.trim() ? t("sftp.noMatches") : t("files.emptyFolder")}</p>
-              ) : (
-                <div role="rowgroup" className="relative" style={{ height: rows.length * rowHeight }}>
-                  {visibleIndexes.map((index) => {
-                    const entry = rows[index]!;
-                    const names = selection.has(entry.name) ? selected : [entry.name];
-                    const paths = exchange?.copy ? names.map((name) => childPath(path, name)) : undefined;
-                    return (
-                      <FileRow
-                        key={entry.name}
-                        id={rowId(index)}
-                        index={index}
-                        entry={entry}
-                        path={path}
-                        exchange={exchange}
-                        dragPaths={paths}
-                        onCopy={paths && (() => exchange?.copy?.(paths))}
-                        selected={selection.has(entry.name)}
-                        focused={index === focusIndex}
-                        nameEditor={rename?.name === entry.name ? (
-                          <Input
-                            aria-label={t("files.rename.title", { name: entry.name })}
-                            aria-describedby={renameError ? renameErrorId : undefined}
-                            aria-invalid={!!renameError || undefined}
-                            className="bg-surface h-5 rounded-sm px-1 py-0 text-[12.5px] md:text-[12.5px]"
-                            autoFocus
-                            autoCapitalize="off"
-                            autoCorrect="off"
-                            spellCheck={false}
-                            readOnly={rename.busy}
-                            value={rename.value}
-                            onFocus={(event) => {
-                              const dot = entry.name.lastIndexOf(".");
-                              event.target.setSelectionRange(0, dot > 0 ? dot : entry.name.length);
-                            }}
-                            onChange={(event) => setRename({ ...rename, value: event.target.value, failure: null })}
-                            onKeyDown={onRenameKeyDown}
-                            onClick={(event) => event.stopPropagation()}
-                            onDoubleClick={(event) => event.stopPropagation()}
-                            onContextMenu={(event) => event.stopPropagation()}
-                          />
-                        ) : undefined}
-                        modified={prefs.showModified ? (entry.modified === null ? "" : dateFormat.format(entry.modified * 1000)) : undefined}
-                        showPermissions={prefs.showPermissions}
-                        onClick={(event) => select(entry.name, clickMode(event))}
-                        onOpen={() => void store.getState().open(entry)}
-                        onContextMenu={() => {
-                          if (!selection.has(entry.name)) select(entry.name, "only");
-                        }}
-                        onOperation={(kind) => {
-                          if (kind === "rename") beginRename(entry.name, index);
-                          else if (kind === "permissions") onOperation({ kind, entry });
-                          else if (kind === "newFolder" || kind === "newFile") onOperation({ kind });
-                          else onOperation({ kind, names });
-                        }}
-                        onDownload={onDownload && (() => onDownload(names))}
-                      />
-                    );
-                  })}
+              <div style={{ minWidth: `${minWidth}rem`, "--file-columns": gridTemplate } as CSSProperties}>
+                <div ref={header} role="row" aria-rowindex={1}
+                  className={cn(columnGrid, "bg-surface sticky top-0 z-10 h-6 items-center px-3 pb-1")}
+                >
+                  {columns.map((key) => (
+                    <HeaderCell key={key} label={t(`files.columns.${key}`)} sortKey={key}
+                      sort={sort} onSort={sortBy} end={key === "size"} />
+                  ))}
                 </div>
-              )}
+                <div className={cn("px-2 pb-2", loading && "opacity-70")}>
+                  {rows.length === 0 ? (
+                    <p className="text-muted-foreground p-6 text-center">{filter.trim() ? t("sftp.noMatches") : t("files.emptyFolder")}</p>
+                  ) : (
+                    <div role="rowgroup" className="relative" style={{ height: rows.length * rowHeight }}>
+                      {visibleIndexes.map((index) => {
+                        const entry = rows[index]!;
+                        const names = selection.has(entry.name) ? selected : [entry.name];
+                        const paths = exchange?.copy ? names.map((name) => childPath(path, name)) : undefined;
+                        return (
+                          <FileRow
+                            key={entry.name}
+                            id={rowId(index)}
+                            index={index}
+                            entry={entry}
+                            path={path}
+                            exchange={exchange}
+                            dragPaths={paths}
+                            move={canStartMove ? { directory: path, names } : undefined}
+                            cut={cutNames.has(entry.name)}
+                            onCut={canStartMove ? () => store.getState().cutEntries(names) : undefined}
+                            onPaste={onPaste}
+                            onCopy={paths && (() => exchange?.copy?.(paths))}
+                            selected={selection.has(entry.name)}
+                            focused={index === focusIndex}
+                            nameEditor={rename?.name === entry.name ? (
+                              <Input
+                                aria-label={t("files.rename.title", { name: entry.name })}
+                                aria-describedby={renameError ? renameErrorId : undefined}
+                                aria-invalid={!!renameError || undefined}
+                                className="bg-surface h-5 rounded-sm px-1 py-0 text-[12.5px] md:text-[12.5px]"
+                                autoFocus
+                                autoCapitalize="off"
+                                autoCorrect="off"
+                                spellCheck={false}
+                                readOnly={rename.busy}
+                                value={rename.value}
+                                onFocus={(event) => {
+                                  const dot = entry.name.lastIndexOf(".");
+                                  event.target.setSelectionRange(0, dot > 0 ? dot : entry.name.length);
+                                }}
+                                onChange={(event) => setRename({ ...rename, value: event.target.value, failure: null })}
+                                onKeyDown={onRenameKeyDown}
+                                onClick={(event) => event.stopPropagation()}
+                                onDoubleClick={(event) => event.stopPropagation()}
+                                onContextMenu={(event) => event.stopPropagation()}
+                              />
+                            ) : undefined}
+                            modified={prefs.showModified ? (entry.modified === null ? "" : dateFormat.format(entry.modified * 1000)) : undefined}
+                            showPermissions={prefs.showPermissions}
+                            onClick={(event) => select(entry.name, clickMode(event))}
+                            onOpen={() => void store.getState().open(entry)}
+                            onContextMenu={() => {
+                              if (!selection.has(entry.name)) select(entry.name, "only");
+                            }}
+                            onOperation={(kind) => {
+                              if (kind === "rename") beginRename(entry.name, index);
+                              else if (kind === "permissions") onOperation({ kind, entry });
+                              else if (kind === "newFolder" || kind === "newFile") onOperation({ kind });
+                              else onOperation({ kind, names });
+                            }}
+                            onDownload={onDownload && (() => onDownload(names))}
+                          />
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
+        </ContextMenuTrigger>
+        {onPaste && <ContextMenuContent><PasteItem onPaste={onPaste} /></ContextMenuContent>}
+      </ContextMenu>
       {renameError && (
         <p id={renameErrorId} role="alert" className="text-destructive shrink-0 px-3 pb-1 text-xs">
           {renameError}
@@ -608,6 +667,7 @@ function FileTable({
         <span>{t("files.entryCount", { count: rows.length })}</span>
         <span>{t("files.selectedCount", { count: selected.length })}</span>
         {hiddenSelected > 0 && <span>{t("files.hiddenSelectedCount", { count: hiddenSelected })}</span>}
+        {moving && <span>{t("files.move.moving")}</span>}
       </div>
     </>
   );
@@ -673,6 +733,10 @@ function FileRow({
   exchange,
   dragPaths,
   onCopy,
+  move,
+  cut,
+  onCut,
+  onPaste,
 }: {
   id: string;
   index: number;
@@ -691,11 +755,24 @@ function FileRow({
   exchange?: FileExchange;
   dragPaths?: string[];
   onCopy?: () => void;
+  move?: FileMove;
+  cut: boolean;
+  onCut?: () => void;
+  onPaste?: () => void;
 }) {
   const { t } = useTranslation();
   const renameOnMenuClose = useRef(false);
-  const { setNodeRef, listeners, isDragging } = useDraggable({ id, disabled: !dragPaths || !!nameEditor, data: { side: exchange?.side, paths: dragPaths } });
   const dir = isDirLike(entry);
+  const { setNodeRef: setDragRef, listeners, isDragging } = useDraggable({
+    id, disabled: (!dragPaths && !move) || !!nameEditor, data: { side: exchange?.side, paths: dragPaths, move },
+  });
+  const { setNodeRef: setDropRef, isOver } = useDroppable({
+    id, disabled: !move || !dir || !!nameEditor, data: { folder: entry.name },
+  });
+  const setNodeRef = useCallback((node: HTMLElement | null) => {
+    setDragRef(node);
+    setDropRef(node);
+  }, [setDragRef, setDropRef]);
   const { Icon, color } = entryIcons[fileIconKind(entry)];
   return (
     <ContextMenu>
@@ -711,7 +788,8 @@ function FileRow({
             columnGrid,
             "absolute inset-x-0 items-center rounded-sm px-1 select-none",
             selected ? "bg-selected" : "hover:bg-accent/60",
-            isDragging && "opacity-50",
+            (isDragging || cut) && "opacity-50",
+            isOver && "bg-selected ring-ring ring-2 ring-inset",
             focused && "ring-ring/40 ring-1 ring-inset",
           )}
           style={{ top: index * rowHeight, height: rowHeight }}
@@ -773,6 +851,14 @@ function FileRow({
           <Copy />
           {t("files.copyPath")}
         </ContextMenuItem>
+        {onCut && (
+          <ContextMenuItem onSelect={onCut}>
+            <Scissors />
+            {t("files.move.cut")}
+            <ContextMenuShortcut>{shortcutLabel("fileCut", currentPlatform())}</ContextMenuShortcut>
+          </ContextMenuItem>
+        )}
+        {onPaste && <PasteItem onPaste={onPaste} />}
         <ContextMenuSeparator />
         <ContextMenuItem onSelect={() => { renameOnMenuClose.current = true; }}>
           <Pencil />
@@ -799,5 +885,16 @@ function FileRow({
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
+  );
+}
+
+function PasteItem({ onPaste }: { onPaste(): void }) {
+  const { t } = useTranslation();
+  return (
+    <ContextMenuItem onSelect={onPaste}>
+      <ClipboardPaste />
+      {t("files.move.paste")}
+      <ContextMenuShortcut>{shortcutLabel("filePaste", currentPlatform())}</ContextMenuShortcut>
+    </ContextMenuItem>
   );
 }

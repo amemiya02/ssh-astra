@@ -290,6 +290,13 @@
     "rename": {
       "title": "Rename “{{name}}”"
     },
+    "move": {
+      "cut": "Cut",
+      "paste": "Paste",
+      "moving": "Moving items…",
+      "failures": "Items that could not be moved",
+      "close": "Close"
+    },
     "nameProblem": {
       "slash": "A name cannot contain “/”.",
       "dots": "“{{name}}” cannot be used as a name.",
@@ -318,6 +325,7 @@
       "notFound": "No such file or folder: {{path}}",
       "permissionDenied": "Permission denied: {{path}}",
       "alreadyExists": "Already exists: {{path}}",
+      "moveIntoSelf": "A folder cannot be moved into itself.",
       "notOpen": "The File panel is not connected.",
       "other": "The server refused: {{message}}"
     },

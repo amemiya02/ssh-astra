@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import type { CommandError } from "@/lib/ipc/connect";
 import type { FileEntry } from "@/lib/ipc/files";
 import type { FileBrowserStore } from "./fileBrowsers";
+import type { MoveFailure } from "./fileBrowserStore";
 import { operationErrorText } from "./fileErrors";
 import { nameProblem, octalMode, parseOctalMode } from "./fileList";
 
@@ -112,6 +113,26 @@ function OperationDialog({
         {children}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Reports every entry that could not be moved. Other entries may have moved successfully. */
+export function MoveFailureDialog({ failures, onClose }: { failures: readonly MoveFailure[]; onClose(): void }) {
+  const { t } = useTranslation();
+  return (
+    <OperationDialog title={t("files.move.failures")} onClose={onClose}>
+      <ul className="text-destructive max-h-56 space-y-2 overflow-auto text-xs break-all">
+        {failures.map(({ name, error }) => (
+          <li key={name}>
+            <span className="font-medium">{name}</span>
+            <p>{operationErrorText(t, error)}</p>
+          </li>
+        ))}
+      </ul>
+      <DialogFooter>
+        <Button type="button" size="sm" onClick={onClose}>{t("files.move.close")}</Button>
+      </DialogFooter>
+    </OperationDialog>
   );
 }
 
