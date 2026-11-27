@@ -3,15 +3,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { usePaletteActions } from "@/features/palette/palette-actions";
+import { showToast } from "@/features/toasts/toastStore";
 import { copyDiagnostics, openLogsDirectory } from "@/lib/ipc/diagnostics";
 import { SettingRow } from "./SettingRow";
 import { settingRows } from "./setting-rows";
 
 const actions = { open: openLogsDirectory, copy: copyDiagnostics };
 type Action = keyof typeof actions;
-type Feedback = "copied" | "openFailed" | "copyFailed";
+type Feedback = "openFailed" | "copyFailed";
 
-function useDiagnosticsActions() {
+function useDiagnosticsActions(inlineErrors: boolean) {
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [busy, setBusy] = useState(false);
   const run = useCallback(async (action: Action) => {
@@ -19,13 +20,15 @@ function useDiagnosticsActions() {
     setBusy(true);
     try {
       await actions[action]();
-      if (action === "copy") setFeedback("copied");
+      if (action === "copy") showToast((t) => t("settings.diagnostics.copied"));
     } catch {
-      setFeedback(action === "open" ? "openFailed" : "copyFailed");
+      const error = action === "open" ? "openFailed" : "copyFailed";
+      if (inlineErrors) setFeedback(error);
+      else showToast((t) => t(`settings.diagnostics.${error}`), "error");
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [inlineErrors]);
   useEffect(() => {
     if (!feedback) return;
     const timeout = window.setTimeout(() => setFeedback(null), 4_000);
@@ -36,7 +39,7 @@ function useDiagnosticsActions() {
 
 export function DiagnosticsSection() {
   const { t } = useTranslation();
-  const { run, busy, feedback } = useDiagnosticsActions();
+  const { run, busy, feedback } = useDiagnosticsActions(true);
   return (
     <>
       <SettingRow setting={settingRows.logs}>
@@ -60,7 +63,7 @@ export function DiagnosticsSection() {
 
 export function DiagnosticsPaletteActions() {
   const { t } = useTranslation();
-  const { run, busy, feedback } = useDiagnosticsActions();
+  const { run, busy } = useDiagnosticsActions(false);
   usePaletteActions(useMemo(() => {
     if (!isTauri() || busy) return [];
     return [
@@ -68,9 +71,5 @@ export function DiagnosticsPaletteActions() {
       { id: "diagnostics.copy", title: t("settings.diagnostics.copy"), run: () => void run("copy") },
     ];
   }, [busy, run, t]));
-  return feedback && (
-    <p role="status" className="bg-popover text-popover-foreground pointer-events-none fixed right-3 bottom-9 z-50 rounded-md border px-3 py-2 text-xs shadow-md">
-      {t(`settings.diagnostics.${feedback}`)}
-    </p>
-  );
+  return null;
 }

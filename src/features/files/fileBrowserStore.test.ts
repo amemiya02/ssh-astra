@@ -3,6 +3,7 @@ import type { EditEvent } from "@/lib/ipc/edit";
 import type { FileEntry, Listing } from "@/lib/ipc/files";
 import { createFileBrowserStore, followConnection, type FilesApi } from "./fileBrowserStore";
 import { createFileBrowsers } from "./fileBrowsers";
+import { createSharedRemoteEdits } from "./sharedRemoteEdits";
 
 const entry = (name: string, kind: FileEntry["kind"] = "file"): FileEntry => ({
   name,
@@ -411,6 +412,24 @@ describe("remote editing", () => {
     await store.getState().retryEdit("/home/me/notes.txt");
     expect(api.retryRemoteEdit).toHaveBeenCalledWith(42);
     expect(store.getState().edits[0]).toMatchObject({ status: "uploading", error: null });
+  });
+
+  it("reports a failed upload once for an edit shared by two File panels", async () => {
+    const api = fakeApi();
+    const failures: string[] = [];
+    const editsForPanel = createSharedRemoteEdits(api, (name, reason) => failures.push(`${name}: ${reason}`));
+    const browsers = createFileBrowsers(api, editsForPanel);
+    const first = browsers.get("one", "host-1").getState();
+    const second = browsers.get("two", "host-1").getState();
+    await Promise.all([first.connect(), second.connect()]);
+    await first.open(entry("notes.txt"));
+    await second.open(entry("notes.txt"));
+
+    editEvents({ state: "uploadFailed", reason: "connection lost" });
+    first.closeEdit("/home/me/notes.txt");
+    second.closeEdit("/home/me/notes.txt");
+    editEvents({ state: "uploadFailed", reason: "closed edit" });
+    expect(failures).toEqual(["notes.txt: connection lost"]);
   });
 
   it("shows a file that could not be opened and tries again", async () => {

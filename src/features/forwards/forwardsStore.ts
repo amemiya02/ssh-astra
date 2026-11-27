@@ -1,3 +1,4 @@
+import { showToast } from "@/features/toasts/toastStore";
 import { createSnapshotWatch } from "@/lib/ipc/watchSnapshot";
 import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
@@ -26,13 +27,21 @@ export interface ForwardsState {
 const stopped: ForwardStatus = { state: "stopped" };
 
 /** Port forward states as the UI sees them: pushed by the backend, never polled. */
-export function createForwardsStore(api: ForwardsApi): StoreApi<ForwardsState> {
+export function createForwardsStore(api: ForwardsApi, onFailure?: (reason: string) => void): StoreApi<ForwardsState> {
+  const commandFailures = new WeakSet<ForwardEvent>();
   return createStore<ForwardsState>()((set, get) => {
-    const apply = (event: ForwardEvent) => {
+    const apply = (event: ForwardEvent, fromCommand = false) => {
       const states = { ...get().states };
+      const previous = states[event.forwardId];
       if (event.status.state === "stopped") delete states[event.forwardId];
       else states[event.forwardId] = event;
+      if (fromCommand) commandFailures.add(event);
       set({ states });
+      if (event.status.state !== "failed") return;
+      // A failed command can resolve before the matching native event arrives.
+      if (!fromCommand && previous?.status.state === "failed" &&
+          commandFailures.has(previous) && previous.status.reason === event.status.reason) return;
+      onFailure?.(event.status.reason);
     };
     return {
       states: {},
@@ -44,13 +53,15 @@ export function createForwardsStore(api: ForwardsApi): StoreApi<ForwardsState> {
       ),
 
       async start(hostId, id, ask) {
+        const before = get().states[id];
         try {
           await api.startForward(hostId, id, ask);
         } catch (e) {
           const error = readCommandError(e);
           // A listen failure already arrived as an event; a connect failure did not.
-          if (error.kind !== "cancelled" && get().states[id]?.status.state !== "failed") {
-            apply({ hostId, forwardId: id, status: { state: "failed", reason: error.message } });
+          const latest = get().states[id];
+          if (error.kind !== "cancelled" && (latest === before || latest?.status.state !== "failed")) {
+            apply({ hostId, forwardId: id, status: { state: "failed", reason: error.message } }, true);
           }
           throw error;
         }
@@ -75,7 +86,9 @@ export function runningForwards(state: Pick<ForwardsState, "states">): ForwardEv
 }
 
 /** The app's forwards store, backed by the Tauri PortForwarder commands. */
-export const forwardsStore = createForwardsStore(ipc);
+export const forwardsStore = createForwardsStore(ipc, (reason) => {
+  showToast((t) => t("toast.forwardFailed", { reason }), "error");
+});
 
 export function useForwards<T>(selector: (state: ForwardsState) => T): T {
   return useStore(forwardsStore, selector);

@@ -1,3 +1,4 @@
+import { showToast } from "@/features/toasts/toastStore";
 import { readCommandError, type CommandError } from "@/lib/ipc/connect";
 import * as ipc from "@/lib/ipc/edit";
 import type { EditEvent, EditId } from "@/lib/ipc/edit";
@@ -27,9 +28,15 @@ function publish(edit: SharedEdit, change: Partial<RemoteEditItem>) {
 }
 
 /** Rust owns one temp file per Host and path. Share its event channel and release it after the last pane. */
-export function createSharedRemoteEdits(api: EditCommands) {
+export function createSharedRemoteEdits(api: EditCommands, onUploadFailed?: (name: string, reason: string) => void) {
   const edits = new Map<string, SharedEdit>();
   const closing = new Map<string, Promise<void>>();
+
+  function uploadFailed(edit: SharedEdit, error: CommandError) {
+    if (!edit.panels.size) return;
+    publish(edit, { status: "uploadFailed", error });
+    onUploadFailed?.(edit.item.name, error.message);
+  }
 
   function releaseIfUnused(key: string, edit: SharedEdit) {
     if (edit.panels.size || edit.opening || edits.get(key) !== edit) return;
@@ -63,10 +70,8 @@ export function createSharedRemoteEdits(api: EditCommands) {
       if (edit.opening) return edit.opening;
 
       const onEvent = (event: EditEvent) => {
-        publish(edit, {
-          status: event.state,
-          error: event.state === "uploadFailed" ? { kind: "uploadFailed", message: event.reason } : null,
-        });
+        if (event.state === "uploadFailed") uploadFailed(edit, { kind: "uploadFailed", message: event.reason });
+        else publish(edit, { status: event.state, error: null });
       };
       const show = async () => {
         const previousClose = closing.get(key);
@@ -98,7 +103,7 @@ export function createSharedRemoteEdits(api: EditCommands) {
         try {
           await api.retryRemoteEdit(edit.item.id);
         } catch (cause) {
-          publish(edit, { status: "uploadFailed", error: readCommandError(cause) });
+          uploadFailed(edit, readCommandError(cause));
         }
       },
       release(path: string) {
@@ -111,4 +116,6 @@ export function createSharedRemoteEdits(api: EditCommands) {
 }
 
 /** Shared by the dock and standalone SFTP workspaces in this window. */
-export const sharedRemoteEdits = createSharedRemoteEdits(ipc);
+export const sharedRemoteEdits = createSharedRemoteEdits(ipc, (name, reason) => {
+  showToast((t) => t("toast.editUploadFailed", { name, reason }), "error");
+});
