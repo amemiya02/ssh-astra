@@ -145,7 +145,11 @@ it("switches the interface to Traditional Chinese and saves the selected languag
     expect((await backend.load()).general).toEqual({ language: "zh-Hant" });
 
     preferred.mockReturnValue(["zh-TW"]);
-    const system = [...group.querySelectorAll("button")].find((option) => option.textContent === "依照系統")!;
+    const simplified = [...group.querySelectorAll("button")].find((option) => option.textContent === "簡體中文")!;
+    await act(() => simplified.click());
+    expect(document.documentElement.lang).toBe("zh");
+
+    const system = [...group.querySelectorAll("button")].find((option) => option.textContent === "跟随系统")!;
     await act(() => system.click());
     expect(system.getAttribute("aria-checked")).toBe("true");
     expect(document.documentElement.lang).toBe("zh-Hant");
