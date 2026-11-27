@@ -478,6 +478,9 @@
     "paste": {
       "title": "Paste {{count}} lines?",
       "body": "The shell may run each line as soon as it arrives. Check the text before pasting.",
+      "invisibleTitle": "Paste text with invisible characters?",
+      "invisibleBody": "Invisible characters can change how text appears or how the shell handles it. Check their Unicode codes in the preview before pasting.",
+      "invisiblePosition": "Line {{line}}, column {{column}}",
       "confirm": "Paste",
       "cancel": "Cancel"
     },
