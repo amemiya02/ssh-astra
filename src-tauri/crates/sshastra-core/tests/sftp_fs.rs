@@ -201,7 +201,13 @@ async fn browse_resolves_the_path_before_listing() {
     assert_eq!(many.path, "/srv/files/many");
     let via_link = files::browse(&fs, "/srv/files/docs-link").await.unwrap();
     assert_eq!(via_link.path, "/srv/files/docs");
-    assert!(via_link.entries.is_empty());
+    let mut names: Vec<_> = via_link
+        .entries
+        .iter()
+        .map(|entry| entry.name.as_str())
+        .collect();
+    names.sort_unstable();
+    assert_eq!(names, ["file-link", "folder-link", "nested", "readme.txt"]);
 }
 
 #[tokio::test(flavor = "multi_thread")]
