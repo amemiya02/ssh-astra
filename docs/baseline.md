@@ -73,3 +73,11 @@ The 2026-11-27 baseline is from the Apple M2 with 24 GiB RAM, macOS 27.3 (26C504
 | Download 32 MiB | 9.74 s, 3.29 MiB/s | 10.23 s, 3.13 MiB/s |
 | Upload 1,000 × 1 KiB | 108.45 s, 9.22 KiB/s | 639.88 s, 1.56 KiB/s |
 | Download 1,000 × 1 KiB | 25.24 s, 39.62 KiB/s | 489.04 s, 2.04 KiB/s |
+
+### Linux Window memory
+
+The debug E2E build opened one and then two idle Home Windows in the same app process in an isolated D-Bus session under Xvfb. Each state settled for 3 seconds before three samples were taken 500 ms apart. The median sums RSS for the app and its descendants, including WebKitGTK. Shared pages can contribute to more than one process. [Runner log](https://github.com/amemiya02/ssh-astra/actions/runs/46051755400/job/140684538043)
+
+| Date (JST) | Revision | Runner | One Window | Two Windows | Change |
+| --- | --- | --- | --- | --- | --- |
+| 2026-11-28 | `ce93597` | Ubuntu 22.04.5 LTS, x64, AMD EPYC 9V45, 15,989 MiB RAM | 619.8 MiB | 967.4 MiB | +347.7 MiB |
