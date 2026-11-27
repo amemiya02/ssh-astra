@@ -77,6 +77,8 @@ SSH Astra never logs Terminal input or output, passwords, key passphrases, priva
 
 Issues and PRs are welcome. [`CLAUDE.md`](CLAUDE.md) describes the project layout and conventions, and [`GLOSSARY.md`](GLOSSARY.md) the domain terms.
 
+Run `pnpm performance` on macOS with Docker running to reproduce the [performance baseline](docs/baseline.md).
+
 ## License
 
 [MIT](LICENSE)

@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { FileInput, Plus, Search, Server, SquareTerminal, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -42,6 +43,22 @@ export function HomeView({ active, controller, connections, onOpenLocalTerminal 
   const [recent] = useSetting(recentHostsSetting);
   const [query, setQuery] = useState("");
   const search = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const measurement = window as Window & { __sshastraMeasureStartup?: boolean };
+    if (!active || !measurement.__sshastraMeasureStartup) return;
+    let afterPaint = 0;
+    const beforePaint = requestAnimationFrame(() => {
+      afterPaint = requestAnimationFrame(() => {
+        delete measurement.__sshastraMeasureStartup;
+        void invoke("home_first_paint");
+      });
+    });
+    return () => {
+      cancelAnimationFrame(beforePaint);
+      cancelAnimationFrame(afterPaint);
+    };
+  }, [active]);
 
   const empty = tree.hosts.length === 0;
   // The field only exists once there are Hosts, which load after the first render.

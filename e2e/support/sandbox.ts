@@ -24,11 +24,17 @@ function configDir(home: string): string {
 export function sandboxHome(): string {
   const existing = process.env.SSHASTRA_E2E_HOME;
   if (existing) return existing;
+  const home = createSandboxHome();
+  process.env.SSHASTRA_E2E_HOME = home;
+  return home;
+}
+
+/** A separate sandbox for each desktop process in a measurement run. */
+export function createSandboxHome(): string {
   const home = mkdtempSync(join(tmpdir(), "sshastra-e2e-"));
   const config = configDir(home);
   mkdirSync(config, { recursive: true });
   writeFileSync(join(config, "settings.json"), JSON.stringify({ version: 1, general: { language: "en" } }));
-  process.env.SSHASTRA_E2E_HOME = home;
   return home;
 }
 
