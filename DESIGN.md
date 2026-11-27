@@ -400,11 +400,15 @@ The Host's tile wherever a Host appears: its initials on its hue at 15%, lettere
 
 While Broadcast is active, the first segment shows a warning-colour radio icon and the current scope. Clicking it turns Broadcast off.
 
+The privacy toggle sits beside the theme menu. Its pressed state uses the `selected` surface and an eye-off icon. While active, Host cards, rows, tabs, and the status bar show Host names in place of connection details. Address search remains available and the Port forward count stays visible.
+
 ### Settings navigation
 
 The top search field filters settings across all categories. Results keep their category headings and the original controls. Search matches titles, descriptions, and keywords in both English and Simplified Chinese. Clearing the field returns to the selected category. Choosing a category clears the search and scrolls its rows to the top.
 
 The left navigation lists Appearance, Terminal, Files, Connection, Transfers, Updates, and Diagnostics in that order when available. Appearance includes workspace layout and interface language. Updates and Diagnostics use the installed app's native features. The current category uses the `selected` surface, and narrow workspaces place the categories in a horizontally scrolling row above the controls. Shortcuts, Notifications, and Agent access can appear when they have settings available.
+
+Terminal keyword highlighting uses the active Terminal palette. Settings → Terminal offers a switch for the built-in rules and a list of custom text or regular-expression rules. Matches use xterm decorations in the visible normal buffer.
 
 ### Theme gallery (signature)
 Settings lists every theme as a card (10px radius, 6px padding, auto-fill at min 10rem, 12px gaps), light and dark in their own groups. Each card is a miniature of the window drawn from that theme's own values (tab strip, sidebar, a few lines of Terminal text, the six ANSI swatches and a primary square) with the name in `text-xs` 500. Checked: primary border, `selected` fill, primary check. Hovering or focusing a card previews that theme across the whole window, Terminals included; leaving restores the committed one; click commits. The status bar's theme menu lists the same themes.
@@ -438,6 +442,7 @@ Settings lists every theme as a card (10px radius, 6px padding, auto-fill at min
 ### Host editor
 - **Basic information** is always visible and includes the name, address, port, user, authentication, Group, and Jump host. New Hosts start with Automatic authentication. The private key field appears when Private key is selected. Group shows the current location or the selected destination for a new Host. Use the Host list's move action to change a saved Host's Group.
 - **Advanced** is a full-width disclosure below Basic information. It starts collapsed and contains Identities only, Terminal colours, the File panel folder, and the action to clear a saved Host's credentials. A save error attached to an advanced field opens the section, displays the message by the field, and moves focus to it.
+- **Test connection** is an outlined action in the footer. The result appears above the footer with a muted progress message, a success message, or the standard Connection error panel.
 
 ### Connection view
 A remote Terminal pane shows a scrollable Connection view on the workspace surface until its shell opens. The progress list groups steps by Host in route order, including each named Jump host. Reach server, Verify host key and Log in apply to each hop. Open shell applies to the destination. An extra step appears while this pane waits for another connection attempt.
@@ -448,6 +453,7 @@ If the Connection drops, a scrollable overlay covers the Terminal and shows the 
 
 ### Security surfaces
 - **Fingerprint block:** `muted` fill, 1px border, 10px radius, 12px by 14px padding; a `text-xs` muted label above the fingerprint in mono, breaking anywhere, selectable.
+- **Unknown host key.** The confirmation shows the fingerprint and offers Reject, Trust for this run, and Save and trust. A changed or revoked key displays an error.
 - **Connection error panel:** 10px radius, 12px by 14px padding, destructive at 8% (12% dark) fill and a 30% destructive border. A host key mismatch is red and blocks.
 
 ## Do's and Don'ts
