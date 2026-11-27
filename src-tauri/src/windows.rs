@@ -238,12 +238,17 @@ fn build(app: &AppHandle, label: &str, presentation: Presentation) -> tauri::Res
         .insert(label.into(), WindowResources::default());
     let result = builder.build();
     match &result {
-        #[cfg(target_os = "linux")]
-        Ok(window) if presentation == Presentation::Hidden => crate::tray::watch_hidden(window),
+        Ok(window) => {
+            #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+            app.state::<TransfersState>().activity.window_opened(window);
+            #[cfg(target_os = "linux")]
+            if presentation == Presentation::Hidden {
+                crate::tray::watch_hidden(window);
+            }
+        }
         Err(_) => {
             windows.resources.lock().unwrap().remove(label);
         }
-        Ok(_) => {}
     }
     result
 }

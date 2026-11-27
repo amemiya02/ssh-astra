@@ -82,7 +82,7 @@ tauri-plugin-single-instance = "2.5.5"
 block2 = "0.6"
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWorkspace"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "block2", "NSNotification", "NSObject", "NSOperation"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "block2", "NSNotification", "NSObject", "NSOperation", "NSProcessInfo", "NSString"] }
 plist = "1"
 
 [target.'cfg(unix)'.dependencies]
@@ -97,6 +97,7 @@ windows-sys = { version = "0.61", features = [
     "Win32_Storage_FileSystem",
     "Win32_System_Pipes",
     "Win32_System_Power",
+    "Win32_System_SystemServices",
     "Win32_System_Threading",
     "Win32_UI_WindowsAndMessaging",
 ] }
