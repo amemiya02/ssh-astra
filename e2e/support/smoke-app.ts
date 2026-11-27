@@ -1,13 +1,25 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { closeSync, openSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { promisify } from "node:util";
 import { appEnv } from "./sandbox.ts";
 
 export const smokeBinary = resolve(
   import.meta.dirname, "../../src-tauri/target/debug", process.platform === "win32" ? "sshastra.exe" : "sshastra",
 );
 export const smokeLogs = resolve(import.meta.dirname, "../artifacts/logs");
+
+export async function relaunchSmokeApp(): Promise<void> {
+  const home = process.env.SSHASTRA_E2E_HOME;
+  if (!home) throw new Error("The SSH Astra smoke test sandbox is missing.");
+  await promisify(execFile)(smokeBinary, ["--single-instance-check", "argument with spaces"], {
+    cwd: home,
+    env: { ...process.env, ...appEnv(home) },
+    timeout: 10_000,
+    killSignal: "SIGKILL",
+  });
+}
 
 let replacement: { child: ChildProcess; exited: Promise<void> } | undefined;
 

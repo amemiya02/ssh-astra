@@ -9,7 +9,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $, $$, browser, expect } from "@wdio/globals";
-import { restartSmokeApp } from "../support/smoke-app.ts";
+import { relaunchSmokeApp, restartSmokeApp } from "../support/smoke-app.ts";
 import * as sshd from "../support/sshd.ts";
 
 const HOST_NAME = "E2E sshd";
@@ -136,6 +136,13 @@ describe("sshastra", () => {
     await browser.execute((textarea) => textarea.focus(), input);
     await typeCommand(`echo "e2e-$((6 * 7))-${run}"`);
     await waitForTerminalText(new RegExp(`^e2e-42-${run}$`, "m"), "the command's output");
+
+    // CI runs Linux smoke cases inside a separate D-Bus session.
+    if (process.platform === "linux" && process.env.DBUS_SESSION_BUS_ADDRESS) {
+      await relaunchSmokeApp();
+      await expect(tab).toHaveAttribute("aria-controls", panelId);
+      await expect(pane.$(".xterm")).toBeDisplayed();
+    }
 
     // cd: the File panel follows the shell.
     await typeCommand(`mkdir ${scratch} && cd ${scratch}`);

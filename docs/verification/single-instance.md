@@ -9,3 +9,5 @@ Use an installed build in a disposable desktop account or VM. Open a Local termi
 | Linux | Open the desktop launcher again or run `sshastra` in a desktop session with a D-Bus user session. Inspect the app PID with `pgrep -x sshastra`. The window manager controls foreground focus. |
 
 Run the executable again with `--single-instance-check "argument with spaces"`. Expect the same window and no new tab or Terminal input. The Rust tests cover delivery of the literal arguments and working directory to the pending inbox. Finally, quit from the app menu, then launch it again and check that a new process starts normally.
+
+Linux CI also verifies that a second launch exits and the original Terminal stays open in an isolated smoke-test desktop.
