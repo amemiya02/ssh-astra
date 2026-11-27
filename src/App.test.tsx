@@ -1019,3 +1019,33 @@ it("confirms an explicit File panel copy after writing the path to the clipboard
   await act(async () => copy.click());
   expect(document.querySelector('[role="status"][aria-live="polite"]')?.textContent).toBe("");
 });
+
+it("starts a Terminal log from its tab menu and stops it from the command palette", async () => {
+  await render(workspace({ type: "open", tabId: "log", pane: local("log-pane") }));
+  const tab = document.getElementById("tab-log")!;
+  expect(tab.getAttribute("aria-label")).not.toContain("Terminal log active");
+
+  await selectTabMenu("log", "Start Terminal log");
+  expect(invoke).toHaveBeenCalledWith("terminal_log_start", { id: expect.any(Number) });
+  await sendTerminalMessage({ terminalLog: { state: "active" } }, "local_terminal_open");
+  expect(tab.getAttribute("aria-label")).toContain("Terminal log active");
+
+  await paletteAction("Stop Terminal log");
+  expect(invoke).toHaveBeenCalledWith("terminal_log_stop", { id: expect.any(Number) });
+  await sendTerminalMessage({ terminalLog: { state: "stopped" } }, "local_terminal_open");
+  expect(tab.getAttribute("aria-label")).not.toContain("Terminal log active");
+});
+
+it("shows the Terminal log marker for an unfocused split even while its Host reconnects", async () => {
+  await render(workspace(
+    { type: "open", tabId: "log", pane: remote("logging-remote") },
+    { type: "split", pane: local("focused-local"), orientation: "horizontal" },
+  ));
+  const tab = document.getElementById("tab-log")!;
+  await sendTerminalMessage({ terminalLog: { state: "active" } });
+  await sendTerminalMessage({ connection: { state: "reconnecting", attempt: 1, attempts: 3 } });
+  expect(tab.getAttribute("aria-label")).toContain("Terminal log active");
+
+  await sendTerminalMessage({ exitCode: 0 });
+  expect(tab.getAttribute("aria-label")).not.toContain("Terminal log active");
+});

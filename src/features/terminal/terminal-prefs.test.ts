@@ -28,6 +28,8 @@ describe("terminal preferences", () => {
     expect(prefs.copyOnSelect).toBe(true);
     expect(prefs.rightClickPaste).toBe(true);
     expect(prefs.shellIntegration).toBe(true);
+    expect(prefs.autoLog).toBe(false);
+    expect(prefs.logDirectory).toBeNull();
     expect(prefs.confirmMultilinePaste).toBe(true);
   });
 
@@ -55,6 +57,8 @@ describe("terminal preferences", () => {
       copyOnSelect: false,
       rightClickPaste: false,
       shellIntegration: false,
+      autoLog: true,
+      logDirectory: "/tmp/my Terminal logs",
       confirmMultilinePaste: false,
     };
     (await openSettings(backend)).set(terminalSetting, changed);

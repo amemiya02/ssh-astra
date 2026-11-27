@@ -62,3 +62,10 @@ describe("decodeTerminalMessage for Shell integration", () => {
     }
   });
 });
+
+it("reads Terminal log state without treating it as output or an exit", () => {
+  expect(decodeTerminalMessage({ terminalLog: { state: "active" } })).toEqual({
+    type: "terminalLog",
+    status: { state: "active" },
+  });
+});

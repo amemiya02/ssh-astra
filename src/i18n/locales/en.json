@@ -639,6 +639,12 @@
     "exitedUnknown": "Process exited",
     "failedToStart": "The shell could not start.",
     "failureDetail": "Details: {{message}}",
+    "log": {
+      "start": "Start Terminal log",
+      "stop": "Stop Terminal log",
+      "active": "Terminal log active",
+      "failed": "Could not write the Terminal log. {{message}}"
+    },
     "pressEnterToRestart": "Press Enter to start a new shell.",
     "search": {
       "label": "Find in Terminal",
@@ -1073,9 +1079,21 @@
         "label": "Copy on select",
         "description": "Selecting text in a Terminal copies it to the clipboard."
       },
+      "autoLog": {
+        "label": "Automatically write Terminal logs",
+        "description": "Save plain-text output from every new local or remote Terminal."
+      },
+      "logDirectory": {
+        "label": "Terminal log folder",
+        "description": "Where new Terminal logs are saved.",
+        "default": "SSH Astra data folder",
+        "choose": "Choose folder",
+        "reset": "Use default",
+        "failed": "Could not choose a Terminal log folder. {{message}}"
+      },
       "rightClickPaste": {
         "label": "Right-click paste",
-        "description": "Right-clicking in a Terminal pastes the clipboard."
+        "description": "When on, right-clicking pastes the clipboard. When off, it opens the Terminal menu."
       },
       "confirmMultilinePaste": {
         "label": "Confirm multi-line paste",

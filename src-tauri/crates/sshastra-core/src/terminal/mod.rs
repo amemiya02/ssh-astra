@@ -6,12 +6,16 @@ mod encoding;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod local_cwd;
 mod local_pty;
+mod log;
+mod log_text;
 mod registry;
 mod shell_integration;
 
 pub(crate) use encoding::OutputDecoder;
 pub use encoding::{TerminalBackspace, TerminalCharset};
 pub use local_pty::{LocalPty, ShellCommand};
+pub use log::{TerminalLog, TerminalLogStatus};
+pub use log_text::TerminalLogText;
 pub use registry::{TerminalId, TerminalRegistry};
 pub use shell_integration::{CwdParser, ShellOutput, Shown, INJECTION, REPORT_CWD};
 
@@ -24,12 +28,18 @@ use serde::{Deserialize, Serialize};
 pub struct TerminalSettings {
     /// Type the ShellIntegration hook into new remote shells.
     pub shell_integration: bool,
+    /// Write Terminal logs automatically for newly opened Terminals.
+    pub auto_log: bool,
+    /// Where to save Terminal logs. None uses the app directory.
+    pub log_directory: Option<std::path::PathBuf>,
 }
 
 impl Default for TerminalSettings {
     fn default() -> Self {
         Self {
             shell_integration: true,
+            auto_log: false,
+            log_directory: None,
         }
     }
 }
@@ -123,6 +133,8 @@ pub enum TerminalError {
     Spawn(String),
     #[error("terminal I/O failed: {0}")]
     Io(String),
+    #[error("Terminal log I/O failed: {0}")]
+    Log(#[from] std::io::Error),
     #[error("no such terminal: {0}")]
     NotFound(TerminalId),
 }

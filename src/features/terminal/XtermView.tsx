@@ -1,3 +1,4 @@
+import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { FitAddon } from "@xterm/addon-fit";
 import { LigaturesAddon } from "@xterm/addon-ligatures";
 import { SearchAddon } from "@xterm/addon-search";
@@ -11,6 +12,7 @@ import { openExternalUrl, readClipboardText, writeClipboardText } from "@/lib/ip
 import { useTheme } from "@/theme/theme-context";
 import { resolveTerminalTheme, terminalSearchDecorations } from "@/theme/terminal-themes";
 import { PasteConfirmDialog } from "./PasteConfirmDialog";
+import { TerminalLogMenuItem } from "./TerminalLogMenuItem";
 import { TerminalSearchBar, type SearchDirection, type SearchResults } from "./TerminalSearchBar";
 import { BroadcastPaneContext, type Broadcast } from "@/features/workspace/broadcast";
 import { getResolvedShortcuts } from "@/features/workspace/shortcut-settings";
@@ -274,7 +276,19 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
 
   return (
     <div className="relative h-full w-full">
-      <div ref={containerRef} className="h-full w-full py-2 pr-1 pl-3" aria-label={label} />
+      <ContextMenu>
+        <ContextMenuTrigger asChild disabled={prefs.rightClickPaste || paneId === undefined}>
+          <div ref={containerRef} className="h-full w-full py-2 pr-1 pl-3" aria-label={label} />
+        </ContextMenuTrigger>
+        {!prefs.rightClickPaste && paneId !== undefined && (
+          <ContextMenuContent onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            xtermRef.current?.focus();
+          }}>
+            <TerminalLogMenuItem paneId={paneId} />
+          </ContextMenuContent>
+        )}
+      </ContextMenu>
       {linkDestination && (
         <div
           role="tooltip"
