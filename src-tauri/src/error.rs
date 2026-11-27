@@ -53,7 +53,7 @@ impl From<TerminalError> for CommandError {
         let kind = match err {
             Spawn(_) => "spawn",
             Io(_) => "io",
-            Log(_) => "io",
+            Log(_) | Recording(_) => "io",
             NotFound(_) => "notFound",
         };
         Self::new(kind, err)

@@ -13,7 +13,7 @@ import { openExternalUrl, readClipboardText, writeClipboardText } from "@/lib/ip
 import { useTheme } from "@/theme/theme-context";
 import { resolveTerminalTheme, terminalSearchDecorations } from "@/theme/terminal-themes";
 import { PasteConfirmDialog } from "./PasteConfirmDialog";
-import { TerminalLogMenuItem } from "./TerminalLogMenuItem";
+import { TerminalOutputMenuItems } from "./TerminalOutputMenuItems";
 import { TerminalSearchBar, type SearchDirection, type SearchResults } from "./TerminalSearchBar";
 import { BroadcastPaneContext, type Broadcast } from "@/features/workspace/broadcast";
 import { getResolvedShortcuts } from "@/features/workspace/shortcut-settings";
@@ -285,7 +285,7 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
             event.preventDefault();
             xtermRef.current?.focus();
           }}>
-            <TerminalLogMenuItem paneId={paneId} />
+            <TerminalOutputMenuItems paneId={paneId} />
           </ContextMenuContent>
         )}
       </ContextMenu>

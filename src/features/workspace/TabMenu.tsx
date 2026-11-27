@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/context-menu";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { TerminalLogMenuItem } from "@/features/terminal/TerminalLogMenuItem";
+import { TerminalOutputMenuItems } from "@/features/terminal/TerminalOutputMenuItems";
 import { isTemporaryHost, type TemporaryHost } from "@/lib/ipc/hosts";
 import { ansiHues } from "@/theme/monogram-ink";
 import { activePane, canDuplicateTab, tabId, tabPanes, type Tab, type TabMenuAction } from "./tabs";
@@ -85,7 +85,7 @@ export function TabMenu({ tab, title, vertical, onAction, onSaveTemporaryHost }:
             {t("quickConnect.saveAsHost")}
           </ContextMenuItem>
         )}
-        <TerminalLogMenuItem paneId={tab.activePaneId} />
+        <TerminalOutputMenuItems paneId={tab.activePaneId} />
         <ContextMenuSeparator />
         <ContextMenuItem disabled={tab.locked} onSelect={() => onAction({ type: "close", id: tab.id })}>
           <X />
