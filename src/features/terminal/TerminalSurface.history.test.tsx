@@ -85,6 +85,7 @@ async function mount(history = Promise.resolve(["echo saved command"])) {
   });
   return {
     bytes, emit, ghost, historyChanged: () => historyChanged?.(), key, prompt, receive, shellText,
+    paste: (text: string) => act(() => terminal.paste(text)),
     close() {
       act(() => root.unmount());
       container.remove();
@@ -114,6 +115,27 @@ it.each([["ArrowRight", 39], ["End", 35]] as const)("accepts the displayed suffi
     await receive("ho saved command");
     expect(shellText()).toBe("$ echo saved command");
     expect(listCommandHistory).toHaveBeenCalledTimes(1);
+  } finally { close(); }
+});
+
+it("suggests at the end of an xterm-wrapped input line", async () => {
+  const prefix = "echo " + "x".repeat(80);
+  const { bytes, ghost, key, paste, prompt, receive, shellText, close } = await mount(Promise.resolve([`${prefix}-tail`]));
+  try {
+    await prompt();
+    paste(prefix);
+    await receive(prefix);
+    expect(shellText()).toBe("xxxxxxx");
+    await vi.waitFor(() => expect(ghost()).toBe("-tail"));
+    key("ArrowLeft", 37);
+    await receive("\x1b[D");
+    expect(ghost()).toBeUndefined();
+    key("End", 35);
+    expect(bytes().at(-1)).toEqual({ id: 42, data: "\x1b[F" });
+    await receive("\x1b[C");
+    await vi.waitFor(() => expect(ghost()).toBe("-tail"));
+    key("End", 35);
+    expect(bytes().at(-1)).toEqual({ id: 42, data: "\x1b[200~-tail\x1b[201~", generation: 0 });
   } finally { close(); }
 });
 

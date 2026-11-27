@@ -30,10 +30,10 @@ export function attachHistorySuggestions(xterm: Terminal, prompt: ReturnType<typ
   let pending: PendingEcho | undefined;
   let editedMarker: IMarker | undefined;
   let composing = false;
-  let shown: { input: ShellPromptInput; suffix: string; decoration: IDecoration } | undefined;
+  let shown: { input: ShellPromptInput; suffix: string; decoration: IDecoration; dispose(): void } | undefined;
 
   const hide = () => {
-    shown?.decoration.dispose();
+    shown?.dispose();
     shown = undefined;
   };
   const stop = () => {
@@ -71,7 +71,7 @@ export function attachHistorySuggestions(xterm: Terminal, prompt: ReturnType<typ
       if (before.marker !== input.marker) {
         pending = undefined;
       } else if (expected !== undefined ? input.text === expected && input.atEnd
-        : input.text !== before.text || input.cursorColumn !== before.cursorColumn) {
+        : input.text !== before.text || input.cursorLine !== before.cursorLine || input.cursorColumn !== before.cursorColumn) {
         pending = undefined;
       }
     }
@@ -84,11 +84,15 @@ export function attachHistorySuggestions(xterm: Terminal, prompt: ReturnType<typ
       hide();
       return;
     }
-    if (shown?.suffix === suffix && shown.input.marker === input.marker && shown.input.cursorColumn === input.cursorColumn &&
-      shown.input.text === input.text) return;
+    if (shown?.suffix === suffix && samePosition(shown.input, input)) return;
     hide();
-    const decoration = xterm.registerDecoration({ marker: input.marker, x: input.cursorColumn, width: xterm.cols - input.cursorColumn, layer: "top" });
-    if (!decoration) return;
+    const anchor = xterm.registerMarker();
+    const decoration = xterm.registerDecoration({ marker: anchor, x: input.cursorColumn, width: xterm.cols - input.cursorColumn, layer: "top" });
+    if (!decoration) {
+      anchor.dispose();
+      return;
+    }
+    const onPromptDisposed = input.marker.onDispose(() => anchor.dispose());
     decoration.onRender((element) => {
       if (element.textContent !== suffix) element.textContent = suffix;
       element.classList.add("terminal-history-suggestion");
@@ -99,7 +103,10 @@ export function attachHistorySuggestions(xterm: Terminal, prompt: ReturnType<typ
       element.style.letterSpacing = `${xterm.options.letterSpacing}px`;
       element.style.color = xterm.options.theme?.foreground ?? "inherit";
     });
-    shown = { input, suffix, decoration };
+    shown = { input, suffix, decoration, dispose() {
+      onPromptDisposed.dispose();
+      anchor.dispose();
+    } };
   };
 
   const observeInput = (data: string) => {
@@ -107,6 +114,7 @@ export function attachHistorySuggestions(xterm: Terminal, prompt: ReturnType<typ
     if (host === undefined || !target.atPrompt()) return;
     const before = pending?.before ?? prompt.read();
     const text = data.startsWith("\x1b[200~") && data.endsWith("\x1b[201~") ? data.slice(6, -6) : data;
+    // Wait for the complete echo of consecutive input, even across output chunks.
     const previous = pending?.expected ?? (before?.atEnd ? before.text : undefined);
     if (before && previous !== undefined && (pending === undefined || pending.expected !== undefined) && text &&
       isPlainCommandText(previous + text)) {
@@ -139,8 +147,7 @@ export function attachHistorySuggestions(xterm: Terminal, prompt: ReturnType<typ
         (event.key !== "ArrowRight" && event.key !== "End")) return false;
       const current = prompt.read();
       const { input, suffix } = shown;
-      if (!current?.atEnd || current.marker !== input.marker || current.cursorColumn !== input.cursorColumn ||
-        current.text !== input.text || textarea?.ownerDocument.activeElement !== textarea) return false;
+      if (!current?.atEnd || !samePosition(current, input) || textarea?.ownerDocument.activeElement !== textarea) return false;
       hide();
       return target.insert(suffix);
     },
@@ -154,6 +161,10 @@ export function attachHistorySuggestions(xterm: Terminal, prompt: ReturnType<typ
       textarea?.removeEventListener("blur", hide);
     },
   };
+}
+
+function samePosition(a: ShellPromptInput, b: ShellPromptInput): boolean {
+  return a.marker === b.marker && a.cursorLine === b.cursorLine && a.cursorColumn === b.cursorColumn && a.text === b.text;
 }
 
 /** Allow room for wide glyphs and keep the complete suffix on screen. */

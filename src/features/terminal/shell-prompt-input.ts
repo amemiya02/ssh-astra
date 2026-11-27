@@ -1,12 +1,15 @@
 import type { IMarker, Terminal } from "@xterm/xterm";
 
-/** A single editable screen row delimited by the shell's primary prompt. */
+/** The editable logical line delimited by the shell's primary prompt. */
 export interface ShellPromptInput {
   text: string;
+  cursorLine: number;
   cursorColumn: number;
   atEnd: boolean;
   marker: IMarker;
 }
+
+const maxInputColumns = 1_024;
 
 /** The cursor in xterm's OSC callback is positioned after the rendered prompt. */
 export function trackShellPromptInput(xterm: Terminal) {
@@ -45,21 +48,36 @@ export function trackShellPromptInput(xterm: Terminal) {
       if (!boundary || pendingWrites > 0 || boundary.marker.isDisposed) return;
       const buffer = xterm.buffer.active;
       const { marker, column, prompt } = boundary;
+      const cursorLine = buffer.baseY + buffer.cursorY;
       const cursorColumn = buffer.cursorX;
-      if (buffer.type !== "normal" || buffer.viewportY !== buffer.baseY || marker.line !== buffer.baseY + buffer.cursorY ||
-        cursorColumn < column || cursorColumn >= xterm.cols || buffer.getLine(marker.line + 1)?.isWrapped) return;
-      const line = buffer.getLine(marker.line);
-      if (!line || line.translateToString(false, 0, column) !== prompt) return;
-      let end = Math.min(xterm.cols, line.length);
+      if (buffer.type !== "normal" || buffer.viewportY !== buffer.baseY || cursorLine < marker.line || cursorColumn >= xterm.cols) return;
+      const first = buffer.getLine(marker.line);
+      if (!first || first.translateToString(false, 0, column) !== prompt) return;
       const cell = buffer.getNullCell();
-      while (end > column && !line.getCell(end - 1, cell)?.getChars() && cell.getWidth() !== 0) end--;
-      if (cursorColumn > end) return;
-      for (let i = column; i < end; i++) {
-        const next = line.getCell(i, cell);
-        if (!next || (!next.getChars() && next.getWidth() !== 0)) return;
+      let columns = 0;
+      let text = "";
+      for (let row = marker.line; row < buffer.length; row++) {
+        const line = row === marker.line ? first : buffer.getLine(row);
+        if (!line) return;
+        const start = row === marker.line ? column : 0;
+        const continues = buffer.getLine(row + 1)?.isWrapped;
+        let end = Math.min(xterm.cols, line.length);
+        if (!continues) {
+          // Only renderer-confirmed soft wraps belong to the same input line.
+          if (row < cursorLine) return;
+          while (end > start && !line.getCell(end - 1, cell)?.getChars() && cell.getWidth() !== 0) end--;
+        }
+        columns += end - start;
+        if (end < start || columns > maxInputColumns || (row === cursorLine && (cursorColumn < start || cursorColumn > end))) return;
+        for (let i = start; i < end; i++) {
+          const next = line.getCell(i, cell);
+          if (!next || (!next.getChars() && next.getWidth() !== 0)) return;
+        }
+        text += line.translateToString(false, start, end);
+        if (!continues) return { text, cursorLine, cursorColumn, atEnd: cursorLine === row && cursorColumn === end, marker };
       }
-      return { text: line.translateToString(false, column, end), cursorColumn, atEnd: cursorColumn === end, marker };
     },
+    // The transport can enqueue more output before xterm has moved its cursor.
     beforeWrite() { pendingWrites++; },
     afterWrite() {
       pendingWrites--;
