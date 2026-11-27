@@ -5,13 +5,18 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { hostsStore } from "@/features/hosts/hostsStore";
 import { settingsPageSections } from "@/features/settings/sections";
 import { startI18n } from "@/i18n";
-import type { FileEntry, Listing } from "@/lib/ipc/files";
+import { dragFileOut, type FileEntry, type Listing } from "@/lib/ipc/files";
 import * as hostsIpc from "@/lib/ipc/hosts";
 import { localStorageBackend, openSettings, setSetting, startSettings } from "@/lib/storage";
 import { FileBrowser, type FileExchange } from "./FileBrowser";
 import { PermissionsDialog } from "./FileOperationDialogs";
 import { createFileBrowserStore, type FilesApi } from "./fileBrowserStore";
 import { filesSetting } from "./file-prefs";
+
+vi.mock("@/lib/ipc/files", async (original) => ({
+  ...(await original<typeof import("@/lib/ipc/files")>()),
+  dragFileOut: vi.fn(() => Promise.resolve(false)),
+}));
 
 vi.mock("@/lib/ipc/hosts", async (original) => ({
   ...(await original<typeof import("@/lib/ipc/hosts")>()),
@@ -474,6 +479,42 @@ describe("FileBrowser", () => {
       [1, "/move/a.txt", "/move/sub/a.txt"],
       [1, "/move/b.txt", "/move/sub/b.txt"],
     ]);
+  });
+
+  it("hands one file to the OS only when the pointer leaves the window", async () => {
+    const { rows } = await render({ startPath: "/move", enableMove: true });
+    const [folder, file] = rows();
+    rows().forEach((row, index) => { row.getBoundingClientRect = () => new DOMRect(0, index * 26, 100, 26); });
+    const pointer = (target: EventTarget, type: string, x: number, y: number) => target.dispatchEvent(
+      new PointerEvent(type, {
+        bubbles: true, cancelable: true, button: 0, buttons: type === "pointerup" ? 0 : 1,
+        pointerType: "mouse", isPrimary: true, pointerId: 1, clientX: x, clientY: y,
+      }),
+    );
+    vi.stubGlobal("__sshastraFilePromises", true);
+    const capture = {
+      setPointerCapture: vi.fn(),
+      hasPointerCapture: () => true,
+      releasePointerCapture: vi.fn(),
+    };
+    Object.assign(document.documentElement, capture);
+    try {
+      act(() => pointer(file!, "pointerdown", 10, 36));
+      act(() => pointer(document, "pointermove", 10, 46));
+      act(() => pointer(folder!, "pointermove", 10, 10));
+      expect(dragFileOut).not.toHaveBeenCalled();
+
+      await act(async () => pointer(document, "pointermove", -5, 10));
+      expect(dragFileOut).toHaveBeenCalledExactlyOnceWith({
+        id: 1, directory: "/move", name: "a.txt", size: 2048, modified: 1_704_164_645,
+      });
+      expect(capture.releasePointerCapture).toHaveBeenCalledWith(1);
+      await act(async () => pointer(folder!, "pointerup", 10, 10));
+      expect(api.renameFile).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+      for (const key of Object.keys(capture)) Reflect.deleteProperty(document.documentElement, key);
+    }
   });
 
   it("offers Cut on a row and Paste in an empty destination's context menu", async () => {

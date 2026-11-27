@@ -431,7 +431,8 @@ impl IDataObjectAsyncCapability_Impl for DataObject_Impl {
             return Err(E_FAIL.into());
         }
         self.drag.extracting.store(true, Ordering::Release);
-        log::debug!("file drag Explorer asynchronous extraction began");
+        #[cfg(feature = "e2e")]
+        log::info!("file drag OLE asynchronous extraction began");
         Ok(())
     }
 
@@ -442,7 +443,8 @@ impl IDataObjectAsyncCapability_Impl for DataObject_Impl {
     fn EndOperation(&self, status: HRESULT, _: Ref<IBindCtx>, effect: u32) -> Result<()> {
         self.drag.extracting.store(false, Ordering::Release);
         self.drag.stop_reading();
-        log::debug!("file drag Explorer asynchronous extraction ended");
+        #[cfg(feature = "e2e")]
+        log::info!("file drag OLE asynchronous extraction ended");
         let result: FsResult<bool> = status.ok().map_err(win_error).map(|()| {
             (effect == DROPEFFECT_COPY.0 || self.drag.read_started.load(Ordering::Acquire))
                 && status != S_FALSE
@@ -507,5 +509,111 @@ fn global_medium<T: Copy>(value: T) -> Result<STGMEDIUM> {
             u: STGMEDIUM_0 { hGlobal: handle },
             ..Default::default()
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use super::*;
+
+    #[test]
+    fn ole_offers_metadata_on_hover_and_marshals_a_seekable_stream_after_release() {
+        unsafe { OleInitialize(None).unwrap() };
+        let _ole = OleThread;
+        let opens = Arc::new(Mutex::new(Vec::new()));
+        let source = Arc::new(Source {
+            name: "資料.bin".into(),
+            length: Some(5),
+            modified: None,
+            open: Box::new({
+                let opens = opens.clone();
+                move |offset| {
+                    opens.lock().unwrap().push(offset);
+                    let mut input = Cursor::new(b"bytes");
+                    input.set_position(offset);
+                    Box::pin(async move { Ok(Box::new(input) as sshastra_core::files::FileReader) })
+                }
+            }),
+        });
+        let (sender, mut result) = tokio::sync::oneshot::channel();
+        let report = Arc::new(Report(Mutex::new(Some(sender))));
+        let (drag, finished) = Drag::new(source, report);
+        let formats = Formats::new().unwrap();
+        let [descriptor_format, stream_format, loop_format, _] = formats.offer();
+        let object = data_on_mta(
+            DataObject {
+                formats,
+                drag: drag.clone(),
+            },
+            finished,
+        )
+        .unwrap();
+        let target: IDropSource = DropSource { drag }.into();
+
+        // Every call below goes through the public OLE interfaces, including the STA-to-MTA proxy.
+        unsafe {
+            assert_eq!(object.QueryGetData(&descriptor_format), S_OK);
+            assert_eq!(object.QueryGetData(&stream_format), S_OK);
+            let mut metadata = object.GetData(&descriptor_format).unwrap();
+            let handle = metadata.u.hGlobal;
+            let descriptor = GlobalLock(handle)
+                .cast::<FILEGROUPDESCRIPTORW>()
+                .read_unaligned();
+            let _ = GlobalUnlock(handle);
+            ReleaseStgMedium(&mut metadata);
+            let name = descriptor.fgd[0].cFileName;
+            assert_eq!(String::from_utf16(&name[..6]).unwrap(), "資料.bin");
+
+            let mut in_drag = object.GetData(&loop_format).unwrap();
+            let handle = in_drag.u.hGlobal;
+            assert_eq!(GlobalLock(handle).cast::<u32>().read_unaligned(), 1);
+            let _ = GlobalUnlock(handle);
+            ReleaseStgMedium(&mut in_drag);
+
+            let mut medium = object.GetData(&stream_format).unwrap();
+            let stream = medium.u.pstm.as_ref().unwrap().clone();
+            ReleaseStgMedium(&mut medium);
+            let mut content = [0_u8; 5];
+            let waiting = stream.Read(content.as_mut_ptr().cast(), 5, None);
+            assert!(waiting.is_err());
+            assert!(opens.lock().unwrap().is_empty());
+
+            assert_eq!(
+                target.GiveFeedback(DROPEFFECT_COPY),
+                DRAGDROP_S_USEDEFAULTCURSORS
+            );
+            assert_eq!(
+                target.QueryContinueDrag(false, MODIFIERKEYS_FLAGS(0)),
+                DRAGDROP_S_DROP
+            );
+            let operation = object.cast::<IDataObjectAsyncCapability>().unwrap();
+            assert!(operation.GetAsyncMode().unwrap().as_bool());
+            operation.StartOperation(None::<&IBindCtx>).unwrap();
+            assert!(operation.InOperation().unwrap().as_bool());
+
+            assert_eq!(stream.Read(content.as_mut_ptr().cast(), 5, None), S_OK);
+            assert_eq!(&content, b"bytes");
+            stream
+                .Seek(2, windows::Win32::System::Com::STREAM_SEEK_SET, None)
+                .unwrap();
+            let clone = stream.Clone().unwrap();
+            let mut bytes = [0_u8; 4];
+            let mut read = 0;
+            assert_eq!(
+                clone.Read(bytes.as_mut_ptr().cast(), 4, Some(&mut read)),
+                S_FALSE
+            );
+            assert_eq!(read, 3);
+            assert_eq!(&bytes[..3], b"tes");
+            assert_eq!(opens.lock().unwrap().as_slice(), &[0, 2]);
+
+            operation
+                .EndOperation(S_OK, None::<&IBindCtx>, DROPEFFECT_COPY.0)
+                .unwrap();
+            assert_eq!(result.try_recv(), Ok(Ok(true)));
+            assert!(!operation.InOperation().unwrap().as_bool());
+        }
     }
 }
