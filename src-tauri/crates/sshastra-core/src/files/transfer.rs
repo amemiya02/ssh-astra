@@ -734,6 +734,11 @@ impl Inner {
                 .map_err(|e| io_error(&stage.target().display(), e))
         })
         .await;
+        if copied.is_err() && matches!(stage.target(), Side::Local(..)) {
+            // A local write may still be running in Tokio's blocking pool.
+            // Settle it before cleanup or another copy can use the same path.
+            let _ = writer.shutdown().await;
+        }
         drop(writer);
 
         let result = async {
