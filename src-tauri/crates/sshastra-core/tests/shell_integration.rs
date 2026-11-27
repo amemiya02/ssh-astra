@@ -433,11 +433,12 @@ async fn runs_post_login_command_with_shell_integration_disabled() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn split_shell_inherits_directory_after_login_command_and_before_queued_input() {
+async fn split_shell_inherits_directory_after_an_interactive_login_command() {
     let Some(sshd) = support::sshd(Service::Ssh) else {
         return;
     };
-    let login = r#"read -r reply # use input from the user
+    let login = r#"printf 'login:%s\n' 'waiting'
+read -r reply # use input from the user
 printf 'login:%s\n' "$reply"
 cd /srv/files
 (exit 7)"#;
@@ -451,11 +452,26 @@ cd /srv/files
         Some("/srv/files/docs"),
     )
     .await;
+    shell
+        .run(Duration::from_secs(10), |shell, _| {
+            shell.rows().iter().any(|row| row == "login:waiting")
+        })
+        .await;
+    assert!(
+        shell.rows().iter().any(|row| row == "login:waiting"),
+        "{:?}",
+        shell.rows()
+    );
     shell.type_line("answer");
-    shell.type_line(r#"printf 'split:%s:%s\n' "$PWD" "$?""#);
     let directories = shell.settle().await;
 
-    assert!(directories.iter().any(|path| path == "/srv/files/docs"));
+    assert!(
+        directories.iter().any(|path| path == "/srv/files/docs"),
+        "directories: {directories:?}; shell output: {:?}",
+        shell.text()
+    );
+    shell.type_line(r#"printf 'split:%s:%s\n' "$PWD" "$?""#);
+    shell.settle().await;
     let rows = shell.rows();
     assert!(rows.iter().any(|row| row == "login:answer"), "{rows:?}");
     assert!(
@@ -471,11 +487,11 @@ async fn zsh_split_accepts_literal_shell_metacharacters_and_trailing_newlines_in
     };
     let cwd = "/tmp/sshastra split '\"\\; $(id) ! 日本\n";
     let mut original = Shell::open(&sshd, support::ZSH_USER, true).await;
-    original.next_cwd().await;
+    original.settle().await;
     original.type_line(
-        r#"path=$(printf '/tmp/sshastra split \047\042\134\073 $(id) ! \346\227\245\346\234\254\n/.'); mkdir -p "$path" && cd "$path""#,
+        r#"d=$(printf '/tmp/sshastra split \047\042\134\073 $(id) ! \346\227\245\346\234\254\n/.'); mkdir -p "$d" && cd "$d""#,
     );
-    assert_eq!(original.next_cwd().await, cwd);
+    assert_eq!(original.next_cwd().await, cwd, "{:?}", original.text());
 
     let mut split = Shell::open_with_terminal_settings(
         &sshd,
