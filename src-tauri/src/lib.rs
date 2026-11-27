@@ -117,6 +117,7 @@ pub fn run() {
             // fall back to a file of our own.
             let known_hosts = KnownHosts::system_default()
                 .unwrap_or_else(|| KnownHosts::new(config_dir.join("known_hosts")));
+            app.manage(known_hosts.clone());
             let settings =
                 SettingsStore::open(config_dir.join("settings.json")).map_err(Into::into);
             if let Ok(store) = &settings {
@@ -198,6 +199,8 @@ pub fn run() {
             commands::forwards::forward_stop,
             commands::settings::settings_load,
             commands::settings::settings_set,
+            commands::known_hosts::known_hosts_list,
+            commands::known_hosts::known_hosts_reveal,
             commands::notifications::notification_show,
             commands::diagnostics::diagnostics_event,
             commands::diagnostics::diagnostics_open_logs,

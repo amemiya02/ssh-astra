@@ -939,6 +939,7 @@
       "connection": "連線",
       "transfers": "傳輸",
       "shortcuts": "快速鍵",
+      "knownHosts": "已知主機",
       "notifications": "通知",
       "updates": "更新",
       "diagnostics": "診斷"
@@ -1245,6 +1246,26 @@
         "label": "終端機程式",
         "description": "允許 終端機中的程式在視窗處於背景時傳送通知。"
       }
+    },
+    "knownHosts": {
+      "label": "OpenSSH 主機金鑰檔案",
+      "description": "查看使用者檔案中的主機金鑰。此頁面為唯讀。",
+      "refresh": "重新整理",
+      "reveal": "在檔案管理員中顯示",
+      "loading": "正在讀取已知主機…",
+      "loadFailed": "無法讀取已知主機檔案。",
+      "missing": "已知主機檔案尚未建立。",
+      "empty": "檔案中沒有已知主機項目。",
+      "private": "隱私模式會隱藏主機詳細資料及檔案路徑。",
+      "posix": "將複製的指令貼到本機的 POSIX Shell。指令會移除所有相符的金鑰及這些行中的別名。",
+      "powershell": "將複製的指令貼到本機的 PowerShell。指令會移除所有相符的金鑰及這些行中的別名。",
+      "line": "第 {{line}} 行",
+      "copy": "複製移除指令",
+      "copyForLine": "複製第 {{line}} 行的移除指令",
+      "unavailable": "無可用的移除指令",
+      "copied": "已複製移除指令。",
+      "revealFailed": "無法在檔案管理員中顯示已知主機檔案。",
+      "copyFailed": "無法複製移除指令。"
     },
     "diagnostics": {
       "logs": "記錄檔案",
