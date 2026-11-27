@@ -584,6 +584,7 @@ async fn saving_the_temp_file_changes_the_file_on_the_server() {
         forward_agent: false,
         allow_legacy_algorithms: false,
         open_on_startup: false,
+        agent_access: Default::default(),
         proxy: Default::default(),
         keepalive_seconds: None,
         post_login_command: None,

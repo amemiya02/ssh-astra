@@ -49,6 +49,8 @@ export type Pane = {
   title?: string;
   /** Remote Terminals only. */
   status?: ConnectionStatus;
+  /** A registered Terminal that opened on a saved Host. */
+  savedHostTerminal?: boolean;
   /** A remote pane waiting for a manual click after restore or for its turn in the startup queue. */
   restoreConnection?: "manual" | { order: number };
   /** While a dropped Connection is retried: which try this is, of how many. */
@@ -113,6 +115,7 @@ export type TabsAction =
   | { type: "closePane"; paneId: string }
   | { type: "connectRestoredPane"; paneId: string }
   | { type: "retitle"; paneId: string; title: string }
+  | { type: "savedHostTerminal"; paneId: string; available: boolean }
   | { type: "localCwd"; paneId: string; cwd: string }
   | { type: "status"; paneId: string; status: ConnectionStatus; reconnecting?: ReconnectProgress };
 
@@ -380,6 +383,10 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
       const title = action.title.trim() || undefined;
       return updatePane(state, action.paneId, (pane) => ({ ...pane, title }));
     }
+    case "savedHostTerminal":
+      return updatePane(state, action.paneId, (pane) => pane.kind === "remote-terminal"
+        ? { ...pane, savedHostTerminal: action.available }
+        : pane);
     case "localCwd":
       return updatePane(state, action.paneId, (pane) => pane.kind === "local-terminal" ? { ...pane, cwd: action.cwd } : pane);
     case "connectRestoredPane":

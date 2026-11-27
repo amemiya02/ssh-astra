@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use super::watch::Watcher;
+use sshastra_core::agent::AgentPermission;
 use sshastra_core::hosts::{Host, HostDraft, HostId};
 use sshastra_core::ssh::{
     ConnectError, Connection, ConnectionManager, ConnectionSettings, HeldConnections, HeldEvent,
@@ -162,8 +163,9 @@ pub fn temporary_host_save(
     connections: State<'_, ConnectionManager>,
     temporary: State<'_, TemporaryHosts>,
     host_id: HostId,
-    draft: HostDraft,
+    mut draft: HostDraft,
 ) -> CommandResult<Host> {
+    draft.agent_access = AgentPermission::Off;
     let saved = temporary.with(|entries| {
         let route = entries
             .get(&host_id)

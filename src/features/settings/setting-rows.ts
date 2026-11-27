@@ -2,7 +2,7 @@ import type { ParseKeys } from "i18next";
 import type { Language, resources } from "@/i18n/resources";
 import { shortcutNames } from "@/features/workspace/shortcuts";
 
-type SettingMessage = Extract<ParseKeys, `settings.${string}`>;
+type SettingMessage = Extract<ParseKeys, `settings.${string}` | "agentAccess.title" | "agentAccess.description">;
 type SettingsCopy = (typeof resources)["en"]["translation"]["settings"];
 export type SettingsCategory = keyof SettingsCopy["sections"];
 
@@ -187,6 +187,10 @@ export const settingRows = {
   ),
   checkOnStartup: row("updates", "settings.updates.checkOnStartup.label",
     { en: "automatic update upgrade startup", zh: "自动更新 升级 启动", "zh-Hant": "自動更新 升級 啟動" }, "settings.updates.checkOnStartup.description",
+  ),
+  agentAccess: row("agentAccess", "agentAccess.title",
+    { en: "MCP external agent sharing permissions terminal socket pipe local", zh: "MCP 外部代理 共享 权限 终端 套接字 命名管道 本机", "zh-Hant": "MCP 外部代理 共享 權限 終端機 通訊端 具名管道 本機" },
+    "agentAccess.description",
   ),
   logs: row("diagnostics", "settings.diagnostics.logs",
     { en: "debugging crash open folder", zh: "调试 崩溃 打开文件夹", "zh-Hant": "除錯 當機 開啟資料夾" }, "settings.diagnostics.logsDescription",

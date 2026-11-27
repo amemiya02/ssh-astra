@@ -422,6 +422,8 @@ While Broadcast is active, the first segment shows a warning-colour radio icon a
 
 The privacy toggle sits beside the theme menu. Its pressed state uses the `selected` surface and an eye-off icon. While active, Host cards, rows, tabs, and the status bar show Host names in place of connection details. Address search remains available and the Port forward count stays visible.
 
+When Agent access is enabled, a status bar segment shows its name and a cable icon. Click it to turn access off for all Hosts. The tab strip shows the same icon and names the shared state in the tab label whenever an open Terminal in that tab is exposed. A collapsed Host group carries the icon for its shared tabs.
+
 ### Toasts
 
 The lower-right corner of the workspace stacks up to three in-app toasts above the status bar. Cards use the raised surface, a 1px border, 10px radius and a status icon. They report completed or failed transfers when both transfer lists are out of view, Port forward failures, Remote edit upload failures, import results and explicit copy actions. Terminal copy on select is silent.
