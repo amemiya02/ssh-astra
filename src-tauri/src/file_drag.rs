@@ -199,12 +199,16 @@ impl GestureWatch {
 #[cfg(any(windows, target_os = "macos"))]
 pub(crate) async fn wait_for_exit(window: tauri::WebviewWindow) -> bool {
     let mut down = None;
+    #[cfg(feature = "e2e")]
+    log::info!("file drag is watching the native pointer");
     loop {
         #[cfg(target_os = "macos")]
         let sample = macos::sample_pointer(&window).await;
         #[cfg(windows)]
         let sample = windows::sample_pointer(&window);
         let Some((gesture, state)) = sample else {
+            #[cfg(feature = "e2e")]
+            log::info!("file drag native gesture ended before handoff");
             return false;
         };
         if *down.get_or_insert(gesture) != gesture {
@@ -212,7 +216,11 @@ pub(crate) async fn wait_for_exit(window: tauri::WebviewWindow) -> bool {
         }
         match state {
             PointerState::Released => return false,
-            PointerState::Outside => return true,
+            PointerState::Outside => {
+                #[cfg(feature = "e2e")]
+                log::info!("file drag native pointer left the Window");
+                return true;
+            }
             PointerState::Inside => tokio::time::sleep(std::time::Duration::from_millis(20)).await,
         }
     }
