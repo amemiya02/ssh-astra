@@ -897,6 +897,7 @@
   "toast": {
     "filesCopied": "已复制文件。",
     "copied": "已复制到剪贴板。",
+    "editApplicationFallback": "所选应用无法打开 {{name}}，已使用系统默认应用打开。",
     "editUploadFailed": "远程编辑上传失败：{{name}}。{{reason}}",
     "forwardFailed": "端口转发失败。{{reason}}",
     "dismiss": "关闭通知：{{message}}",
@@ -1510,6 +1511,16 @@
         "label": "让 Terminal 跟随 File panel",
         "description": "对应的 Terminal 处于空闲提示符且输入行为空时，随面板切换目录。需要在远程 zsh 或启用了提示符展开的 bash 4.4 及以上版本中成功启动 Shell 集成。",
         "shellIntegrationOff": "Shell 集成已关闭。请在 Terminal 设置中启用，再打开一个新的远程 Terminal。"
+      },
+      "remoteEditApplication": {
+        "label": "远程编辑打开程序",
+        "description": "选择用于打开远程编辑文件的本机应用。",
+        "systemDefault": "系统默认",
+        "choose": "选择应用…",
+        "pickTitle": "选择远程编辑使用的应用",
+        "filter": "应用程序",
+        "reset": "使用系统默认",
+        "changeFailed": "无法更新远程编辑的打开程序。"
       }
     },
     "connection": {

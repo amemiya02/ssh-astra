@@ -7,6 +7,7 @@ import { settingsPageSections } from "@/features/settings/sections";
 import { startI18n } from "@/i18n";
 import type { FileEntry, Listing } from "@/lib/ipc/files";
 import * as hostsIpc from "@/lib/ipc/hosts";
+import { pickOpenPath } from "@/lib/ipc/system";
 import { localStorageBackend, openSettings, setSetting, startSettings } from "@/lib/storage";
 import { FileBrowser, type FileExchange } from "./FileBrowser";
 import { PermissionsDialog } from "./FileOperationDialogs";
@@ -18,6 +19,11 @@ vi.mock("@/lib/ipc/hosts", async (original) => ({
   addBookmark: vi.fn((_hostId: string, path: string) => Promise.resolve({ path })),
   deleteBookmark: vi.fn(() => Promise.resolve()),
   renameBookmark: vi.fn((_hostId: string, path: string, name: string) => Promise.resolve({ path, name })),
+}));
+
+vi.mock("@/lib/ipc/system", async (original) => ({
+  ...(await original<typeof import("@/lib/ipc/system")>()),
+  pickOpenPath: vi.fn<typeof pickOpenPath>(),
 }));
 
 const entry = (name: string, kind: FileEntry["kind"] = "file"): FileEntry => ({
@@ -640,6 +646,7 @@ describe("FileBrowser", () => {
       showModified: false,
       showPermissions: true,
       terminalFollowsFilePanel: false,
+      remoteEditApplication: null,
     });
   });
 
@@ -655,6 +662,33 @@ describe("FileBrowser", () => {
 
     await act(async () => group.querySelector<HTMLButtonElement>('[data-value="on"]')!.click());
     expect((await openSettings(backend)).get(filesSetting).terminalFollowsFilePanel).toBe(true);
+  });
+
+  it("saves the picked editor, keeps it when the picker is canceled, and restores the system default", async () => {
+    const backend = localStorageBackend(window.localStorage, "test.files.editor");
+    await backend.save("files", { showHidden: true });
+    await startSettings(backend);
+    await render({ showSettings: true });
+
+    const app = "/Applications/An Editor.app";
+    vi.mocked(pickOpenPath).mockResolvedValueOnce(app).mockResolvedValueOnce(null);
+    const click = (label: string) => act(async () => {
+      const control = [...container.querySelectorAll("button")].find((button) => button.textContent === label);
+      expect(control).toBeDefined();
+      control!.click();
+    });
+
+    expect(container.textContent).toContain("System default");
+    await click("Choose application…");
+    expect(container.textContent).toContain(app);
+    expect((await openSettings(backend)).get(filesSetting)).toMatchObject({ showHidden: true, remoteEditApplication: app });
+
+    await click("Choose application…");
+    expect((await openSettings(backend)).get(filesSetting)).toMatchObject({ remoteEditApplication: app });
+
+    await click("Use system default");
+    expect(container.textContent).toContain("System default");
+    expect((await openSettings(backend)).get(filesSetting)).toMatchObject({ showHidden: true, remoteEditApplication: null });
   });
 
   it("counts the displayed entries and visible selection through filtering", async () => {

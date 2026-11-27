@@ -173,12 +173,14 @@ describe("filesSetting", () => {
     expect(filesSetting.parse({
       showHidden: "yes", sort: { key: "colour", direction: "up" }, showModified: 0, showPermissions: "no",
       terminalFollowsFilePanel: "on",
+      remoteEditApplication: ["/Applications/Editor.app"],
     })).toEqual({
       showHidden: false,
       sort: { key: "name", direction: "asc" },
       showModified: true,
       showPermissions: false,
       terminalFollowsFilePanel: false,
+      remoteEditApplication: null,
     });
     expect(filesSetting.parse(null)).toEqual(filesSetting.defaults);
   });
@@ -190,6 +192,7 @@ describe("filesSetting", () => {
       showModified: true,
       showPermissions: false,
       terminalFollowsFilePanel: false,
+      remoteEditApplication: null,
     });
   });
 });
