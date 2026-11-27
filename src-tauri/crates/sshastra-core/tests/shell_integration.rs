@@ -317,6 +317,7 @@ async fn reports_command_markers(user: &str) {
             status: ShellIntegrationStatus::Available
         })
     );
+    assert_input_marker_after_prompt(&shell);
     shell.integration.clear();
 
     let command = r#"printf '%s\n' 'hello; 100%' && true"#;
@@ -335,6 +336,7 @@ async fn reports_command_markers(user: &str) {
         ]
     );
     assert!(shell.rows().iter().any(|line| line == "hello; 100%"));
+    assert_input_marker_after_prompt(&shell);
     assert!(
         shell
             .rows()
@@ -369,6 +371,35 @@ async fn reports_command_markers(user: &str) {
             prompt_id: initial_prompt + 3
         }]
     );
+
+    let previous_output = shell.output.len();
+    shell.integration.clear();
+    shell.terminal.write(b"echo ").unwrap();
+    shell
+        .terminal
+        .write(b"\x1b[200~sshastra-suggested\x1b[201~")
+        .unwrap();
+    shell
+        .run(Duration::from_secs(5), |shell, _| {
+            shell
+                .rows()
+                .iter()
+                .any(|line| line.ends_with("echo sshastra-suggested"))
+        })
+        .await;
+    assert!(shell
+        .rows()
+        .iter()
+        .any(|line| line.ends_with("echo sshastra-suggested")));
+    assert!(shell.integration.is_empty());
+    assert!(!String::from_utf8_lossy(&shell.output[previous_output..]).contains("\x1b]6973;start;"));
+}
+
+fn assert_input_marker_after_prompt(shell: &Shell) {
+    let output = shell.text();
+    let (_, primary_prompt) = output.rsplit_once("\x1b]6973;prompt\x07").unwrap();
+    let (visible_prompt, _) = primary_prompt.split_once("\x1b]6973;input\x07").unwrap();
+    assert!(visible_prompt.contains("@ssh:"), "{visible_prompt:?}");
 }
 
 #[tokio::test(flavor = "multi_thread")]

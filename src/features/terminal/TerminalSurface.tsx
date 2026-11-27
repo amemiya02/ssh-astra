@@ -20,13 +20,17 @@ import {
   type TerminalSize,
 } from "@/lib/ipc/terminal";
 import type { TransferHost } from "@/lib/ipc/transfers";
+import { getSetting, watchSetting } from "@/lib/storage";
 import { readAgentScreen } from "./agent-screen";
 import { quoteDroppedPaths } from "./dropped-paths";
 import { terminalPasteInput } from "./terminal-input";
 import { XtermView } from "./XtermView";
 import { shellIntegration, useShellIntegration } from "./shellIntegration";
+import { trackShellPromptInput } from "./shell-prompt-input";
 import { terminalOutputs } from "./terminal-outputs";
 import { notifyCommandFinished, watchTerminalNotifications } from "./terminal-notifications";
+import { terminalSetting } from "./terminal-prefs";
+import { attachHistorySuggestions } from "./xterm-history-suggestions";
 
 export type OpenTerminal = (
   size: TerminalSize,
@@ -87,6 +91,8 @@ export function TerminalSurface({
   const onTitleChangeRef = useRef(onTitleChange);
   const labelRef = useRef(label);
   const activeRef = useRef(active);
+  const historyHostRef = useRef(historyHostId);
+  const suggestionsRef = useRef<ReturnType<typeof attachHistorySuggestions> | null>(null);
   const tRef = useRef(t);
 
   useEffect(() => {
@@ -98,6 +104,8 @@ export function TerminalSurface({
     labelRef.current = label;
     hostRef.current = host;
     activeRef.current = active;
+    historyHostRef.current = historyHostId;
+    suggestionsRef.current?.refresh();
     invalidateAgentReview(paneId);
   });
 
@@ -118,9 +126,38 @@ export function TerminalSurface({
     let unregisterMove: (() => void) | undefined;
     let unregisterWriter: (() => void) | undefined;
     const sendInput = (id: TerminalId, data: string, generation?: number) => {
+      suggestions.observeInput(data);
       shellIntegration.input(paneId, data);
       const write = writeTerminal(id, data, generation);
       return e2eHooks ? write.then(() => e2eHooks?.trackInput(xterm, data.length)) : write;
+    };
+    const promptInput = trackShellPromptInput(xterm);
+    const historyHost = () => {
+      const prefs = getSetting(terminalSetting);
+      if (id !== undefined && connected && !exited && !lifetime.signal.aborted && activeRef.current &&
+        prefs.inlineSuggestions && prefs.commandHistory && prefs.shellIntegration && !movingSourcePane(paneId)) {
+        return historyHostRef.current;
+      }
+    };
+    const suggestions = attachHistorySuggestions(xterm, promptInput, {
+      host: historyHost,
+      atPrompt: () => shellIntegration.canPasteAtPrompt(paneId),
+      insert: (suffix) => {
+        if (id === undefined || historyHost() === undefined) return false;
+        const bracketed = xterm.modes.bracketedPasteMode && !xterm.options.ignoreBracketedPasteMode;
+        void sendInput(id, terminalPasteInput(suffix, bracketed, false), generation).catch(() => undefined);
+        return true;
+      },
+    });
+    suggestionsRef.current = suggestions;
+    const stopSuggestionSettings = watchSetting(terminalSetting, suggestions.refresh);
+    const resetSuggestions = () => {
+      promptInput.reset();
+      suggestions.reset();
+    };
+    const afterOutput = () => {
+      promptInput.afterWrite();
+      if (!lifetime.signal.aborted) suggestions.refresh();
     };
     const enableImagePaste = (opened: TerminalId) => {
       const sourceGeneration = generation;
@@ -173,22 +210,27 @@ export function TerminalSurface({
       if (lifetime.signal.aborted || exited) return;
       if (event.type === "moveFence") {
         invalidateAgentReview(paneId, true);
+        resetSuggestions();
         receiveMoveFence(paneId, event.token);
         return;
       }
       if (event.type === "output") {
         if (activityTabId !== undefined && event.data.length > 0) activity?.output(activityTabId);
-        if (e2eHooks) e2eHooks.trackOutput(xterm, event.data);
-        else xterm.write(event.data);
+        promptInput.beforeWrite();
+        suggestions.hide();
+        if (e2eHooks) e2eHooks.trackOutput(xterm, event.data, afterOutput);
+        else xterm.write(event.data, afterOutput);
         return;
       }
       if (event.type === "shellIntegration") {
         const finished = shellIntegration.event(paneId, event.event, xterm.buffer.active.type === "normal");
         if (finished) notifyCommandFinished(labelRef.current, finished);
+        suggestions.refresh();
         return;
       }
       if (event.type === "connection") {
         connected = event.state.state === "connected";
+        resetSuggestions();
         invalidateAgentReview(paneId, true);
         if (connected) {
           generation++;
@@ -232,6 +274,7 @@ export function TerminalSurface({
       }
       if (event.type !== "exit") return;
       exited = true;
+      resetSuggestions();
       invalidateAgentReview(paneId, true);
       imagePasteRef.current = null;
       removeWriter();
@@ -256,6 +299,7 @@ export function TerminalSurface({
         }
         id = opened;
         shellIntegration.attach(paneId, opened);
+        suggestions.refresh();
         output.attach(opened);
         if (connected) {
           enableImagePaste(opened);
@@ -305,6 +349,10 @@ export function TerminalSurface({
 
     return () => {
       lifetime.abort();
+      suggestionsRef.current = null;
+      stopSuggestionSettings();
+      suggestions.dispose();
+      promptInput.dispose();
       stopReview();
       invalidateAgentReview(paneId, true);
       imagePasteRef.current = null;
@@ -325,7 +373,8 @@ export function TerminalSurface({
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1">
         <XtermView label={label} active={active} colorScheme={colorScheme} onTitleChange={onTitleChange} imagePasteRef={imagePasteRef} attach={attach}
-          historyHostId={historyHostId} canPasteHistory={() => shellIntegration.canPasteAtPrompt(paneId)} />
+          historyHostId={historyHostId} canPasteHistory={() => shellIntegration.canPasteAtPrompt(paneId)}
+          onTerminalKey={(event) => suggestionsRef.current?.accept(event) ?? false} />
       </div>
       {unavailable && (
         <p className="border-border text-muted-foreground shrink-0 border-t px-3 py-1 text-xs" role="status">

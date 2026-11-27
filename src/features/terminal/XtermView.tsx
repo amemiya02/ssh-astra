@@ -47,6 +47,7 @@ interface XtermViewProps {
   colorScheme?: string | null;
   historyHostId?: HostId;
   canPasteHistory?(): boolean;
+  onTerminalKey?(event: KeyboardEvent): boolean;
   /** A program set a window title (OSC 0/2); an empty string clears it. */
   onTitleChange?(title: string): void;
   /** The image paste for the running shell, or null between attachments. */
@@ -69,7 +70,7 @@ function appearanceOptions(
  * the user's font, size, ligatures and colour scheme (live), find in scrollback,
  * clickable links, copy on select, right-click paste and paste confirmation.
  */
-export function XtermView({ label, active, colorScheme, historyHostId, canPasteHistory, onTitleChange, imagePasteRef, attach }: XtermViewProps) {
+export function XtermView({ label, active, colorScheme, historyHostId, canPasteHistory, onTerminalKey, onTitleChange, imagePasteRef, attach }: XtermViewProps) {
   const { t } = useTranslation();
   const { theme } = useTheme();
   const { broadcast, paneId } = useContext(BroadcastPaneContext) ?? {};
@@ -90,6 +91,7 @@ export function XtermView({ label, active, colorScheme, historyHostId, canPasteH
   const attachRef = useRef(attach);
   const onTitleChangeRef = useRef(onTitleChange);
   const historyHostRef = useRef(historyHostId);
+  const onTerminalKeyRef = useRef(onTerminalKey);
   const [canCopy, setCanCopy] = useState(false);
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<SearchResults | null>(null);
@@ -114,6 +116,7 @@ export function XtermView({ label, active, colorScheme, historyHostId, canPasteH
     attachRef.current = attach;
     onTitleChangeRef.current = onTitleChange;
     historyHostRef.current = historyHostId;
+    onTerminalKeyRef.current = onTerminalKey;
   });
 
   /** Use the source xterm's line endings and bracketed-paste mode for every recipient. */
@@ -217,6 +220,10 @@ export function XtermView({ label, active, colorScheme, historyHostId, canPasteH
       if (shortcut === "commandHistory" && historyHostRef.current !== undefined) {
         event.preventDefault();
         setHistoryHost(historyHostRef.current);
+        return false;
+      }
+      if (onTerminalKeyRef.current?.(event)) {
+        event.preventDefault();
         return false;
       }
       const menuKey = !event.altKey && !event.ctrlKey && !event.metaKey &&
