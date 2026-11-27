@@ -31,6 +31,7 @@ pub(crate) struct Route {
     resource_subscription: Option<ActiveResources>,
     resource_channel: Arc<AsyncMutex<()>>,
     latency_subscription: Option<(u32, oneshot::Sender<()>)>,
+    completion_listing: Option<(u32, oneshot::Sender<()>)>,
     review_changes: watch::Sender<()>,
 }
 
@@ -62,6 +63,7 @@ impl TerminalRoute {
             resource_subscription: None,
             resource_channel: Arc::default(),
             latency_subscription: None,
+            completion_listing: None,
             review_changes: watch::Sender::new(()),
         })))
     }
@@ -169,9 +171,29 @@ impl Route {
         }
     }
 
+    pub(crate) fn start_completion(&mut self, request: u32) -> Option<oneshot::Receiver<()>> {
+        if !self.running || self.pending.is_some() {
+            return None;
+        }
+        let (stop, stopped) = oneshot::channel();
+        self.completion_listing = Some((request, stop));
+        Some(stopped)
+    }
+
+    pub(crate) fn stop_completion(&mut self, request: u32) {
+        if self
+            .completion_listing
+            .as_ref()
+            .is_some_and(|(id, _)| *id == request)
+        {
+            self.completion_listing = None;
+        }
+    }
+
     pub(crate) fn stop_live_subscriptions(&mut self) {
         self.stop_resources();
         self.latency_subscription = None;
+        self.completion_listing = None;
     }
 
     pub(crate) fn review_delivery(&self) -> Option<(TerminalDelivery, watch::Receiver<()>)> {

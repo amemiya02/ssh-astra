@@ -1,6 +1,7 @@
 import type { AgentReviewRequest } from "./agent-review";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import type { FileEntry } from "./files";
 import type { TransferHost } from "./transfers";
 
 /** Mirrors `sshastra_core::terminal::TerminalId`. */
@@ -150,6 +151,29 @@ export async function drainTerminalWrites(ids: readonly TerminalId[]): Promise<v
 /** Changes directories on the same prompt the File panel observed, if it is still idle. */
 export function followFileDirectory(id: TerminalId, promptId: number, path: string): Promise<void> {
   return invoke("terminal_follow_file_directory", { id, promptId, path });
+}
+
+/** Lists one directory using the running Terminal's SSH transport. No login is attempted. */
+export async function listTerminalPaths(id: TerminalId, generation: number, query: {
+  directory: string;
+  prefix: string;
+  directoriesOnly: boolean;
+}, signal: AbortSignal): Promise<FileEntry[] | null> {
+  if (signal.aborted) return null;
+  const cancel = () => { void invoke("terminal_completion_cancel", { id, request: onStart.id }).catch(() => undefined); };
+  const onStart = new Channel<null>(() => {
+    if (signal.aborted) cancel();
+    else signal.addEventListener("abort", cancel, { once: true });
+  });
+  try {
+    const result = await invoke<{ entries: FileEntry[] } | null>("terminal_completion_paths", {
+      id, generation, query, onStart,
+    });
+    return signal.aborted ? null : result?.entries ?? null;
+  } finally {
+    onStart.onmessage = () => undefined;
+    signal.removeEventListener("abort", cancel);
+  }
 }
 
 export function resizeTerminal(id: TerminalId, size: TerminalSize): Promise<void> {

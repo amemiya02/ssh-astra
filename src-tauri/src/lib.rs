@@ -10,6 +10,8 @@ mod error;
 mod file_drag;
 #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
 mod launch;
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+mod login_launch;
 #[cfg(target_os = "macos")]
 mod macos_menu;
 mod prompts;
@@ -238,7 +240,11 @@ pub fn run() {
             app.manage(remote_editor());
             #[cfg(desktop)]
             tray::setup(app.handle());
-            windows::restore(app)?;
+            #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+            let visible = !login_launch::should_hide(app.handle());
+            #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+            let visible = true;
+            windows::restore(app, visible)?;
             Ok(())
         })
         .manage(windows::Windows::default())
@@ -350,6 +356,8 @@ pub fn run() {
             commands::terminal::prompt_answer,
             commands::terminal::terminal_write,
             commands::terminal::terminal_resize,
+            commands::terminal::terminal_completion_paths,
+            commands::terminal::terminal_completion_cancel,
             commands::terminal::terminal_close,
             commands::terminal::terminal_set_title,
             commands::terminal::terminal_latency_start,

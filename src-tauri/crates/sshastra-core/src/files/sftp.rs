@@ -88,18 +88,59 @@ impl SftpFs {
     ) -> FsResult<Option<DirectoryRead>> {
         Self::scan(connection, cancelled, |stream| async move {
             let session = raw_session(connection, path, stream).await?;
-            Self::list_bounded(&session, path).await
+            Self::list_bounded(&session, path, usize::MAX, |_, _| true).await
         })
         .await
     }
 
-    async fn list_bounded(session: &RawSftpSession, path: &str) -> FsResult<DirectoryRead> {
+    /// Lists matching entries in one directory on the Terminal's current transport.
+    pub async fn completion_paths(
+        connection: &Connection,
+        directory: &str,
+        prefix: &str,
+        directories_only: bool,
+        cancelled: oneshot::Receiver<()>,
+    ) -> FsResult<Option<DirectoryRead>> {
+        const MAX_VISITED: usize = 4_096;
+        Self::scan(connection, cancelled, |stream| async move {
+            let session = raw_session(connection, directory, stream).await?;
+            let path = if let Some(relative) = directory.strip_prefix("~/") {
+                let home = session
+                    .realpath(".")
+                    .await
+                    .map_err(|e| error(directory, e))?
+                    .files
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| FsError::Protocol("SFTP returned no home path".into()))?
+                    .filename;
+                join(&home, relative)
+            } else {
+                directory.to_owned()
+            };
+            Self::list_bounded(&session, &path, MAX_VISITED, |name, attrs| {
+                name.starts_with(prefix)
+                    && (!name.starts_with('.') || prefix.starts_with('.'))
+                    && (!directories_only || kind(attrs) == FileKind::Dir)
+            })
+            .await
+        })
+        .await
+    }
+
+    async fn list_bounded(
+        session: &RawSftpSession,
+        path: &str,
+        visit_limit: usize,
+        matches: impl Fn(&str, &FileAttributes) -> bool,
+    ) -> FsResult<DirectoryRead> {
         let handle = session
             .opendir(path)
             .await
             .map_err(|e| error(path, e))?
             .handle;
         let mut listing = DirectoryRead::default();
+        let mut visited = 0;
         'directory: while let Some(batch) = read_directory_batch(session, path, &handle).await? {
             for File {
                 filename: name,
@@ -111,7 +152,12 @@ impl SftpFs {
                     continue;
                 }
                 validate_name(&name)?;
-                if !listing.push(entry(name, &attrs)) {
+                if visited == visit_limit {
+                    listing.mark_truncated();
+                    break 'directory;
+                }
+                visited += 1;
+                if matches(&name, &attrs) && !listing.push(entry(name, &attrs)) {
                     break 'directory;
                 }
             }

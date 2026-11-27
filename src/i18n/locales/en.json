@@ -991,6 +991,15 @@
       "confirmClear": "Clear history",
       "cancel": "Cancel"
     },
+    "completion": {
+      "title": "Command completions",
+      "loading": "Finding completions…",
+      "integrationOff": "Turn on Shell integration in Terminal settings, then open a new remote Terminal to use completions.",
+      "integrationUnavailable": "Completions require Shell integration in a remote Terminal.",
+      "promptUnavailable": "Completions are available at the end of an editable shell prompt.",
+      "pathUnavailable": "The current directory could not be listed.",
+      "empty": "No matching completions."
+    },
     "shellIntegration": {
       "disabled": "Shell integration is off in Settings.",
       "unsupported": "Shell integration is unavailable for this shell. Use bash 4.4+ with prompt expansion enabled, or zsh.",
@@ -1297,6 +1306,7 @@
         "terminalZoomOut": "Decrease Terminal font size",
         "find": "Find in Terminal",
         "commandHistory": "Command history",
+        "completionList": "Completion list",
         "fileBack": "Go back in File panel",
         "fileForward": "Go forward in File panel",
         "fileCopy": "Copy in File panel",
@@ -1307,6 +1317,18 @@
     "confirmClose": {
       "label": "Confirm Terminal close",
       "description": "Ask before closing a connected remote Terminal."
+    },
+    "launchAtLogin": {
+      "label": "Launch at login",
+      "description": "Open SSH Astra when you sign in to your computer.",
+      "unavailable": "Could not read the system login registration.",
+      "error": "Could not change whether SSH Astra launches at login."
+    },
+    "startInTray": {
+      "label": "Start in tray",
+      "description": "When SSH Astra starts at login, keep its Windows hidden while the system tray is available.",
+      "requiresLoginLaunch": "Turn on Launch at login to set this preference.",
+      "error": "Could not save the tray startup preference."
     },
     "closeToTray": {
       "label": "Close to tray",
@@ -1514,6 +1536,10 @@
         "label": "Command history",
         "description": "Command lines are saved in plain text on this device for saved Hosts. Requires Shell integration in remote zsh or bash 4.4+ with prompt expansion enabled.",
         "shellIntegrationDisabled": "Shell integration is off. Turn it on, then open a new remote Terminal. When recording is active, command lines are saved in plain text on this device."
+      },
+      "completionList": {
+        "label": "Completion list",
+        "description": "Show command and remote path suggestions at the end of a Shell integration prompt. The default shortcut is Ctrl+Space."
       },
       "inlineSuggestions": {
         "label": "Inline command suggestions",

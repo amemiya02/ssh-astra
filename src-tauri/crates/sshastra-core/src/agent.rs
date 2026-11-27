@@ -147,6 +147,10 @@ pub struct DirectoryRead {
 }
 
 impl DirectoryRead {
+    pub(crate) fn mark_truncated(&mut self) {
+        self.truncated = true;
+    }
+
     /// Returns false at the first entry that would exceed the limit.
     pub fn push(&mut self, entry: FileEntry) -> bool {
         if self.entries.len() == DIRECTORY_ENTRY_LIMIT

@@ -1266,6 +1266,44 @@ it("defaults Close to tray off for existing profiles and remembers the selected 
   expect(setting().querySelector('[aria-checked="true"]')?.textContent).toBe("On");
 });
 
+it("defaults Launch at login off and remembers the tray preference across enable and disable", async () => {
+  enableDesktopWindow();
+  await render(emptyTabs);
+  await clickButton("Settings");
+
+  const login = () => document.querySelector('[role="radiogroup"][aria-label="Launch at login"]')!;
+  const tray = () => document.querySelector('[role="radiogroup"][aria-label="Start in tray"]');
+  expect(login()?.querySelector('[aria-checked="true"]')?.textContent).toBe("Off");
+  expect(tray()).toBeNull();
+
+  await clickButton("On", login());
+  expect(tray()?.querySelector('[aria-checked="true"]')?.textContent).toBe("Off");
+  await clickButton("On", tray()!);
+  expect(settingsFile.loginLaunchPreferences).toEqual({ startInTray: true });
+
+  await clickButton("Off", login());
+  expect(tray()).toBeNull();
+  await clickButton("On", login());
+  expect(tray()?.querySelector('[aria-checked="true"]')?.textContent).toBe("On");
+});
+
+it("keeps Launch at login off and displays an error if registration fails", async () => {
+  enableDesktopWindow();
+  await startSettings({
+    ...settingsBackend,
+    save: async (section, value) => {
+      if (section === "loginLaunch") throw new Error("registration unavailable");
+      await settingsBackend.save(section, value);
+    },
+  });
+  await render(emptyTabs);
+  await clickButton("Settings");
+  const login = document.querySelector('[role="radiogroup"][aria-label="Launch at login"]')!;
+  await clickButton("On", login);
+  expect(login.querySelector('[aria-checked="true"]')?.textContent).toBe("Off");
+  expect(document.body.textContent).toContain("Could not change whether SSH Astra launches at login.");
+});
+
 async function broadcastShortcut(inWindow = false) {
   const modifiers = currentPlatform() === "mac" ? { metaKey: true } : { ctrlKey: true };
   await act(async () => document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", {

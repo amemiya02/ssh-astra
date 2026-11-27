@@ -14,7 +14,7 @@ import { settingRows } from "./setting-rows";
 import { TerminalHighlightingSettings } from "./terminal-highlighting-settings";
 import { TerminalSchemeSettings } from "./terminal-scheme-settings";
 
-type BooleanPref = "ligatures" | "cursorBlink" | "copyOnSelect" | "confirmMultilinePaste" | "pasteImages" | "shellIntegration" | "commandHistory" | "inlineSuggestions" | "autoLog" | "inlineImages" | "showLatency";
+type BooleanPref = "ligatures" | "cursorBlink" | "copyOnSelect" | "confirmMultilinePaste" | "pasteImages" | "shellIntegration" | "commandHistory" | "inlineSuggestions" | "completionList" | "autoLog" | "inlineImages" | "showLatency";
 
 export function TerminalSection() {
   const { t } = useTranslation();
@@ -168,6 +168,7 @@ export function TerminalSection() {
         ? t("settings.terminal.commandHistory.shellIntegrationDisabled")
         : undefined)}
       {toggle("inlineSuggestions")}
+      {toggle("completionList")}
       {toggle("autoLog")}
       <SettingRow setting={settingRows.logDirectory}>
         <div className="flex min-w-0 max-w-72 flex-wrap items-center justify-end gap-2">

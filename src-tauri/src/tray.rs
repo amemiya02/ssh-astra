@@ -210,7 +210,6 @@ pub(crate) fn close_enabled(app: &AppHandle) -> bool {
         .unwrap_or(false)
 }
 
-/// Background launch can use the same gate before hiding a Window.
 pub(crate) async fn can_restore(app: &AppHandle) -> bool {
     let registered = app.try_state::<Tray>().is_some();
     #[cfg(target_os = "linux")]
@@ -219,10 +218,36 @@ pub(crate) async fn can_restore(app: &AppHandle) -> bool {
     registered
 }
 
+pub(crate) async fn can_restore_at_login(app: &AppHandle) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        use std::time::Duration;
+
+        if app.try_state::<Tray>().is_none() {
+            return false;
+        }
+        // A desktop session can start the application before its tray host.
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !linux::panel_available().await {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+            }
+        })
+        .await
+        .is_ok()
+    }
+    #[cfg(not(target_os = "linux"))]
+    can_restore(app).await
+}
+
 /// Call on the UI thread after checking that a tray action can bring it back.
 pub(crate) fn hide(window: &WebviewWindow) -> tauri::Result<()> {
     window.hide()?;
     #[cfg(target_os = "linux")]
-    linux::reveal_if_panel_disappears(window.clone());
+    watch_hidden(window);
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn watch_hidden(window: &WebviewWindow) {
+    linux::reveal_if_panel_disappears(window.clone());
 }
