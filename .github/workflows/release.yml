@@ -34,7 +34,7 @@ jobs:
 
       # Fails before anything is built if the tag differs from a version in
       # package.json, tauri.conf.json, Cargo.toml or Cargo.lock, or if the
-      # updater public key is still the placeholder.
+      # updater public key or signed-version requirement is missing.
       - name: Check the tag against the app versions
         run: node scripts/release-check.ts "$GITHUB_REF_NAME"
 
@@ -124,26 +124,38 @@ jobs:
           args: ${{ matrix.args }}
 
   verify:
-    name: Check the draft has every installer
+    name: Check the draft installers and signature versions
     needs: [draft, build]
     runs-on: ubuntu-22.04
     steps:
-      - name: List the release assets
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Check release assets and signature versions
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_ID: ${{ needs.draft.outputs.release-id }}
         run: |
-          assets=$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets" --paginate --jq '.[].name')
-          echo "$assets"
+          assets=$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets" --paginate --slurp | jq 'add')
+          names=$(jq -r '.[].name' <<<"$assets")
+          echo "$names"
           missing=0
           for pattern in '\.msi$' '\.msi\.sig$' '\.dmg$' '\.app\.tar\.gz$' '\.app\.tar\.gz\.sig$' \
-                         '\.AppImage$' '\.AppImage\.sig$' '\.deb$' '^latest\.json$'; do
-            if ! grep -qE "$pattern" <<<"$assets"; then
+                         '\.AppImage$' '\.AppImage\.sig$' '\.deb$' '\.deb\.sig$' '^latest\.json$'; do
+            if ! grep -qE "$pattern" <<<"$names"; then
               echo "::error::No release asset matches $pattern"
               missing=1
             fi
           done
-          exit $missing
+          if (( missing )); then exit 1; fi
+
+          signatures=$(mktemp -d)
+          while IFS=$'\t' read -r id name; do
+            gh api -H 'Accept: application/octet-stream' \
+              "repos/$GITHUB_REPOSITORY/releases/assets/$id" > "$signatures/$name"
+          done < <(jq -r '.[] | select(.name | endswith(".sig")) | [.id, .name] | @tsv' <<<"$assets")
+          node scripts/release-check.ts "$GITHUB_REF_NAME" "$signatures/"*.sig
       - name: Check latest.json lists every platform
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
