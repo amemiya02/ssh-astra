@@ -22,7 +22,7 @@ pub use transfer::{ImportSummary, EXPORT_FORMAT};
 /// The file format version this build writes, to the store and to export
 /// files. Bump it together with a migration step in [`migrate`], which reads
 /// both.
-const CURRENT_VERSION: u32 = 14;
+const CURRENT_VERSION: u32 = 15;
 
 const MAX_HOST_TAGS: usize = 10;
 const MAX_TAG_LENGTH: usize = 32;
@@ -103,6 +103,24 @@ pub enum HostAuth {
     Key { identity_file: PathBuf },
 }
 
+/// Stable identifiers for the built-in icons a user can choose for a Host.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum HostIcon {
+    Linux,
+    Ubuntu,
+    ArchLinux,
+    AlpineLinux,
+    LinuxMint,
+    Nixos,
+    Freebsd,
+    Macos,
+    Server,
+    Database,
+    Cloud,
+    Router,
+}
+
 /// A saved, named set of connection settings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -112,6 +130,9 @@ pub struct Host {
     /// User-defined labels, in the order they were added.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
+    /// Absent when the Host uses its automatic icon.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<HostIcon>,
     pub address: String,
     pub port: u16,
     pub user: String,
@@ -167,6 +188,8 @@ pub struct HostDraft {
     pub name: String,
     #[serde(default)]
     pub tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<HostIcon>,
     pub address: String,
     pub port: u16,
     pub user: String,
@@ -230,6 +253,7 @@ impl HostDraft {
             id,
             name: self.name.trim().to_owned(),
             tags: normalize_tags(&self.tags),
+            icon: self.icon,
             address: self.address.trim().to_owned(),
             port: self.port,
             user: self.user.trim().to_owned(),
@@ -640,6 +664,7 @@ impl HostStore {
             let mut host = HostDraft {
                 name: entry.name.clone(),
                 tags: Vec::new(),
+                icon: None,
                 address: entry.address,
                 port: entry.port,
                 user: entry.user,
@@ -893,8 +918,9 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
         // character set and Backspace byte, defaulting to UTF-8 and DEL.
         // v12 adds outbound proxies; older Hosts inherit the global setting.
         // v13 adds a local shell command as an outbound proxy choice. v14
-        // adds Tags; older Hosts default to an empty list.
-        2 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | CURRENT_VERSION => {
+        // adds Tags; older Hosts default to an empty list. v15 adds an
+        // optional icon; older Hosts use the automatic icon via serde default.
+        2 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | CURRENT_VERSION => {
             let FileV2 { groups, hosts } = serde_json::from_str(text).map_err(corrupt)?;
             Ok(Library { groups, hosts })
         }

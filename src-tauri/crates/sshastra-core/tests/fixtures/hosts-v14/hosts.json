@@ -1,0 +1,22 @@
+{
+  "version": 14,
+  "groups": [
+    { "id": "g-prod", "name": "Production", "parentId": null }
+  ],
+  "hosts": [
+    {
+      "id": "h-gateway",
+      "name": "Gateway",
+      "tags": ["Production", "East Coast"],
+      "address": "ssh.example.net",
+      "port": 2222,
+      "user": "deploy",
+      "auth": { "type": "auto" },
+      "identitiesOnly": false,
+      "forwardAgent": false,
+      "jumpHost": null,
+      "groupId": "g-prod",
+      "forwards": []
+    }
+  ]
+}

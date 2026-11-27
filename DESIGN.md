@@ -269,7 +269,7 @@ Computed in `src/index.css` with `color-mix(in oklab, ...)`; never stored in a t
 - **Selected** (`selected`): primary at 14% over transparent. Selected Host row, current rail destination, checked theme card.
 - **Overlay**: foreground 30% (light) or sidebar 72% (dark). The dialog scrim.
 - **Destructive foreground**: the ground colour, so text reads on light and dark red fills alike.
-- **Host hue tile**: an ANSI hue at 15% (`bg-ansi-*/15`), lettered in `--ansi-*-ink`. `monogramInk` (`src/theme/monogram-ink.ts`) blends the hue with the theme's text colour (keeping at least 30% hue, pushing towards black or white only when the text colour is too dull) until the letters reach 4.6:1 on that tile over every surface it sits on: ground, sidebar, raised, accent over ground and selected over sidebar.
+- **Host hue tile**: an ANSI hue at 15% (`bg-ansi-*/15`) with an icon or initials in `--ansi-*-ink`. `monogramInk` (`src/theme/monogram-ink.ts`) blends the hue with the theme's text colour (keeping at least 30% hue, pushing towards black or white only when the text colour is too dull) until it reaches 4.6:1 over the ground, sidebar, active tab surface, raised layer and hover and selection fills.
 
 ### The thirteen themes
 Light: **Astra Light** (cool blue-grey ground, white panels and Terminal, Astra blue), **GitHub Light** (GitHub's neutral greys and blue), **Catppuccin Latte** (lavender-grey pastel, Terminal on the ground colour), **Solarized Light** (warm cream base3 surfaces, blue accent).
@@ -377,7 +377,7 @@ Compact and native-feeling; controls recede until hovered, pressed or focused.
 - **View pressed** (Hosts, Port forwards while that column is shown): icon turns foreground and a 2px primary bar marks the rail's left edge, never the tile, so "this tab is focused" and "this column is shown" never read as one state.
 
 ### Tabs
-- **Style:** pill tabs on the ground, 28px tall, 112 to 208px wide, 10px radius, 4px apart. A Host tab leads with its Connection dot (8px, named in the label and tooltip); other tabs with a 14px kind icon at 70% opacity; then the truncated title; then a 20px close button.
+- **Style:** pill tabs on the ground, 28px tall, 112 to 208px wide, 10px radius, 4px apart. A Host tab leads with its 20px Host tile and a Connection dot at the corner, named in the label and tooltip. Other tabs lead with a 14px kind icon at 70% opacity. The truncated title and 20px close button follow.
 - **Inactive:** muted foreground, transparent border, `accent/60` on hover, close button hidden until hover.
 - **Active:** `surface` fill, 1px border, foreground text.
 - **Unread output.** A 6px primary dot follows the title when a Terminal in a background tab has new output. The tooltip and accessible label name the indicator. Activating the tab clears it, and output from any split in the active tab leaves it clear.
@@ -406,8 +406,9 @@ Plain searches in the Host list, Home and the command palette match Tags. A quer
 - **Style:** 56px, 10px radius, 1px border, `ground` fill on Home's `surface` panel, 12px padding: a 32px monogram tile with the Connection dot at its corner (ringed 2px in ground), name at 500 over the mono address; a menu button on hover.
 - **States:** `accent` on hover, `accent/70` pressed, 3px focus halo.
 
-### Host monogram (signature)
-The Host's tile wherever a Host appears: its initials on its hue at 15%, lettered in `--ansi-*-ink`. 20px with 11px letters in lists and menus; 32px on cards. Because the tile is translucent and the ink is solved against every backing, the same tile reads on ground, sidebar, raised, hover and selection in all thirteen themes.
+### Host tile
+
+The Host editor offers platform and generic icons and an Automatic choice. The tile uses the chosen icon, then a detected icon if available, then the Host's initials. All glyphs use `--ansi-*-ink` on the Host's hue at 15%. Tiles are 20px in lists, menus and tabs and 32px on Home cards.
 
 ### Status bar
 24px on the ground with a 1px top rule, `text-xs` muted foreground, segments closed by 1px rules; clickable segments take `accent` on hover and an inset focus ring. Every segment is live state, never a placeholder ("No Connections" when there are none).

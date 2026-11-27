@@ -76,6 +76,7 @@ function renderWorkspace(initialPane: Pane = local("a")) {
         <TabStrip
           activity={activity}
           tabs={state.tabs}
+          hosts={[]}
           activeId={state.activeId}
           platform="mac"
           titleSource="shell"

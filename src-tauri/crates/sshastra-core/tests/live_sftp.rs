@@ -31,6 +31,7 @@ fn host(sshd: &Sshd) -> Host {
         id: HostId::from("live-sftp".to_owned()),
         name: "live-sftp".into(),
         tags: Vec::new(),
+        icon: None,
         address: sshd.host.clone(),
         port: sshd.port,
         user: sshd.user.into(),

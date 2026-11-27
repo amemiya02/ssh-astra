@@ -20,7 +20,7 @@ import { HostMonogram } from "@/features/hosts/HostMonogram";
 import { hueClasses } from "@/features/hosts/hostHue";
 import { terminalOutputs } from "@/features/terminal/terminal-outputs";
 import type { TerminalTitleSource } from "@/features/terminal/terminal-prefs";
-import type { TemporaryHost } from "@/lib/ipc/hosts";
+import type { Host, TemporaryHost } from "@/lib/ipc/hosts";
 import { getSetting, setSetting, useSetting } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import { TabMenu } from "./TabMenu";
@@ -49,6 +49,7 @@ import {
 interface TabStripProps {
   activity: TabActivity;
   tabs: Tab[];
+  hosts: readonly Host[];
   activeId: string | null;
   platform: Platform;
   titleSource: TerminalTitleSource;
@@ -86,11 +87,12 @@ const kindIcons = {
 /**
  * Compact pill tabs on the window ground; the active one is raised (surface fill, 1px border).
  * Arrow keys move between tabs, Delete and middle-click close, dragging reorders. A Host's tab
- * shows its Connection state as a dot, named in the tooltip, and underlines itself in the Host's hue.
+ * shows its Host tile, a Connection dot named in the tooltip, and an underline in the Host's hue.
  */
 export function TabStrip({
   activity,
   tabs,
+  hosts,
   activeId,
   platform,
   titleSource,
@@ -104,6 +106,7 @@ export function TabStrip({
   const { t } = useTranslation();
   const shortcuts = useResolvedShortcuts(platform);
   const { unread, flashing } = useStore(activity.store);
+  const savedById = useMemo(() => new Map(hosts.map((host) => [host.id, host])), [hosts]);
   const outputs = useStore(terminalOutputs.store);
   const [privacyMode] = useSetting(privacyModeSetting);
   const [{ tabOrientation, verticalTabsCompact, groupTabsByHost: grouping }] = useSetting(workspaceSetting);
@@ -199,7 +202,8 @@ export function TabStrip({
 
   function renderTab(tab: Tab, grouped = false, hidden = false) {
     const active = tab.id === activeId;
-    const kind = activePane(tab).kind;
+    const pane = activePane(tab);
+    const host = "host" in pane ? savedById.get(pane.host.id) ?? pane.host : undefined;
     const title = tabTitle(tab, t, ordinals.get(tab.id)!, titleSource, privacyMode);
     const status = tabStatus(tab);
     const hasUnreadOutput = !active && unread.has(tab.id);
@@ -218,7 +222,7 @@ export function TabStrip({
     const label = details ? `${title} (${details})` : title;
     const TabIcon = tab.layout.type === "split"
       ? tab.layout.orientation === "horizontal" ? Columns2 : Rows2
-      : kindIcons[kind];
+      : kindIcons[pane.kind];
     const hue = tabHue(tab);
     return (
       <DraggableTab
@@ -275,13 +279,18 @@ export function TabStrip({
           )}
           onClick={() => onActivate(tab.id)}
         >
-          {status ? (
-            <span className="grid size-3.5 shrink-0 place-items-center" aria-hidden>
-              <span
+          {host ? (
+            <HostMonogram host={{ ...host, name: workspaceHostName(host, t, privacyMode) }}>
+              {status && <span
                 data-status={status}
-                className={cn("size-2 rounded-full", statusDot[status], status === "connecting" && "animate-pulse")}
-              />
-            </span>
+                className={cn(
+                  "absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full ring-1",
+                  active ? "ring-surface" : "ring-background",
+                  statusDot[status],
+                  status === "connecting" && "motion-safe:animate-pulse",
+                )}
+              />}
+            </HostMonogram>
           ) : (
             <TabIcon className="size-3.5 shrink-0 opacity-70" aria-hidden />
           )}
@@ -368,7 +377,8 @@ export function TabStrip({
             const hasUnread = closed && group.tabs.some(({ id }) => id !== activeId && unread.has(id));
             const bellRang = closed && group.tabs.some(({ id }) => flashing.has(id));
             const current = closed && group.tabs.some(({ id }) => id === activeId);
-            const name = workspaceHostName(group.host, t, privacyMode);
+            const host = savedById.get(group.host.id) ?? group.host;
+            const name = workspaceHostName(host, t, privacyMode);
             const title = t("tabs.hostGroup", { name });
             const label = [
               title,
@@ -392,7 +402,8 @@ export function TabStrip({
                 onClick={() => toggleHost(group.host.id)}
               >
                 <ChevronRight aria-hidden className={cn("shrink-0", compact ? "size-3" : "size-3.5", !closed && "rotate-90")} />
-                {compact ? <HostMonogram host={{ ...group.host, name }} /> : <span className="truncate">{name}</span>}
+                <HostMonogram host={{ ...host, name }} />
+                {!compact && <span className="truncate">{name}</span>}
                 {hasUnread && <span aria-hidden data-unread-output className={cn(
                   "bg-primary size-1.5 shrink-0 rounded-full",
                   compact && "absolute top-1 right-1",

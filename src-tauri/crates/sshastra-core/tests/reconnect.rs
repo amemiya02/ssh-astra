@@ -80,6 +80,7 @@ impl Fixture {
             id: HostId::from("flaky".to_owned()),
             name: "flaky sshd".into(),
             tags: Vec::new(),
+            icon: None,
             address: sshd.host.clone(),
             port: sshd.port,
             user: sshd.user.into(),

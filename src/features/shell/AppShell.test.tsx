@@ -68,6 +68,7 @@ function shell(activeKind: PaneKind["kind"] | null) {
           tabs={<TabStrip
             activity={activity}
             tabs={fixtureTabs.tabs}
+            hosts={[]}
             activeId={fixtureTabs.activeId}
             platform="mac"
             titleSource="shell"
