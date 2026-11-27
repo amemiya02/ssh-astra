@@ -203,18 +203,9 @@ fn build(app: &AppHandle, label: &str, focus: bool) -> tauri::Result<WebviewWind
     result
 }
 
+/// WebView2 can block window construction from a synchronous command.
 #[tauri::command]
 pub(crate) async fn window_new(app: AppHandle) -> Result<(), String> {
-    let (send, receive) = oneshot::channel();
-    let handle = app.clone();
-    app.run_on_main_thread(move || {
-        let _ = send.send(open(&handle));
-    })
-    .map_err(|error| error.to_string())?;
-    receive.await.map_err(|error| error.to_string())?
-}
-
-fn open(app: &AppHandle) -> Result<(), String> {
     let windows = app.state::<Windows>();
     if windows.quitting.load(Ordering::Acquire) {
         return Err("SSH Astra is quitting".into());
@@ -228,18 +219,37 @@ fn open(app: &AppHandle) -> Result<(), String> {
         *next += 1;
         (label, *next)
     };
-    let window = build(app, &label, true).map_err(|error| error.to_string())?;
-    *windows.focused.lock().unwrap() = Some(label.clone());
+    // Reserve the workspace before its webview can read or write settings.
     if let Err(error) = app.state::<SettingsState>().with(|store| {
         let mut session = WindowSession::read(store);
-        session.labels.push(label);
-        session.next_id = next_id;
+        session.labels.push(label.clone());
+        session.next_id = session.next_id.max(next_id);
         session.save(store)
     }) {
         log::warn!("Could not save the open Windows: {error:?}");
     }
-    let _ = window.set_focus();
-    Ok(())
+    match build(&app, &label, true) {
+        Ok(window) => {
+            *windows.focused.lock().unwrap() = Some(label);
+            let _ = window.set_focus();
+            Ok(())
+        }
+        Err(error) => {
+            forget(&app, &label);
+            Err(error.to_string())
+        }
+    }
+}
+
+fn forget(app: &AppHandle, label: &str) {
+    if let Err(error) = app.state::<SettingsState>().with(|store| {
+        let mut session = WindowSession::read(store);
+        session.labels.retain(|open| open != label);
+        session.layouts.remove(label);
+        session.save(store)
+    }) {
+        log::warn!("Could not save the remaining Windows: {error:?}");
+    }
 }
 
 /// Startup Hosts are chosen once per app, against the layouts of every restored Window.
@@ -371,14 +381,7 @@ pub(crate) fn destroyed(app: &AppHandle, label: &str) {
     windows.pending_saves.lock().unwrap().remove(label);
     let closed_by_user = windows.closing.lock().unwrap().remove(label);
     if closed_by_user {
-        if let Err(error) = app.state::<SettingsState>().with(|store| {
-            let mut session = WindowSession::read(store);
-            session.labels.retain(|open| open != label);
-            session.layouts.remove(label);
-            session.save(store)
-        }) {
-            log::warn!("Could not save the remaining Windows: {error:?}");
-        }
+        forget(app, label);
     }
     app.state::<SettingsState>().unwatch(label);
     app.state::<HostsState>().unwatch(label);
