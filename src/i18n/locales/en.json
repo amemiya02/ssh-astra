@@ -27,7 +27,25 @@
     "turnOff": "Turn off Agent access",
     "sharedTerminal": "Terminal shared with agents",
     "startFailed": "Could not enable Agent access.",
-    "saveFailed": "Agent access is off for this run. Could not save the setting."
+    "saveFailed": "Agent access is off for this run. Could not save the setting.",
+    "activity": {
+      "title": "Recent agent activity",
+      "description": "This device keeps the past 30 days of tool calls. The log includes tool names, permitted Hosts and paths, and results.",
+      "refresh": "Refresh",
+      "clear": "Clear activity",
+      "loadOlder": "Load older activity",
+      "loading": "Loading agent activity…",
+      "loadFailed": "Could not load agent activity.",
+      "clearFailed": "Could not clear agent activity.",
+      "empty": "No recent activity.",
+      "unknownTool": "Unknown tool",
+      "outcome": {
+        "allowed": "Allowed",
+        "denied": "Denied",
+        "timedOut": "Timed out",
+        "failed": "Failed"
+      }
+    }
   },
   "shell": {
     "workspace": "Terminals",

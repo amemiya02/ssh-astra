@@ -7,14 +7,17 @@ use std::io::{self, BufRead, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use serde_json::Value;
-use sshastra_core::agent::{dispatch, rpc_error, AgentBackend};
+use sshastra_core::agent::{
+    dispatch_recording, rpc_error, ActivityCall, AgentActivityLog, AgentBackend,
+};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
+use tokio::time::{timeout_at, Instant};
 
 use crate::error::CommandResult;
 use platform::{Endpoint, Listener};
@@ -26,13 +29,15 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub struct AgentService {
     backend: Arc<dyn AgentBackend>,
+    activity: Arc<AgentActivityLog>,
     server: Mutex<Option<Server>>,
 }
 
 impl AgentService {
-    pub fn new(backend: impl AgentBackend + 'static) -> Self {
+    pub fn new(backend: impl AgentBackend + 'static, activity: Arc<AgentActivityLog>) -> Self {
         Self {
             backend: Arc::new(backend),
+            activity,
             server: Mutex::new(None),
         }
     }
@@ -58,7 +63,11 @@ impl AgentService {
             return save();
         }
         *server = None;
-        let pending = Server::start(&Endpoint::current_user()?, Arc::clone(&self.backend))?;
+        let pending = Server::start(
+            &Endpoint::current_user()?,
+            Arc::clone(&self.backend),
+            Arc::clone(&self.activity),
+        )?;
         save()?;
         pending.active.store(true, Ordering::Release);
         *server = Some(pending);
@@ -81,7 +90,11 @@ struct Server {
 }
 
 impl Server {
-    fn start(endpoint: &Endpoint, backend: Arc<dyn AgentBackend>) -> io::Result<Self> {
+    fn start(
+        endpoint: &Endpoint,
+        backend: Arc<dyn AgentBackend>,
+        activity: Arc<AgentActivityLog>,
+    ) -> io::Result<Self> {
         let runtime = runtime()?;
         let listener = {
             let _entered = runtime.enter();
@@ -92,7 +105,15 @@ impl Server {
         let active_on_thread = Arc::clone(&active);
         let thread = thread::Builder::new()
             .name("sshastra-agent".into())
-            .spawn(move || runtime.block_on(serve(listener, active_on_thread, backend, stopped)))?;
+            .spawn(move || {
+                runtime.block_on(serve(
+                    listener,
+                    active_on_thread,
+                    backend,
+                    activity,
+                    stopped,
+                ))
+            })?;
         Ok(Self {
             active,
             stop: Some(stop),
@@ -130,6 +151,7 @@ async fn serve(
     mut listener: Listener,
     active: Arc<AtomicBool>,
     backend: Arc<dyn AgentBackend>,
+    activity: Arc<AgentActivityLog>,
     mut stopped: oneshot::Receiver<()>,
 ) {
     let mut clients = JoinSet::new();
@@ -147,12 +169,14 @@ async fn serve(
                     }
                     continue;
                 };
-                let (active, backend) = (Arc::clone(&active), Arc::clone(&backend));
+                let (active, backend, activity) = (
+                    Arc::clone(&active),
+                    Arc::clone(&backend),
+                    Arc::clone(&activity),
+                );
                 clients.spawn(async move {
-                    let _ = tokio::time::timeout(
-                        REQUEST_TIMEOUT,
-                        converse(stream, &active, backend.as_ref()),
-                    ).await;
+                    let deadline = Instant::now() + REQUEST_TIMEOUT;
+                    let _ = converse(stream, &active, backend.as_ref(), &activity, deadline).await;
                 });
             }
         }
@@ -160,23 +184,56 @@ async fn serve(
     clients.shutdown().await;
 }
 
+struct InFlightActivity<'a> {
+    log: &'a AgentActivityLog,
+    call: Option<ActivityCall>,
+}
+
+impl Drop for InFlightActivity<'_> {
+    fn drop(&mut self) {
+        if let Some(call) = self.call.take() {
+            if self.log.record(call, SystemTime::now()).is_err() {
+                log::warn!("Could not record Agent access activity");
+            }
+        }
+    }
+}
+
 async fn converse(
     mut stream: impl AsyncRead + AsyncWrite + Unpin,
     active: &AtomicBool,
     backend: &dyn AgentBackend,
+    log: &AgentActivityLog,
+    deadline: Instant,
 ) -> io::Result<()> {
-    let Some(frame) = read_frame(&mut stream, MAX_REQUEST_BYTES).await? else {
+    let Some(frame) = timeout_at(deadline, read_frame(&mut stream, MAX_REQUEST_BYTES)).await??
+    else {
         return Ok(());
     };
     let enabled = || active.load(Ordering::Acquire);
-    let response = dispatch(&frame, enabled, backend).await;
+    let mut activity = InFlightActivity { log, call: None };
+    let response = match timeout_at(
+        deadline,
+        dispatch_recording(&frame, enabled, backend, &mut activity.call),
+    )
+    .await
+    {
+        Ok(response) => response,
+        Err(error) => {
+            if let Some(call) = &mut activity.call {
+                call.timed_out();
+            }
+            return Err(error.into());
+        }
+    };
     if let Some(response) = response.filter(|_| enabled()) {
         let response = validate_frame(json_line(&response), MAX_RESPONSE_BYTES)?
             .expect("JSON frame cannot be empty");
-        stream.write_all(&response).await?;
+        timeout_at(deadline, stream.write_all(&response)).await??;
+        drop(activity);
         // The proxy closes once it has the whole reply. Keep the pipe open
         // until then so Windows can deliver the last buffered bytes.
-        let _ = stream.read_u8().await;
+        let _ = timeout_at(deadline, stream.read_u8()).await;
     }
     Ok(())
 }

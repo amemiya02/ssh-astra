@@ -27,7 +27,25 @@
     "turnOff": "关闭代理访问",
     "sharedTerminal": "终端已向代理开放",
     "startFailed": "无法开启代理访问。",
-    "saveFailed": "本次运行的代理访问已关闭，但无法保存设置。"
+    "saveFailed": "本次运行的代理访问已关闭，但无法保存设置。",
+    "activity": {
+      "title": "近期代理活动",
+      "description": "本机保留最近 30 天的工具调用，记录工具名称、已授权的 Host 和路径以及结果。",
+      "refresh": "刷新",
+      "clear": "清空活动记录",
+      "loadOlder": "加载更早的活动记录",
+      "loading": "正在加载代理活动记录…",
+      "loadFailed": "无法加载代理活动记录。",
+      "clearFailed": "无法清空代理活动记录。",
+      "empty": "近期没有代理活动。",
+      "unknownTool": "未知工具",
+      "outcome": {
+        "allowed": "允许",
+        "denied": "拒绝",
+        "timedOut": "超时",
+        "failed": "失败"
+      }
+    }
   },
   "shell": {
     "workspace": "终端",

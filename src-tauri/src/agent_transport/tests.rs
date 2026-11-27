@@ -22,6 +22,7 @@ impl<F: Fn() -> Vec<OpenTerminal> + Send + Sync> AgentBackend for TestBackend<F>
         (id == 12.into()).then(|| ReadTarget {
             terminal: id,
             host: String::from("build").into(),
+            host_name: "Build".into(),
             permission: AgentPermission::Read,
             status: TerminalStatus::Connected,
             generation: Some(0),
@@ -31,9 +32,12 @@ impl<F: Fn() -> Vec<OpenTerminal> + Send + Sync> AgentBackend for TestBackend<F>
     fn read_screen(
         &self,
         _target: &ReadTarget,
-        _lines: usize,
+        lines: usize,
     ) -> BoxFuture<'_, Result<TerminalScreen, ReadError>> {
-        Box::pin(async {
+        Box::pin(async move {
+            if lines == 1 {
+                return std::future::pending().await;
+            }
             Ok(TerminalScreen {
                 screen: "rendered".into(),
                 scrollback: "history".into(),
@@ -71,10 +75,15 @@ fn isolated_directory() -> tempfile::TempDir {
     directory
 }
 
+fn activity_log(directory: &tempfile::TempDir) -> Arc<AgentActivityLog> {
+    Arc::new(AgentActivityLog::new(directory.path().join("activity")))
+}
+
 #[test]
 fn stdio_discovers_and_calls_the_read_tools_through_local_ipc() {
     let dir = isolated_directory();
     let endpoint = Endpoint::isolated(dir.path());
+    let log = activity_log(&dir);
     let server = Server::start(
         &endpoint,
         Arc::new(TestBackend(|| {
@@ -89,6 +98,7 @@ fn stdio_discovers_and_calls_the_read_tools_through_local_ipc() {
                 status: TerminalStatus::Connected,
             }]
         })),
+        Arc::clone(&log),
     )
     .unwrap();
     server.active.store(true, Ordering::Release);
@@ -120,6 +130,44 @@ fn stdio_discovers_and_calls_the_read_tools_through_local_ipc() {
         screen,
         json!({"screen":"rendered","scrollback":"history","truncated":false})
     );
+    drop(server);
+    let activity =
+        serde_json::to_value(log.list(SystemTime::now(), None).unwrap().records).unwrap();
+    let mut calls = activity.as_array().unwrap().clone();
+    for call in &mut calls {
+        assert!(call
+            .as_object_mut()
+            .unwrap()
+            .remove("timestamp")
+            .unwrap()
+            .is_u64());
+    }
+    assert_eq!(calls.len(), 2);
+    assert!(calls.contains(&json!({"tool":"read_terminal","host":"Build","outcome":"allowed"})));
+    assert!(calls.contains(&json!({"tool":"list_terminals","outcome":"allowed"})));
+}
+
+#[test]
+fn a_stalled_tool_call_records_a_timeout_without_returning_content() {
+    let directory = tempfile::tempdir().unwrap();
+    let log = activity_log(&directory);
+    runtime().unwrap().block_on(async {
+        let (mut client, server) = tokio::io::duplex(MAX_REQUEST_BYTES);
+        let request = br#"{"jsonrpc":"2.0","id":42,"method":"tools/call","params":{"name":"read_terminal","arguments":{"terminalId":12,"scrollbackLines":1}}}"#;
+        client.write_all(request).await.unwrap();
+        client.write_u8(b'\n').await.unwrap();
+        let enabled = AtomicBool::new(true);
+        let deadline = Instant::now() + Duration::from_millis(5);
+        let error = converse(server, &enabled, &TestBackend(Vec::new), &log, deadline).await.unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        assert!(client.read_u8().await.is_err());
+    });
+    let activity =
+        serde_json::to_value(log.list(SystemTime::now(), None).unwrap().records).unwrap();
+    assert_eq!(activity.as_array().unwrap().len(), 1);
+    assert_eq!(activity[0]["tool"], "read_terminal");
+    assert_eq!(activity[0]["host"], "Build");
+    assert_eq!(activity[0]["outcome"], "timedOut");
 }
 
 #[test]
@@ -134,6 +182,7 @@ fn a_stopped_server_closes_the_endpoint_and_returns_no_terminal_data() {
             count.fetch_add(1, Ordering::Relaxed);
             Vec::new()
         })),
+        activity_log(&dir),
     )
     .unwrap();
     server.active.store(true, Ordering::Release);
@@ -162,7 +211,9 @@ fn unix_socket_and_directory_are_private_and_a_second_server_cannot_replace_them
 
     let dir = isolated_directory();
     let endpoint = Endpoint::isolated(dir.path());
-    let server = Server::start(&endpoint, Arc::new(TestBackend(Vec::new))).unwrap();
+    let log = activity_log(&dir);
+    let server =
+        Server::start(&endpoint, Arc::new(TestBackend(Vec::new)), Arc::clone(&log)).unwrap();
     let socket = endpoint.socket();
     assert_eq!(
         socket.metadata().unwrap().permissions().mode() & 0o777,
@@ -179,11 +230,11 @@ fn unix_socket_and_directory_are_private_and_a_second_server_cannot_replace_them
             & 0o777,
         0o700
     );
-    assert!(Server::start(&endpoint, Arc::new(TestBackend(Vec::new))).is_err());
+    assert!(Server::start(&endpoint, Arc::new(TestBackend(Vec::new)), Arc::clone(&log)).is_err());
 
     drop(server);
     assert!(!socket.exists());
-    assert!(Server::start(&endpoint, Arc::new(TestBackend(Vec::new))).is_ok());
+    assert!(Server::start(&endpoint, Arc::new(TestBackend(Vec::new)), log).is_ok());
 }
 
 #[test]
@@ -195,6 +246,7 @@ fn a_local_client_cannot_send_an_oversized_frame() {
         Arc::new(TestBackend(|| {
             panic!("oversized requests cannot read metadata")
         })),
+        activity_log(&dir),
     )
     .unwrap();
     server.active.store(true, Ordering::Release);
