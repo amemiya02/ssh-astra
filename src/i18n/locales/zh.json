@@ -410,6 +410,24 @@
   },
   "transfers": {
     "title": "传输",
+    "open": "打开传输",
+    "filter": "筛选传输",
+    "filters": {
+      "all": "全部",
+      "inProgress": "进行中",
+      "failed": "失败",
+      "completed": "已完成"
+    },
+    "empty": {
+      "all": "没有传输。",
+      "inProgress": "没有未结束的传输。",
+      "failed": "没有失败的传输。",
+      "completed": "没有已完成的传输。"
+    },
+    "unknownHost": "未知主机",
+    "reveal": "在文件管理器中显示",
+    "revealFailed": "无法在文件管理器中显示 {{name}}。",
+    "clearFailed": "无法清除已完成的传输。",
     "expand": "显示传输",
     "collapse": "隐藏传输",
     "active": "进行中 {{count}}",

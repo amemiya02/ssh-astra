@@ -206,6 +206,7 @@ pub fn run() {
             commands::transfers::transfer_retry,
             commands::transfers::transfer_answer,
             commands::transfers::transfers_remove,
+            commands::transfers::transfer_reveal_download,
         ])
         .build(tauri::generate_context!())
         .expect("error while building sshastra")

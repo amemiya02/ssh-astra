@@ -410,7 +410,7 @@ The privacy toggle sits beside the theme menu. Its pressed state uses the `selec
 
 ### Toasts
 
-The lower-right corner of the workspace stacks up to three in-app toasts above the status bar. Cards use the raised surface, a 1px border, 10px radius and a status icon. They report completed or failed transfers while the Transfers panel is hidden or collapsed, Port forward failures, Remote edit upload failures, import results and explicit copy actions. Terminal copy on select is silent.
+The lower-right corner of the workspace stacks up to three in-app toasts above the status bar. Cards use the raised surface, a 1px border, 10px radius and a status icon. They report completed or failed transfers when both transfer lists are out of view, Port forward failures, Remote edit upload failures, import results and explicit copy actions. Terminal copy on select is silent.
 
 Additional toasts queue in arrival order. A normal toast stays on screen for five seconds. An error stays until dismissed with its labeled close button. Persistent live regions announce normal messages politely and errors assertively without moving focus.
 
@@ -456,6 +456,14 @@ Settings lists every theme as a card (10px radius, 6px padding, auto-fill at min
 
 - Queued and running rows offer Pause beside Cancel. Paused rows keep their progress bar, show Paused in the detail line, and offer Resume beside Cancel. Transfers waiting on a destination conflict can be paused from the conflict dialog.
 - A paused transfer frees its queue slot after the current write closes. Resume takes the next available slot in queue order and verifies any staged bytes before continuing. An overwrite that writes directly to the destination finishes its current file before pausing.
+
+### Global Transfers pane
+
+The status bar's transfer summary and the command palette open or focus the same Transfers tab. The summary shows the current count and speed while transfers run and stays available when the queue is idle. The pane fills the workspace on the surface colour and uses the same rows and actions as the File panel's transfer list.
+
+The All, In progress, Failed and Completed filters sit above the scrolling list. In progress includes paused transfers and those waiting for a conflict decision. Groups use the destination Host for uploads and the source Host for downloads and Host-to-Host copies. A copy row shows both Host names.
+
+Clear completed removes successful rows across Hosts. Completed downloads have a folder button labeled “Show in file manager” that reveals the local destination.
 
 ### Menus, tooltips, dialogs
 - **Menus:** `raised` fill, 1px border, 8px radius, 4px padding, `shadow-overlay`; items 6px radius, `accent` on focus, destructive items red.

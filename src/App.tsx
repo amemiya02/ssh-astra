@@ -167,6 +167,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
   const pickSftpHost = useCallback(() => setSftpPickerOpen(true), []);
   const openHome = useCallback(() => openTab({ kind: "home" }), [openTab]);
   const openSettings = useCallback(() => openTab({ kind: "settings" }), [openTab]);
+  const openTransfers = useCallback(() => openTab({ kind: "transfers" }), [openTab]);
   const openForwards = useCallback((host: Host) => openTab({ kind: "port-forwards", host }), [openTab]);
   // Port forward states and transfers are pushed by the backend for the app's lifetime.
   useEffect(() => {
@@ -228,6 +229,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
         },
         { id: "home.open", title: t("palette.actions.goHome"), keywords: [t("palette.keywords.hosts")], run: openHome },
         { id: "files.openSftp", title: t("sftp.open"), run: pickSftpHost },
+        { id: "transfers.open", title: t("transfers.open"), run: openTransfers },
         {
           id: "privacyMode.toggle",
           title: t(privacyMode ? "privacyMode.turnOff" : "privacyMode.turnOn"),
@@ -265,7 +267,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
             ]
           : []),
       ],
-      [t, openLocalTerminal, openHome, openSettings, pickSftpHost, canSplitFocused, privacyMode],
+      [t, openLocalTerminal, openHome, openSettings, openTransfers, pickSftpHost, canSplitFocused, privacyMode],
     ),
   );
 
@@ -453,8 +455,9 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
             onResizeSplit={(tabId, resize) => dispatch({ type: "resizeSplit", tabId, ...resize })}
           />
         }
-        fullWorkspace={!focusedPane || focusedPane.kind === "sftp" || focusedPane.kind === "home"}
+        fullWorkspace={!focusedPane || focusedPane.kind === "sftp" || focusedPane.kind === "home" || focusedPane.kind === "transfers"}
         filePanel={<FilePanelContent pane={filePanelPane} peers={filePanelPeers} onOpenSftp={openSftp} />}
+        onOpenTransfers={openTransfers}
         status={{
           connected,
           reconnecting,

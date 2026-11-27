@@ -79,6 +79,7 @@ function shell(activeKind: PaneKind["kind"] | null) {
           />}
           workspace={<><input aria-label="Terminal input" /><WorkspaceSection /></>}
           filePanel={<DockState />}
+          onOpenTransfers={() => {}}
         />
       </TooltipProvider>
     </ThemeProvider>

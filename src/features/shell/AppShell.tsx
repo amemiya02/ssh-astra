@@ -32,8 +32,9 @@ export interface AppShellProps {
    * It can read the dock and collapse itself with `useFilePanelDock()`.
    */
   filePanel: ReactNode;
-  /** The standalone SFTP tab fills the workspace. */
+  /** The selected workspace view fills the area normally shared with the File panel. */
   fullWorkspace?: boolean;
+  onOpenTransfers(): void;
   /** What the status bar reports. */
   status?: StatusInfo;
 }
@@ -53,7 +54,7 @@ const sidebarSize = "248px";
  * The main window: nav rail | sidebar view | (tab strip / Terminal workspace + File panel dock), over a status bar.
  * Panel sizes, collapsed panels and the dock position persist across restarts.
  */
-export function AppShell({ sidebar, nav, tabs, workspace, filePanel, fullWorkspace, status }: AppShellProps) {
+export function AppShell({ sidebar, nav, tabs, workspace, filePanel, fullWorkspace, onOpenTransfers, status }: AppShellProps) {
   const { t } = useTranslation();
   const { layout, saveGroup, setDock, setSidebarView } = useShellLayout();
   const { dock, sidebarView } = layout;
@@ -313,7 +314,12 @@ export function AppShell({ sidebar, nav, tabs, workspace, filePanel, fullWorkspa
         </ResizablePanelGroup>
         <ToastRegion />
       </div>
-      <StatusBar info={status} onShowForwards={() => showSidebarView("forwards")} onOpenSettings={nav.onSettings} />
+      <StatusBar
+        info={status}
+        onShowForwards={() => showSidebarView("forwards")}
+        onOpenTransfers={onOpenTransfers}
+        onOpenSettings={nav.onSettings}
+      />
     </div>
   );
 

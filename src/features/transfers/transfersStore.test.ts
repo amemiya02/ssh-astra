@@ -7,6 +7,7 @@ import {
   firstConflict,
   formatDuration,
   timeLeft,
+  transferGroups,
   transferSummary,
   type TransfersApi,
 } from "./transfersStore";
@@ -107,15 +108,16 @@ describe("transfers store", () => {
   it("asks the backend to upload, download, cancel, retry and answer", async () => {
     const { api, store } = setup();
     const s = store.getState();
+    const host = { id: "h1", name: "Web" };
 
-    await s.upload("h1", ["/a"], "/srv");
-    await s.download("h1", ["/srv/b"], "/dl");
+    await s.upload(host, ["/a"], "/srv");
+    await s.download(host, ["/srv/b"], "/dl");
     await s.cancel(3);
     await s.retry(4);
     await s.answer(5, "skipAll");
 
-    expect(api.uploadFiles).toHaveBeenCalledWith("h1", ["/a"], "/srv");
-    expect(api.downloadFiles).toHaveBeenCalledWith("h1", ["/srv/b"], "/dl");
+    expect(api.uploadFiles).toHaveBeenCalledWith(host, ["/a"], "/srv");
+    expect(api.downloadFiles).toHaveBeenCalledWith(host, ["/srv/b"], "/dl");
     expect(api.cancelTransfer).toHaveBeenCalledWith(3);
     expect(api.retryTransfer).toHaveBeenCalledWith(4);
     expect(api.answerConflict).toHaveBeenCalledWith(5, "skipAll");
@@ -156,9 +158,49 @@ describe("transfers store", () => {
     expect(store.getState().transfers.map((t) => t.id)).toEqual([2]);
     expect(api.removeTransfers).toHaveBeenCalledWith([1, 3]);
   });
+
+  it("clears completed transfers without removing any other state or a later completion", async () => {
+    const { api, push, store } = setup([
+      transfer(1, { state: { type: "done" } }),
+      transfer(2, { state: { type: "failed", message: "x" } }),
+      transfer(3, { state: { type: "cancelled" } }),
+      transfer(4, { state: { type: "paused" } }),
+      transfer(5),
+    ]);
+    await store.getState().watch();
+    vi.mocked(api.removeTransfers).mockImplementationOnce(async () => {
+      push(transfer(5, { state: { type: "done" } }));
+    });
+
+    await store.getState().clearCompleted();
+
+    expect(store.getState().transfers.map(({ id }) => id)).toEqual([2, 3, 4, 5]);
+    expect(api.removeTransfers).toHaveBeenCalledWith([1]);
+  });
 });
 
 describe("transfer views", () => {
+  it("groups filtered transfers by Host identity in queue order", () => {
+    const web = { id: "h1", name: "Web" };
+    const replica = { id: "h2", name: "Web" };
+    const acrossHosts = [
+      transfer(1, { state: { type: "done" }, sourceHost: web, direction: "download" }),
+      transfer(2, { state: { type: "paused" }, targetHost: web }),
+      transfer(3, { state: { type: "failed", message: "boom" }, targetHost: replica }),
+      transfer(4, { state: { type: "conflict", path: "/dest" }, sourceHost: web, targetHost: replica, direction: "copy" }),
+      transfer(5, { state: { type: "queued" }, sourceHost: replica, direction: "download" }),
+      transfer(6, { state: { type: "cancelled" } }),
+      transfer(7, { targetHost: web }),
+    ];
+    const groupedIds = (filter: Parameters<typeof transferGroups>[1]) =>
+      transferGroups(acrossHosts, filter).map(({ host, transfers }) => [host?.id, transfers.map(({ id }) => id)]);
+
+    expect(groupedIds("all")).toEqual([["h1", [1, 2, 4, 7]], ["h2", [3, 5]], [undefined, [6]]]);
+    expect(groupedIds("inProgress")).toEqual([["h1", [2, 4, 7]], ["h2", [5]]]);
+    expect(groupedIds("failed")).toEqual([["h2", [3]]]);
+    expect(groupedIds("completed")).toEqual([["h1", [1]]]);
+  });
+
   const all = [
     transfer(1, { state: { type: "done" } }),
     transfer(2, { state: { type: "conflict", path: "/remote/x" } }),

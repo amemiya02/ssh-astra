@@ -28,10 +28,10 @@ export interface TransfersState {
   speeds: Record<TransferId, number>;
   /** Loads the current transfers and follows the backend's changes. Call once. */
   watch(): Promise<void>;
-  /** Registers an expanded Transfers panel until the returned cleanup is called. */
+  /** Registers a visible transfer list until the returned cleanup is called. */
   trackVisiblePanel(): () => void;
-  upload(hostId: HostId, paths: string[], remoteDir: string): Promise<void>;
-  download(hostId: HostId, paths: string[], localDir: string): Promise<void>;
+  upload(host: TransferHost, paths: string[], remoteDir: string): Promise<void>;
+  download(host: TransferHost, paths: string[], localDir: string): Promise<void>;
   copyRemote(source: TransferHost, paths: string[], target: TransferHost, remoteDir: string): Promise<void>;
   cancel(id: TransferId): Promise<void>;
   pause(id: TransferId): Promise<void>;
@@ -40,6 +40,8 @@ export interface TransfersState {
   answer(id: TransferId, answer: ConflictAnswer): Promise<void>;
   /** Forgets finished transfers among `ids`. */
   dismiss(ids: TransferId[]): Promise<void>;
+  /** Forgets the transfers already completed when this action was requested. */
+  clearCompleted(): Promise<void>;
 }
 
 /** How much a new speed sample moves the shown speed (the rest is the earlier speed). */
@@ -110,12 +112,12 @@ export function createTransfersStore(
         return () => { visiblePanels.delete(panel); };
       },
 
-      async upload(hostId, paths, remoteDir) {
-        await api.uploadFiles(hostId, paths, remoteDir);
+      async upload(host, paths, remoteDir) {
+        await api.uploadFiles(host, paths, remoteDir);
       },
 
-      async download(hostId, paths, localDir) {
-        await api.downloadFiles(hostId, paths, localDir);
+      async download(host, paths, localDir) {
+        await api.downloadFiles(host, paths, localDir);
       },
 
       async copyRemote(source, paths, target, remoteDir) {
@@ -134,6 +136,13 @@ export function createTransfersStore(
         set({ transfers: get().transfers.filter((t) => !finished.has(t.id)) });
         await api.removeTransfers([...finished]);
       },
+
+      async clearCompleted() {
+        const completed = new Set(doneTransfers(get().transfers).map(({ id }) => id));
+        if (completed.size === 0) return;
+        await api.removeTransfers([...completed]);
+        set(({ transfers }) => ({ transfers: transfers.filter(({ id }) => !completed.has(id)) }));
+      },
     };
   });
 }
@@ -145,6 +154,27 @@ export function activeTransfers(transfers: readonly Transfer[]): Transfer[] {
 
 export function doneTransfers(transfers: readonly Transfer[]): Transfer[] {
   return transfers.filter((t) => t.state.type === "done");
+}
+
+export type TransferFilter = "all" | "inProgress" | "failed" | "completed";
+
+/** Groups each matching row once, under the source Host or the upload's target Host. */
+export function transferGroups(transfers: readonly Transfer[], filter: TransferFilter) {
+  const groups = new Map<HostId | undefined, { host: TransferHost | undefined; transfers: Transfer[] }>();
+  for (const transfer of transfers) {
+    if (filter === "inProgress" && isFinished(transfer)) continue;
+    if (filter === "failed" && transfer.state.type !== "failed") continue;
+    if (filter === "completed" && transfer.state.type !== "done") continue;
+
+    const host = transfer.sourceHost ?? transfer.targetHost;
+    let group = groups.get(host?.id);
+    if (!group) {
+      group = { host, transfers: [] };
+      groups.set(host?.id, group);
+    }
+    group.transfers.push(transfer);
+  }
+  return [...groups.values()];
 }
 
 /** The question to ask now: the oldest transfer waiting on a conflict. */
@@ -181,6 +211,11 @@ export const transfersStore = createTransfersStore(ipc, undefined, ({ name, stat
   if (state.type === "done") showToast((t) => t("toast.transferDone", { name }));
   if (state.type === "failed") showToast((t) => t("toast.transferFailed", { name, reason: state.message }), "error");
 });
+
+export function clearCompletedTransfers(): void {
+  void transfersStore.getState().clearCompleted().catch(() =>
+    showToast((t) => t("transfers.clearFailed"), "error"));
+}
 
 export function useTransfers<T>(selector: (state: TransfersState) => T): T {
   return useStore(transfersStore, selector);

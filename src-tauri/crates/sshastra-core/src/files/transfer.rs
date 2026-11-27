@@ -218,7 +218,6 @@ enum Location {
     Remote {
         path: String,
         open: OpenRemote,
-        host_id: Option<HostId>,
         host: Option<TransferHost>,
     },
 }
@@ -239,12 +238,7 @@ impl Location {
     }
 
     fn host_id(&self) -> Option<&HostId> {
-        match self {
-            Self::Local(_) => None,
-            Self::Remote { host_id, host, .. } => host_id
-                .as_ref()
-                .or_else(|| host.as_ref().map(|host| &host.id)),
-        }
+        self.host().map(|host| &host.id)
     }
 
     fn opener(&self) -> Option<&OpenRemote> {
@@ -345,8 +339,7 @@ impl TransferQueue {
     /// Queues an upload that can resume once when this Host reconnects.
     pub fn upload_to(
         &self,
-        host: HostId,
-        open: OpenRemote,
+        RemoteTransfer { host, open }: RemoteTransfer,
         local: PathBuf,
         remote_dir: String,
     ) -> TransferId {
@@ -355,7 +348,7 @@ impl TransferQueue {
 
     fn enqueue_upload(
         &self,
-        host_id: Option<HostId>,
+        host: Option<TransferHost>,
         open: OpenRemote,
         local: PathBuf,
         remote_dir: String,
@@ -369,12 +362,7 @@ impl TransferQueue {
             direction: TransferDirection::Upload,
             name,
             source: Location::Local(local),
-            target: Location::Remote {
-                path,
-                open,
-                host_id,
-                host: None,
-            },
+            target: Location::Remote { path, open, host },
         })
     }
 
@@ -387,8 +375,7 @@ impl TransferQueue {
     /// Queues a download that can resume once when this Host reconnects.
     pub fn download_from(
         &self,
-        host: HostId,
-        open: OpenRemote,
+        RemoteTransfer { host, open }: RemoteTransfer,
         remote: String,
         local_dir: PathBuf,
     ) -> TransferId {
@@ -397,7 +384,7 @@ impl TransferQueue {
 
     fn enqueue_download(
         &self,
-        host_id: Option<HostId>,
+        host: Option<TransferHost>,
         open: OpenRemote,
         remote: String,
         local_dir: PathBuf,
@@ -410,8 +397,7 @@ impl TransferQueue {
             source: Location::Remote {
                 path: remote,
                 open,
-                host_id,
-                host: None,
+                host,
             },
             target: Location::Local(local),
         })
@@ -438,13 +424,11 @@ impl TransferQueue {
             source: Location::Remote {
                 path: source_path,
                 open: source.open,
-                host_id: None,
                 host: Some(source.host),
             },
             target: Location::Remote {
                 path,
                 open: target.open,
-                host_id: None,
                 host: Some(target.host),
             },
         })
@@ -628,6 +612,18 @@ impl TransferQueue {
             .values()
             .map(|e| e.info.clone())
             .collect()
+    }
+
+    /// The native filesystem path of a completed download still in the queue.
+    pub fn completed_download_path(&self, id: TransferId) -> Option<PathBuf> {
+        let state = self.inner.lock();
+        let entry = state.entries.get(&id)?;
+        match (entry.info.direction, &entry.info.state, &entry.job.target) {
+            (TransferDirection::Download, TransferState::Done, Location::Local(path)) => {
+                Some(path.clone())
+            }
+            _ => None,
+        }
     }
 
     fn enqueue(&self, job: Job) -> TransferId {
