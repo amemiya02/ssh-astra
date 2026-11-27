@@ -9,6 +9,7 @@ import { createFileBrowserStore, type FilesApi } from "./fileBrowserStore";
 import { RemoteEdits } from "./RemoteEdits";
 
 let editEvents: (event: EditEvent) => void = () => {};
+let copyEvents: (event: EditEvent) => void = () => {};
 
 const api: FilesApi = {
   openFiles: vi.fn(() => Promise.resolve(1)),
@@ -20,6 +21,11 @@ const api: FilesApi = {
   }),
   retryRemoteEdit: vi.fn(() => Promise.resolve()),
   closeRemoteEdit: vi.fn(() => Promise.resolve()),
+  overwriteRemoteEdit: vi.fn(() => Promise.resolve()),
+  openRemoteEditConflictCopy: vi.fn((_id, _conflictId, onEvent) => {
+    copyEvents = onEvent;
+    return Promise.resolve(4);
+  }),
   createDir: vi.fn(() => Promise.resolve()),
   compressFiles: vi.fn(() => Promise.resolve()),
   extractArchive: vi.fn(() => Promise.resolve()),
@@ -100,5 +106,40 @@ describe("RemoteEdits", () => {
     expect(container.querySelector('[aria-live="polite"]')?.textContent).toBe(notice);
     expect(container.textContent).toContain("Saved to web-1");
     act(() => button(`Dismiss notification: ${notice}`)!.click());
+  });
+
+  it("offers all conflict choices and keeps the original edit when cancelled or opened separately", async () => {
+    vi.clearAllMocks();
+    const store = await render();
+    await act(() => store.getState().open({ name: "app.conf", kind: "file", size: 1, modified: null, permissions: null, linkTarget: null }));
+    act(() => editEvents({ state: "conflict", conflictId: 1 }));
+
+    const review = () => act(() => button("Review conflict")!.click());
+    const choose = (name: string) => act(async () => {
+      const dialog = document.body.querySelector('[role="dialog"]')!;
+      [...dialog.querySelectorAll("button")].find((b) => b.textContent === name)!.click();
+    });
+
+    review();
+    await choose("Cancel");
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+    expect(api.overwriteRemoteEdit).not.toHaveBeenCalled();
+    expect(api.openRemoteEditConflictCopy).not.toHaveBeenCalled();
+    expect(api.closeRemoteEdit).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Local changes kept. Uploads paused.");
+
+    review();
+    await choose("Open remote version");
+    expect(api.openRemoteEditConflictCopy).toHaveBeenCalledWith(3, 1, expect.any(Function));
+    expect(store.getState().edits.map(({ id }) => id)).toEqual([3, 4]);
+    act(() => copyEvents({ state: "uploaded" }));
+    expect(container.textContent).toContain("Saved to web-1");
+    expect(container.textContent).toContain("Local changes kept. Uploads paused.");
+
+    review();
+    await choose("Overwrite remote");
+    expect(api.overwriteRemoteEdit).toHaveBeenCalledWith(3, 1);
+    act(() => editEvents({ state: "uploaded" }));
+    expect(store.getState().edits.map(({ status }) => status)).toEqual(["uploaded", "uploaded"]);
   });
 });

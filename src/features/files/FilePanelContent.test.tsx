@@ -44,6 +44,8 @@ vi.mock("@/lib/ipc/edit", () => ({
   openRemoteEdit: vi.fn((_host: string, path: string) => Promise.resolve(path.endsWith("a.conf") ? 1 : 2)),
   retryRemoteEdit: vi.fn(() => Promise.resolve()),
   closeRemoteEdit: vi.fn(() => Promise.resolve()),
+  overwriteRemoteEdit: vi.fn(() => Promise.resolve()),
+  openRemoteEditConflictCopy: vi.fn(() => Promise.resolve(3)),
 }));
 
 const host: Host = {

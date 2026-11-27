@@ -615,6 +615,17 @@
       "noApplication": "這部電腦上沒有能開啟此檔案的應用程式。",
       "notFound": "檔案已不存在。",
       "notAFile": "只有普通檔案可以在編輯器中開啟。",
+      "conflict": {
+        "title": "遠端檔案已變更",
+        "body": "開啟後，{{host}} 上的 {{path}} 已變更。可用本機最後儲存的內容覆寫遠端檔案，也可另開遠端版本並保留本機變更。",
+        "review": "檢視衝突",
+        "openRemote": "另開遠端版本",
+        "overwrite": "覆寫遠端檔案",
+        "copyName": "{{name}}（遠端版本）",
+        "paused": "已保留本機變更，上傳已暫停。",
+        "resolving": "正在處理衝突…",
+        "resolveFailed": "無法解決衝突：{{message}}"
+      },
       "question": {
         "tooLarge": {
           "title": "檔案太大，無法編輯",
