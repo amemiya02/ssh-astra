@@ -15,6 +15,7 @@ import { hostMenuEntries } from "@/features/hosts/hostMenu";
 import { RowContextMenu, RowMoreMenu } from "@/features/hosts/RowMenu";
 import { useHosts } from "@/features/hosts/hostsStore";
 import type { HostsController } from "@/features/hosts/useHostsController";
+import { privacyModeSetting } from "@/features/workspace/privacy-mode";
 import { reportHomeFirstPaint } from "@/lib/ipc/home";
 import type { Host, HostId } from "@/lib/ipc/hosts";
 import { useSetting } from "@/lib/storage";
@@ -42,6 +43,7 @@ export function HomeView({ active, controller, connections, onOpenLocalTerminal 
   const tree = useHosts((s) => s.tree);
   const status = useHosts((s) => s.status);
   const loadError = useHosts((s) => s.error);
+  const [privacyMode] = useSetting(privacyModeSetting);
   const [recent] = useSetting(recentHostsSetting);
   const [sort, setSort] = useSetting(hostSortSetting);
   const [query, setQuery] = useState("");
@@ -159,7 +161,7 @@ export function HomeView({ active, controller, connections, onOpenLocalTerminal 
                 <ul className={cardGrid}>
                   {recents.map((host) => (
                     <li key={host.id}>
-                      <HostCard host={host} controller={controller} connection={connections.get(host.id)} />
+                      <HostCard host={host} privacyMode={privacyMode} controller={controller} connection={connections.get(host.id)} />
                     </li>
                   ))}
                 </ul>
@@ -174,7 +176,7 @@ export function HomeView({ active, controller, connections, onOpenLocalTerminal 
                 <ul className={cardGrid}>
                   {section.hosts.map(({ host, matches }) => (
                     <li key={host.id}>
-                      <HostCard host={host} matches={matches} controller={controller} connection={connections.get(host.id)} />
+                      <HostCard host={host} privacyMode={privacyMode} matches={matches} controller={controller} connection={connections.get(host.id)} />
                     </li>
                   ))}
                 </ul>
@@ -190,11 +192,13 @@ export function HomeView({ active, controller, connections, onOpenLocalTerminal 
 /** One Host: monogram tile in its hue, name, `user@address`, a dot while connected or connecting. Click or Enter opens a Terminal. */
 function HostCard({
   host,
+  privacyMode,
   matches,
   controller,
   connection,
 }: {
   host: Host;
+  privacyMode: boolean;
   matches?: { name?: number[]; address?: number[]; user?: number[] };
   controller: HostsController;
   connection?: HostConnection;
@@ -217,10 +221,12 @@ function HostCard({
             <span className="block truncate font-medium">
               <Highlighted text={host.name} indexes={matches?.name} />
             </span>
-            <span className="text-muted-foreground block truncate font-mono text-xs">
-              <Highlighted text={host.user} indexes={matches?.user} />@<Highlighted text={host.address} indexes={matches?.address} />
-              {host.port === 22 ? "" : `:${host.port}`}
-            </span>
+            {!privacyMode && (
+              <span className="text-muted-foreground block truncate font-mono text-xs">
+                <Highlighted text={host.user} indexes={matches?.user} />@<Highlighted text={host.address} indexes={matches?.address} />
+                {host.port === 22 ? "" : `:${host.port}`}
+              </span>
+            )}
           </span>
           {connection && <span className="sr-only">{t(`tabs.status.${connection}`)}</span>}
         </button>

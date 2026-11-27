@@ -28,6 +28,7 @@ import { zoomTerminalFont } from "@/features/terminal/terminal-prefs";
 import { useTerminalPrefs } from "@/features/terminal/terminal-prefs-context";
 import { createBroadcast, type BroadcastScope } from "@/features/workspace/broadcast";
 import { paneNeighbors } from "@/features/workspace/pane-layout";
+import { privacyModeSetting, togglePrivacyMode } from "@/features/workspace/privacy-mode";
 import { currentPlatform, paneSwapShortcuts, shortcutLabel, type WorkspaceCommand } from "@/features/workspace/shortcuts";
 import { TabPanels } from "@/features/workspace/TabPanels";
 import { ConflictDialog } from "@/features/transfers/ConflictDialog";
@@ -58,7 +59,7 @@ import { useWorkspaceShortcuts } from "@/features/workspace/use-workspace-shortc
 import { serializeWorkspaceLayout, workspaceLayoutSetting } from "@/features/workspace/workspace-layout";
 import { workspaceSetting } from "@/features/workspace/workspace-prefs";
 import type { Host } from "@/lib/ipc/hosts";
-import { getSetting, setSetting } from "@/lib/storage";
+import { getSetting, setSetting, useSetting } from "@/lib/storage";
 
 const platform = currentPlatform();
 const localTerminal: PaneKind = { kind: "local-terminal" };
@@ -71,6 +72,7 @@ const updatable = isTauri() && import.meta.env.VITE_E2E !== "1";
  */
 export function App({ initialTabs }: { initialTabs: TabsState }) {
   const { t } = useTranslation();
+  const [privacyMode] = useSetting(privacyModeSetting);
   const { prefs: { titleSource } } = useTerminalPrefs();
   const [state, dispatch] = useReducer(tabsReducer, initialTabs);
   const { tabs, activeId } = state;
@@ -202,9 +204,9 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
       tabs.map((tab, index) => {
         const kind = activePane(tab).kind;
         const ordinal = tabs.slice(0, index + 1).filter((other) => activePane(other).kind === kind).length;
-        return { id: tab.id, title: tabTitle(tab, t, ordinal, titleSource) };
+        return { id: tab.id, title: tabTitle(tab, t, ordinal, titleSource, privacyMode) };
       }),
-    [tabs, t, titleSource],
+    [tabs, t, titleSource, privacyMode],
   );
   usePaletteActions(
     useMemo(
@@ -217,6 +219,11 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
         },
         { id: "home.open", title: t("palette.actions.goHome"), keywords: [t("palette.keywords.hosts")], run: openHome },
         { id: "files.openSftp", title: t("sftp.open"), run: pickSftpHost },
+        {
+          id: "privacyMode.toggle",
+          title: t(privacyMode ? "privacyMode.turnOff" : "privacyMode.turnOn"),
+          run: togglePrivacyMode,
+        },
         ...(canSplitFocused ? [
           {
             id: "workspace.splitRight",
@@ -249,7 +256,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
             ]
           : []),
       ],
-      [t, openLocalTerminal, openHome, openSettings, pickSftpHost, canSplitFocused],
+      [t, openLocalTerminal, openHome, openSettings, pickSftpHost, canSplitFocused, privacyMode],
     ),
   );
 
@@ -464,7 +471,9 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
               <Server aria-hidden />
               <span className="min-w-0">
                 <span className="block truncate font-medium">{host.name}</span>
-                <span className="text-muted-foreground block truncate text-xs">{host.user}@{host.address}</span>
+                {!privacyMode && (
+                  <span className="text-muted-foreground block truncate text-xs">{host.user}@{host.address}</span>
+                )}
               </span>
             </CommandItem>
           ))}
