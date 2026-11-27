@@ -78,28 +78,9 @@ fn schedule_activation(app: &AppHandle) {
 }
 
 fn activate_window(app: &AppHandle) {
-    let Some(window) = crate::windows::active(app) else {
+    let Some(window) = crate::windows::show_active(app) else {
         return;
     };
-    #[cfg(target_os = "linux")]
-    let result = {
-        use gtk::prelude::GtkWindowExt;
-
-        // GTK presents a hidden or minimized window in one request. Tauri's
-        // individual show and unminimize requests are queued on Linux.
-        window.gtk_window().map(|window| window.present())
-    };
-    #[cfg(not(target_os = "linux"))]
-    let result = (|| {
-        #[cfg(target_os = "macos")]
-        app.show()?;
-        window.unminimize()?;
-        window.show()?;
-        window.set_focus()
-    })();
-    if let Err(error) = result {
-        log::debug!("could not activate the existing window: {error}");
-    }
     let label = window.label();
     if app.state::<PendingLaunches>().target_for_activation(label) {
         let _ = app.emit_to(EventTarget::webview_window(label), "ssh-link-pending", ());

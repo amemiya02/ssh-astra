@@ -58,7 +58,7 @@ sshastra-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 tokio = { version = "1", features = ["io-util", "macros", "net", "rt", "sync", "time"] }
 tauri-plugin-opener = "2"
 tauri-plugin-clipboard-manager = "2"
@@ -102,6 +102,7 @@ windows-sys = { version = "0.61", features = [
 [target.'cfg(target_os = "linux")'.dependencies]
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 gtk = "0.18"
+libloading = "0.7"
 zbus = "5"
 
 [features]

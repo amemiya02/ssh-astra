@@ -1292,6 +1292,10 @@
       "label": "關閉終端機前確認",
       "description": "關閉已連線的遠端終端機前詢問。"
     },
+    "closeToTray": {
+      "label": "關閉至系統匣",
+      "description": "系統匣可用時，關閉最後一個視窗後，SSH Astra 會繼續執行。"
+    },
     "confirmQuit": {
       "label": "結束應用程式前確認",
       "description": "如果仍有連線、傳輸或連接埠轉送進行中，結束時會要求確認。"
@@ -1700,6 +1704,11 @@
   "window": {
     "new": "新增視窗",
     "openFailed": "無法開啟新視窗。"
+  },
+  "tray": {
+    "showWindow": "顯示視窗",
+    "recentHosts": "最近使用的主機",
+    "runningForwards": "執行中的連接埠轉送：{{running}}"
   },
   "quit": {
     "title": "結束 SSH Astra？",
