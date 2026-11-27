@@ -2,6 +2,7 @@ import { hostHue } from "@/features/hosts/hostHue";
 import type { TerminalTitleSource } from "@/features/terminal/terminal-prefs";
 import { isTemporaryHost, type Host } from "@/lib/ipc/hosts";
 import type { SshLinkTarget } from "@/lib/ipc/ssh-links";
+import type { TerminalId } from "@/lib/ipc/terminal";
 import type { AnsiHue } from "@/theme/monogram-ink";
 import { paneNeighbors, resizePaneLayout, type PaneDirection, type SplitResize } from "./pane-layout";
 import { workspaceHostName } from "./privacy-mode";
@@ -50,6 +51,12 @@ export type Pane = {
   title?: string;
   /** Remote Terminals only. */
   status?: ConnectionStatus;
+  /** The live backend Terminal attached to the pane's renderer. */
+  terminalId?: TerminalId;
+  /** Changes when a remote pane leaves a connected shell. */
+  connectionGeneration?: number;
+  /** The user selected the Resource panel in this Window. */
+  showResources?: boolean;
   /** A registered Terminal that opened on a saved Host. */
   savedHostTerminal?: boolean;
   /** A remote pane waiting for a manual click after restore or for its turn in the startup queue. */
@@ -117,7 +124,8 @@ export type TabsAction =
   | { type: "closePane"; paneId: string }
   | { type: "connectRestoredPane"; paneId: string }
   | { type: "retitle"; paneId: string; title: string }
-  | { type: "savedHostTerminal"; paneId: string; available: boolean }
+  | { type: "attachRemoteTerminal"; paneId: string; id: TerminalId | null; savedHost: boolean }
+  | { type: "showResources"; paneId: string; show: boolean }
   | { type: "localCwd"; paneId: string; cwd: string }
   | { type: "status"; paneId: string; status: ConnectionStatus; reconnecting?: ReconnectProgress };
 
@@ -387,9 +395,13 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
       const title = action.title.trim() || undefined;
       return updatePane(state, action.paneId, (pane) => ({ ...pane, title }));
     }
-    case "savedHostTerminal":
+    case "attachRemoteTerminal":
       return updatePane(state, action.paneId, (pane) => pane.kind === "remote-terminal"
-        ? { ...pane, savedHostTerminal: action.available }
+        ? { ...pane, terminalId: action.id ?? undefined, savedHostTerminal: action.savedHost }
+        : pane);
+    case "showResources":
+      return updatePane(state, action.paneId, (pane) => pane.kind === "remote-terminal"
+        ? { ...pane, showResources: action.show }
         : pane);
     case "localCwd":
       return updatePane(state, action.paneId, (pane) => pane.kind === "local-terminal" ? { ...pane, cwd: action.cwd } : pane);
@@ -401,6 +413,8 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
       return updatePane(state, action.paneId, (pane) => ({
         ...pane,
         status: action.status,
+        connectionGeneration: pane.kind === "remote-terminal" && pane.status === "connected" && action.status !== "connected"
+          ? (pane.connectionGeneration ?? 0) + 1 : pane.connectionGeneration,
         restoreConnection: action.status === "connecting" ? pane.restoreConnection : undefined,
         reconnecting: action.reconnecting,
       }));
@@ -494,6 +508,13 @@ function updatePane(state: TabsState, paneId: string, update: (pane: Pane) => Pa
 
 function replaceLeaf(layout: PaneLayout, paneId: string, replace: (pane: Pane) => PaneLayout | undefined): PaneLayout | undefined {
   return mapLeaves(layout, (leaf) => leaf.pane.id === paneId ? replace(leaf.pane) : leaf);
+}
+
+/** A moved tab receives fresh renderer attachments and dock choices in its destination Window. */
+export function movedTabLayout(layout: PaneLayout): PaneLayout {
+  return mapLeaves(layout, (leaf) => leaf.pane.kind === "remote-terminal"
+    ? { ...leaf, pane: { ...leaf.pane, terminalId: undefined, connectionGeneration: undefined, showResources: undefined } }
+    : leaf)!;
 }
 
 function mapLeaves(

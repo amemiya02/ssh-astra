@@ -449,7 +449,11 @@ pub async fn terminal_close(
     if let Some(route) =
         windows::with_resources(&window, |resources| resources.terminals.remove(&id))?
     {
-        route.lock().invalidate_reviews();
+        {
+            let mut route = route.lock();
+            route.stop_resources();
+            route.invalidate_reviews();
+        }
         registry.close(id)?;
     }
     Ok(())

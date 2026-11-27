@@ -51,7 +51,8 @@ const filePanelCollisions: CollisionDetection = (args) => {
 };
 
 /** The dock for the focused remote Terminal, with an optional peer Host's File panel. */
-export function FilePanelContent({ pane, peers = [], onOpenSftp }: {
+export function FilePanelContent({ pane, peers = [], onOpenSftp, tabbed }: {
+  tabbed?: boolean;
   pane?: FilePanelPane;
   peers?: FilePanelPane[];
   onOpenSftp?(host: Host): void;
@@ -123,14 +124,15 @@ export function FilePanelContent({ pane, peers = [], onOpenSftp }: {
   return (
     <DndContext sensors={sensors} collisionDetection={filePanelCollisions}
       onDragStart={startDrag} onDragCancel={() => { dragged.current = null; }} onDragEnd={drop}>
-      <RemoteFilePanel key={pane.id} pane={pane} onOpenSftp={onOpenSftp} onCopy={copy}
+      <RemoteFilePanel key={pane.id} pane={pane} onOpenSftp={onOpenSftp} onCopy={copy} tabbed={tabbed}
         extraActions={peerPicker} copyError={copyError}
         peer={peer && <RemoteFilePanel key={peer.id} pane={peer} onCopy={copy} embedded />} />
     </DndContext>
   );
 }
 
-function RemoteFilePanel({ pane, onOpenSftp, onCopy, embedded, extraActions, peer, copyError }: {
+function RemoteFilePanel({ pane, onOpenSftp, onCopy, embedded, extraActions, peer, copyError, tabbed }: {
+  tabbed?: boolean;
   pane: FilePanelPane;
   onOpenSftp?(host: Host): void;
   onCopy(selection: RemoteSelection, target: FilePanelPane, directory: string): void;
@@ -281,7 +283,7 @@ function RemoteFilePanel({ pane, onOpenSftp, onCopy, embedded, extraActions, pee
     );
   }
   return (
-    <FilePanel actions={<>{extraActions}{actions}</>} footer={<>
+    <FilePanel tabbed={tabbed} actions={<>{extraActions}{actions}</>} footer={<>
       {copyError && <p role="alert" className="text-destructive border-t px-3 py-2 text-xs">{copyError}</p>}
       {edits}
     </>}>
