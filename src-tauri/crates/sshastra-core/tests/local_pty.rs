@@ -1,5 +1,5 @@
 //! LocalPty behaviour, observed only through the Terminal interface:
-//! bytes written in, events (output, exit) coming out.
+//! bytes written in, events (output, directory, exit) coming out.
 
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
@@ -50,13 +50,8 @@ fn read_until(pty: &mut LocalPty, rx: &Receiver<TerminalEvent>, needle: &str) ->
                     return text;
                 }
             }
-            Ok(
-                event @ (TerminalEvent::Connection(_)
-                | TerminalEvent::Cwd(_)
-                | TerminalEvent::ShellIntegration(_)),
-            ) => {
-                panic!("a Local terminal sent {event:?}")
-            }
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            Ok(TerminalEvent::Cwd(_)) => {}
             Ok(TerminalEvent::Exit { code }) => panic!(
                 "exited ({code:?}) before {needle:?}; output: {:?}",
                 String::from_utf8_lossy(&seen)
@@ -65,6 +60,7 @@ fn read_until(pty: &mut LocalPty, rx: &Receiver<TerminalEvent>, needle: &str) ->
                 "timed out waiting for {needle:?}; output: {:?}",
                 String::from_utf8_lossy(&seen)
             ),
+            Ok(event) => panic!("a Local terminal sent {event:?}"),
         }
     }
 }
@@ -78,14 +74,12 @@ fn read_to_exit(pty: &mut LocalPty, rx: &Receiver<TerminalEvent>) -> (String, Op
                 answer_queries(pty, &bytes);
                 seen.extend_from_slice(&bytes);
             }
-            event @ (TerminalEvent::Connection(_)
-            | TerminalEvent::Cwd(_)
-            | TerminalEvent::ShellIntegration(_)) => {
-                panic!("a Local terminal sent {event:?}")
-            }
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            TerminalEvent::Cwd(_) => {}
             TerminalEvent::Exit { code } => {
                 return (String::from_utf8_lossy(&seen).into_owned(), code)
             }
+            event => panic!("a Local terminal sent {event:?}"),
         }
     }
 }
@@ -93,6 +87,56 @@ fn read_to_exit(pty: &mut LocalPty, rx: &Receiver<TerminalEvent>) -> (String, Op
 #[cfg(unix)]
 fn sh(script: &str) -> ShellCommand {
     ShellCommand::new("/bin/sh").args(["-c", script])
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn reports_the_shell_directory_after_cd() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().canonicalize().unwrap();
+    let target = home.join("work space");
+    std::fs::create_dir(&target).unwrap();
+    let command = sh("read -r dir; cd \"$dir\" || exit; printf 'changed\\n'; read -r _").cwd(&home);
+    let (mut pty, rx) = spawn(command);
+    read_cwd(&rx, &home);
+    pty.write(format!("{}\r", target.display()).as_bytes())
+        .unwrap();
+    read_cwd(&rx, &target);
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn read_cwd(rx: &Receiver<TerminalEvent>, expected: &std::path::Path) {
+    let deadline = Instant::now() + TIMEOUT;
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        match rx
+            .recv_timeout(left)
+            .expect("directory event before timeout")
+        {
+            TerminalEvent::Cwd(path) if std::path::Path::new(&path) == expected => return,
+            TerminalEvent::Output(_) | TerminalEvent::Cwd(_) => {}
+            event => panic!("a Local terminal sent {event:?}"),
+        }
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn starts_in_the_saved_directory_or_home_if_it_was_removed() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().canonicalize().unwrap();
+    let work = home.join("saved work");
+    std::fs::create_dir(&work).unwrap();
+    let command = sh("printf 'cwd:%s>' \"$(pwd -P)\"")
+        .env("HOME", &home)
+        .cwd(&work);
+
+    let (mut pty, rx) = spawn(command.clone());
+    read_until(&mut pty, &rx, &format!("cwd:{}>", work.display()));
+
+    std::fs::remove_dir(&work).unwrap();
+    let (mut pty, rx) = spawn(command);
+    read_until(&mut pty, &rx, &format!("cwd:{}>", home.display()));
 }
 
 #[cfg(unix)]

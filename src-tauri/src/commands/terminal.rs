@@ -4,15 +4,15 @@
 //! - a remote Terminal's Connection changes are JSON
 //!   `{ "connection": { "state": "reconnecting", "attempt": 1, "attempts": 3 } }`
 //!   (also `"connected"`, `"disconnected"` with a `reason`),
-//! - a remote Terminal's shell reporting its directory (ShellIntegration) is
-//!   JSON `{ "cwd": "/abs/path" }`,
+//! - the shell's directory is JSON `{ "cwd": "/abs/path" }`, read from the
+//!   local process on macOS/Linux or reported by the remote shell,
 //! - Shell integration markers and availability are JSON
 //!   `{ "shellIntegration": { "type": "promptStart" } }` (or the matching event),
 //! - the final message is JSON `{ "exitCode": number | null }`.
 //!
 //! Local terminals and remote Terminals share every command after `open`.
 
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 use serde::Serialize;
 use sshastra_core::hosts::HostId;
@@ -94,12 +94,18 @@ pub async fn local_terminal_open(
     registry: State<'_, TerminalRegistry>,
     size: TerminalSize,
     on_event: Channel<InvokeResponseBody>,
+    cwd: Option<PathBuf>,
 ) -> CommandResult<TerminalId> {
-    let pty = LocalPty::spawn(
-        ShellCommand::default_shell(),
-        size,
-        channel_sink(on_event, None),
-    )?;
+    let command = ShellCommand::default_shell();
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    let command = match cwd {
+        // portable-pty selects the user's home when this path is no longer a directory.
+        Some(path) if path.is_absolute() => command.cwd(path),
+        _ => command,
+    };
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    let _ = cwd;
+    let pty = LocalPty::spawn(command, size, channel_sink(on_event, None))?;
     Ok(registry.insert(Box::new(pty)))
 }
 

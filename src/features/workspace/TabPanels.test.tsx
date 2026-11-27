@@ -85,6 +85,7 @@ function renderWorkspace(initialPane: Pane = local("a")) {
           onEditHost={() => {}}
           onConnectRestoredPane={(paneId) => dispatch({ type: "connectRestoredPane", paneId })}
           onTitleChange={() => {}}
+          onLocalCwd={() => {}}
           onStatusChange={() => {}}
           onResizeSplit={(tabId, resize) => dispatch({ type: "resizeSplit", tabId, ...resize })}
         />

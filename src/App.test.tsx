@@ -6,10 +6,11 @@ import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { currentPlatform } from "@/features/workspace/shortcuts";
 import { emptyTabs, newPane, tabsReducer, type TabsAction, type TabsState } from "@/features/workspace/tabs";
+import { restoreWorkspaceLayout, workspaceLayoutSetting } from "@/features/workspace/workspace-layout";
 import i18n, { startI18n } from "@/i18n";
 import type { Host } from "@/lib/ipc/hosts";
 import type { TerminalMessage } from "@/lib/ipc/terminal";
-import { startSettings, type SettingsBackend } from "@/lib/storage";
+import { getSetting, startSettings, type SettingsBackend } from "@/lib/storage";
 import { ThemeProvider } from "@/theme/ThemeProvider";
 import { App } from "./App";
 
@@ -118,6 +119,28 @@ async function sendTerminalMessage(message: TerminalMessage) {
   const { onEvent } = openCall?.[1] as { onEvent: { onmessage(message: TerminalMessage): void } };
   await act(async () => onEvent.onmessage(message));
 }
+
+it("restores each Local terminal in its own last reported directory", async () => {
+  const localOpens = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === "local_terminal_open");
+  await render(workspace(
+    { type: "open", tabId: "work", pane: local("a") },
+    { type: "split", orientation: "horizontal", pane: local("b") },
+  ));
+  const paths = ["/home/tester/work space", "/tmp/files"];
+  expect(localOpens()).toHaveLength(paths.length);
+  for (const [index, [, args]] of localOpens().entries()) {
+    const { onEvent } = args as { onEvent: { onmessage(message: TerminalMessage): void } };
+    await act(async () => onEvent.onmessage({ cwd: paths[index]! }));
+  }
+
+  expect(localOpens()).toHaveLength(paths.length);
+  await unmount();
+  await startSettings(settingsBackend);
+  vi.mocked(invoke).mockClear();
+  await render(restoreWorkspaceLayout(getSetting(workspaceLayoutSetting), [], "layout"));
+
+  expect(localOpens().map(([, args]) => (args as { cwd?: string }).cwd)).toEqual(paths);
+});
 
 async function closePaneShortcut() {
   const modifiers = currentPlatform() === "mac" ? { metaKey: true } : { ctrlKey: true, shiftKey: true };

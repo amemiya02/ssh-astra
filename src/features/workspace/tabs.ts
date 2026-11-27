@@ -14,7 +14,7 @@ export type ConnectionStatus = "connecting" | "connected" | "disconnected";
 export type PaneKind =
   /** The Host vault: search, recent and every Host as a card. One per window. */
   | { kind: "home" }
-  | { kind: "local-terminal" }
+  | { kind: "local-terminal"; cwd?: string }
   | { kind: "remote-terminal"; host: Host }
   | { kind: "sftp"; host: Host }
   | { kind: "settings" }
@@ -110,6 +110,7 @@ export type TabsAction =
   | { type: "closePane"; paneId: string }
   | { type: "connectRestoredPane"; paneId: string }
   | { type: "retitle"; paneId: string; title: string }
+  | { type: "localCwd"; paneId: string; cwd: string }
   | { type: "status"; paneId: string; status: ConnectionStatus; reconnecting?: ReconnectProgress };
 
 export type CloseAction = Extract<TabsAction, { type: "close" | "closeOthers" | "closeRight" | "closePane" }>;
@@ -353,6 +354,8 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
       const title = action.title.trim() || undefined;
       return updatePane(state, action.paneId, (pane) => ({ ...pane, title }));
     }
+    case "localCwd":
+      return updatePane(state, action.paneId, (pane) => pane.kind === "local-terminal" ? { ...pane, cwd: action.cwd } : pane);
     case "connectRestoredPane":
       return updatePane(state, action.paneId, (pane) => pane.restoreConnection === "manual"
         ? { ...pane, restoreConnection: undefined, status: "connecting" }
