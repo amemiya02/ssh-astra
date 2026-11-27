@@ -6,7 +6,7 @@ use sshastra_core::files::FsError;
 use sshastra_core::forward::ForwardError;
 use sshastra_core::hosts::HostStoreError;
 use sshastra_core::settings::SettingsError;
-use sshastra_core::ssh::ConnectError;
+use sshastra_core::ssh::{ConnectError, HostKeyRecord};
 use sshastra_core::terminal::TerminalError;
 
 /// The error every command returns. Serialized to the front end as
@@ -183,14 +183,21 @@ impl From<ConnectError> for CommandError {
                 fingerprint,
                 known,
             } => {
-                let details = json!({
+                let mut details = json!({
                     "host": host,
                     "port": port,
                     "fingerprint": fingerprint,
-                    "knownFingerprint": known.fingerprint,
-                    "knownHostsPath": known.path.display().to_string(),
-                    "line": known.line,
                 });
+                match known {
+                    HostKeyRecord::KnownHosts(known) => {
+                        details["knownFingerprint"] = json!(known.fingerprint);
+                        details["knownHostsPath"] = json!(known.path.display().to_string());
+                        details["line"] = json!(known.line);
+                    }
+                    HostKeyRecord::ThisRun { fingerprint } => {
+                        details["knownFingerprint"] = json!(fingerprint);
+                    }
+                }
                 Self::new("hostKeyMismatch", &err).with_details(details)
             }
             HostKeyRevoked { fingerprint } => Self::new("hostKeyRevoked", &err)
@@ -260,5 +267,30 @@ mod tests {
         assert_eq!(json["details"]["jumpHost"], "bastion");
         assert_eq!(json["details"]["fingerprint"], "SHA256:x");
         assert!(json["message"].as_str().unwrap().contains("bastion"));
+    }
+
+    #[test]
+    fn host_key_mismatch_for_this_run_has_no_file_location() {
+        let err = ConnectError::HostKeyMismatch {
+            host: "host.example".into(),
+            port: 22,
+            fingerprint: "SHA256:presented".into(),
+            known: HostKeyRecord::ThisRun {
+                fingerprint: "SHA256:expected".into(),
+            },
+        };
+
+        let json = serde_json::to_value(CommandError::from(err)).unwrap();
+
+        assert_eq!(json["kind"], "hostKeyMismatch");
+        assert_eq!(
+            json["details"],
+            json!({
+                "host": "host.example",
+                "port": 22,
+                "fingerprint": "SHA256:presented",
+                "knownFingerprint": "SHA256:expected",
+            })
+        );
     }
 }

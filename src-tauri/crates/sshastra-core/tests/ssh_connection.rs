@@ -11,29 +11,32 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use russh::keys::{decode_secret_key, PrivateKey};
+use russh::server;
 use sshastra_core::hosts::{Host, HostAuth, HostId};
-use sshastra_core::known_hosts::KnownHosts;
+use sshastra_core::known_hosts::{HostKey, KnownHosts};
 use sshastra_core::ssh::{
     AuthMethod, BoxFuture, ConnectError, ConnectProgress, ConnectStage, Connection,
-    ConnectionManager, HostKeyPrompt, PasswordPrompt, ProgressStatus, Prompter, RemoteTerminal,
-    RemoteTerminalOptions, Secret,
+    ConnectionManager, HostKeyDecision, HostKeyPrompt, HostKeyRecord, PasswordPrompt,
+    ProgressStatus, Prompter, RemoteTerminal, RemoteTerminalOptions, Secret,
 };
 use sshastra_core::terminal::{Terminal, TerminalEvent, TerminalSize};
 use support::{Service, Sshd};
+use tokio::net::TcpListener;
 
 const OTHER_ED25519_KEY: &str =
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIcBDB1UjHN/eesqq7DdD1lWjjN3fCPWh4CoYJ5wJZ3R";
 
 /// Answers prompts from a script and records what was asked.
 struct ScriptedPrompter {
-    trust_new_host: bool,
+    trust_new_host: HostKeyDecision,
     passwords: Mutex<VecDeque<Option<String>>>,
     asked: Mutex<Vec<String>>,
     progress: Mutex<Vec<ConnectProgress>>,
 }
 
 impl ScriptedPrompter {
-    fn new(trust_new_host: bool, passwords: &[Option<&str>]) -> Arc<Self> {
+    fn new(trust_new_host: HostKeyDecision, passwords: &[Option<&str>]) -> Arc<Self> {
         Arc::new(Self {
             trust_new_host,
             passwords: Mutex::new(passwords.iter().map(|p| p.map(str::to_owned)).collect()),
@@ -43,7 +46,7 @@ impl ScriptedPrompter {
     }
 
     fn trusting(sshd: &Sshd) -> Arc<Self> {
-        Self::new(true, &[Some(sshd.password)])
+        Self::new(HostKeyDecision::SaveAndTrust, &[Some(sshd.password)])
     }
 
     fn asked(&self) -> Vec<String> {
@@ -56,7 +59,7 @@ impl Prompter for ScriptedPrompter {
         self.progress.lock().unwrap().push(progress);
     }
 
-    fn confirm_host_key(&self, prompt: HostKeyPrompt) -> BoxFuture<'_, bool> {
+    fn confirm_host_key(&self, prompt: HostKeyPrompt) -> BoxFuture<'_, HostKeyDecision> {
         self.asked.lock().unwrap().push(format!(
             "host key {}:{} {} {}",
             prompt.host, prompt.port, prompt.algorithm, prompt.fingerprint
@@ -81,12 +84,16 @@ impl Prompter for ScriptedPrompter {
 }
 
 fn host(sshd: &Sshd) -> Host {
+    host_at(&sshd.host, sshd.port, sshd.user)
+}
+
+fn host_at(address: &str, port: u16, user: &str) -> Host {
     Host {
-        id: HostId::from(format!("it-{}", sshd.port)),
+        id: HostId::from(format!("it-{port}")),
         name: "docker sshd".into(),
-        address: sshd.host.clone(),
-        port: sshd.port,
-        user: sshd.user.into(),
+        address: address.into(),
+        port,
+        user: user.into(),
         auth: HostAuth::Password,
         jump_host: None,
         terminal_scheme: None,
@@ -162,7 +169,7 @@ async fn first_connect_asks_to_trust_the_host_key_then_remembers_it() {
     );
 
     // A fresh manager (as after a restart) does not ask again.
-    let again = ScriptedPrompter::new(false, &[Some(sshd.password)]);
+    let again = ScriptedPrompter::new(HostKeyDecision::Reject, &[Some(sshd.password)]);
     kh.manager()
         .connect(&host(&sshd), again.clone())
         .await
@@ -171,12 +178,123 @@ async fn first_connect_asks_to_trust_the_host_key_then_remembers_it() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn temporary_trust_survives_new_connections_but_not_a_new_manager() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let kh = KnownHostsFile::empty();
+    let initial = b"# existing OpenSSH records\n";
+    fs::write(&kh.path, initial).unwrap();
+    let manager = kh.manager();
+    let target = host(&sshd);
+    let first = ScriptedPrompter::new(HostKeyDecision::TrustForRun, &[Some(sshd.password)]);
+    drop(manager.connect(&target, first.clone()).await.unwrap());
+    assert_eq!(
+        first.asked(),
+        [host_key_question(&sshd), password_question(&sshd, false)]
+    );
+
+    let next = ScriptedPrompter::new(HostKeyDecision::Reject, &[Some(sshd.password)]);
+    drop(manager.connect(&target, next.clone()).await.unwrap());
+    assert_eq!(next.asked(), [password_question(&sshd, false)]);
+
+    let fresh = ScriptedPrompter::new(HostKeyDecision::Reject, &[]);
+    let result = kh.manager().connect(&target, fresh.clone()).await;
+    assert!(
+        matches!(result, Err(ConnectError::HostKeyDeclined)),
+        "{result:?}"
+    );
+    assert_eq!(fresh.asked(), [host_key_question(&sshd)]);
+    assert_eq!(fs::read(&kh.path).unwrap().as_slice(), initial);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn temporary_trust_is_scoped_to_the_host_and_endpoint() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let jump = support::sshd(Service::Jump).unwrap();
+    // The OpenSSH fixtures reuse the same public key across these endpoints.
+    assert_eq!(sshd.host_key, jump.host_key);
+    let kh = KnownHostsFile::empty();
+    let manager = kh.manager();
+    let target = host(&sshd);
+    let first = ScriptedPrompter::new(HostKeyDecision::TrustForRun, &[Some(sshd.password)]);
+    manager
+        .test_connection(&[], &target, first.clone())
+        .await
+        .unwrap();
+    assert_eq!(
+        first.asked(),
+        [host_key_question(&sshd), password_question(&sshd, false)]
+    );
+
+    let mut other_host = target.clone();
+    other_host.id = HostId::from("other-host".to_owned());
+    let mut edited_endpoint = target.clone();
+    edited_endpoint.port = jump.port;
+    for (other, server) in [(&other_host, &sshd), (&edited_endpoint, &jump)] {
+        let prompt = ScriptedPrompter::new(HostKeyDecision::Reject, &[]);
+        let result = manager.connect(other, prompt.clone()).await;
+        assert!(
+            matches!(result, Err(ConnectError::HostKeyDeclined)),
+            "{result:?}"
+        );
+        assert_eq!(prompt.asked(), [host_key_question(server)]);
+    }
+
+    let next = ScriptedPrompter::new(HostKeyDecision::Reject, &[Some(sshd.password)]);
+    drop(manager.connect(&target, next.clone()).await.unwrap());
+    assert_eq!(next.asked(), [password_question(&sshd, false)]);
+    assert!(!kh.path.exists());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn known_hosts_mismatch_and_revocation_take_precedence_over_temporary_trust() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let kh = KnownHostsFile::empty();
+    let manager = kh.manager();
+    let target = host(&sshd);
+    let first = ScriptedPrompter::new(HostKeyDecision::TrustForRun, &[Some(sshd.password)]);
+    drop(manager.connect(&target, first).await.unwrap());
+
+    let prompt = ScriptedPrompter::new(HostKeyDecision::Reject, &[]);
+    let endpoint = format!("[{}]:{}", sshd.host, sshd.port);
+    fs::write(&kh.path, format!("{endpoint} {OTHER_ED25519_KEY}\n")).unwrap();
+    let result = manager.connect(&target, prompt.clone()).await;
+    assert!(
+        matches!(
+            result,
+            Err(ConnectError::HostKeyMismatch {
+                known: HostKeyRecord::KnownHosts(_),
+                ..
+            })
+        ),
+        "{result:?}"
+    );
+
+    fs::write(
+        &kh.path,
+        format!("@revoked {endpoint} {}\n", sshd.host_key.to_openssh()),
+    )
+    .unwrap();
+    let result = manager.connect(&target, prompt.clone()).await;
+    assert!(
+        matches!(result, Err(ConnectError::HostKeyRevoked { .. })),
+        "{result:?}"
+    );
+    assert!(prompt.asked().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn declining_an_unknown_host_key_stops_before_authentication() {
     let Some(sshd) = support::sshd(Service::Ssh) else {
         return;
     };
     let kh = KnownHostsFile::empty();
-    let prompter = ScriptedPrompter::new(false, &[Some(sshd.password)]);
+    let prompter = ScriptedPrompter::new(HostKeyDecision::Reject, &[Some(sshd.password)]);
 
     let result = kh.manager().connect(&host(&sshd), prompter.clone()).await;
 
@@ -202,7 +320,9 @@ async fn a_changed_host_key_blocks_the_connection_without_asking_anything() {
 
     match result {
         Err(ConnectError::HostKeyMismatch {
-            fingerprint, known, ..
+            fingerprint,
+            known: HostKeyRecord::KnownHosts(known),
+            ..
         }) => {
             assert_eq!(fingerprint, sshd.host_key.fingerprint());
             assert_eq!(
@@ -223,7 +343,10 @@ async fn a_wrong_password_asks_again() {
         return;
     };
     let kh = KnownHostsFile::empty();
-    let prompter = ScriptedPrompter::new(true, &[Some("wrong"), Some(sshd.password)]);
+    let prompter = ScriptedPrompter::new(
+        HostKeyDecision::SaveAndTrust,
+        &[Some("wrong"), Some(sshd.password)],
+    );
 
     kh.manager()
         .connect(&host(&sshd), prompter.clone())
@@ -245,7 +368,7 @@ async fn cancelling_the_password_prompt_cancels_the_connection() {
         return;
     };
     let kh = KnownHostsFile::empty();
-    let prompter = ScriptedPrompter::new(true, &[None]);
+    let prompter = ScriptedPrompter::new(HostKeyDecision::SaveAndTrust, &[None]);
 
     let result = kh.manager().connect(&host(&sshd), prompter).await;
 
@@ -259,7 +382,7 @@ async fn repeated_wrong_passwords_fail_authentication() {
     };
     let kh = KnownHostsFile::empty();
     let prompter = ScriptedPrompter::new(
-        true,
+        HostKeyDecision::SaveAndTrust,
         &[Some("a"), Some("b"), Some("c"), Some(sshd.password)],
     );
 
@@ -300,7 +423,7 @@ async fn an_unreachable_address_is_reported() {
         forwards: Vec::new(),
         group_id: None,
     };
-    let prompter = ScriptedPrompter::new(true, &[]);
+    let prompter = ScriptedPrompter::new(HostKeyDecision::SaveAndTrust, &[]);
 
     let result = kh.manager().connect(&target, prompter.clone()).await;
     assert!(
@@ -341,7 +464,7 @@ async fn hosts_trusted_by_the_ssh_command_are_trusted_without_asking() {
     assert!(recorded.lines().any(|l| l.starts_with("|1|")), "{recorded}");
     assert!(!recorded.lines().any(|l| l.starts_with('[')), "{recorded}");
 
-    let prompter = ScriptedPrompter::new(false, &[Some(sshd.password)]);
+    let prompter = ScriptedPrompter::new(HostKeyDecision::Reject, &[Some(sshd.password)]);
     kh.manager()
         .connect(&host(&sshd), prompter.clone())
         .await
@@ -516,7 +639,7 @@ async fn a_terminal_via_a_jump_host_reports_the_named_hops_in_order() {
     let mut jump = host(&sshd);
     jump.name = "Office bastion".into();
     let target = behind("internal", &jump);
-    let prompter = ScriptedPrompter::new(true, &[Some(sshd.password); 2]);
+    let prompter = ScriptedPrompter::new(HostKeyDecision::SaveAndTrust, &[Some(sshd.password); 2]);
     let _terminal = open_with_progress(vec![jump.clone()], target.clone(), prompter.clone()).await;
 
     assert_eq!(
@@ -535,7 +658,7 @@ async fn a_rejected_password_ends_progress_at_the_failed_login_step() {
         return;
     };
     let kh = KnownHostsFile::empty();
-    let prompter = ScriptedPrompter::new(true, &[Some("incorrect"); 3]);
+    let prompter = ScriptedPrompter::new(HostKeyDecision::SaveAndTrust, &[Some("incorrect"); 3]);
 
     let result = kh.manager().connect(&host(&sshd), prompter.clone()).await;
 
@@ -558,7 +681,7 @@ struct HostKeyGate {
 }
 
 impl Prompter for HostKeyGate {
-    fn confirm_host_key(&self, prompt: HostKeyPrompt) -> BoxFuture<'_, bool> {
+    fn confirm_host_key(&self, prompt: HostKeyPrompt) -> BoxFuture<'_, HostKeyDecision> {
         Box::pin(async move {
             self.entered.notify_one();
             self.release.notified().await;
@@ -569,6 +692,91 @@ impl Prompter for HostKeyGate {
     fn password(&self, prompt: PasswordPrompt) -> BoxFuture<'_, Option<Secret>> {
         self.script.password(prompt)
     }
+}
+
+struct AcceptNone;
+
+impl server::Handler for AcceptNone {
+    type Error = russh::Error;
+
+    async fn auth_none(&mut self, _: &str) -> Result<server::Auth, Self::Error> {
+        Ok(server::Auth::Accept)
+    }
+}
+
+#[tokio::test]
+async fn a_conflicting_key_is_blocked_during_and_after_an_overlapping_private_test() {
+    // Present two different keys on the same endpoint, including while a
+    // previous prompt is still open. Only this test owns these SSH sessions.
+    let old = decode_secret_key(include_str!("sshd/ssh_host_ed25519_key"), None).unwrap();
+    let new = decode_secret_key(include_str!("sshd/keys/id_ed25519"), None).unwrap();
+    let fingerprint = |key: &PrivateKey| HostKey::from(key.public_key().clone()).fingerprint();
+    let old_fingerprint = fingerprint(&old);
+    let new_fingerprint = fingerprint(&new);
+    assert_ne!(old_fingerprint, new_fingerprint);
+    let socket = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let mut target = host_at(
+        "127.0.0.1",
+        socket.local_addr().unwrap().port(),
+        support::USER,
+    );
+    target.name = "rotating sshd".into();
+    let server = tokio::spawn(async move {
+        for key in [old.clone(), new, old] {
+            let (stream, _) = socket.accept().await.unwrap();
+            let config = server::Config {
+                keys: vec![key],
+                ..Default::default()
+            };
+            drop(
+                server::run_stream(Arc::new(config), stream, AcceptNone)
+                    .await
+                    .unwrap(),
+            );
+        }
+    });
+
+    let kh = KnownHostsFile::empty();
+    let manager = kh.manager();
+    let gate = Arc::new(HostKeyGate {
+        script: ScriptedPrompter::new(HostKeyDecision::SaveAndTrust, &[]),
+        entered: tokio::sync::Notify::new(),
+        release: tokio::sync::Notify::new(),
+    });
+    let other = async {
+        gate.entered.notified().await;
+        let prompt = ScriptedPrompter::new(HostKeyDecision::TrustForRun, &[]);
+        drop(manager.connect(&target, prompt.clone()).await.unwrap());
+        assert!(prompt.asked()[0].ends_with(&new_fingerprint));
+        gate.release.notify_one();
+    };
+    let (private, ()) = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::join!(manager.test_connection(&[], &target, gate.clone()), other)
+    })
+    .await
+    .unwrap();
+
+    let prompt = ScriptedPrompter::new(HostKeyDecision::Reject, &[]);
+    let reconnect = manager.connect(&target, prompt.clone()).await.map(drop);
+    for result in [private, reconnect] {
+        match result {
+            Err(ConnectError::HostKeyMismatch {
+                fingerprint,
+                known:
+                    HostKeyRecord::ThisRun {
+                        fingerprint: expected,
+                    },
+                ..
+            }) => {
+                assert_eq!(fingerprint, old_fingerprint);
+                assert_eq!(expected, new_fingerprint);
+            }
+            other => panic!("expected a temporary host key mismatch, got {other:?}"),
+        }
+    }
+    assert!(prompt.asked().is_empty());
+    assert!(!kh.path.exists());
+    server.await.unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -584,7 +792,7 @@ async fn a_concurrent_connect_reports_waiting_before_reusing_the_connection() {
         entered: tokio::sync::Notify::new(),
         release: tokio::sync::Notify::new(),
     });
-    let prompter = ScriptedPrompter::new(false, &[]);
+    let prompter = ScriptedPrompter::new(HostKeyDecision::Reject, &[]);
     let follower = async {
         gate.entered.notified().await;
         let connect = manager.connect(&target, prompter.clone());
@@ -805,7 +1013,7 @@ async fn a_host_behind_one_jump_host_is_reached_through_it() {
     let kh = KnownHostsFile::empty();
     let jump = host(&sshd);
     let internal = behind("internal", &jump);
-    let prompter = ScriptedPrompter::new(true, &[Some(sshd.password); 2]);
+    let prompter = ScriptedPrompter::new(HostKeyDecision::SaveAndTrust, &[Some(sshd.password); 2]);
 
     let connection = kh
         .manager()
@@ -834,7 +1042,7 @@ async fn a_host_behind_two_jump_hosts_is_reached_through_both() {
     let jump = host(&sshd);
     let jump2 = behind("jump2", &jump);
     let deep = behind("deep", &jump2);
-    let prompter = ScriptedPrompter::new(true, &[Some(sshd.password); 3]);
+    let prompter = ScriptedPrompter::new(HostKeyDecision::SaveAndTrust, &[Some(sshd.password); 3]);
 
     let connection = kh
         .manager()
@@ -864,7 +1072,7 @@ async fn a_jump_host_connection_is_shared_with_the_jump_host_itself() {
     let manager = kh.manager();
     let jump = host(&sshd);
     let internal = behind("internal", &jump);
-    let prompter = ScriptedPrompter::new(true, &[Some(sshd.password); 2]);
+    let prompter = ScriptedPrompter::new(HostKeyDecision::SaveAndTrust, &[Some(sshd.password); 2]);
 
     let _internal = manager
         .connect_through(std::slice::from_ref(&jump), &internal, prompter.clone())
@@ -885,7 +1093,10 @@ async fn a_failing_jump_host_is_named_in_the_error() {
     let mut jump = host(&sshd);
     jump.name = "bastion".into();
     let internal = behind("internal", &jump);
-    let prompter = ScriptedPrompter::new(true, &[Some("a"), Some("b"), Some("c")]);
+    let prompter = ScriptedPrompter::new(
+        HostKeyDecision::SaveAndTrust,
+        &[Some("a"), Some("b"), Some("c")],
+    );
 
     let result = kh
         .manager()
@@ -914,7 +1125,7 @@ async fn an_unreachable_second_jump_host_is_named_in_the_error() {
     let mut missing = behind("missing", &jump);
     missing.address = "no-such-host.invalid".into();
     let internal = behind("internal", &missing);
-    let prompter = ScriptedPrompter::new(true, &[Some(sshd.password)]);
+    let prompter = ScriptedPrompter::new(HostKeyDecision::SaveAndTrust, &[Some(sshd.password)]);
 
     let result = kh
         .manager()

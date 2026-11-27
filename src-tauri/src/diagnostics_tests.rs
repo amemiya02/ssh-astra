@@ -7,7 +7,7 @@ use std::time::Duration;
 use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::ssh::{
-    BoxFuture, ConnectionManager, HostKeyPrompt, PasswordPrompt, Prompter, Secret,
+    BoxFuture, ConnectionManager, HostKeyDecision, HostKeyPrompt, PasswordPrompt, Prompter, Secret,
 };
 use sshastra_core::terminal::{Terminal, TerminalEvent, TerminalSize};
 
@@ -18,8 +18,8 @@ const INPUT_MARKER: &str = "test-terminal-input-marker";
 const TERMINAL_MARKER: &str = "test-terminal-log-marker";
 
 impl Prompter for PasswordLogin {
-    fn confirm_host_key(&self, _: HostKeyPrompt) -> BoxFuture<'_, bool> {
-        Box::pin(async { true })
+    fn confirm_host_key(&self, _: HostKeyPrompt) -> BoxFuture<'_, HostKeyDecision> {
+        Box::pin(async { HostKeyDecision::SaveAndTrust })
     }
 
     fn password(&self, _: PasswordPrompt) -> BoxFuture<'_, Option<Secret>> {

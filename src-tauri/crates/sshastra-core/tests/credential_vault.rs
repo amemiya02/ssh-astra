@@ -16,8 +16,8 @@ use sshastra_core::hosts::{Host, HostAuth, HostDraft, HostId, HostStore};
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::settings::SettingsStore;
 use sshastra_core::ssh::{
-    BoxFuture, ConnectError, ConnectionManager, HostKeyPrompt, PassphrasePrompt, PasswordPrompt,
-    Prompter, Secret,
+    BoxFuture, ConnectError, ConnectionManager, HostKeyDecision, HostKeyPrompt, PassphrasePrompt,
+    PasswordPrompt, Prompter, Secret,
 };
 use support::{Service, Sshd};
 
@@ -52,8 +52,8 @@ impl ScriptedPrompter {
 }
 
 impl Prompter for ScriptedPrompter {
-    fn confirm_host_key(&self, _: HostKeyPrompt) -> BoxFuture<'_, bool> {
-        Box::pin(async { true })
+    fn confirm_host_key(&self, _: HostKeyPrompt) -> BoxFuture<'_, HostKeyDecision> {
+        Box::pin(async { HostKeyDecision::SaveAndTrust })
     }
 
     fn password(&self, prompt: PasswordPrompt) -> BoxFuture<'_, Option<Secret>> {

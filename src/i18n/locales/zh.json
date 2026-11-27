@@ -637,10 +637,12 @@
     "cancel": "取消",
     "hostKey": {
       "title": "未知的主机密钥",
-      "body": "这是第一次连接 {{host}}。信任之前，请确认这个指纹确实属于该服务器。",
+      "body": "信任之前，请确认这个指纹确实属于 {{host}}。",
       "fingerprintLabel": "{{algorithm}} 密钥指纹",
-      "hint": "信任后会写入 ~/.ssh/known_hosts，与 ssh 命令共用。",
-      "trust": "信任并连接"
+      "hint": "保存会将密钥写入与 ssh 命令共用的 ~/.ssh/known_hosts。临时信任在退出 SSH Astra 时失效。",
+      "reject": "拒绝",
+      "trustForRun": "仅本次运行信任",
+      "saveAndTrust": "保存并信任"
     },
     "password": {
       "title": "{{user}}@{{host}} 的密码",
@@ -654,7 +656,9 @@
       "body": "{{host}} 提供的密钥与记录不一致。可能有人在拦截连接，也可能服务器重装过。",
       "presented": "收到的密钥",
       "recorded": "记录的密钥（known_hosts 第 {{line}} 行）",
-      "fix": "如果确认变化是正常的，请手动删除 {{path}} 第 {{line}} 行，然后重新连接。"
+      "recordedForRun": "记录的密钥（仅本次运行信任）",
+      "fix": "如果确认变化是正常的，请手动删除 {{path}} 第 {{line}} 行，然后重新连接。",
+      "fixForRun": "如果确认变化是正常的，请重启 SSH Astra，并在信任前核对新的指纹。"
     },
     "errors": {
       "unreachable": "无法连接到 Host。",
