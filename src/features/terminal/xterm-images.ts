@@ -3,6 +3,21 @@ import type { IDisposable, Terminal } from "@xterm/xterm";
 
 const storageLimit = 16; // MB of decoded pixels, per Terminal
 const sequenceSizeLimit = 8_000_000;
+let canCompileWasm: boolean | undefined;
+
+function supportsImageDecoders(): boolean {
+  if (canCompileWasm === undefined) {
+    try {
+      // Older webviews may support WebAssembly but block it under the app CSP.
+      const emptyModule = Uint8Array.of(0, 97, 115, 109, 1, 0, 0, 0);
+      new WebAssembly.Instance(new WebAssembly.Module(emptyModule));
+      canCompileWasm = true;
+    } catch {
+      canCompileWasm = false;
+    }
+  }
+  return canCompileWasm;
+}
 
 // In addon-image 0.9.0, xterm's cells keep their image IDs after the add-on
 // is disposed. Carry the counter into a new cache so those cells stay empty.
@@ -19,6 +34,7 @@ export function attachTerminalImages(terminal: Terminal, initiallyEnabled: boole
   let trimStorage: IDisposable | undefined;
 
   const load = () => {
+    if (!supportsImageDecoders()) return;
     const addon = new ImageAddon({
       enableSizeReports: false,
       storageLimit,
@@ -47,6 +63,7 @@ export function attachTerminalImages(terminal: Terminal, initiallyEnabled: boole
     if (!images) return;
     previousImageId = storageCounters(images)._lastId;
     trimStorage?.dispose();
+    trimStorage = undefined;
     images.dispose();
     images = undefined;
   };
@@ -64,9 +81,20 @@ export function attachTerminalImages(terminal: Terminal, initiallyEnabled: boole
         else unload();
       });
     },
-    dispose() {
+    disposeTerminal() {
       disposed = true;
-      unload();
+      if (!images) {
+        terminal.dispose();
+        return;
+      }
+      // Detach and release cached images immediately. An active iTerm2 decode
+      // can still finish, so dispose xterm when its current writes have settled.
+      terminal.element?.remove();
+      images.reset();
+      terminal.write("", () => {
+        unload();
+        terminal.dispose();
+      });
     },
   };
 }

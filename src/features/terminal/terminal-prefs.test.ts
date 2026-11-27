@@ -98,7 +98,14 @@ describe("terminal preferences", () => {
 
   it("keeps the valid parts of a damaged or older saved value and defaults the rest", async () => {
     const backend = memoryBackend({
-      terminal: { fontSize: 400, colorScheme: "neon", copyOnSelect: false, fontFamily: "", shellIntegration: "no", inlineImages: "off" },
+      terminal: {
+        fontSize: 400,
+        colorScheme: "neon",
+        copyOnSelect: false,
+        fontFamily: "",
+        shellIntegration: "no",
+        inlineImages: "off",
+      },
     });
     expect((await openSettings(backend)).get(terminalSetting)).toEqual({
       ...defaultTerminalPrefs,

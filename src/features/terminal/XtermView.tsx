@@ -223,8 +223,7 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
       onTitle.dispose();
       unexpose();
       detach();
-      images.dispose();
-      xterm.dispose();
+      images.disposeTerminal();
       xtermRef.current = null;
       fitRef.current = null;
       searchRef.current = null;
