@@ -1258,6 +1258,11 @@
   },
   "home": {
     "search": "Search Hosts by name, address, user or Tag",
+    "layout": {
+      "label": "Home layout",
+      "cards": "Cards",
+      "list": "List"
+    },
     "recent": "Recent",
     "hosts": "Hosts",
     "ungrouped": "Ungrouped",

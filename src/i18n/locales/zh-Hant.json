@@ -1258,6 +1258,11 @@
   },
   "home": {
     "search": "依名稱、位址、使用者名稱或標籤搜尋 Host",
+    "layout": {
+      "label": "首頁版面配置",
+      "cards": "卡片",
+      "list": "清單"
+    },
     "recent": "最近使用",
     "hosts": "Host",
     "ungrouped": "未群組",
