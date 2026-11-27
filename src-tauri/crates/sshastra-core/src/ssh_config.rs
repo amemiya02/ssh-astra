@@ -10,8 +10,8 @@
 //! the first `Host`, OpenSSH's "first value obtained wins" across every
 //! matching block (so a trailing `Host *` supplies defaults), `HostName`,
 //! `Port`, `User`, `IdentityFile` (the first one), `IdentitiesOnly`, `ForwardAgent`,
-//! `ProxyJump` (as Jump hosts), `Include`, `LocalForward`, `RemoteForward`
-//! and `DynamicForward` (as auto-start Port forward rules, since `ssh` sets
+//! `ServerAliveInterval`, `ProxyJump` (as Jump hosts), `Include`, `LocalForward`,
+//! `RemoteForward` and `DynamicForward` (as auto-start Port forward rules, since `ssh` sets
 //! them up on every connect). `ProxyCommand` Hosts are reported and skipped;
 //! `Match` blocks are reported and ignored; other directives are ignored.
 
@@ -49,6 +49,7 @@ pub struct ConfigHost {
     pub identity_file: Option<PathBuf>,
     pub identities_only: bool,
     pub forward_agent: bool,
+    pub keepalive_seconds: Option<u32>,
     pub jump_host: Option<String>,
     pub forwards: Vec<ForwardDraft>,
 }
@@ -372,6 +373,7 @@ struct Settings {
     identity_file: Option<String>,
     identities_only: Option<String>,
     forward_agent: Option<String>,
+    server_alive_interval: Option<String>,
     /// `None` inside: `ProxyJump none` / `ProxyCommand none`.
     proxy: Option<Option<Proxy>>,
     /// In order, with their keyword.
@@ -388,6 +390,51 @@ fn yes_or_no(directive: &str, value: Option<&str>) -> Result<bool, ImportProblem
             value: value.into(),
         }),
     }
+}
+
+fn server_alive_interval(value: Option<&str>) -> Result<Option<u32>, ImportProblem> {
+    value
+        .map(|raw| {
+            parse_time_seconds(raw).ok_or_else(|| ImportProblem::InvalidValue {
+                directive: "ServerAliveInterval".into(),
+                value: raw.into(),
+            })
+        })
+        .transpose()
+}
+
+/// OpenSSH accepts plain seconds and sequences of time units such as `1m15s`.
+/// Its interval is returned as a signed integer, truncating fractional seconds.
+fn parse_time_seconds(raw: &str) -> Option<u32> {
+    if raw.is_empty() {
+        return None;
+    }
+    let mut total = 0.0;
+    let mut seen_seconds = false;
+    for part in raw.split_inclusive(|ch: char| !ch.is_ascii_digit() && ch != '.') {
+        let unit = part.as_bytes().last()?.to_ascii_lowercase();
+        let (number, multiplier) = if unit.is_ascii_digit() {
+            (part, 1.0)
+        } else {
+            let multiplier = match unit {
+                b's' => 1.0,
+                b'm' => 60.0,
+                b'h' => 3600.0,
+                b'd' => 86_400.0,
+                b'w' => 604_800.0,
+                _ => return None,
+            };
+            (&part[..part.len() - 1], multiplier)
+        };
+        if multiplier == 1.0 && std::mem::replace(&mut seen_seconds, true) {
+            return None;
+        }
+        if number.ends_with('.') || (multiplier != 1.0 && number.contains('.')) {
+            return None;
+        }
+        total += number.parse::<f64>().ok()? * multiplier;
+    }
+    (total <= f64::from(i32::MAX)).then_some(total as u32)
 }
 
 /// A resolved alias, before its Jump hosts are linked.
@@ -419,6 +466,7 @@ impl Config<'_> {
                     "identityfile" => set(&mut s.identity_file, d),
                     "identitiesonly" => set(&mut s.identities_only, d),
                     "forwardagent" => set(&mut s.forward_agent, d),
+                    "serveraliveinterval" => set(&mut s.server_alive_interval, d),
                     "proxyjump" | "proxycommand" if s.proxy.is_none() => {
                         let value = d.value();
                         s.proxy = Some(if value.eq_ignore_ascii_case("none") {
@@ -478,6 +526,7 @@ impl Config<'_> {
             identity_file,
             identities_only: yes_or_no("IdentitiesOnly", s.identities_only.as_deref())?,
             forward_agent: yes_or_no("ForwardAgent", s.forward_agent.as_deref())?,
+            keepalive_seconds: server_alive_interval(s.server_alive_interval.as_deref())?,
             jump_host: None,
             forwards: Vec::new(),
         })
@@ -758,6 +807,9 @@ impl Hosts {
                         identity_file: None,
                         identities_only: yes_or_no("IdentitiesOnly", s.identities_only.as_deref())?,
                         forward_agent: yes_or_no("ForwardAgent", s.forward_agent.as_deref())?,
+                        keepalive_seconds: server_alive_interval(
+                            s.server_alive_interval.as_deref(),
+                        )?,
                         jump_host: None,
                         forwards: Vec::new(),
                     }

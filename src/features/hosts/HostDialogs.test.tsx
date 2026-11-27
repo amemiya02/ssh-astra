@@ -146,6 +146,29 @@ describe("Host editor", () => {
     expect(document.querySelector('[role="alert"]')?.textContent).toBe("Choose a valid value");
   });
 
+  it.each([[undefined, "0", 0], [15, "", undefined]] as const)(
+    "edits the keepalive interval in Advanced from %s to %s",
+    async (previous, next, expected) => {
+      const save = vi.fn<EditorProps["save"]>().mockResolvedValue(host);
+      await renderEditor({ host: { ...host, keepaliveSeconds: previous }, save });
+
+      const input = field("Keepalive interval (seconds)") as HTMLInputElement;
+      expect(input.closest("[hidden]")).not.toBeNull();
+      act(() => button("Advanced").click());
+      expect(input.value).toBe(previous === undefined ? "" : String(previous));
+      act(() => {
+        const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+        setValue.call(input, next);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      act(() => button("Advanced").click());
+      await act(async () => button("Save").click());
+
+      expect(save).toHaveBeenCalledOnce();
+      expect(save.mock.calls[0]?.[0].keepaliveSeconds).toBe(expected);
+    },
+  );
+
   it("saves edits to both advanced fields after the section is collapsed again", async () => {
     const save = vi.fn<EditorProps["save"]>().mockResolvedValue(host);
     await renderEditor({ save });

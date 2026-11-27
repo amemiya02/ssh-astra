@@ -31,6 +31,13 @@ describe("parseHostForm", () => {
     expect(result.ok && result.draft.port).toBe(22);
   });
 
+  it.each(["-1", "1.5", "4294967296"])("rejects invalid keepalive seconds %s", (keepaliveSeconds) => {
+    expect(parseHostForm({ ...valid, keepaliveSeconds })).toEqual({
+      ok: false,
+      errors: { keepaliveSeconds: "keepaliveSeconds" },
+    });
+  });
+
   it("reports every missing or invalid field", () => {
     const result = parseHostForm({ ...valid, name: "", address: " ", port: "70000", user: "" });
     expect(result).toEqual({ ok: false, errors: { name: "required", address: "required", user: "required", port: "port" } });
