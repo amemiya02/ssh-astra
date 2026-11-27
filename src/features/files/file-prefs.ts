@@ -1,7 +1,7 @@
 import { defineSection } from "@/lib/storage";
 import type { FileSort, SortKey } from "./fileList";
 
-/** How File panels display files and interact with Terminals. */
+/** How File panels display files, interact with Terminals, and open remote edits. */
 export interface FilesPrefs {
   /** Show dotfiles. */
   showHidden: boolean;
@@ -9,6 +9,8 @@ export interface FilesPrefs {
   showModified: boolean;
   showPermissions: boolean;
   terminalFollowsFilePanel: boolean;
+  /** Absolute application path, or null for the system default. */
+  remoteEditApplication: string | null;
 }
 
 export const defaultFilesPrefs: FilesPrefs = {
@@ -17,6 +19,7 @@ export const defaultFilesPrefs: FilesPrefs = {
   showModified: true,
   showPermissions: false,
   terminalFollowsFilePanel: false,
+  remoteEditApplication: null,
 };
 
 const sortKeys: readonly SortKey[] = ["name", "size", "modified", "permissions"];
@@ -35,5 +38,7 @@ export const filesSetting = defineSection<FilesPrefs>("files", defaultFilesPrefs
     showPermissions: typeof value.showPermissions === "boolean" ? value.showPermissions : defaultFilesPrefs.showPermissions,
     terminalFollowsFilePanel: typeof value.terminalFollowsFilePanel === "boolean"
       ? value.terminalFollowsFilePanel : defaultFilesPrefs.terminalFollowsFilePanel,
+    remoteEditApplication: typeof value.remoteEditApplication === "string" && value.remoteEditApplication.trim()
+      ? value.remoteEditApplication : null,
   };
 });
