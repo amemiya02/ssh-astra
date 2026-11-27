@@ -379,6 +379,32 @@ impl RemoteFs for SftpFs {
         })
     }
 
+    fn compress<'a>(
+        &'a self,
+        directory: &'a str,
+        names: &'a [String],
+        archive: &'a str,
+    ) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(super::archive::compress(
+            &self.connection,
+            directory,
+            names,
+            archive,
+        ))
+    }
+
+    fn extract_archive<'a>(
+        &'a self,
+        directory: &'a str,
+        archive: &'a str,
+    ) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(super::archive::extract(
+            &self.connection,
+            directory,
+            archive,
+        ))
+    }
+
     fn remove_file<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>> {
         Box::pin(async move {
             self.session

@@ -341,6 +341,17 @@
       "failures": "Items that could not be moved",
       "close": "Close"
     },
+    "archive": {
+      "compressAction": "Compress…",
+      "extractAction": "Extract…",
+      "compressTitle": "Compress selection",
+      "compressDescription": "The archive will be created in this folder with a .tar.gz extension.",
+      "name": "Archive name",
+      "compress": "Compress",
+      "extractTitle": "Extract “{{name}}”",
+      "extractDescription": "The contents will go into a new folder named “{{folder}}”.",
+      "extract": "Extract"
+    },
     "nameProblem": {
       "slash": "A name cannot contain “/”.",
       "dots": "“{{name}}” cannot be used as a name.",
@@ -376,6 +387,12 @@
       "permissionDenied": "Permission denied: {{path}}",
       "ownershipUnavailable": "The current owner or group ID is unavailable for {{path}}. Enter both IDs to change ownership.",
       "alreadyExists": "Already exists: {{path}}",
+      "archiveToolMissing": "The required tool {{tool}} is missing on this Host.",
+      "archiveUnsupported": "The archive format for “{{path}}” is unsupported.",
+      "archiveNotAFile": "The archive is missing or is not a file.",
+      "archiveUnavailable": "Archive operations require an SSH Connection.",
+      "archiveIncomplete": "Extraction stopped. Partial contents may remain in “{{path}}”. {{message}}",
+      "archiveFailed": "The archive operation failed. {{message}}",
       "moveIntoSelf": "A folder cannot be moved into itself.",
       "notOpen": "The File panel is not connected.",
       "other": "The server refused: {{message}}"
@@ -528,6 +545,11 @@
     "windowStatus": "Broadcast · This window",
     "turnOff": "Turn off Broadcast",
     "recipient": "Receives Broadcast input"
+  },
+  "privacyMode": {
+    "label": "Privacy mode",
+    "turnOn": "Turn on privacy mode",
+    "turnOff": "Turn off privacy mode"
   },
   "status": {
     "noConnections": "No Connections",

@@ -13,6 +13,7 @@ import {
 import { HostMonogram } from "@/features/hosts/HostMonogram";
 import { recentHostIds, recentHostsSetting } from "@/features/hosts/host-history";
 import { useHosts } from "@/features/hosts/hostsStore";
+import { privacyModeSetting } from "@/features/workspace/privacy-mode";
 import type { Host } from "@/lib/ipc/hosts";
 import { useSetting } from "@/lib/storage";
 import { useRegisteredActions } from "./palette-actions";
@@ -51,6 +52,7 @@ export function CommandPalette({ open, onOpenChange, tabs, onOpenHost, onActivat
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const hosts = useHosts((s) => s.tree.hosts);
+  const [privacyMode] = useSetting(privacyModeSetting);
   const [recent] = useSetting(recentHostsSetting);
   const actions = useRegisteredActions();
 
@@ -130,7 +132,7 @@ export function CommandPalette({ open, onOpenChange, tabs, onOpenHost, onActivat
                   {entry.host ? <HostMonogram host={entry.host} /> : <Icon aria-hidden />}
                   <span className="min-w-0 flex-1 truncate">
                     <Highlighted text={entry.title} indexes={titleMatches} />
-                    {entry.detail && <span className="text-muted-foreground ml-2 font-mono text-xs">{entry.detail}</span>}
+                    {!privacyMode && entry.detail && <span className="text-muted-foreground ml-2 font-mono text-xs">{entry.detail}</span>}
                   </span>
                   {entry.shortcut && <CommandShortcut>{entry.shortcut}</CommandShortcut>}
                 </CommandItem>

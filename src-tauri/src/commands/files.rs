@@ -145,6 +145,31 @@ pub async fn files_rename(
     Ok(fs.rename(&from, &to).await?)
 }
 
+/// Archives direct children of a remote directory into a new tar.gz file.
+#[tauri::command]
+pub async fn files_compress(
+    registry: State<'_, FsRegistry>,
+    id: FsId,
+    directory: String,
+    names: Vec<String>,
+    archive: String,
+) -> CommandResult<()> {
+    let fs = registry.get(id).ok_or_else(CommandError::not_open)?;
+    Ok(fs.compress(&directory, &names, &archive).await?)
+}
+
+/// Expands a remote archive into a new sibling directory.
+#[tauri::command]
+pub async fn files_extract_archive(
+    registry: State<'_, FsRegistry>,
+    id: FsId,
+    directory: String,
+    archive: String,
+) -> CommandResult<()> {
+    let fs = registry.get(id).ok_or_else(CommandError::not_open)?;
+    Ok(fs.extract_archive(&directory, &archive).await?)
+}
+
 /// How many entries deleting `paths` would remove (each path counts itself
 /// and, for a directory, everything under it), for the confirmation.
 #[tauri::command]

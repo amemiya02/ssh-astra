@@ -341,6 +341,17 @@
       "failures": "无法移动的条目",
       "close": "关闭"
     },
+    "archive": {
+      "compressAction": "压缩…",
+      "extractAction": "解压…",
+      "compressTitle": "压缩所选项目",
+      "compressDescription": "将在当前文件夹内创建扩展名为 .tar.gz 的压缩包。",
+      "name": "压缩包名称",
+      "compress": "压缩",
+      "extractTitle": "解压「{{name}}」",
+      "extractDescription": "内容将解压到名为「{{folder}}」的新文件夹。",
+      "extract": "解压"
+    },
     "nameProblem": {
       "slash": "名称不能包含“/”。",
       "dots": "不能使用“{{name}}”作为名称。",
@@ -376,6 +387,12 @@
       "permissionDenied": "权限不足：{{path}}",
       "ownershipUnavailable": "无法获取 {{path}} 的当前属主或属组 ID。请同时输入两个 ID。",
       "alreadyExists": "已存在：{{path}}",
+      "archiveToolMissing": "此主机缺少所需工具 {{tool}}。",
+      "archiveUnsupported": "不支持「{{path}}」的压缩包格式。",
+      "archiveNotAFile": "压缩包不存在或不是文件。",
+      "archiveUnavailable": "压缩和解压需要 SSH 连接。",
+      "archiveIncomplete": "解压已中止。「{{path}}」中可能留有部分内容。{{message}}",
+      "archiveFailed": "压缩包操作失败。{{message}}",
       "moveIntoSelf": "不能将文件夹移入自身。",
       "notOpen": "File panel 未连接。",
       "other": "服务器拒绝了操作：{{message}}"
@@ -528,6 +545,11 @@
     "windowStatus": "广播 · 本窗口",
     "turnOff": "关闭广播",
     "recipient": "接收广播输入"
+  },
+  "privacyMode": {
+    "label": "隐私模式",
+    "turnOn": "开启隐私模式",
+    "turnOff": "关闭隐私模式"
   },
   "status": {
     "noConnections": "没有连接",

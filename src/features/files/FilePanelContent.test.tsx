@@ -18,6 +18,8 @@ vi.mock("@/lib/ipc/files", () => ({
   listFiles: vi.fn((_id: number, path: string) => Promise.resolve({ path: path || "/etc", entries: [] })),
   closeFiles: vi.fn(() => Promise.resolve()),
   createDir: vi.fn(),
+  compressFiles: vi.fn(() => Promise.resolve()),
+  extractArchive: vi.fn(() => Promise.resolve()),
   createEmptyFile: vi.fn(),
   renameFile: vi.fn(),
   countFiles: vi.fn(),

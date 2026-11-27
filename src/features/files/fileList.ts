@@ -98,6 +98,14 @@ export function formatPermissions(entry: FileEntry): string {
   );
 }
 
+/** The new sibling folder for a supported archive. */
+export function archiveFolderName(name: string): string | null {
+  const suffix = /\.(?:tar\.gz|tgz|tar|zip)$/i.exec(name);
+  if (suffix === null || suffix.index + suffix[0].length !== name.length) return null;
+  const folder = name.slice(0, suffix.index);
+  return folder === "" || folder === "." || folder === ".." ? null : folder;
+}
+
 /** Why `name` cannot be given to a new or renamed entry in a directory holding `existing`. */
 export type NameProblem = "empty" | "slash" | "dots" | "taken";
 

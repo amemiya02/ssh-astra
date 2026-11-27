@@ -23,6 +23,7 @@
 
 mod agent_forward;
 mod auth;
+mod exec;
 mod handshake;
 mod held;
 mod host_keys;
@@ -32,6 +33,7 @@ mod remote_terminal;
 mod shell;
 
 pub use auth::Agent;
+pub use exec::{shell_quote, ExecError, ExecOutput};
 pub use held::{HeldConnections, HeldEvent};
 pub use host_keys::HostKeyRecord;
 pub use progress::{AuthMethod, ConnectProgress, ConnectStage, ProgressStatus};

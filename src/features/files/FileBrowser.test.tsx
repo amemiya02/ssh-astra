@@ -27,6 +27,7 @@ const listings: Record<string, Listing> = {
     entries: [entry("sub", "dir"), ...Array.from({ length: 10_000 }, (_, i) => entry(`f${String(i).padStart(5, "0")}`))],
   },
   "/big/sub": { path: "/big/sub", entries: [entry("inner.txt")] },
+  "/archive": { path: "/archive", entries: [entry("a.txt"), entry("b.zip")] },
   "/counts": { path: "/counts", entries: [entry(".env"), entry("a.txt"), entry("b.txt")] },
   "/move": { path: "/move", entries: [entry("sub", "dir"), entry("a.txt"), entry("b.txt"), entry("c.txt")] },
   "/move/sub": { path: "/move/sub", entries: [] },
@@ -44,6 +45,8 @@ const api: FilesApi = {
   retryRemoteEdit: vi.fn(() => Promise.resolve()),
   closeRemoteEdit: vi.fn(() => Promise.resolve()),
   createDir: vi.fn(() => Promise.resolve()),
+  compressFiles: vi.fn(() => Promise.resolve()),
+  extractArchive: vi.fn(() => Promise.resolve()),
   createEmptyFile: vi.fn(() => Promise.resolve()),
   renameFile: vi.fn(() => Promise.resolve()),
   countFiles: vi.fn(() => Promise.resolve(2)),
@@ -114,6 +117,38 @@ const pathButton = (label: string) =>
 const pathInput = () => container.querySelector<HTMLInputElement>('input[aria-label="Path"]')!;
 
 describe("FileBrowser", () => {
+  it("compresses the selection and reports a missing extraction tool in the operation dialog", async () => {
+    vi.mocked(api.extractArchive).mockRejectedValueOnce({
+      kind: "archiveToolMissing", message: "missing unzip", details: { tool: "unzip" },
+    });
+    const { rows, store } = await render({ startPath: "/archive" });
+    const openMenu = async (row: Element, label: string) => {
+      await act(async () => row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+      const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+        .find((menuItem) => menuItem.textContent === label)!;
+      await act(async () => item.click());
+    };
+    const [first, second] = rows();
+    await act(async () => {
+      first!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      second!.dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true }));
+    });
+    await openMenu(first!, "Compress…");
+    const input = dialog()!.querySelector<HTMLInputElement>('input[aria-label="Archive name"]')!;
+    await act(async () => type(input, "backup"));
+    await act(async () => button("Compress").click());
+    expect(api.compressFiles).toHaveBeenCalledExactlyOnceWith(1, "/archive", ["a.txt", "b.zip"], "backup.tar.gz");
+    expect(dialog()).toBeNull();
+
+    await act(async () => second!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await openMenu(second!, "Extract…");
+    expect(dialog()?.textContent).toContain("a new folder named “b”");
+    await act(async () => button("Extract").click());
+    expect(api.extractArchive).toHaveBeenCalledExactlyOnceWith(1, "/archive", "b.zip");
+    expect(dialog()?.querySelector('[role="alert"]')?.textContent).toContain("unzip is missing");
+    expect(store.getState().error).toBeNull();
+  });
+
   it("searches beneath the current path and reveals a hidden result in its canonical parent", async () => {
     vi.mocked(api.searchNames).mockResolvedValueOnce({
       matches: [{ parent: "/big/alias ", name: ".hidden-match" }],
