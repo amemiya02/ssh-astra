@@ -374,7 +374,8 @@ Compact and native-feeling; controls recede until hovered, pressed or focused.
 - **Style:** pill tabs on the ground, 28px tall, 112 to 208px wide, 10px radius, 4px apart. A Host tab leads with its Connection dot (8px, named in the label and tooltip); other tabs with a 14px kind icon at 70% opacity; then the truncated title; then a 20px close button.
 - **Inactive:** muted foreground, transparent border, `accent/60` on hover, close button hidden until hover.
 - **Active:** `surface` fill, 1px border, foreground text.
-- **Host hue:** a 2px pill underline in the Host's ANSI hue along the tab's bottom edge, full strength when active, 40% when not.
+- **Tab colour.** A 2px pill underline runs along a Host tab's bottom edge in its automatic ANSI hue at full strength when active and 40% when inactive. The tab's context menu offers six colours and an automatic setting. A custom colour replaces the underline and uses the matching `--ansi-*-ink` token at full strength for contrast in every theme.
+- **Locked tabs.** A 14px lock in muted foreground takes the close button's place and appears in the tab's accessible label. Locking applies to the whole tab. Panes in a locked split can close while another pane remains open.
 - **Behaviour:** arrow keys, Home and End move; Delete and middle-click close; dragging reorders with a 2px `ring` insertion bar. Split and dock toggles sit at the far right.
 
 ### Host list rows

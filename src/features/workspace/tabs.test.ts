@@ -9,6 +9,7 @@ import {
   startupTabs,
   newPane,
   tabPanes,
+  tabHue,
   tabsReducer,
   tabStatus,
   tabTitle,
@@ -101,6 +102,38 @@ describe("tabsReducer: tabs", () => {
     state = tabsReducer(state, { type: "open", tabId: "f3", pane: forwards("f3.1", web) });
     expect(ids(state)).toEqual(["a", "f1", "f2"]);
     expect(state.activeId).toBe("f1");
+  });
+
+  it("overrides the Host hue for just the colored tab and restores the Host hue when cleared", () => {
+    const web = host("web");
+    const state: TabsState = { tabs: [tab("a", [remote("a.1", web)]), tab("b", [remote("b.1", web)])], activeId: "a" };
+    expect(tabHue(state.tabs[0]!)).toBe("green");
+
+    const colored = tabsReducer(state, { type: "setTabColor", id: "a", color: "cyan" });
+    expect(tabHue(colored.tabs[0]!)).toBe("cyan");
+    expect(tabHue(colored.tabs[1]!)).toBe("green");
+
+    const cleared = tabsReducer(colored, { type: "setTabColor", id: "a", color: undefined });
+    expect(tabHue(cleared.tabs[0]!)).toBe("green");
+  });
+
+  it("protects a locked tab from direct, keyboard and bulk closes until it is unlocked", () => {
+    const state = tabsReducer(withTabs(["a", "b", "c", "d"], "b"), { type: "setTabLocked", id: "b", locked: true });
+    expect(tabsReducer(state, { type: "close", id: "b" })).toBe(state);
+    expect(tabsReducer(state, { type: "closePane", paneId: "b.1" })).toBe(state);
+    expect(ids(tabsReducer(state, { type: "closeOthers", id: "c" }))).toEqual(["b", "c"]);
+    expect(ids(tabsReducer(state, { type: "closeRight", id: "a" }))).toEqual(["a", "b"]);
+
+    const unlocked = tabsReducer(state, { type: "setTabLocked", id: "b", locked: false });
+    expect(tabsReducer(unlocked, { type: "close", id: "b" })).toEqual(withTabs(["a", "c", "d"], "c"));
+  });
+
+  it("can close a pane in a locked split tab until only one pane remains", () => {
+    const split: TabsState = { tabs: [tab("a", [local("a.1"), local("a.2")])], activeId: "a" };
+    const locked = tabsReducer(split, { type: "setTabLocked", id: "a", locked: true });
+    const single = tabsReducer(locked, { type: "closePane", paneId: "a.2" });
+    expect(paneIds(single, "a")).toEqual(["a.1"]);
+    expect(tabsReducer(single, { type: "closePane", paneId: "a.1" })).toBe(single);
   });
 
   it("closing the active tab focuses the tab to its right, like a browser", () => {
@@ -376,6 +409,17 @@ describe("tabTitle", () => {
     const titled = tab("a", [local("a.1"), { ...local("a.2"), title: "htop" }]);
     expect(tabTitle({ ...titled, activePaneId: "a.2" }, t, 2)).toBe("htop");
     expect(tabTitle(titled, t, 1)).toBe("Local terminal");
+  });
+
+  it("keeps a custom title while pane focus and shell titles change, then restores the current automatic title", () => {
+    let state: TabsState = { tabs: [tab("a", [local("a.1"), local("a.2")])], activeId: "a" };
+    state = tabsReducer(state, { type: "renameTab", id: "a", title: "  Deploy  " });
+    state = tabsReducer(state, { type: "focusPane", paneId: "a.2" });
+    state = tabsReducer(state, { type: "retitle", paneId: "a.2", title: "vim notes.md" });
+    expect(tabTitle(state.tabs[0]!, t, 1)).toBe("Deploy");
+
+    state = tabsReducer(state, { type: "renameTab", id: "a", title: "  " });
+    expect(tabTitle(state.tabs[0]!, t, 1)).toBe("vim notes.md");
   });
 
   it("names a Port forwards tab after its Host", () => {
