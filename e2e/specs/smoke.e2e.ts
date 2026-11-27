@@ -49,25 +49,52 @@ async function typeCommand(command: string): Promise<void> {
   await browser.keys("Enter");
 }
 
+async function prepareWindow(): Promise<void> {
+  // Choosing the (only) window turns off the service's focus recovery, which
+  // needs the `tauri-plugin-wdio` plugin and waits 5 s per command without it.
+  await browser.switchToWindow(await browser.getWindowHandle());
+  // No enter/exit animations: a window in the background (macOS) may never run them,
+  // leaving dialogs at opacity 0, which WebDriver reports as not displayed.
+  await browser.execute(() => {
+    const style = document.createElement("style");
+    style.textContent = "*, *::before, *::after { animation: none !important; transition: none !important; }";
+    document.head.append(style);
+  });
+}
+
+async function restartApp(): Promise<void> {
+  const previousWindow = `http://${browser.options.hostname}:${browser.options.port}/session/${browser.sessionId}/window`;
+  await browser.execute(() => {
+    const tauri = (window as unknown as { __TAURI_INTERNALS__: { invoke(command: string): Promise<unknown> } }).__TAURI_INTERNALS__;
+    // Let WebDriver finish this command before exiting the app that is serving it.
+    setTimeout(() => void tauri.invoke("plugin:process|restart"), 500);
+  });
+  await browser.waitUntil(async () => {
+    try {
+      const response = await fetch(previousWindow, { signal: AbortSignal.timeout(1000) });
+      const body = await response.json() as { value?: { error?: string } };
+      return !response.ok && body.value?.error === "invalid session id";
+    } catch {
+      return false; // The old process exited; the new one is still starting.
+    }
+  }, { timeoutMsg: "The restarted SSH Astra process never became ready." });
+  await browser.reloadSession();
+  await prepareWindow();
+}
+
 describe("sshastra", () => {
   let localDir: string;
+  let restarted = false;
 
   before(async () => {
-    // Choosing the (only) window turns off the service's focus recovery, which
-    // needs the `tauri-plugin-wdio` plugin and waits 5 s per command without it.
-    await browser.switchToWindow(await browser.getWindowHandle());
-    // No enter/exit animations: a window in the background (macOS) may never run them,
-    // leaving dialogs at opacity 0, which WebDriver reports as not displayed.
-    await browser.execute(() => {
-      const style = document.createElement("style");
-      style.textContent = "*, *::before, *::after { animation: none !important; transition: none !important; }";
-      document.head.append(style);
-    });
+    await prepareWindow();
     localDir = mkdtempSync(join(tmpdir(), "sshastra-e2e-upload-"));
     writeFileSync(join(localDir, uploadName), uploadContent);
   });
 
-  after(() => {
+  after(async () => {
+    // The replacement process was launched by Tauri, so the service no longer owns it.
+    if (restarted) await browser.closeWindow().catch(() => undefined);
     rmSync(localDir, { recursive: true, force: true });
     sshd.runAsTester(`rm -rf '${scratch}'`);
   });
@@ -129,5 +156,66 @@ describe("sshastra", () => {
     });
     // The listing reloads by itself once the upload into the folder shown is done.
     await listing.$(`span=${uploadName}`).waitForDisplayed();
+  });
+
+  it("restores the tab and split layout after restarting and connects only on request", async () => {
+    const name = "E2E restored sshd";
+    await $('[role="tab"][id]').click();
+    await $("button=New Host").click();
+    await $("#host-form-name").setValue(name);
+    await $("#host-form-address").setValue("127.0.0.1");
+    await $("#host-form-port").clearValue();
+    await $("#host-form-port").setValue(String(sshd.port()));
+    await $("#host-form-user").setValue(sshd.USER);
+    await $("button=Save").click();
+    await $(`//*[@role='tabpanel' and not(@hidden)]//button[contains(., '${name}')]`).click();
+
+    const password = () => $('[role="dialog"] input[type="password"]');
+    const trust = $("button=Trust and connect");
+    await browser.waitUntil(async () => await password().isDisplayed() || await trust.isDisplayed());
+    if (await trust.isDisplayed()) await trust.click();
+    await password().waitForDisplayed();
+    await password().setValue(sshd.PASSWORD);
+    await $('[role="dialog"]').$("button=Connect").click();
+
+    const activeTab = () => $('[role="tab"][aria-selected="true"]');
+    await activeTab().$('[data-status="connected"]').waitForExist();
+    await $('button[aria-label="Split right"]').click();
+    await activeTab().$('[data-status="connected"]').waitForExist();
+    const tabs = await $$('[role="tab"]').map((tab) => tab.getAttribute("id"));
+    const tab = await activeTab().getAttribute("id");
+    const panel = await activeTab().getAttribute("aria-controls");
+    if (!panel || !tab) throw new Error("The active tab has no saved identity.");
+
+    const focusedPane = () => $(`//*[@id='${panel}']//*[@data-pane-focus]/..`);
+    const focus = await focusedPane().getAttribute("id");
+    if (!focus) throw new Error("The split has no focused pane.");
+    await browser.waitUntil(async () => {
+      return browser.execute(async (id, paneId) => {
+        type Saved = { workspace?: { activeId?: string; tabs?: { id: string; activePaneId: string }[] } };
+        const tauri = (window as unknown as { __TAURI_INTERNALS__: { invoke(command: string): Promise<Saved> } }).__TAURI_INTERNALS__;
+        const { workspace } = await tauri.invoke("settings_load");
+        return workspace?.activeId === id && workspace.tabs?.some((entry) => entry.id === id && `pane-${entry.activePaneId}` === paneId);
+      }, tab.replace(/^tab-/, ""), focus);
+    }, { timeoutMsg: "The active tab and split focus were never saved." });
+
+    await restartApp();
+    restarted = true;
+    await expect(activeTab()).toHaveAttribute("id", tab);
+    expect(await $$('[role="tab"]').map((tab) => tab.getAttribute("id"))).toEqual(tabs);
+    await expect(focusedPane()).toHaveAttribute("id", focus);
+    await expect($(`#${panel} [role="separator"][aria-orientation="vertical"]`)).toBeDisplayed();
+    const connect = await $$(`#${panel} button`).filter(async (button) => await button.getText() === "Connect");
+    expect(connect).toHaveLength(2);
+    await expect($(`#${panel} .xterm`)).not.toExist();
+    await expect($('[role="dialog"]')).not.toExist();
+
+    await focusedPane().$("button=Connect").click();
+    await password().waitForDisplayed();
+    await password().setValue(sshd.PASSWORD);
+    await $('[role="dialog"]').$("button=Connect").click();
+    await expect(activeTab().$('[data-status="connected"]')).toExist();
+    await expect(focusedPane().$(".xterm")).toBeDisplayed();
+    await expect($(`#${panel}`).$("button=Connect")).toBeDisplayed();
   });
 });

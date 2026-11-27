@@ -39,10 +39,11 @@ interface PendingPrompt {
 const windows = typeof navigator !== "undefined" && /^Win/i.test(navigator.platform);
 const nativePath = (path: string) => windows ? path.replaceAll("/", "\\") : path;
 
-export function SftpWorkspace({ id, host, active, onStatusChange }: {
+export function SftpWorkspace({ id, host, active, showPrompts = active, onStatusChange }: {
   id: string;
   host: Host;
   active: boolean;
+  showPrompts?: boolean;
   onStatusChange(id: string, status: ConnectionStatus): void;
 }) {
   const { t } = useTranslation();
@@ -116,7 +117,7 @@ export function SftpWorkspace({ id, host, active, onStatusChange }: {
   const remoteReady = remotePhase === "open" && remotePath !== null && !connectionError;
   const localReady = localPhase === "open" && localPath !== null;
   const status = remoteReady ? "connected"
-    : remotePhase === "closed" || connectionError || remoteError ? "disconnected" : "connecting";
+    : remoteError ? "disconnected" : "connecting";
   useEffect(() => onStatusChange(id, status), [id, status, onStatusChange]);
 
   const upload = (paths: string[]) => {
@@ -179,7 +180,7 @@ export function SftpWorkspace({ id, host, active, onStatusChange }: {
         if (localReady) download([path]);
         else setTransferError(t("sftp.localUnavailable"));
       }} />}
-      {pending && <ConnectPromptDialog prompt={pending.prompt} open={active} onAnswer={pending.resolve} />}
+      {pending && <ConnectPromptDialog prompt={pending.prompt} open={showPrompts} onAnswer={pending.resolve} />}
     </div>
   );
 }

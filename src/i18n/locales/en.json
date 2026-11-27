@@ -540,6 +540,11 @@
       "title": "{{user}}@{{host}} asks",
       "description": "The server asks for more information to sign in."
     },
+    "restored": {
+      "disconnected": "{{host}} is disconnected.",
+      "waiting": "Waiting to connect to {{host}}…",
+      "connect": "Connect"
+    },
     "lost": {
       "title": "Disconnected",
       "reconnecting": "Reconnecting… try {{attempt}} of {{attempts}}",
@@ -553,6 +558,7 @@
     "lead": "Changes apply right away and are kept after a restart.",
     "open": "Settings",
     "sections": {
+      "workspace": "Workspace",
       "appearance": "Appearance",
       "terminal": "Terminal",
       "connection": "Connection",
@@ -560,6 +566,15 @@
       "transfers": "Transfers",
       "updates": "Updates",
       "diagnostics": "Diagnostics"
+    },
+    "restoreTabs": {
+      "label": "Restore tabs",
+      "description": "Choose what happens to your tabs and panes the next time SSH Astra starts.",
+      "options": {
+        "none": "Start on Home",
+        "layout": "Restore layout",
+        "connect": "Restore and connect"
+      }
     },
     "theme": {
       "follow": {

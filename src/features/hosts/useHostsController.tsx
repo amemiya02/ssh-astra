@@ -72,7 +72,6 @@ export function useHostsController(openers: HostOpeners): HostsController {
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
-    void hostsStore.getState().load();
     void connectionsStore.getState().watch();
     // Unmounting mid-connect refuses the open question so the backend stops waiting.
     return () => {
