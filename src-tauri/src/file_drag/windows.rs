@@ -29,7 +29,7 @@ use windows::Win32::System::Ole::{
     DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_NONE,
 };
 use windows::Win32::System::SystemServices::{MK_LBUTTON, MODIFIERKEYS_FLAGS};
-use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_ESCAPE, VK_LBUTTON};
 use windows::Win32::UI::Shell::{
     IDataObjectAsyncCapability, IDataObjectAsyncCapability_Impl, SHCreateStdEnumFmtEtc,
     CFSTR_FILECONTENTS, CFSTR_FILEDESCRIPTORW, CFSTR_INDRAGLOOP, CFSTR_LOGICALPERFORMEDDROPEFFECT,
@@ -248,7 +248,15 @@ struct DropSource {
 
 impl IDropSource_Impl for DropSource_Impl {
     fn QueryContinueDrag(&self, escape: BOOL, keys: MODIFIERKEYS_FLAGS) -> HRESULT {
-        if escape.as_bool() {
+        // OLE supplies the press notification. Also consult the physical key
+        // while it is held, in case the nested drag loop coalesced its message.
+        let escape_held = unsafe { GetAsyncKeyState(i32::from(VK_ESCAPE.0)) } < 0;
+        if escape.as_bool() || escape_held {
+            #[cfg(feature = "e2e")]
+            log::info!(
+                "file drag cancelled by Escape ole={} held={escape_held}",
+                escape.as_bool()
+            );
             self.drag.stop_reading();
             return DRAGDROP_S_CANCEL;
         }
@@ -258,6 +266,8 @@ impl IDropSource_Impl for DropSource_Impl {
         // OLE calls the target's Drop before DoDragDrop returns. Enable data reads
         // only after release over a target that advertised a copy.
         if self.drag.can_drop.load(Ordering::Acquire) {
+            #[cfg(feature = "e2e")]
+            log::info!("file drag OLE accepted the initiating mouse release");
             self.drag.accepted.store(true, Ordering::Release);
             self.drag.in_drag_loop.store(false, Ordering::Release);
             DRAGDROP_S_DROP
