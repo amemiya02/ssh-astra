@@ -21,6 +21,18 @@ struct FilesSettings {
     remote_edit_application: Option<PathBuf>,
 }
 
+fn files_settings(settings: &SettingsState) -> FilesSettings {
+    settings
+        .with(|store| Ok(store.section("files")))
+        .unwrap_or_default()
+}
+
+fn send_events(channel: Channel<EditEvent>) -> impl Fn(EditEvent) + Send + Sync + 'static {
+    move |event| {
+        let _ = channel.send(event);
+    }
+}
+
 /// The desktop file opener for a new or existing edit.
 pub struct SystemOpener;
 
@@ -107,8 +119,7 @@ fn open_application(path: &Path, application: &Path) -> Result<(), String> {
 }
 
 /// Downloads `path` from `host_id` over its live Connection and opens it in
-/// the chosen or default application. Upload progress (`{ state: "uploading" |
-/// "uploaded" | "uploadFailed", reason? }`) goes to `on_event`. Opening a
+/// the chosen or default application. Upload and conflict events go to `on_event`. Opening a
 /// file that is already open shows it again and returns the same id. Only
 /// regular files up to 10 MB (`tooLarge`, `notAFile`); one that looks binary
 /// fails with `binary` unless `allow_binary`.
@@ -125,19 +136,43 @@ pub async fn edit_open(
     // An edit outlives File panel sessions and Connections: each save goes
     // over whatever Connection the Host has then.
     let fs = Arc::new(LiveHostFs::new(live_sftp(app, host_id.clone())));
-    let on_event = move |event| {
-        let _ = on_event.send(event);
-    };
-    let files: FilesSettings = settings
-        .with(|store| Ok(store.section("files")))
-        .unwrap_or_default();
+    let files = files_settings(&settings);
     let options = OpenEditOptions {
         allow_binary,
         application: files.remote_edit_application.as_deref(),
     };
     Ok(editor
-        .open_with(fs, &host_id, &path, options, on_event)
+        .open_with(fs, &host_id, &path, options, send_events(on_event))
         .await?)
+}
+
+/// Opens the current remote version alongside a conflicted edit, using the same editor preference.
+#[tauri::command]
+pub async fn edit_open_conflict_copy(
+    editor: State<'_, RemoteEditor>,
+    settings: State<'_, SettingsState>,
+    id: EditId,
+    conflict_id: u64,
+    on_event: Channel<EditEvent>,
+) -> CommandResult<OpenedEdit> {
+    let files = files_settings(&settings);
+    Ok(editor
+        .open_conflict_copy(
+            id,
+            conflict_id,
+            files.remote_edit_application.as_deref(),
+            send_events(on_event),
+        )
+        .await?)
+}
+
+#[tauri::command]
+pub fn edit_overwrite(
+    editor: State<'_, RemoteEditor>,
+    id: EditId,
+    conflict_id: u64,
+) -> CommandResult<()> {
+    Ok(editor.overwrite(id, conflict_id)?)
 }
 
 /// Uploads the edit's temp file now (after a failed upload).
