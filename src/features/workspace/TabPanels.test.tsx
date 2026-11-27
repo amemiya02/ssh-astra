@@ -36,6 +36,7 @@ function renderWorkspace() {
         activeId={state.activeId}
         renderHome={() => null}
         onFocusPane={(paneId) => dispatch({ type: "focusPane", paneId })}
+        onConnectRestoredPane={(paneId) => dispatch({ type: "connectRestoredPane", paneId })}
         onTitleChange={() => {}}
         onStatusChange={() => {}}
         onResizeSplit={(tabId, resize) => dispatch({ type: "resizeSplit", tabId, ...resize })}

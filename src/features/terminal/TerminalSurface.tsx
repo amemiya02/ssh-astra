@@ -76,53 +76,57 @@ export function TerminalSurface({
     shellIntegration.open(paneId);
     const size = () => ({ cols: xterm.cols, rows: xterm.rows });
 
-    openRef
-      .current(size(), (event) => {
-        if (disposed || exited) return;
-        if (event.type === "output") {
-          if (e2eHooks) e2eHooks.trackOutput(xterm, event.data);
-          else xterm.write(event.data);
-          return;
-        }
-        if (event.type === "shellIntegration") {
-          shellIntegration.event(paneId, event.event, xterm.buffer.active.type === "normal");
-          return;
-        }
-        if (event.type === "connection") {
-          if (event.state.state === "connected") shellIntegration.open(paneId);
-          else shellIntegration.close(paneId);
-          return;
-        }
-        if (event.type !== "exit") return;
-        exited = true;
-        id = undefined;
-        shellIntegration.close(paneId);
-        const message =
-          event.code === null
-            ? tRef.current("terminal.exitedUnknown")
-            : tRef.current("terminal.exited", { code: event.code });
-        xterm.write(`\r\n\x1b[2m${message}\x1b[0m\r\n`);
-        xterm.options.cursorBlink = false;
-        onTitleChangeRef.current?.("");
-        onExitRef.current?.();
-      })
-      .then(
-        (opened) => {
-          if (disposed || exited) {
-            void closeTerminal(opened);
+    queueMicrotask(() => {
+      // In development, Strict Mode disposes and reattaches the view before the first open.
+      if (disposed) return;
+      openRef
+        .current(size(), (event) => {
+          if (disposed || exited) return;
+          if (event.type === "output") {
+            if (e2eHooks) e2eHooks.trackOutput(xterm, event.data);
+            else xterm.write(event.data);
             return;
           }
-          id = opened;
-          onOpenedRef.current?.();
-          // Catch up on any resize that happened while connecting.
-          void resizeTerminal(opened, size());
-        },
-        (error: unknown) => {
-          if (disposed) return;
+          if (event.type === "shellIntegration") {
+            shellIntegration.event(paneId, event.event, xterm.buffer.active.type === "normal");
+            return;
+          }
+          if (event.type === "connection") {
+            if (event.state.state === "connected") shellIntegration.open(paneId);
+            else shellIntegration.close(paneId);
+            return;
+          }
+          if (event.type !== "exit") return;
+          exited = true;
+          id = undefined;
           shellIntegration.close(paneId);
-          onOpenErrorRef.current?.(error);
-        },
-      );
+          const message =
+            event.code === null
+              ? tRef.current("terminal.exitedUnknown")
+              : tRef.current("terminal.exited", { code: event.code });
+          xterm.write(`\r\n\x1b[2m${message}\x1b[0m\r\n`);
+          xterm.options.cursorBlink = false;
+          onTitleChangeRef.current?.("");
+          onExitRef.current?.();
+        })
+        .then(
+          (opened) => {
+            if (disposed || exited) {
+              void closeTerminal(opened);
+              return;
+            }
+            id = opened;
+            onOpenedRef.current?.();
+            // Catch up on any resize that happened while connecting.
+            void resizeTerminal(opened, size());
+          },
+          (error: unknown) => {
+            if (disposed) return;
+            shellIntegration.close(paneId);
+            onOpenErrorRef.current?.(error);
+          },
+        );
+    });
 
     const onData = xterm.onData((data) => {
       if (id === undefined) return;

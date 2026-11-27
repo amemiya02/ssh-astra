@@ -33,6 +33,8 @@ interface RemoteTerminalViewProps {
   host: Host;
   /** Whether its tab is shown. A question asked while hidden waits until the tab is shown. */
   active?: boolean;
+  /** Startup restoration can ask sign-in questions before this pane is focused. */
+  showPrompts?: boolean;
   onTitleChange?(title: string): void;
   /**
    * Connecting until the shell runs, then connected; disconnected once it ends or the connect fails.
@@ -53,6 +55,7 @@ export function RemoteTerminalView({
   paneId,
   host,
   active = true,
+  showPrompts = active,
   onTitleChange,
   onStatusChange,
   onCwd,
@@ -147,7 +150,7 @@ export function RemoteTerminalView({
       {pending && (
         <ConnectPromptDialog
           prompt={pending.prompt}
-          open={active}
+          open={showPrompts}
           onAnswer={(answer) => {
             show(null);
             pending.resolve(answer);

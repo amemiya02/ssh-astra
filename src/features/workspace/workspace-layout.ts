@@ -1,5 +1,8 @@
 import { defineSection } from "@/lib/storage";
-import { layoutPanes, maxPanesPerTab, type Pane, type PaneLayout, type TabsState } from "./tabs";
+import type { Host } from "@/lib/ipc/hosts";
+import { ansiHues } from "@/theme/monogram-ink";
+import { layoutPanes, maxPanesPerTab, startupTabs, type Pane, type PaneLayout, type Tab, type TabsState } from "./tabs";
+import type { RestoreTabs } from "./workspace-prefs";
 
 type HostedPaneKind = Extract<Pane, { host: unknown }>["kind"];
 
@@ -9,7 +12,7 @@ export type SavedPane = { id: string } & (
 );
 
 export interface WorkspaceLayout {
-  tabs: { id: string; layout: PaneLayout<SavedPane>; activePaneId: string }[];
+  tabs: (Omit<Tab, "layout"> & { layout: PaneLayout<SavedPane> })[];
   activeId: string | null;
 }
 
@@ -17,7 +20,9 @@ export interface WorkspaceLayout {
 export function serializeWorkspaceLayout(state: TabsState): WorkspaceLayout {
   return {
     activeId: state.activeId,
-    tabs: state.tabs.map(({ id, activePaneId, layout }) => ({ id, activePaneId, layout: serializeLayout(layout) })),
+    tabs: state.tabs.map(({ id, activePaneId, layout, customTitle, color, locked }) => ({
+      id, activePaneId, layout: serializeLayout(layout), customTitle, color, locked,
+    })),
   };
 }
 
@@ -51,7 +56,10 @@ export const workspaceLayoutSetting = defineSection<WorkspaceLayout>("workspace"
 
     const panes = layoutPanes(layout);
     const activePaneId = panes.find((pane) => pane.id === tab.activePaneId)?.id ?? panes[0]!.id;
-    tabs.push({ id: tab.id, activePaneId, layout });
+    const customTitle = typeof tab.customTitle === "string" ? tab.customTitle.trim() || undefined : undefined;
+    const color = ansiHues.find((hue) => hue === tab.color);
+    const locked = typeof tab.locked === "boolean" ? tab.locked : undefined;
+    tabs.push({ id: tab.id, activePaneId, layout, customTitle, color, locked });
     tabIds.add(tab.id);
   }
   const activeId = isId(raw.activeId) && tabIds.has(raw.activeId) ? raw.activeId : tabs[0]?.id ?? null;
@@ -59,7 +67,7 @@ export const workspaceLayoutSetting = defineSection<WorkspaceLayout>("workspace"
 });
 
 type ReadPane = (raw: unknown) => PaneLayout<SavedPane> | undefined;
-type SavedChild = { layout: PaneLayout<SavedPane>; ratio: number };
+type LayoutChild<P> = { layout: PaneLayout<P>; ratio: number };
 
 function parsePane(raw: unknown): SavedPane | undefined {
   if (!isRecord(raw) || !isId(raw.id)) return undefined;
@@ -83,7 +91,7 @@ function parseLayout(raw: unknown, readPane: ReadPane, depth: number): PaneLayou
   if (raw.type === "pane") return readPane(raw.pane);
   if (raw.type !== "split" || !Array.isArray(raw.children)) return undefined;
 
-  const children = raw.children.flatMap((child): SavedChild[] => {
+  const children = raw.children.flatMap((child): LayoutChild<SavedPane>[] => {
     if (!isRecord(child)) return [];
     const layout = parseLayout(child.layout, readPane, depth + 1);
     return layout ? [{ layout, ratio: positiveRatio(child.ratio) }] : [];
@@ -94,7 +102,7 @@ function parseLayout(raw: unknown, readPane: ReadPane, depth: number): PaneLayou
 function parseFlatLayout(tab: Record<string, unknown>, readPane: ReadPane): PaneLayout<SavedPane> | undefined {
   if (!Array.isArray(tab.panes)) return undefined;
   const ratios: unknown[] = Array.isArray(tab.ratios) ? tab.ratios : [];
-  const children = tab.panes.flatMap((pane, index): SavedChild[] => {
+  const children = tab.panes.flatMap((pane, index): LayoutChild<SavedPane>[] => {
     const layout = readPane(pane);
     return layout ? [{ layout, ratio: positiveRatio(ratios[index]) }] : [];
   });
@@ -102,7 +110,7 @@ function parseFlatLayout(tab: Record<string, unknown>, readPane: ReadPane): Pane
 }
 
 /** Empty branches are dropped, single children are promoted, and unusable sizes become equal. */
-function repairSplit(orientation: unknown, children: SavedChild[]): PaneLayout<SavedPane> | undefined {
+function repairSplit<P>(orientation: unknown, children: LayoutChild<P>[]): PaneLayout<P> | undefined {
   if (children.length < 2) return children[0]?.layout;
   const total = children.reduce((sum, child) => sum + child.ratio, 0);
   const valid = Number.isFinite(total) && children.every((child) => child.ratio / total > 0);
@@ -123,4 +131,45 @@ function isId(value: unknown): value is string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Resolves saved Host ids against the current Host list and repairs the resulting gaps. */
+export function restoreWorkspaceLayout(saved: WorkspaceLayout, hosts: readonly Host[], mode: RestoreTabs): TabsState {
+  if (mode === "none") return startupTabs();
+
+  const byId = new Map(hosts.map((host) => [host.id, host]));
+  let order = 0;
+  function restoreLayout(layout: PaneLayout<SavedPane>): PaneLayout | undefined {
+    if (layout.type === "split") {
+      const children = layout.children.flatMap(({ layout, ratio }) => {
+        const restored = restoreLayout(layout);
+        return restored ? [{ layout: restored, ratio }] : [];
+      });
+      return children.length === layout.children.length
+        ? { ...layout, children }
+        : repairSplit(layout.orientation, children);
+    }
+    const { pane } = layout;
+    if (!("hostId" in pane)) return { type: "pane", pane };
+
+    const host = byId.get(pane.hostId);
+    if (!host) return undefined;
+    const { id, kind } = pane;
+    if (kind === "port-forwards") return { type: "pane", pane: { id, kind, host } };
+
+    const restoreConnection = mode === "connect" ? { order: order++ } : "manual";
+    return { type: "pane", pane: { id, kind, host, status: "disconnected", restoreConnection } };
+  }
+
+  const tabs = saved.tabs.flatMap((tab): Tab[] => {
+    const layout = restoreLayout(tab.layout);
+    if (!layout) return [];
+    const panes = layoutPanes(layout);
+    const activePaneId = panes.find((pane) => pane.id === tab.activePaneId)?.id ?? panes[0]!.id;
+    return [{ ...tab, layout, activePaneId }];
+  });
+  const first = tabs[0];
+  if (!first) return startupTabs();
+  const activeId = tabs.some((tab) => tab.id === saved.activeId) ? saved.activeId : first.id;
+  return { tabs, activeId };
 }
