@@ -51,6 +51,7 @@ import { getResolvedShortcuts, useResolvedShortcuts } from "@/features/workspace
 import { matchFileHistoryShortcut, matchFileClipboardShortcut, shortcutAriaLabel, shortcutLabel, type ResolvedShortcuts } from "@/features/workspace/shortcuts";
 import type { CommandError } from "@/lib/ipc/connect";
 import type { FileEntry } from "@/lib/ipc/files";
+import type { HostId } from "@/lib/ipc/hosts";
 import { copyTextWithToast } from "@/features/toasts/copyFeedback";
 import { showToast } from "@/features/toasts/toastStore";
 import { useSetting } from "@/lib/storage";
@@ -59,6 +60,7 @@ import type { FileBrowserStore } from "./fileBrowsers";
 import type { FileMove, FolderSize, SelectMode } from "./fileBrowserStore";
 import { errorText, operationErrorText } from "./fileErrors";
 import { FileOperationDialog, MoveFailureDialog, type FileOperation } from "./FileOperationDialogs";
+import { FileBookmarks } from "./FileBookmarks";
 import { FileNameSearch } from "./FileNameSearch";
 import { filesSetting } from "./file-prefs";
 import {
@@ -123,6 +125,7 @@ export function FileBrowser({
   exchange,
   enableMove = false,
   remoteClipboard,
+  bookmarkHostId,
 }: {
   store: FileBrowserStore;
   hostName: string;
@@ -130,6 +133,7 @@ export function FileBrowser({
   exchange?: FileExchange;
   enableMove?: boolean;
   remoteClipboard?: RemoteClipboard;
+  bookmarkHostId?: HostId;
 }) {
   const { t } = useTranslation();
   const path = useStore(store, (s) => s.path);
@@ -175,7 +179,7 @@ export function FileBrowser({
       className="focus-visible:ring-ring/50 flex h-full flex-col outline-none focus-visible:ring-[3px] focus-visible:ring-inset">
       {/* Sibling keys must differ: PathBar and FileTable sharing the path as key made React keep the old path bar. */}
       <PathBar key={`path:${path ?? ""}`} store={store} focusPanel={focusPanel} onOperation={setOperation}
-        searchOpen={searchOpen} onToggleSearch={toggleSearch} />
+        searchOpen={searchOpen} onToggleSearch={toggleSearch} bookmarkHostId={bookmarkHostId} />
       {error && path !== null && (
         <p role="alert" className="text-destructive px-3 pb-1.5 text-xs">
           {errorText(t, error, hostName)}
@@ -238,12 +242,13 @@ function pathCrumbs(path: string) {
   return crumbs;
 }
 
-function PathBar({ store, focusPanel, onOperation, searchOpen, onToggleSearch }: {
+function PathBar({ store, focusPanel, onOperation, searchOpen, onToggleSearch, bookmarkHostId }: {
   store: FileBrowserStore;
   focusPanel(): void;
   onOperation(operation: FileOperation): void;
   searchOpen: boolean;
   onToggleSearch?: () => void;
+  bookmarkHostId?: HostId;
 }) {
   const { t } = useTranslation();
   const path = useStore(store, (s) => s.path);
@@ -363,6 +368,10 @@ function PathBar({ store, focusPanel, onOperation, searchOpen, onToggleSearch }:
           </>
         )}
       </div>
+      {bookmarkHostId !== undefined && path !== null && (
+        <FileBookmarks hostId={bookmarkHostId} path={path}
+          onNavigate={(target) => navigate(() => store.getState().navigate(target, "user"))} />
+      )}
       {onToggleSearch && (
         <IconButton type="button" label={t("files.search.open")} className="size-6"
           aria-pressed={searchOpen} disabled={path === null} onClick={onToggleSearch}>

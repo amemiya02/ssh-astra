@@ -1,0 +1,58 @@
+{
+  "version": 18,
+  "groups": [
+    { "id": "g-prod", "name": "Production", "parentId": null }
+  ],
+  "hosts": [
+    {
+      "id": "h-gateway",
+      "name": "Gateway",
+      "icon": "router",
+      "address": "ssh.example.net",
+      "port": 2222,
+      "user": "deploy",
+      "auth": { "type": "auto" },
+      "identitiesOnly": false,
+      "forwardAgent": false,
+      "proxy": { "mode": "proxyCommand", "config": "nc %h %p" },
+      "jumpHost": null,
+      "groupId": "g-prod",
+      "forwards": []
+    },
+    {
+      "id": "h-web",
+      "name": "Web",
+      "detectedOs": "ubuntu",
+      "tags": ["Production", "East Coast"],
+      "icon": "ubuntu",
+      "color": "cyan",
+      "address": "web.example.net",
+      "port": 22,
+      "user": "deploy",
+      "auth": { "type": "key", "identityFile": "~/.ssh/id_ed25519" },
+      "identitiesOnly": true,
+      "forwardAgent": true,
+      "allowLegacyAlgorithms": true,
+      "keepaliveSeconds": 20,
+      "postLoginCommand": "pwd",
+      "terminalCharset": "big5",
+      "terminalBackspace": "ctrlH",
+      "jumpHost": "h-gateway",
+      "terminalScheme": "light",
+      "defaultDirectory": "~/sites",
+      "groupId": "g-prod",
+      "forwards": [
+        {
+          "id": "f-web",
+          "label": "Web",
+          "type": "local",
+          "bindAddress": "127.0.0.1",
+          "bindPort": 8080,
+          "remoteHost": "127.0.0.1",
+          "remotePort": 80,
+          "autoStart": true
+        }
+      ]
+    }
+  ]
+}

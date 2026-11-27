@@ -5,7 +5,7 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 use sshastra_core::hosts::{
-    DetectedOs, Group, GroupId, Host, HostDraft, HostId, HostStore, HostTree, ImportReport,
+    Bookmark, DetectedOs, Group, GroupId, Host, HostDraft, HostId, HostStore, HostTree, ImportReport,
     ImportSummary,
 };
 use sshastra_core::ssh_config::{parse_user_config, ParseContext};
@@ -68,6 +68,34 @@ pub fn host_save(
     draft: HostDraft,
 ) -> CommandResult<Host> {
     hosts.with(|store| Ok(store.upsert(id, draft)?))
+}
+
+#[tauri::command]
+pub fn host_bookmark_add(
+    hosts: State<'_, HostsState>,
+    host_id: HostId,
+    path: String,
+) -> CommandResult<Bookmark> {
+    hosts.with(|store| Ok(store.add_bookmark(&host_id, &path)?))
+}
+
+#[tauri::command]
+pub fn host_bookmark_rename(
+    hosts: State<'_, HostsState>,
+    host_id: HostId,
+    path: String,
+    name: String,
+) -> CommandResult<Bookmark> {
+    hosts.with(|store| Ok(store.rename_bookmark(&host_id, &path, &name)?))
+}
+
+#[tauri::command]
+pub fn host_bookmark_delete(
+    hosts: State<'_, HostsState>,
+    host_id: HostId,
+    path: String,
+) -> CommandResult<()> {
+    hosts.with(|store| Ok(store.delete_bookmark(&host_id, &path)?))
 }
 
 /// Deletes a Host, stopping its running Port forwards and, in the background,

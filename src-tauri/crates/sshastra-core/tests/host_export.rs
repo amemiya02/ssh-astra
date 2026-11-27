@@ -154,6 +154,27 @@ fn renamed(tree: &HostTree, to: &HostTree) -> HostTree {
 }
 
 #[test]
+fn exports_and_imports_bookmarks_with_each_host() {
+    let (_source_dir, mut source) = store();
+    let web = source.upsert(None, draft("web")).unwrap();
+    let other = source.upsert(None, draft("other")).unwrap();
+    source.add_bookmark(&web.id, "/srv/web").unwrap();
+    source.rename_bookmark(&web.id, "/srv/web", "Live").unwrap();
+    source.add_bookmark(&other.id, "/").unwrap();
+
+    let (target_dir, mut target) = store();
+    target.import(&source.export()).unwrap();
+    let reopened = HostStore::open(target_dir.path().join("hosts.json")).unwrap();
+    assert_eq!(reopened.list()[0].name, "web");
+    assert_ne!(reopened.list()[0].id, web.id);
+    assert_eq!(reopened.list()[0].bookmarks[0].path, "/srv/web");
+    assert_eq!(reopened.list()[0].bookmarks[0].name.as_deref(), Some("Live"));
+    assert_eq!(reopened.list()[1].name, "other");
+    assert_eq!(reopened.list()[1].bookmarks[0].path, "/");
+    assert_eq!(reopened.list()[1].bookmarks[0].name, None);
+}
+
+#[test]
 fn exporting_then_importing_into_an_empty_store_gives_the_same_host_list() {
     let (_a, source) = populated();
     let file = source.export();
@@ -183,7 +204,7 @@ fn exporting_then_importing_into_an_empty_store_gives_the_same_host_list() {
         exported_web["tags"],
         serde_json::json!(["Production", "East Coast"])
     );
-    assert_eq!(exported["version"], 18);
+    assert_eq!(exported["version"], 19);
     assert_eq!(exported_web["icon"], "server");
     assert_eq!(exported_web["color"], "magenta");
     assert_eq!(renamed(&source.tree(), &imported), imported);

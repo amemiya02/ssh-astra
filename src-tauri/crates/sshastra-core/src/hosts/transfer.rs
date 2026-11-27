@@ -1,4 +1,4 @@
-//! Export files: the whole Host list (Groups, Hosts and their Port forwards)
+//! Export files: the whole Host list, including Bookmarks and Port forwards,
 //! in the HostStore's own versioned format, marked with [`EXPORT_FORMAT`], so
 //! importing an older one runs the same migrations as opening an old store.
 //! Credentials are never part of it: they live only in the CredentialVault.

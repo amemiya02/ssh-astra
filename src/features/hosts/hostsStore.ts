@@ -4,7 +4,7 @@ import { readCommandError } from "@/lib/ipc/connect";
 import * as forwardsIpc from "@/lib/ipc/forwards";
 import type { ForwardDraft, ForwardId, PortForward } from "@/lib/ipc/forwards";
 import * as hostsIpc from "@/lib/ipc/hosts";
-import type { Group, GroupId, Host, HostDraft, HostId, HostOsChange, HostTree, ImportReport, ImportSummary } from "@/lib/ipc/hosts";
+import type { Bookmark, Group, GroupId, Host, HostDraft, HostId, HostOsChange, HostTree, ImportReport, ImportSummary } from "@/lib/ipc/hosts";
 import { createSnapshotWatch } from "@/lib/ipc/watchSnapshot";
 import type { MoveOp } from "./hostTree";
 
@@ -17,6 +17,9 @@ export type HostsApi = Pick<
   | "saveHost"
   | "saveTemporaryHost"
   | "deleteHost"
+  | "addBookmark"
+  | "renameBookmark"
+  | "deleteBookmark"
   | "duplicateHost"
   | "moveHost"
   | "moveGroup"
@@ -39,6 +42,9 @@ export interface HostsState {
   /** Adds a Host (no `id`) at the top level, or saves edits to the Host with `id`. */
   saveHost(draft: HostDraft, id?: HostId): Promise<Host>;
   saveTemporaryHost(id: HostId, draft: HostDraft): Promise<Host>;
+  addBookmark(hostId: HostId, path: string): Promise<void>;
+  renameBookmark(hostId: HostId, path: string, name: string): Promise<void>;
+  deleteBookmark(hostId: HostId, path: string): Promise<void>;
   deleteHost(id: HostId): Promise<void>;
   /** Saves a copy as `name` right after the original. */
   duplicateHost(id: HostId, name: string): Promise<Host>;
@@ -73,7 +79,19 @@ export function createHostsStore(api: HostsApi): StoreApi<HostsState> {
     const withCurrentOs = (host: Host): Host => osChanges.has(host.id)
       ? { ...host, detectedOs: osChanges.get(host.id) ?? undefined }
       : host;
-    const replaceTree = (tree: HostTree) => set({ tree: { ...tree, hosts: tree.hosts.map(withCurrentOs) } });
+    // Other Host commands cannot change an existing Host's Bookmarks. Keep the
+    // current list even if a Host or tree reply was produced before a Bookmark edit.
+    const withCurrentBookmarks = (host: Host, current?: Host): Host => {
+      if (!current || current.bookmarks === host.bookmarks) return host;
+      const result = { ...host };
+      if (current.bookmarks) result.bookmarks = current.bookmarks;
+      else delete result.bookmarks;
+      return result;
+    };
+    const replaceTree = (tree: HostTree) => {
+      const current = new Map(get().tree.hosts.map((host) => [host.id, host]));
+      set({ tree: { ...tree, hosts: tree.hosts.map((host) => withCurrentBookmarks(withCurrentOs(host), current.get(host.id))) } });
+    };
     const watch = createSnapshotWatch<HostTree, HostOsChange>(
       api.loadHostTree,
       (tree) => {
@@ -86,7 +104,7 @@ export function createHostsStore(api: HostsApi): StoreApi<HostsState> {
       },
     );
     const publishHost = (saved: Host) => {
-      const host = withCurrentOs(saved);
+      const host = withCurrentBookmarks(withCurrentOs(saved), get().tree.hosts.find((h) => h.id === saved.id));
       update((tree) => ({
         ...tree,
         hosts: tree.hosts.some((h) => h.id === host.id)
@@ -100,6 +118,27 @@ export function createHostsStore(api: HostsApi): StoreApi<HostsState> {
         ...tree,
         hosts: tree.hosts.map((h) => (h.id === hostId ? { ...h, forwards: change(h.forwards) } : h)),
       }));
+    // Serialize Bookmark writes and their replies across panels. A double add
+    // preserves a name and a rename cannot overtake a pending delete.
+    let bookmarkWrite = Promise.resolve();
+    const updateBookmark = (hostId: HostId, path: string, write: () => Promise<Bookmark | void>) => {
+      const written = bookmarkWrite.then(async () => {
+        const saved = await write();
+        update((tree) => ({ ...tree, hosts: tree.hosts.map((host) => {
+          if (host.id !== hostId) return host;
+          const bookmarks = [...(host.bookmarks ?? [])];
+          const at = bookmarks.findIndex((bookmark) => bookmark.path === path);
+          if (at === -1 && saved) bookmarks.push(saved);
+          else if (at !== -1) {
+            if (saved) bookmarks[at] = saved;
+            else bookmarks.splice(at, 1);
+          }
+          return { ...host, bookmarks };
+        }) }));
+      });
+      bookmarkWrite = written.catch(() => {});
+      return written;
+    };
     return {
       tree: { groups: [], hosts: [] },
       status: "loading",
@@ -119,6 +158,18 @@ export function createHostsStore(api: HostsApi): StoreApi<HostsState> {
 
       async saveTemporaryHost(id, draft) {
         return publishHost(await api.saveTemporaryHost(id, draft));
+      },
+
+      addBookmark(hostId, path) {
+        return updateBookmark(hostId, path, () => api.addBookmark(hostId, path));
+      },
+
+      renameBookmark(hostId, path, name) {
+        return updateBookmark(hostId, path, () => api.renameBookmark(hostId, path, name));
+      },
+
+      deleteBookmark(hostId, path) {
+        return updateBookmark(hostId, path, () => api.deleteBookmark(hostId, path));
       },
 
       async deleteHost(id) {

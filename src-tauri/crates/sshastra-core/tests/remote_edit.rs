@@ -590,6 +590,7 @@ async fn saving_the_temp_file_changes_the_file_on_the_server() {
         terminal_backspace: None,
         default_directory: None,
         forwards: Vec::new(),
+        bookmarks: Vec::new(),
     };
     let connection = manager
         .connect(&host, Arc::new(Trusting(sshd.password)))

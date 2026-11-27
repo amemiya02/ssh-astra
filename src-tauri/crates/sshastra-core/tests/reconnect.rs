@@ -100,6 +100,7 @@ impl Fixture {
             terminal_backspace: None,
             default_directory: None,
             forwards: Vec::new(),
+            bookmarks: Vec::new(),
         };
         Self {
             manager: Arc::new(ConnectionManager::new(KnownHosts::new(

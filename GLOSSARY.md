@@ -8,7 +8,7 @@ A modern desktop SSH/SFTP client: saved hosts, terminals and a file panel in one
 
 **Host**:
 A saved, named set of connection settings (address, port, user, authentication, jump host) that the user opens to start working on a machine.
-_Avoid_: Session, bookmark, server, profile
+_Avoid_: Session, server, profile
 
 **Quick connect**:
 Opens a Terminal directly from an SSH address entered in Home or the command palette.
@@ -65,6 +65,10 @@ _Avoid_: Sync input, multi-exec
 **File panel**:
 The SFTP file browser beside a Terminal, browsing the same Host over the same Connection.
 _Avoid_: SFTP browser, file manager, explorer
+
+**Bookmark**:
+A directory saved on a Host so the user can jump to it from the File panel.
+_Avoid_: Favorite, pinned folder
 
 **Remote edit**:
 A file from a Host opened in the local editor with automatic upload on save. File panels editing the same path on that Host share the Remote edit until the last one closes it.
