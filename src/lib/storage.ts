@@ -211,6 +211,11 @@ export function setSetting<T>(section: SettingsSection<T>, value: T): void {
   active.set(section, value);
 }
 
+/** Applies a canonical reply from a dedicated native settings command. */
+export function receiveSettingsChange(change: SettingsChange): void {
+  active.receive(change);
+}
+
 export function flushSettings(): Promise<void> {
   return active.flush();
 }

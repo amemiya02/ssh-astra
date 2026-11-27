@@ -5616,6 +5616,7 @@ dependencies = [
  "chrono",
  "dunce",
  "encoding_rs",
+ "glob",
  "hmac",
  "httparse",
  "keyring",

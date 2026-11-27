@@ -1,3 +1,4 @@
+import { isTauri } from "@tauri-apps/api/core";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import { SegmentedControl } from "@/components/SegmentedControl";
 import { connectionSetting, keepaliveChoices } from "@/features/connect/connection-settings";
 import { useSetting } from "@/lib/storage";
 import { CommitField } from "./CommitField";
+import { OpenSshSyncSetting } from "./open-ssh-sync-setting";
 import { SettingRow } from "./SettingRow";
 import { settingRows } from "./setting-rows";
 
@@ -62,6 +64,7 @@ export function ConnectionSection() {
           onSave={(proxy) => setSettings(connectionSetting.parse({ ...settings, proxy }))}
         />
       </SettingRow>
+      {isTauri() && <OpenSshSyncSetting />}
     </>
   );
 }

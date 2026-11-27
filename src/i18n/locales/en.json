@@ -1404,6 +1404,38 @@
       }
     },
     "connection": {
+      "openSshSync": {
+        "label": "Sync Hosts to OpenSSH",
+        "description": "Keep an OpenSSH config fragment up to date so you can connect using saved Host aliases on the command line.",
+        "confirmTitle": "Enable OpenSSH sync?",
+        "confirmAdd": "SSH Astra will add this line at the top of ~/.ssh/config and write its own config fragment.",
+        "confirmExisting": "An existing Include loads the SSH Astra config fragment. Enabling sync writes the fragment.",
+        "confirm": "Enable sync",
+        "cancel": "Cancel",
+        "refresh": "Refresh export",
+        "removeInclude": "Sync is off. If SSH Astra added this line, you can remove it from ~/.ssh/config.",
+        "written_one": "{{count}} alias available in OpenSSH",
+        "written_other": "{{count}} aliases available in OpenSSH",
+        "problems": {
+          "configChanged": "The config or approval changed. Review the Include again.",
+          "missingInclude": "The Include is missing. Turn sync off and back on to review the change.",
+          "includeConflict": "The fragment is included more than once or inside a conditional block. Move its Include to the top of ~/.ssh/config.",
+          "fragmentExists": "A file named ssh-astra.conf already exists in ~/.ssh and belongs to you.",
+          "hostsUnavailable": "The saved Hosts could not be read.",
+          "homeUnavailable": "The OpenSSH home directory is unavailable.",
+          "io": "Could not read or write the OpenSSH config files. Check the files and their permissions."
+        },
+        "issues": {
+          "userAlias": "is already in your OpenSSH config.",
+          "duplicateAlias": "matches multiple saved Host names.",
+          "invalidField": "has a connection setting that cannot be written to OpenSSH.",
+          "unsupportedProxy": "uses an outbound proxy that this export cannot represent.",
+          "jumpUnavailable": "depends on a Jump host whose alias could not be exported.",
+          "httpForward": "has an HTTP CONNECT Port forward that was skipped.",
+          "manualForward": "has a manually started Port forward that was skipped.",
+          "invalidForward": "has a Port forward with an endpoint that cannot be written to OpenSSH."
+        }
+      },
       "osDetection": {
         "label": "Detect Host operating systems",
         "description": "Read the operating system after a saved Host connects and use it for the automatic Host icon."
