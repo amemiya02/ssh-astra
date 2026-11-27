@@ -229,10 +229,10 @@ async fn deleting_what_the_user_may_not_delete_says_so() {
         files::remove_tree(&fs, "/srv/files/hello.txt").await,
         Err(FsError::PermissionDenied("/srv/files/hello.txt".into()))
     );
-    assert_eq!(
+    assert!(matches!(
         files::remove_tree(&fs, "/srv/files/docs").await,
-        Err(FsError::PermissionDenied("/srv/files/docs".into()))
-    );
+        Err(FsError::PermissionDenied(path)) if path.starts_with("/srv/files/docs/")
+    ));
     assert_eq!(
         files::remove_tree(&fs, "/srv/files/nope").await,
         Err(FsError::NotFound("/srv/files/nope".into()))

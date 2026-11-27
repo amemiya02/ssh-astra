@@ -21,6 +21,7 @@ vi.mock("@/lib/ipc/files", () => ({
   createEmptyFile: vi.fn(),
   renameFile: vi.fn(),
   countFiles: vi.fn(),
+  folderSize: vi.fn(),
   deleteFiles: vi.fn(),
   chmodFile: vi.fn(),
 }));
