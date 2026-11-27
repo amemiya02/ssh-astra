@@ -5,11 +5,12 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::SystemTime;
 
 use serde::Serialize;
 use sshastra_core::agent::{
-    AgentBackend, DirectoryRead, OpenTerminal, ReadError, ReadTarget, TerminalScreen,
-    SCREEN_BYTE_LIMIT,
+    ActivityRecord, AgentActivityLog, AgentBackend, DirectoryRead, OpenTerminal, ReadError,
+    ReadTarget, TerminalScreen, SCREEN_BYTE_LIMIT,
 };
 use sshastra_core::files::{FsError, FsResult, SftpFs};
 use sshastra_core::ssh::{BoxFuture, Connection};
@@ -21,6 +22,7 @@ use tauri::{
 use tokio::sync::{oneshot, Semaphore};
 
 use super::hosts::HostsState;
+use crate::error::CommandResult;
 
 const MAX_PENDING_REMOTE_READS: usize = 8;
 
@@ -87,14 +89,19 @@ impl AgentBackend for DesktopAgent {
 
     fn target(&self, id: TerminalId) -> Option<ReadTarget> {
         let terminal = self.registry.saved_terminal(id)?;
-        let permission = self
+        let (permission, host_name) = self
             .hosts
-            .with(|store| Ok(store.get(&terminal.host).map(|host| host.agent_access)))
+            .with(|store| {
+                Ok(store
+                    .get(&terminal.host)
+                    .map(|host| (host.agent_access, host.name.clone())))
+            })
             .ok()
             .flatten()?;
         Some(ReadTarget {
             terminal: id,
             host: terminal.host.clone(),
+            host_name,
             permission,
             status: terminal.snapshot().status?,
             generation: self
@@ -254,6 +261,20 @@ pub(crate) fn terminal_agent_screen(
     snapshot: TerminalScreen,
 ) {
     pending.answer(webview.label(), request_id, snapshot);
+}
+
+#[tauri::command]
+pub(crate) async fn agent_activity_list(
+    activity: State<'_, Arc<AgentActivityLog>>,
+) -> CommandResult<Vec<ActivityRecord>> {
+    Ok(activity.list(SystemTime::now())?)
+}
+
+#[tauri::command]
+pub(crate) async fn agent_activity_clear(
+    activity: State<'_, Arc<AgentActivityLog>>,
+) -> CommandResult<()> {
+    Ok(activity.clear()?)
 }
 
 #[cfg(test)]

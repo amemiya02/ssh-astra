@@ -1,6 +1,8 @@
 //! Local Agent access policy and MCP tool dispatch. The desktop shell owns the
 //! local transport and supplies the current Terminal and Host state.
 
+mod activity;
+
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{json, Value};
@@ -9,6 +11,9 @@ use crate::files::FileEntry;
 use crate::hosts::HostId;
 use crate::ssh::BoxFuture;
 use crate::terminal::TerminalId;
+
+pub use activity::{ActivityCall, ActivityRecord, AgentActivityLog};
+use activity::{Outcome, Tool};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -87,13 +92,23 @@ pub struct OpenTerminal {
 }
 
 /// The exact Terminal and Connection generation at authorization.
-#[derive(PartialEq, Eq)]
 pub struct ReadTarget {
     pub terminal: TerminalId,
     pub host: HostId,
+    pub host_name: String,
     pub permission: AgentPermission,
     pub status: TerminalStatus,
     pub generation: Option<u64>,
+}
+
+impl ReadTarget {
+    fn same_authorization(&self, other: &Self) -> bool {
+        self.terminal == other.terminal
+            && self.host == other.host
+            && self.permission == other.permission
+            && self.status == other.status
+            && self.generation == other.generation
+    }
 }
 
 #[derive(Deserialize, Serialize)]
@@ -185,6 +200,7 @@ const PROTOCOL_VERSIONS: &[&str] = &["2025-11-25", "2025-06-18", "2025-03-26", "
 const TERMINALS_PER_PAGE: usize = 16;
 const SCROLLBACK_DEFAULT: usize = 100;
 const SCROLLBACK_MAX: usize = 500;
+const HOST_NAME_BYTE_LIMIT: usize = 512;
 const PATH_BYTE_LIMIT: usize = 4096;
 const DIRECTORY_ENTRY_LIMIT: usize = 128;
 const DIRECTORY_NAME_BYTE_LIMIT: usize = 32 * 1024;
@@ -211,7 +227,7 @@ impl OpenTerminal {
         if permission.is_off() {
             return None;
         }
-        let host = bound_metadata(name, 512);
+        let host = bound_metadata(name, HOST_NAME_BYTE_LIMIT);
         Some(TerminalMetadata {
             id: self.id,
             title: self
@@ -267,6 +283,17 @@ pub async fn dispatch(
     enabled: impl Fn() -> bool,
     backend: &dyn AgentBackend,
 ) -> Option<Value> {
+    dispatch_recording(frame, enabled, backend, &mut None).await
+}
+
+/// Like `dispatch`, with metadata available even if the transport interrupts the call.
+pub async fn dispatch_recording(
+    frame: &[u8],
+    enabled: impl Fn() -> bool,
+    backend: &dyn AgentBackend,
+    activity: &mut Option<ActivityCall>,
+) -> Option<Value> {
+    *activity = None;
     let request = match serde_json::from_slice::<Value>(frame) {
         Ok(request) => request,
         Err(_) => return Some(rpc_error(Value::Null, -32700, "Parse error")),
@@ -300,13 +327,21 @@ pub async fn dispatch(
         "ping" => json!({}),
         "tools/list" => json!({"tools": tools()}),
         "tools/call" => {
+            let tool = Tool::from_name(params["name"].as_str());
+            let activity = activity.insert(ActivityCall::new(tool));
             let arguments = params
                 .get("arguments")
                 .cloned()
                 .unwrap_or_else(|| json!({}));
-            match call(params["name"].as_str(), arguments, &enabled, backend).await {
-                Ok(result) => result,
-                Err(message) => return Some(rpc_error(id, -32602, message)),
+            match call(tool, arguments, &enabled, backend, activity).await {
+                Ok((result, outcome)) => {
+                    activity.finish(outcome);
+                    result
+                }
+                Err(message) => {
+                    activity.finish(Outcome::Failed);
+                    return Some(rpc_error(id, -32602, message));
+                }
             }
         }
         _ => return Some(rpc_error(id, -32601, "Method not found")),
@@ -315,14 +350,23 @@ pub async fn dispatch(
 }
 
 async fn call(
-    tool: Option<&str>,
+    tool: Tool,
     arguments: Value,
     enabled: impl Fn() -> bool,
     backend: &dyn AgentBackend,
-) -> Result<Value, &'static str> {
+    activity: &mut ActivityCall,
+) -> Result<(Value, Outcome), &'static str> {
     let (terminal, operation) = match tool {
-        Some("list_terminals") => return list(arguments, enabled(), backend),
-        Some("read_terminal") => {
+        Tool::ListTerminals => {
+            let permitted = enabled();
+            let outcome = if permitted {
+                Outcome::Allowed
+            } else {
+                Outcome::Denied
+            };
+            return list(arguments, permitted, backend).map(|result| (result, outcome));
+        }
+        Tool::ReadTerminal => {
             let arguments = serde_json::from_value::<ScreenArguments>(arguments)
                 .map_err(|_| "Invalid read_terminal arguments")?;
             let lines = arguments.scrollback_lines.unwrap_or(SCROLLBACK_DEFAULT);
@@ -331,7 +375,7 @@ async fn call(
             }
             (arguments.terminal_id, ReadOperation::Screen(lines))
         }
-        Some(name @ ("list_directory" | "read_file")) => {
+        Tool::ListDirectory | Tool::ReadFile => {
             let arguments = serde_json::from_value::<PathArguments>(arguments)
                 .map_err(|_| "Invalid path arguments")?;
             if !arguments.path.starts_with('/')
@@ -342,16 +386,16 @@ async fn call(
                     "Path must be absolute, contain no NUL, and be at most 4096 UTF-8 bytes",
                 );
             }
-            let operation = if name == "list_directory" {
+            let operation = if matches!(tool, Tool::ListDirectory) {
                 ReadOperation::Directory(arguments.path)
             } else {
                 ReadOperation::File(arguments.path)
             };
             (arguments.terminal_id, operation)
         }
-        _ => return Err("Unknown tool"),
+        Tool::Unknown => return Err("Unknown tool"),
     };
-    Ok(read(backend, enabled, terminal, operation).await)
+    Ok(read(backend, enabled, terminal, operation, activity).await)
 }
 
 fn tools() -> Vec<Value> {
@@ -417,7 +461,8 @@ async fn read(
     enabled: impl Fn() -> bool,
     id: TerminalId,
     operation: ReadOperation,
-) -> Value {
+    activity: &mut ActivityCall,
+) -> (Value, Outcome) {
     let target = || {
         enabled()
             .then(|| backend.target(id))
@@ -425,8 +470,13 @@ async fn read(
             .filter(|target| !target.permission.is_off() && target.terminal == id)
     };
     let Some(authorized) = target() else {
-        return tool_error(ReadError::Denied);
+        return (tool_error(ReadError::Denied), Outcome::Denied);
     };
+    let path = match &operation {
+        ReadOperation::Screen(_) => None,
+        ReadOperation::Directory(path) | ReadOperation::File(path) => Some(path.as_str()),
+    };
+    activity.set_target(&authorized, path);
     let result = match operation {
         ReadOperation::Screen(lines) => backend
             .read_screen(&authorized, lines)
@@ -441,12 +491,13 @@ async fn read(
             .map(|listing| json!(listing)),
         ReadOperation::File(path) => backend.read_file(&authorized, &path).await.map(file_data),
     };
-    if target().as_ref() != Some(&authorized) {
-        return tool_error(ReadError::Denied);
+    if !target().is_some_and(|current| current.same_authorization(&authorized)) {
+        return (tool_error(ReadError::Denied), Outcome::Denied);
     }
     match result {
-        Ok(data) => tool_data(data),
-        Err(error) => tool_error(error),
+        Ok(data) => (tool_data(data), Outcome::Allowed),
+        Err(ReadError::Denied) => (tool_error(ReadError::Denied), Outcome::Denied),
+        Err(error) => (tool_error(error), Outcome::Failed),
     }
 }
 

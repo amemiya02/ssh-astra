@@ -21,9 +21,9 @@ mod windows;
 mod diagnostics_tests;
 
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 
-use sshastra_core::agent::AgentSettings;
+use sshastra_core::agent::{AgentActivityLog, AgentSettings};
 use sshastra_core::credentials;
 use sshastra_core::edit::RemoteEditor;
 use sshastra_core::files::{FsRegistry, TransferSettings};
@@ -157,10 +157,19 @@ pub fn run() {
             #[cfg(feature = "e2e")]
             let vault: Arc<dyn credentials::CredentialVault> = Arc::new(credentials::NoVault);
             let hosts = HostsState::new(hosts);
-            let agent_service = AgentService::new(DesktopAgent::new(
-                hosts.clone(),
-                app.state::<TerminalRegistry>().inner().clone(),
+            let agent_activity = Arc::new(AgentActivityLog::new(
+                config_dir.join("agent-activity.json"),
             ));
+            if agent_activity.list(SystemTime::now()).is_err() {
+                log::warn!("Could not expire old Agent access activity");
+            }
+            let agent_service = AgentService::new(
+                DesktopAgent::new(
+                    hosts.clone(),
+                    app.state::<TerminalRegistry>().inner().clone(),
+                ),
+                Arc::clone(&agent_activity),
+            );
             if let Ok(store) = &settings {
                 let agent: AgentSettings = store.section(AgentSettings::SECTION);
                 if agent.enabled && agent_service.apply(true, || Ok(())).is_err() {
@@ -168,6 +177,7 @@ pub fn run() {
                 }
             }
             app.manage(agent_service);
+            app.manage(agent_activity);
             app.manage(hosts);
             app.manage(SnippetsState::new(
                 SnippetStore::open(config_dir.join("snippets.json")).map_err(Into::into),
@@ -259,6 +269,8 @@ pub fn run() {
             commands::settings::settings_load,
             commands::settings::settings_watch,
             commands::settings::settings_set,
+            commands::agent::agent_activity_list,
+            commands::agent::agent_activity_clear,
             commands::command_history::command_history_list,
             commands::command_history::command_history_clear,
             commands::known_hosts::known_hosts_list,
