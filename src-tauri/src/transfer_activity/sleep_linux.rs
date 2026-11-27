@@ -79,7 +79,22 @@ async fn inhibit_session(reason: &str) -> zbus::Result<SessionLease> {
     let connection = Connection::session().await?;
     // Other desktops can expose the same interface with broader semantics
     // (including preventing the screen from blanking).
-    if whoami::desktop_env() == Some(whoami::DesktopEnvironment::Plasma) {
+    let plasma = [
+        "XDG_CURRENT_DESKTOP",
+        "XDG_SESSION_DESKTOP",
+        "DESKTOP_SESSION",
+    ]
+    .into_iter()
+    .filter_map(|key| std::env::var(key).ok())
+    .any(|desktop| {
+        desktop.split(':').any(|name| {
+            matches!(
+                name.to_ascii_lowercase().as_str(),
+                "kde" | "plasma" | "plasma5" | "plasma6"
+            )
+        })
+    });
+    if plasma {
         if let Ok(message) = connection
             .call_method(Some(KDE), KDE_PATH, Some(KDE), "Inhibit", &(APP, reason))
             .await
