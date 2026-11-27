@@ -7,6 +7,7 @@ import { updateSetting } from "@/features/updates/update-settings";
 import { updatesStore, useUpdates } from "@/features/updates/updatesStore";
 import { useSetting } from "@/lib/storage";
 import { SettingRow } from "./SettingRow";
+import { settingRows } from "./setting-rows";
 
 /** The running version, once the app has said it. */
 function useAppVersion(): string | null {
@@ -22,14 +23,15 @@ export function UpdatesSection() {
   const [settings, setSettings] = useSetting(updateSetting);
   const status = useUpdates((s) => s.status);
   const version = useAppVersion();
-  const autoLabel = t("settings.updates.checkOnStartup.label");
+  const autoLabel = t(settingRows.checkOnStartup.title);
   const busy = status.type === "checking" || status.type === "downloading" || status.type === "restarting";
 
   return (
     <>
       <SettingRow
-        label={t("settings.updates.version.label")}
-        description={version ? t("settings.updates.version.description", { version }) : undefined}
+        setting={settingRows.version}
+        descriptionValues={version ? { version } : undefined}
+        description={version ? undefined : null}
       >
         <Button
           variant="outline"
@@ -40,7 +42,7 @@ export function UpdatesSection() {
           {status.type === "checking" ? t("updates.checking") : t("updates.check")}
         </Button>
       </SettingRow>
-      <SettingRow label={autoLabel} description={t("settings.updates.checkOnStartup.description")}>
+      <SettingRow setting={settingRows.checkOnStartup}>
         <SegmentedControl
           label={autoLabel}
           value={settings.checkOnStartup ? "on" : "off"}

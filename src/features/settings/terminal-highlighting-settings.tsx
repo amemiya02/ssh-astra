@@ -15,6 +15,8 @@ import { terminalSetting, type TerminalPrefs } from "@/features/terminal/termina
 import { getSetting } from "@/lib/storage";
 import { ansiHues } from "@/theme/monogram-ink";
 import { SettingRow } from "./SettingRow";
+import { settingRows } from "./setting-rows";
+import { useSettingRowVisible } from "./settings-view";
 
 const selectClass = "h-8 min-w-0 rounded-md border border-input bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
@@ -109,40 +111,20 @@ function RuleRow({ rule, autoFocus, onChange, onRemove }: {
   );
 }
 
-export function TerminalHighlightingSettings({ config, updatePrefs }: {
-  config: TerminalHighlighting;
-  updatePrefs(patch: Partial<TerminalPrefs>): void;
+function CustomHighlightRules({ rules, updateRules }: {
+  rules: CustomHighlightRule[];
+  updateRules(change: (rules: CustomHighlightRule[]) => CustomHighlightRule[]): void;
 }) {
   const { t } = useTranslation();
-  const headingId = useId();
   const [addedId, setAddedId] = useState<string>();
-  const builtInLabel = t("settings.terminal.highlighting.builtIn.label");
-
-  const update = (change: (current: TerminalHighlighting) => TerminalHighlighting) =>
-    updatePrefs({ highlighting: change(getSetting(terminalSetting).highlighting) });
-  const updateRules = (change: (rules: CustomHighlightRule[]) => CustomHighlightRule[]) =>
-    update((current) => ({ ...current, rules: change(current.rules) }));
-
   return (
-    <div className="py-3" role="group" aria-labelledby={headingId}>
-      <p id={headingId} className="font-medium">{t("settings.terminal.highlighting.label")}</p>
-      <SettingRow label={builtInLabel} description={t("settings.terminal.highlighting.builtIn.description")}>
-        <SegmentedControl
-          label={builtInLabel}
-          value={config.builtIn ? "on" : "off"}
-          options={[
-            { value: "on", label: t("settings.on") },
-            { value: "off", label: t("settings.off") },
-          ]}
-          onChange={(next) => update((current) => ({ ...current, builtIn: next === "on" }))}
-        />
-      </SettingRow>
+    <div>
       <p className="text-muted-foreground mb-2 text-xs">
         {t("settings.terminal.highlighting.description", { max: maxCustomHighlightRules })}
       </p>
-      {config.rules.length > 0 && (
-        <ul className="mb-2 space-y-2" aria-label={t("settings.terminal.highlighting.custom")}>
-          {config.rules.map((rule) => (
+      {rules.length > 0 && (
+        <ul className="mb-2 space-y-2" aria-label={t(settingRows.customHighlighting.title)}>
+          {rules.map((rule) => (
             <RuleRow
               key={rule.id}
               rule={rule}
@@ -157,7 +139,7 @@ export function TerminalHighlightingSettings({ config, updatePrefs }: {
         type="button"
         variant="outline"
         size="sm"
-        disabled={config.rules.length >= maxCustomHighlightRules}
+        disabled={rules.length >= maxCustomHighlightRules}
         onClick={() => {
           const id = crypto.randomUUID();
           setAddedId(id);
@@ -167,6 +149,43 @@ export function TerminalHighlightingSettings({ config, updatePrefs }: {
         <Plus />
         {t("settings.terminal.highlighting.add")}
       </Button>
+    </div>
+  );
+}
+
+export function TerminalHighlightingSettings({ config, updatePrefs }: {
+  config: TerminalHighlighting;
+  updatePrefs(patch: Partial<TerminalPrefs>): void;
+}) {
+  const { t } = useTranslation();
+  const headingId = useId();
+  const showBuiltIn = useSettingRowVisible(settingRows.builtInHighlighting);
+  const showCustom = useSettingRowVisible(settingRows.customHighlighting);
+  if (!showBuiltIn && !showCustom) return null;
+  const builtInLabel = t(settingRows.builtInHighlighting.title);
+
+  const update = (change: (current: TerminalHighlighting) => TerminalHighlighting) =>
+    updatePrefs({ highlighting: change(getSetting(terminalSetting).highlighting) });
+  const updateRules = (change: (rules: CustomHighlightRule[]) => CustomHighlightRule[]) =>
+    update((current) => ({ ...current, rules: change(current.rules) }));
+
+  return (
+    <div className="py-3" role="group" aria-labelledby={headingId}>
+      <p id={headingId} className="font-medium">
+        {t(showBuiltIn ? "settings.terminal.highlighting.label" : settingRows.customHighlighting.title)}
+      </p>
+      <SettingRow setting={settingRows.builtInHighlighting}>
+        <SegmentedControl
+          label={builtInLabel}
+          value={config.builtIn ? "on" : "off"}
+          options={[
+            { value: "on", label: t("settings.on") },
+            { value: "off", label: t("settings.off") },
+          ]}
+          onChange={(next) => update((current) => ({ ...current, builtIn: next === "on" }))}
+        />
+      </SettingRow>
+      {showCustom && <CustomHighlightRules rules={config.rules} updateRules={updateRules} />}
     </div>
   );
 }

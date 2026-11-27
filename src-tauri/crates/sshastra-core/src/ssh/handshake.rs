@@ -10,8 +10,8 @@ use tokio::sync::Notify;
 use tokio::time::Instant;
 
 use super::{
-    BoxFuture, HostKeyPrompt, KeyboardInteractivePrompt, PassphrasePrompt, PasswordPrompt,
-    Prompter, Secret,
+    BoxFuture, HostKeyDecision, HostKeyPrompt, KeyboardInteractivePrompt, PassphrasePrompt,
+    PasswordPrompt, Prompter, Secret,
 };
 
 /// A time budget that can be paused.
@@ -116,7 +116,7 @@ pub(super) struct Paused {
 }
 
 impl Prompter for Paused {
-    fn confirm_host_key(&self, prompt: HostKeyPrompt) -> BoxFuture<'_, bool> {
+    fn confirm_host_key(&self, prompt: HostKeyPrompt) -> BoxFuture<'_, HostKeyDecision> {
         Box::pin(async move {
             let _pause = self.deadline.pause();
             self.inner.confirm_host_key(prompt).await

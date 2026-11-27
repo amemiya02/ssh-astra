@@ -26,6 +26,7 @@ mod auth;
 mod exec;
 mod handshake;
 mod held;
+mod host_keys;
 mod progress;
 mod remote_listen;
 mod remote_terminal;
@@ -34,11 +35,13 @@ mod shell;
 pub use auth::Agent;
 pub use exec::{shell_quote, ExecError, ExecOutput};
 pub use held::{HeldConnections, HeldEvent};
+pub use host_keys::HostKeyRecord;
 pub use progress::{AuthMethod, ConnectProgress, ConnectStage, ProgressStatus};
 pub use remote_terminal::{ReconnectPolicy, RemoteTerminal, RemoteTerminalOptions};
 pub use shell::RemoteShell;
 
 use agent_forward::AgentForwarding;
+use host_keys::{Endpoint, HostKeys};
 use progress::HopProgress;
 pub(crate) use remote_listen::RemoteListener;
 use remote_listen::Routes;
@@ -58,7 +61,7 @@ use tokio::net::TcpStream;
 use crate::credentials::{CredentialVault, NoVault};
 use crate::files::{FsError, SftpFs};
 use crate::hosts::{Host, HostId};
-use crate::known_hosts::{HostKey, KnownHost, KnownHosts, KnownHostsError, Verdict};
+use crate::known_hosts::{KnownHosts, KnownHostsError};
 use crate::terminal::{TerminalEvent, TerminalSize};
 use shell::ShellEvent;
 
@@ -106,6 +109,15 @@ pub struct HostKeyPrompt {
     pub algorithm: String,
     /// `SHA256:…`
     pub fingerprint: String,
+}
+
+/// How to handle a previously unknown host key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum HostKeyDecision {
+    SaveAndTrust,
+    TrustForRun,
+    Reject,
 }
 
 /// A request for the password of `user@host`.
@@ -191,8 +203,8 @@ pub trait Prompter: Send + Sync {
     /// Reports progress without waiting for a reply.
     fn progress(&self, _progress: ConnectProgress) {}
 
-    /// Should this new host key be trusted (and written to known_hosts)?
-    fn confirm_host_key(&self, prompt: HostKeyPrompt) -> BoxFuture<'_, bool>;
+    /// How to trust this new host key, if at all.
+    fn confirm_host_key(&self, prompt: HostKeyPrompt) -> BoxFuture<'_, HostKeyDecision>;
     /// The password.
     fn password(&self, prompt: PasswordPrompt) -> BoxFuture<'_, Option<Secret>>;
     /// The passphrase of an encrypted private key.
@@ -218,18 +230,12 @@ pub enum ConnectError {
     #[error("the host did not answer in time")]
     TimedOut,
     /// The server's key differs from the one recorded: possibly an attack.
-    #[error(
-        "the host key for {host}:{port} has changed (now {fingerprint}, recorded \
-         {} in {} line {})",
-        known.fingerprint,
-        known.path.display(),
-        known.line
-    )]
+    #[error("the host key for {host}:{port} has changed (now {fingerprint}, recorded {known})")]
     HostKeyMismatch {
         host: String,
         port: u16,
         fingerprint: String,
-        known: KnownHost,
+        known: HostKeyRecord,
     },
     #[error("the host key {fingerprint} is marked as revoked")]
     HostKeyRevoked { fingerprint: String },
@@ -311,8 +317,9 @@ fn log_hop<T>(id: &HostId, step: &str, result: &Result<T, ConnectError>) {
 /// anything (a Terminal, …) holds it, and disconnects when the last holder
 /// drops it. Concurrent connects to the same Host coalesce: the first one
 /// connects, the others wait for it and share its Connection.
+/// Temporary host key trust lasts for the lifetime of the manager.
 pub struct ConnectionManager {
-    known_hosts: KnownHosts,
+    host_keys: Arc<HostKeys>,
     agent: Agent,
     home_dir: Option<PathBuf>,
     vault: Arc<dyn CredentialVault>,
@@ -342,7 +349,7 @@ impl ConnectionManager {
     /// A manager that does not use any ssh-agent; see [`Self::with_agent`].
     pub fn new(known_hosts: KnownHosts) -> Self {
         Self {
-            known_hosts,
+            host_keys: Arc::new(HostKeys::new(known_hosts)),
             agent: Agent::None,
             home_dir: std::env::var_os("HOME")
                 .or_else(|| std::env::var_os("USERPROFILE"))
@@ -673,13 +680,17 @@ impl ConnectionManager {
             && host.forward_agent
             && self.agent != Agent::None)
             .then(|| Arc::new(AgentForwarding::new(self.agent.clone())));
+        let endpoint = Arc::new(Endpoint {
+            id: host.id.clone(),
+            address: host.address.clone(),
+            port: host.port,
+            via: via.as_ref().map(|jump| Arc::clone(&jump.endpoint)),
+        });
         let handler = ClientHandler {
             routes: routes.clone(),
             agent_forwarding: agent_forwarding.clone(),
-            id: host.id.clone(),
-            host: host.address.clone(),
-            port: host.port,
-            known_hosts: self.known_hosts.clone(),
+            endpoint: Arc::clone(&endpoint),
+            host_keys: Arc::clone(&self.host_keys),
             prompter: prompter.clone(),
             failure: failure.clone(),
         };
@@ -724,6 +735,7 @@ impl ConnectionManager {
         );
         Ok(Connection {
             handle,
+            endpoint,
             routes,
             agent_forwarding,
             file_namespace,
@@ -762,6 +774,7 @@ async fn open_tcp(host: &Host) -> Result<TcpStream, ConnectError> {
 /// One live, authenticated SSH transport to a Host.
 pub struct Connection {
     handle: Handle<ClientHandler>,
+    endpoint: Arc<Endpoint>,
     file_namespace: String,
     /// Ports the server listens on for us, and who gets their connections.
     routes: Routes,
@@ -884,49 +897,11 @@ impl Connection {
 struct ClientHandler {
     routes: Routes,
     agent_forwarding: Option<Arc<AgentForwarding>>,
-    id: HostId,
-    host: String,
-    port: u16,
-    known_hosts: KnownHosts,
+    endpoint: Arc<Endpoint>,
+    host_keys: Arc<HostKeys>,
     prompter: Arc<dyn Prompter>,
     /// Why the host key was refused, read back once `connect` fails.
     failure: Arc<Mutex<Option<ConnectError>>>,
-}
-
-impl ClientHandler {
-    async fn decide(&self, key: &PublicKeyOrCertificate) -> Result<(), ConnectError> {
-        let key = match key {
-            PublicKeyOrCertificate::PublicKey { key, .. } => HostKey::from(key.clone()),
-            PublicKeyOrCertificate::Certificate(_) => {
-                return Err(ConnectError::HostCertificateUnsupported)
-            }
-        };
-        match self.known_hosts.verify(&self.host, self.port, &key)? {
-            Verdict::Match => Ok(()),
-            Verdict::Mismatch(known) => Err(ConnectError::HostKeyMismatch {
-                host: self.host.clone(),
-                port: self.port,
-                fingerprint: key.fingerprint(),
-                known,
-            }),
-            Verdict::Revoked => Err(ConnectError::HostKeyRevoked {
-                fingerprint: key.fingerprint(),
-            }),
-            Verdict::Unknown => {
-                let prompt = HostKeyPrompt {
-                    host: self.host.clone(),
-                    port: self.port,
-                    algorithm: key.algorithm(),
-                    fingerprint: key.fingerprint(),
-                };
-                if !self.prompter.confirm_host_key(prompt).await {
-                    return Err(ConnectError::HostKeyDeclined);
-                }
-                self.known_hosts.accept(&self.host, self.port, &key)?;
-                Ok(())
-            }
-        }
-    }
 }
 
 impl client::Handler for ClientHandler {
@@ -936,9 +911,15 @@ impl client::Handler for ClientHandler {
         &mut self,
         key: &PublicKeyOrCertificate,
     ) -> Result<bool, Self::Error> {
-        log::info!("connection hop={} step=host-key result=checking", self.id);
-        let result = self.decide(key).await;
-        log_hop(&self.id, "host-key", &result);
+        log::info!(
+            "connection hop={} step=host-key result=checking",
+            self.endpoint.id
+        );
+        let result = self
+            .host_keys
+            .verify(&self.endpoint, key, self.prompter.as_ref())
+            .await;
+        log_hop(&self.endpoint.id, "host-key", &result);
         match result {
             Ok(()) => Ok(true),
             Err(e) => {

@@ -1,3 +1,4 @@
+import type { TFunction } from "i18next";
 import { CircleAlert, CircleCheck, FilePen, LoaderCircle, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
@@ -68,7 +69,7 @@ function StatusIcon({ status }: { status: RemoteEditItem["status"] }) {
   }
 }
 
-function statusText(t: ReturnType<typeof useTranslation>["t"], edit: RemoteEditItem, hostName: string): string {
+function statusText(t: TFunction, edit: RemoteEditItem, hostName: string): string {
   switch (edit.status) {
     case "opening":
       return t("files.edit.opening");

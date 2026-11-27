@@ -97,7 +97,7 @@ describe("sshastra", () => {
     const tab = $('[role="tab"][aria-selected="true"]');
     const panelId = await tab.getAttribute("aria-controls");
     if (!panelId) throw new Error("the active tab has no panel");
-    await $('[role="dialog"]').$("button=Cancel").click();
+    await $('[role="dialog"]').$("button=Reject").click();
 
     const paneId = await $(`#${panelId} [id^="pane-"]`).getAttribute("id");
     if (!paneId) throw new Error("the active panel has no pane");
@@ -115,7 +115,7 @@ describe("sshastra", () => {
     await $("h2=Unknown host key").waitForDisplayed();
     await expect(tab).toHaveAttribute("aria-controls", panelId);
     await expect(pane).toBeDisplayed();
-    await $("button=Trust and connect").click();
+    await $("button=Save and trust").click();
     const password = $('[role="dialog"] input[type="password"]');
     await password.waitForDisplayed();
     await password.setValue(sshd.PASSWORD);
@@ -169,7 +169,7 @@ describe("sshastra", () => {
     await $(`//*[@role='tabpanel' and not(@hidden)]//button[contains(., '${name}')]`).click();
 
     const password = () => $('[role="dialog"] input[type="password"]');
-    const trust = $("button=Trust and connect");
+    const trust = $("button=Save and trust");
     await browser.waitUntil(async () => await password().isDisplayed() || await trust.isDisplayed());
     if (await trust.isDisplayed()) await trust.click();
     await password().waitForDisplayed();

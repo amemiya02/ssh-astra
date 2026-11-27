@@ -16,8 +16,8 @@ use sshastra_core::forward::{ForwardId, ForwardKind, PortForward, PortForwarder}
 use sshastra_core::hosts::{Host, HostAuth, HostDraft, HostId, HostStore};
 use sshastra_core::known_hosts::{KnownHosts, Verdict};
 use sshastra_core::ssh::{
-    BoxFuture, ConnectError, Connection, ConnectionManager, HeldConnections, HostKeyPrompt,
-    PasswordPrompt, Prompter, Secret,
+    BoxFuture, ConnectError, Connection, ConnectionManager, HeldConnections, HostKeyDecision,
+    HostKeyPrompt, PasswordPrompt, Prompter, Secret,
 };
 use sshastra_core::terminal::{Terminal, TerminalEvent, TerminalSize};
 use support::{Service, Sshd};
@@ -52,8 +52,8 @@ impl CountingPrompter {
 }
 
 impl Prompter for CountingPrompter {
-    fn confirm_host_key(&self, _: HostKeyPrompt) -> BoxFuture<'_, bool> {
-        Box::pin(async { true })
+    fn confirm_host_key(&self, _: HostKeyPrompt) -> BoxFuture<'_, HostKeyDecision> {
+        Box::pin(async { HostKeyDecision::SaveAndTrust })
     }
 
     fn password(&self, prompt: PasswordPrompt) -> BoxFuture<'_, Option<Secret>> {
@@ -160,8 +160,8 @@ struct TestLogin {
 }
 
 impl Prompter for TestLogin {
-    fn confirm_host_key(&self, _: HostKeyPrompt) -> BoxFuture<'_, bool> {
-        Box::pin(async { true })
+    fn confirm_host_key(&self, _: HostKeyPrompt) -> BoxFuture<'_, HostKeyDecision> {
+        Box::pin(async { HostKeyDecision::SaveAndTrust })
     }
 
     fn password(&self, prompt: PasswordPrompt) -> BoxFuture<'_, Option<Secret>> {

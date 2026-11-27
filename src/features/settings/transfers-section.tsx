@@ -3,17 +3,18 @@ import { SegmentedControl } from "@/components/SegmentedControl";
 import { concurrencyChoices, transferSetting } from "@/features/transfers/transfer-settings";
 import { useSetting } from "@/lib/storage";
 import { SettingRow } from "./SettingRow";
+import { settingRows } from "./setting-rows";
 
 export function TransfersSection() {
   const { t } = useTranslation();
   const [settings, setSettings] = useSetting(transferSetting);
-  const label = t("settings.transfers.concurrency.label");
+  const label = t(settingRows.concurrency.title);
   // A hand-edited value outside the choices still shows, as its own option.
   const choices = concurrencyChoices.some((n) => n === settings.concurrency)
     ? [...concurrencyChoices]
     : [...concurrencyChoices, settings.concurrency].sort((a, b) => a - b);
   return (
-    <SettingRow label={label} description={t("settings.transfers.concurrency.description")}>
+    <SettingRow setting={settingRows.concurrency}>
       <SegmentedControl
         label={label}
         value={String(settings.concurrency)}

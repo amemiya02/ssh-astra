@@ -6,6 +6,7 @@ import { useTerminalPrefs } from "@/features/terminal/terminal-prefs-context";
 import { cursorStyles, terminalBellModes, terminalNumberFields, type TerminalPrefs, type TerminalTitleSource } from "@/features/terminal/terminal-prefs";
 import { TerminalSchemeSelect } from "@/features/terminal/TerminalSchemeSelect";
 import { SettingRow } from "./SettingRow";
+import { settingRows } from "./setting-rows";
 import { TerminalHighlightingSettings } from "./terminal-highlighting-settings";
 
 type BooleanPref = "ligatures" | "cursorBlink" | "copyOnSelect" | "rightClickPaste" | "confirmMultilinePaste" | "shellIntegration";
@@ -57,9 +58,10 @@ export function TerminalSection() {
   const { prefs, updatePrefs } = useTerminalPrefs();
 
   const toggle = (key: BooleanPref) => {
-    const label = t(`settings.terminal.${key}.label`);
+    const setting = settingRows[key];
+    const label = t(setting.title);
     return (
-      <SettingRow key={key} label={label} description={t(`settings.terminal.${key}.description`)}>
+      <SettingRow key={key} setting={setting}>
         <SegmentedControl
           label={label}
           value={prefs[key] ? "on" : "off"}
@@ -74,10 +76,11 @@ export function TerminalSection() {
   };
 
   const numberField = (key: keyof typeof terminalNumberFields) => {
-    const label = t(`settings.terminal.${key}.label`);
+    const setting = settingRows[key];
+    const label = t(setting.title);
     const { min, max, step } = terminalNumberFields[key];
     return (
-      <SettingRow key={key} label={label} description={t(`settings.terminal.${key}.description`, { min, max })}>
+      <SettingRow key={key} setting={setting} descriptionValues={{ min, max }}>
         <CommitField
           id={`settings-terminal-${key}`}
           label={label}
@@ -97,16 +100,16 @@ export function TerminalSection() {
     );
   };
 
-  const fontLabel = t("settings.terminal.font.label");
-  const schemeLabel = t("settings.terminal.colorScheme.label");
-  const cursorLabel = t("settings.terminal.cursorStyle.label");
-  const separatorLabel = t("settings.terminal.wordSeparator.label");
-  const titleLabel = t("settings.terminal.titleSource.label");
-  const bellLabel = t("settings.terminal.bell.label");
+  const fontLabel = t(settingRows.font.title);
+  const schemeLabel = t(settingRows.colorScheme.title);
+  const cursorLabel = t(settingRows.cursorStyle.title);
+  const separatorLabel = t(settingRows.wordSeparator.title);
+  const titleLabel = t(settingRows.titleSource.title);
+  const bellLabel = t(settingRows.bell.title);
 
   return (
     <>
-      <SettingRow label={fontLabel} description={t("settings.terminal.font.description")}>
+      <SettingRow setting={settingRows.font}>
         <CommitField
           id="settings-terminal-font"
           label={fontLabel}
@@ -120,7 +123,7 @@ export function TerminalSection() {
       {numberField("lineHeight")}
       {numberField("letterSpacing")}
       {toggle("ligatures")}
-      <SettingRow label={schemeLabel} description={t("settings.terminal.colorScheme.description")}>
+      <SettingRow setting={settingRows.colorScheme}>
         <div className="w-56">
           <TerminalSchemeSelect
             id="settings-terminal-scheme"
@@ -130,7 +133,7 @@ export function TerminalSection() {
           />
         </div>
       </SettingRow>
-      <SettingRow label={cursorLabel} description={t("settings.terminal.cursorStyle.description")}>
+      <SettingRow setting={settingRows.cursorStyle}>
         <SegmentedControl
           label={cursorLabel}
           value={prefs.cursorStyle}
@@ -139,7 +142,7 @@ export function TerminalSection() {
         />
       </SettingRow>
       {toggle("cursorBlink")}
-      <SettingRow label={separatorLabel} description={t("settings.terminal.wordSeparator.description")}>
+      <SettingRow setting={settingRows.wordSeparator}>
         <CommitField
           id="settings-terminal-word-separator"
           label={separatorLabel}
@@ -148,7 +151,7 @@ export function TerminalSection() {
           className="h-8 w-56 font-mono"
         />
       </SettingRow>
-      <SettingRow label={titleLabel} description={t("settings.terminal.titleSource.description")}>
+      <SettingRow setting={settingRows.titleSource}>
         <SegmentedControl<TerminalTitleSource>
           label={titleLabel}
           value={prefs.titleSource}
@@ -159,7 +162,7 @@ export function TerminalSection() {
           onChange={(titleSource) => updatePrefs({ titleSource })}
         />
       </SettingRow>
-      <SettingRow label={bellLabel} description={t("settings.terminal.bell.description")}>
+      <SettingRow setting={settingRows.bell}>
         <SegmentedControl
           label={bellLabel}
           value={prefs.bell}

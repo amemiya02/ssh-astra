@@ -1,3 +1,4 @@
+import type { TFunction } from "i18next";
 import { X } from "lucide-react";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
@@ -9,7 +10,7 @@ import { updatesStore, useUpdates, type UpdateStatus } from "./updatesStore";
 const answerMs = 6000;
 
 /** The words for an update status; `null` when the status bar shows nothing. */
-function noticeText(status: UpdateStatus, t: ReturnType<typeof useTranslation>["t"]): string | null {
+function noticeText(status: UpdateStatus, t: TFunction): string | null {
   switch (status.type) {
     case "idle":
       return null;

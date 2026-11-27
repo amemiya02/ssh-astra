@@ -14,7 +14,8 @@ use sshastra_core::forward::{
 use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::ssh::{
-    BoxFuture, Connection, ConnectionManager, HostKeyPrompt, PasswordPrompt, Prompter, Secret,
+    BoxFuture, Connection, ConnectionManager, HostKeyDecision, HostKeyPrompt, PasswordPrompt,
+    Prompter, Secret,
 };
 use support::{Service, Sshd};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -23,8 +24,8 @@ use tokio::net::{TcpListener, TcpStream};
 struct Trusting(&'static str);
 
 impl Prompter for Trusting {
-    fn confirm_host_key(&self, _: HostKeyPrompt) -> BoxFuture<'_, bool> {
-        Box::pin(async { true })
+    fn confirm_host_key(&self, _: HostKeyPrompt) -> BoxFuture<'_, HostKeyDecision> {
+        Box::pin(async { HostKeyDecision::SaveAndTrust })
     }
     fn password(&self, _: PasswordPrompt) -> BoxFuture<'_, Option<Secret>> {
         Box::pin(async move { Some(Secret::new(self.0)) })
