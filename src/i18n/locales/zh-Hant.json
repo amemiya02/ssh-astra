@@ -671,6 +671,10 @@
     "uploadTitle": "上傳到 {{path}}",
     "download": "下載…",
     "downloadTitle": "下載到…",
+    "dragOut": {
+      "copied": "已複製 {{name}}",
+      "failed": "無法複製 {{name}}。{{error}}"
+    },
     "dropHere": "放開以上傳至 {{path}}"
   },
   "transfers": {

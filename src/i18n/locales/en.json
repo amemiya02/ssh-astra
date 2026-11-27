@@ -671,6 +671,10 @@
     "uploadTitle": "Upload to {{path}}",
     "download": "Download…",
     "downloadTitle": "Download to…",
+    "dragOut": {
+      "copied": "Copied {{name}}",
+      "failed": "Could not copy {{name}}. {{error}}"
+    },
     "dropHere": "Drop to upload to {{path}}"
   },
   "transfers": {

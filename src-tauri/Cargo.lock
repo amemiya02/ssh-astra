@@ -5604,6 +5604,8 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "whoami",
+ "windows",
+ "windows-core",
  "windows-sys 0.61.2",
  "zbus",
 ]

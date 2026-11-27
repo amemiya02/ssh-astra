@@ -22,6 +22,7 @@ import { useSetting } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import { EditQuestionDialog } from "./EditQuestionDialog";
 import { FileBrowser, type FileExchange } from "./FileBrowser";
+import { useNativeFileDrag } from "./useNativeFileDrag";
 import { createFileBrowserStore } from "./fileBrowserStore";
 import type { FileBrowserStore } from "./fileBrowsers";
 import { filesSetting } from "./file-prefs";
@@ -144,7 +145,9 @@ export function SftpWorkspace({ id, host, active, showPrompts = active, onStatus
   const osDrop = useOsFileDrop(remoteDrop, active && remoteReady, upload);
   const [dragSide, setDragSide] = useState<Side | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const nativeDrag = useNativeFileDrag();
   const drop = (event: DragEndEvent) => {
+    nativeDrag.stop();
     setDragSide(null);
     const source = event.active.data.current;
     if (!source?.paths?.length) return;
@@ -159,8 +162,11 @@ export function SftpWorkspace({ id, host, active, showPrompts = active, onStatus
   return (
     <div className="bg-surface text-foreground flex h-full min-h-0 flex-col">
       <DndContext sensors={sensors} collisionDetection={pointerWithin}
-        onDragStart={({ active }) => setDragSide(active.data.current?.side ?? null)}
-        onDragCancel={() => setDragSide(null)} onDragEnd={drop}>
+        onDragStart={(event) => {
+          setDragSide(event.active.data.current?.side ?? null);
+          nativeDrag.track(event);
+        }}
+        onDragCancel={() => { nativeDrag.stop(); setDragSide(null); }} onDragEnd={drop}>
         <div className="min-h-0 flex-1">
           <ResizablePanelGroup orientation="horizontal">
             <ResizablePanel id="local" minSize="32%">

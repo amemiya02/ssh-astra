@@ -108,6 +108,24 @@ const shown = (store: Awaited<ReturnType<typeof connected>>["store"]) => ({
 });
 
 describe("fileBrowserStore", () => {
+  it("offers only one ordinary file from the current remote listing for drag out", async () => {
+    const { store } = await connected({ listFiles: vi.fn(async (): Promise<Listing> => ({
+      path: "/home/me",
+      entries: [entry("資料.txt"), entry("folder", "dir"), { ...entry("alias", "symlink"), linkTarget: "file" }],
+    })) });
+
+    expect(store.getState().filePromise("/home/me", ["資料.txt"])).toEqual({
+      id: 7, directory: "/home/me", name: "資料.txt", size: 1, modified: null,
+    });
+    expect(store.getState().filePromise("/home/me", ["자료.txt"])).toBeNull();
+    expect(store.getState().filePromise("/home/me", ["資料.txt", "folder"])).toBeNull();
+    expect(store.getState().filePromise("/home/me", ["alias"])).toBeNull();
+    expect(store.getState().filePromise("/home/me", ["folder"])).toBeNull();
+    expect(store.getState().filePromise("/home/old", ["資料.txt"])).toBeNull();
+    store.getState().disconnect();
+    expect(store.getState().filePromise("/home/me", ["資料.txt"])).toBeNull();
+  });
+
   it("refreshes the source and destination views when pasting cut entries into another folder", async () => {
     const browsers = createFileBrowsers(fakeApi());
     const panel = browsers.get("moving", "host-1");

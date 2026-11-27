@@ -142,7 +142,8 @@ pub(crate) struct Windows {
 #[derive(Default)]
 pub(crate) struct WindowResources {
     pub(crate) terminals: HashMap<TerminalId, Arc<TerminalRoute>>,
-    pub(crate) files: HashSet<FsId>,
+    /// Remote entries refer to the same SFTP session as the File panel's registry entry.
+    pub(crate) files: HashMap<FsId, Option<std::sync::Weak<sshastra_core::files::SftpFs>>>,
     pub(crate) temporary_hosts: HashSet<HostId>,
     prompts: Arc<PendingPrompts>,
 }
@@ -452,7 +453,7 @@ pub(crate) fn destroyed(app: &AppHandle, label: &str) {
                 let _ = terminals.close(id);
             }
             let files = app.state::<FsRegistry>();
-            for id in resources.files {
+            for id in resources.files.into_keys() {
                 files.remove(id);
             }
         });
