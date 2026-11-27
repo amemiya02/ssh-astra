@@ -56,6 +56,14 @@
       "cloud": "Cloud",
       "router": "Router"
     },
+    "osDetection": {
+      "result": "Detected system: {{system}}",
+      "pending": "Detection runs on a Connection when enabled.",
+      "redetect": "Re-detect",
+      "failed": "Could not request OS re-detection.",
+      "debian": "Debian",
+      "unknown": "Unknown"
+    },
     "colors": {
       "automatic": "Automatic",
       "red": "Red",
@@ -1158,6 +1166,10 @@
       "showPermissions": "Show permissions column"
     },
     "connection": {
+      "osDetection": {
+        "label": "Detect Host operating systems",
+        "description": "Read the operating system after a saved Host connects and use it for the automatic Host icon."
+      },
       "keepalive": {
         "label": "Keepalive interval",
         "description": "How often an idle Connection checks the server is still there. A dropped Connection is noticed after three missed checks. Applies to new Connections.",

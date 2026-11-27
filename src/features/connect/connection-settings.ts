@@ -12,12 +12,13 @@ export interface ConnectionSettings {
   keepaliveSeconds: number;
   /** Unix socket or Windows named pipe. A blank path uses the system agent. */
   agentPath: string;
+  detectOs: boolean;
   proxy?: ProxyConfig;
 }
 
 export const maxKeepaliveSeconds = 3600;
 
-export const defaultConnectionSettings: ConnectionSettings = { keepaliveSeconds: 30, agentPath: "" };
+export const defaultConnectionSettings: ConnectionSettings = { keepaliveSeconds: 30, agentPath: "", detectOs: true };
 
 /** The choices on the Settings tab. */
 export const keepaliveChoices = [0, 15, 30, 60, 120, 300] as const;
@@ -30,6 +31,7 @@ export const connectionSetting = defineSection<ConnectionSettings>("connection",
       ? Math.min(maxKeepaliveSeconds, Math.round(value))
       : defaultConnectionSettings.keepaliveSeconds;
   const agentPath = typeof record.agentPath === "string" && record.agentPath.trim() ? record.agentPath : "";
+  const detectOs = typeof record.detectOs === "boolean" ? record.detectOs : defaultConnectionSettings.detectOs;
   const proxy = readProxyConfig(record.proxy);
-  return proxy ? { keepaliveSeconds, agentPath, proxy } : { keepaliveSeconds, agentPath };
+  return proxy ? { keepaliveSeconds, agentPath, detectOs, proxy } : { keepaliveSeconds, agentPath, detectOs };
 });

@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import type { AnsiHue } from "@/theme/monogram-ink";
 import type { PortForward } from "./forwards";
 
@@ -14,6 +14,10 @@ export const hostIcons = [
   "server", "database", "cloud", "router",
 ] as const;
 export type HostIcon = (typeof hostIcons)[number];
+
+export type DetectedOs = Extract<HostIcon,
+  "linux" | "ubuntu" | "archLinux" | "alpineLinux" | "linuxMint" | "nixos" | "freebsd" | "macos"
+> | "debian" | "unknown";
 
 /**
  * Mirrors `sshastra_core::hosts::HostAuth`. The server's allowed methods
@@ -77,6 +81,8 @@ export interface HostDraft {
 /** A saved Host (`sshastra_core::hosts::Host`). */
 export interface Host extends HostDraft {
   id: HostId;
+  /** Absent until detection has finished for this Host. */
+  detectedOs?: DetectedOs;
   /** The Group the Host sits in; null is the top level. Changed only by moving it. */
   groupId: GroupId | null;
   /** Port forward rules, in the order added. Changed only through `saveForward` / `deleteForward`. */
@@ -130,8 +136,17 @@ export function listHosts(): Promise<Host[]> {
   return invoke<Host[]>("hosts_list");
 }
 
-export function loadHostTree(): Promise<HostTree> {
-  return invoke<HostTree>("host_tree");
+export interface HostOsChange {
+  hostId: HostId;
+  detectedOs: DetectedOs | null;
+}
+
+export function loadHostTree(onOsChange?: (event: HostOsChange) => void): Promise<HostTree> {
+  return invoke<HostTree>("host_tree", { onOsChange: onOsChange ? new Channel(onOsChange) : null });
+}
+
+export function redetectHostOs(id: HostId): Promise<void> {
+  return invoke("host_redetect_os", { id });
 }
 
 /** Adds a Host (at the top level), or replaces the Host with `id`. */

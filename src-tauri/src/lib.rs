@@ -168,6 +168,7 @@ pub fn run() {
             commands::connections::connections_watch,
             commands::connections::host_connect,
             commands::connections::host_test_connection,
+            commands::connections::host_redetect_os,
             commands::connections::host_disconnect,
             commands::connections::temporary_host_create,
             commands::connections::temporary_host_save,

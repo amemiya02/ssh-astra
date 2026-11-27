@@ -57,6 +57,20 @@ describe("hosts store", () => {
     expect(ids(store.getState().tree)).toEqual({ groups: ["prod"], hosts: ["a"] });
   });
 
+  it("shows live OS changes without overwriting a concurrent Host edit", async () => {
+    const original = host("a");
+    const { store } = await loaded({ groups: [], hosts: [original] }, {
+      async loadHostTree(receive) {
+        receive?.({ hostId: original.id, detectedOs: "debian" });
+        return { groups: [], hosts: [original] };
+      },
+    });
+
+    expect(store.getState().tree.hosts[0].detectedOs).toBe("debian");
+    await store.getState().saveHost({ ...draft("new name"), icon: "router" }, original.id);
+    expect(store.getState().tree.hosts[0]).toMatchObject({ name: "new name", icon: "router", detectedOs: "debian" });
+  });
+
   it("keeps the load error to show instead of the list", async () => {
     const { store } = await loaded(
       { groups: [], hosts: [] },

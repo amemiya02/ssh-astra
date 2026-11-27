@@ -20,7 +20,7 @@ import i18n, { startI18n } from "@/i18n";
 import type { ConnectPrompt } from "@/lib/ipc/connect";
 import type { Listing } from "@/lib/ipc/files";
 import type { ForwardEvent, PortForward } from "@/lib/ipc/forwards";
-import type { Host, HostDraft, QuickConnectTarget } from "@/lib/ipc/hosts";
+import type { Host, HostDraft, HostOsChange, QuickConnectTarget } from "@/lib/ipc/hosts";
 import type { TerminalMessage } from "@/lib/ipc/terminal";
 import type { Transfer } from "@/lib/ipc/transfers";
 import { getSetting, startSettings, type SettingsBackend } from "@/lib/storage";
@@ -1084,7 +1084,7 @@ it("shows Host details in Home list rows and opens the exact match from search",
   expect(vi.mocked(invoke)).toHaveBeenCalledWith("remote_terminal_open", expect.objectContaining({ hostId: gateway.id }));
 });
 
-it("shows the same saved icon and colour in the Host list, Home and an open Terminal tab", async () => {
+it("shows the same manual or detected icon in the Host list, Home and an open Terminal tab", async () => {
   savedHosts = [{ ...host, icon: "ubuntu", color: "cyan" }];
   await hostsStore.getState().load();
   await render(workspace(
@@ -1102,6 +1102,12 @@ it("shows the same saved icon and colour in the Host list, Home and an open Term
   const tabChrome = document.querySelector("#tab-work")!.parentElement!;
   expect(tabChrome.querySelector(".bg-ansi-cyan")).not.toBeNull();
 
+  const watch = vi.mocked(invoke).mock.calls.findLast(([command]) => command === "host_tree")?.[1] as {
+    onOsChange: { onmessage(event: HostOsChange): void };
+  };
+  act(() => watch.onOsChange.onmessage({ hostId: host.id, detectedOs: "debian" }));
+  expect(glyphs().map((glyph) => glyph?.getAttribute("data-host-icon"))).toEqual(["ubuntu", "ubuntu", "ubuntu"]);
+
   const terminals = [...testTerminals];
   await act(async () => { await hostsStore.getState().saveHost({ ...host, icon: "database", color: "yellow" }, host.id); });
   expect(glyphs().map((glyph) => glyph?.getAttribute("data-host-icon"))).toEqual(["database", "database", "database"]);
@@ -1110,6 +1116,8 @@ it("shows the same saved icon and colour in the Host list, Home and an open Term
   expect(tabChrome.querySelector(".bg-ansi-yellow")).not.toBeNull();
 
   await act(async () => { await hostsStore.getState().saveHost(host, host.id); });
+  expect(glyphs().map((glyph) => glyph?.getAttribute("data-host-icon"))).toEqual(["debian", "debian", "debian"]);
+  act(() => watch.onOsChange.onmessage({ hostId: host.id, detectedOs: null }));
   expect(glyphs()).toEqual([null, null, null]);
   expect([...testTerminals]).toEqual(terminals);
   expect(terminalCloses()).toHaveLength(0);

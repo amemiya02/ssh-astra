@@ -181,7 +181,7 @@ fn exporting_then_importing_into_an_empty_store_gives_the_same_host_list() {
         exported_web["tags"],
         serde_json::json!(["Production", "East Coast"])
     );
-    assert_eq!(exported["version"], 16);
+    assert_eq!(exported["version"], 17);
     assert_eq!(exported_web["icon"], "server");
     assert_eq!(exported_web["color"], "magenta");
     assert_eq!(renamed(&source.tree(), &imported), imported);

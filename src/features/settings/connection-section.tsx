@@ -22,6 +22,17 @@ export function ConnectionSection() {
     : [...keepaliveChoices, settings.keepaliveSeconds].sort((a, b) => a - b);
   return (
     <>
+      <SettingRow setting={settingRows.osDetection}>
+        <SegmentedControl
+          label={t(settingRows.osDetection.title)}
+          value={settings.detectOs ? "on" : "off"}
+          options={[
+            { value: "on", label: t("settings.on") },
+            { value: "off", label: t("settings.off") },
+          ]}
+          onChange={(value) => setSettings({ ...settings, detectOs: value === "on" })}
+        />
+      </SettingRow>
       <SettingRow setting={settingRows.keepalive}>
         <SegmentedControl
           label={label}
