@@ -453,6 +453,17 @@ impl HostStore {
         chain(&self.library.hosts, id)
     }
 
+    /// The hops for an unsaved draft. An edited Host keeps its id so the same
+    /// loop check applies if one of its proposed Jump hosts leads back to it.
+    pub fn draft_jump_chain(
+        &self,
+        id: Option<HostId>,
+        draft: HostDraft,
+    ) -> Result<Vec<Host>, HostStoreError> {
+        let host = draft.into_host(id.unwrap_or_else(HostId::generate))?;
+        chain_from(&self.library.hosts, host)
+    }
+
     /// Adds a Host (`id: None`) or replaces the one with `id`, then saves.
     pub fn upsert(&mut self, id: Option<HostId>, draft: HostDraft) -> Result<Host, HostStoreError> {
         let mut library = self.library.clone();
@@ -768,20 +779,25 @@ fn required_name(name: &str) -> Result<String, HostStoreError> {
 
 /// Follows `id`'s Jump hosts outwards; see [`HostStore::jump_chain`].
 fn chain(hosts: &[Host], id: &HostId) -> Result<Vec<Host>, HostStoreError> {
-    let find = |id: &HostId| {
-        hosts
-            .iter()
-            .find(|h| &h.id == id)
-            .ok_or_else(|| HostStoreError::NotFound(id.clone()))
-    };
-    let mut hops = vec![find(id)?.clone()];
+    chain_from(hosts, find_host(hosts, id)?.clone())
+}
+
+fn find_host<'a>(hosts: &'a [Host], id: &HostId) -> Result<&'a Host, HostStoreError> {
+    hosts
+        .iter()
+        .find(|h| &h.id == id)
+        .ok_or_else(|| HostStoreError::NotFound(id.clone()))
+}
+
+fn chain_from(hosts: &[Host], host: Host) -> Result<Vec<Host>, HostStoreError> {
+    let mut hops = vec![host];
     while let Some(next) = &hops[hops.len() - 1].jump_host {
         if let Some(start) = hops.iter().position(|h| &h.id == next) {
             let mut names: Vec<String> = hops[start..].iter().map(|h| h.name.clone()).collect();
             names.push(hops[start].name.clone());
             return Err(HostStoreError::JumpHostCycle(names));
         }
-        hops.push(find(next)?.clone());
+        hops.push(find_host(hosts, next)?.clone());
     }
     hops.reverse();
     Ok(hops)

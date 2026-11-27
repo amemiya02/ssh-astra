@@ -23,6 +23,13 @@ describe("parseHostForm", () => {
     expect(result.ok && result.draft.jumpHost).toBe("bastion-id");
   });
 
+  it("can test a draft before the user chooses a display name", () => {
+    const input = { ...valid, name: " " };
+    const result = parseHostForm(input, "test");
+    expect(result.ok && result.draft.name).toBe("10.0.0.5");
+    expect(parseHostForm(input)).toEqual({ ok: false, errors: { name: "required" } });
+  });
+
   it("defaults an empty port to 22", () => {
     const result = parseHostForm({ ...valid, port: " " });
     expect(result.ok && result.draft.port).toBe(22);

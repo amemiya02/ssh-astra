@@ -52,6 +52,7 @@ async function renderEditor(props: Partial<EditorProps> = {}) {
           host={host}
           hosts={[]}
           save={vi.fn(async () => host)}
+          testConnection={vi.fn(async () => {})}
           onSaved={vi.fn()}
           onCancel={vi.fn()}
           {...props}
@@ -68,6 +69,56 @@ const field = (name: string) =>
   [...document.querySelectorAll<HTMLLabelElement>('[role="dialog"] label')].find((label) => label.textContent === name)!.control!;
 
 describe("Host editor", () => {
+  it("tests the current unsaved address, answers a password prompt without a save checkbox, and shows success", async () => {
+    const save = vi.fn<EditorProps["save"]>();
+    const testConnection = vi.fn<EditorProps["testConnection"]>().mockImplementation(async (_draft, _id, ask) => {
+      expect(await ask({ type: "password", id: 1, host: "staging.local", user: "deploy", retry: false, canSave: false }))
+        .toEqual({ type: "password", password: "test-secret", save: false });
+    });
+    await renderEditor({ save, testConnection });
+
+    const values = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!;
+    act(() => {
+      const address = field("Address");
+      values.set!.call(address, "staging.local");
+      address.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => button("Test connection").click());
+
+    expect(testConnection).toHaveBeenCalledWith(expect.objectContaining({
+      address: "staging.local", auth: { type: "password" },
+    }), "prod", expect.any(Function));
+    expect(save).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="status"]')?.textContent).toBe("Testing connection…");
+    expect(button("Test connection").disabled).toBe(true);
+    const prompt = field("Password").closest('[role="dialog"]');
+    expect(prompt?.querySelector('[role="checkbox"]')).toBeNull();
+    expect(prompt?.textContent).not.toContain("No system keychain is available");
+
+    act(() => {
+      const password = field("Password");
+      values.set!.call(password, "test-secret");
+      password.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => button("Connect").click());
+    expect(document.querySelector('[role="status"]')?.textContent).toBe("Connection test succeeded.");
+  });
+
+  it("shows the existing reason when a connection test fails", async () => {
+    const testConnection = vi.fn<EditorProps["testConnection"]>().mockRejectedValue({
+      kind: "authenticationFailed",
+      message: "all authentication methods were rejected",
+    });
+    await renderEditor({ testConnection });
+
+    await act(async () => button("Test connection").click());
+
+    const error = document.querySelector('[role="alert"]');
+    expect(error?.textContent).toContain("Authentication failed.");
+    expect(error?.textContent).toContain("all authentication methods were rejected");
+    expect(button("Test connection").disabled).toBe(false);
+  });
+
   it("shows the connection fields by default and lets the user toggle advanced options", async () => {
     await renderEditor({ groupName: "Infrastructure" });
 

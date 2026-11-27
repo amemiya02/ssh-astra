@@ -74,8 +74,8 @@ export function hostFormFrom(host: Host): HostFormValues {
   return form;
 }
 
-/** Validates the form. Jump host loops are checked by the backend on save. */
-export function parseHostForm(values: HostFormValues): HostFormResult {
+/** Validates the form. The backend checks Jump host loops. */
+export function parseHostForm(values: HostFormValues, purpose: "save" | "test" = "save"): HostFormResult {
   const errors: Partial<Record<HostFormField, HostFormError>> = {};
   const name = values.name.trim();
   const address = values.address.trim();
@@ -85,7 +85,7 @@ export function parseHostForm(values: HostFormValues): HostFormResult {
   const keepaliveText = values.keepaliveSeconds?.trim() ?? "";
   const keepaliveSeconds = Number(keepaliveText);
 
-  if (!name) errors.name = "required";
+  if (purpose === "save" && !name) errors.name = "required";
   if (!address) errors.address = "required";
   if (!user) errors.user = "required";
   const port = /^\d+$/.test(portText) ? Number(portText) : NaN;
@@ -99,7 +99,7 @@ export function parseHostForm(values: HostFormValues): HostFormResult {
   const jumpHost = values.jumpHost || null;
   const auth: HostAuth = values.authType === "key" ? { type: "key", identityFile } : { type: values.authType };
   const draft: HostDraft = {
-    name, address, port, user, auth, jumpHost,
+    name: name || address, address, port, user, auth, jumpHost,
     identitiesOnly: values.identitiesOnly,
     forwardAgent: values.forwardAgent,
   };
