@@ -169,6 +169,25 @@ describe("Host editor", () => {
     },
   );
 
+  it("saves the post-login command from Advanced, including leading shell whitespace", async () => {
+    const save = vi.fn<EditorProps["save"]>().mockResolvedValue(host);
+    await renderEditor({ save });
+
+    const input = field("Post-login command") as HTMLInputElement;
+    expect(input.closest("[hidden]")).not.toBeNull();
+    act(() => button("Advanced").click());
+
+    const command = " printf '%s' \"$HOME\"";
+    act(() => {
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setValue.call(input, command);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => button("Save").click());
+
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ postLoginCommand: command }), "prod");
+  });
+
   it("saves edits to both advanced fields after the section is collapsed again", async () => {
     const save = vi.fn<EditorProps["save"]>().mockResolvedValue(host);
     await renderEditor({ save });

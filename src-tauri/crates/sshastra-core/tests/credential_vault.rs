@@ -110,6 +110,7 @@ fn host(sshd: &Sshd, auth: HostAuth) -> Host {
         identities_only: false,
         forward_agent: false,
         keepalive_seconds: None,
+        post_login_command: None,
         default_directory: None,
         group_id: None,
         forwards: Vec::new(),
@@ -406,6 +407,7 @@ fn draft(sshd: &Sshd, auth: HostAuth) -> HostDraft {
         identities_only: false,
         forward_agent: false,
         keepalive_seconds: None,
+        post_login_command: None,
         default_directory: None,
     }
 }

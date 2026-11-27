@@ -19,7 +19,7 @@ pub use transfer::{ImportSummary, EXPORT_FORMAT};
 /// The file format version this build writes, to the store and to export
 /// files. Bump it together with a migration step in [`migrate`], which reads
 /// both.
-const CURRENT_VERSION: u32 = 9;
+const CURRENT_VERSION: u32 = 10;
 
 /// Identifies a Host across restarts and across the IPC boundary.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -116,6 +116,9 @@ pub struct Host {
     /// Seconds between keepalives; `None` follows the global setting, `Some(0)` turns them off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keepalive_seconds: Option<u32>,
+    /// Command typed into every new Terminal shell once it is ready.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub post_login_command: Option<String>,
     /// The Jump host this Host is reached through, itself possibly behind
     /// another one. Absent in files written before Jump hosts existed.
     #[serde(default)]
@@ -157,6 +160,9 @@ pub struct HostDraft {
     /// Seconds between keepalives; `None` follows the global setting, `Some(0)` turns them off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keepalive_seconds: Option<u32>,
+    /// Command typed into every new Terminal shell once it is ready.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub post_login_command: Option<String>,
     #[serde(default)]
     pub jump_host: Option<HostId>,
     /// The Terminal colour scheme for this Host (e.g. to mark production),
@@ -203,6 +209,7 @@ impl HostDraft {
             identities_only: self.identities_only,
             forward_agent: self.forward_agent,
             keepalive_seconds: self.keepalive_seconds,
+            post_login_command: self.post_login_command.filter(|s| !s.trim().is_empty()),
             jump_host: self.jump_host,
             terminal_scheme: self
                 .terminal_scheme
@@ -571,6 +578,7 @@ impl HostStore {
                 identities_only: entry.identities_only,
                 forward_agent: entry.forward_agent,
                 keepalive_seconds: entry.keepalive_seconds,
+                post_login_command: None,
                 jump_host,
                 terminal_scheme: None,
                 default_directory: None,
@@ -794,8 +802,9 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
         // without changing how older authentication choices are read. v7
         // adds IdentitiesOnly, which defaults to off in older files. v8
         // adds ForwardAgent. v9 adds a keepalive interval; older Hosts omit
-        // it and inherit the global one via Host's serde default.
-        2 | 4 | 5 | 6 | 7 | 8 | CURRENT_VERSION => {
+        // it and inherit the global one via Host's serde default. v10
+        // adds a command sent after each shell opens.
+        2 | 4 | 5 | 6 | 7 | 8 | 9 | CURRENT_VERSION => {
             let FileV2 { groups, hosts } = serde_json::from_str(text).map_err(corrupt)?;
             Ok(Library { groups, hosts })
         }
@@ -805,6 +814,12 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
         // An extra field in an older file did not authorize forwarding.
         for host in &mut library.hosts {
             host.forward_agent = false;
+        }
+    }
+    if version < 10 {
+        // An extra field in an older file was never configured to run.
+        for host in &mut library.hosts {
+            host.post_login_command = None;
         }
     }
     Ok(library)

@@ -16,6 +16,8 @@ export interface HostFormValues {
   forwardAgent: boolean;
   /** Blank follows the global keepalive interval. */
   keepaliveSeconds?: string;
+  /** Blank leaves the shell at its first prompt. */
+  postLoginCommand?: string;
   /** The Host's own Terminal colour scheme; absent follows the global one. */
   terminalScheme?: TerminalColorScheme;
   /** Where the File panel opens first; blank is the home directory. */
@@ -25,7 +27,7 @@ export interface HostFormValues {
 /** The free-text fields, validated here. */
 export type HostFormField = Exclude<
   keyof HostFormValues,
-  "jumpHost" | "authType" | "identitiesOnly" | "forwardAgent" | "terminalScheme" | "defaultDirectory"
+  "jumpHost" | "authType" | "identitiesOnly" | "forwardAgent" | "terminalScheme" | "defaultDirectory" | "postLoginCommand"
 >;
 /** Error codes; the UI maps them to copy under `hosts.errors.*`. */
 export type HostFormError = "required" | "port" | "keepaliveSeconds";
@@ -61,6 +63,7 @@ export function hostFormFrom(host: Host): HostFormValues {
   if (isTerminalColorScheme(host.terminalScheme)) form.terminalScheme = host.terminalScheme;
   if (host.defaultDirectory) form.defaultDirectory = host.defaultDirectory;
   if (host.keepaliveSeconds !== undefined) form.keepaliveSeconds = String(host.keepaliveSeconds);
+  if (host.postLoginCommand) form.postLoginCommand = host.postLoginCommand;
   return form;
 }
 
@@ -95,6 +98,7 @@ export function parseHostForm(values: HostFormValues): HostFormResult {
   };
   if (values.terminalScheme) draft.terminalScheme = values.terminalScheme;
   if (keepaliveText) draft.keepaliveSeconds = keepaliveSeconds;
+  if (values.postLoginCommand?.trim()) draft.postLoginCommand = values.postLoginCommand;
   const defaultDirectory = values.defaultDirectory?.trim();
   if (defaultDirectory) draft.defaultDirectory = defaultDirectory;
   return { ok: true, draft };
