@@ -7,13 +7,12 @@
  * land in `e2e/artifacts/`.
  */
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { appEnv, sandboxHome } from "./support/sandbox.ts";
+import { smokeBinary, smokeLogs, stopReplacement } from "./support/smoke-app.ts";
 import * as sshd from "./support/sshd.ts";
 
-const root = resolve(import.meta.dirname, "..");
-const binary = resolve(root, "src-tauri/target/debug", process.platform === "win32" ? "sshastra.exe" : "sshastra");
-const artifacts = resolve(import.meta.dirname, "artifacts");
+const artifacts = dirname(smokeLogs);
 const home = sandboxHome();
 
 export const config: WebdriverIO.Config = {
@@ -23,18 +22,18 @@ export const config: WebdriverIO.Config = {
   capabilities: [
     {
       browserName: "tauri",
-      "tauri:options": { application: binary },
+      "tauri:options": { application: smokeBinary },
       "wdio:tauriServiceOptions": {
         driverProvider: "embedded",
         env: appEnv(home),
         captureBackendLogs: true,
-        logDir: join(artifacts, "logs"),
+        logDir: smokeLogs,
       },
     } as WebdriverIO.Capabilities,
   ],
   services: [["@wdio/tauri-service", { driverProvider: "embedded" }]],
   logLevel: "warn",
-  outputDir: join(artifacts, "logs"),
+  outputDir: smokeLogs,
   waitforTimeout: 20_000,
   connectionRetryTimeout: 120_000,
   connectionRetryCount: 1,
@@ -43,7 +42,7 @@ export const config: WebdriverIO.Config = {
   reporters: ["spec"],
 
   onPrepare() {
-    mkdirSync(join(artifacts, "logs"), { recursive: true });
+    mkdirSync(smokeLogs, { recursive: true });
     sshd.up();
   },
 
@@ -56,24 +55,7 @@ export const config: WebdriverIO.Config = {
     writeFileSync(join(artifacts, `${name}.html`), html);
   },
 
-  async afterSession() {
-    const driver = process.env.SSHASTRA_E2E_RESTARTED_DRIVER;
-    if (!driver) return;
-    // A new session can close the replacement process after the runner has
-    // deleted its test session. The service only owns the original process.
-    const response = await fetch(new URL("/session", driver), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ capabilities: { alwaysMatch: {} } }),
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!response.ok) throw new Error("Could not open a cleanup session for the restarted app.");
-    const { value } = await response.json() as { value: { sessionId: string } };
-    await fetch(new URL(`/session/${value.sessionId}/window`, driver), {
-      method: "DELETE",
-      signal: AbortSignal.timeout(5000),
-    }).catch(() => undefined); // Closing the last window may end the server before it replies.
-  },
+  afterSession: stopReplacement,
 
   onComplete() {
     rmSync(home, { recursive: true, force: true });

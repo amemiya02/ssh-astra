@@ -9,6 +9,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $, $$, browser, expect } from "@wdio/globals";
+import { restartSmokeApp } from "../support/smoke-app.ts";
 import * as sshd from "../support/sshd.ts";
 
 const HOST_NAME = "E2E sshd";
@@ -60,27 +61,6 @@ async function prepareWindow(): Promise<void> {
     style.textContent = "*, *::before, *::after { animation: none !important; transition: none !important; }";
     document.head.append(style);
   });
-}
-
-async function restartApp(): Promise<void> {
-  const previousWindow = `http://${browser.options.hostname}:${browser.options.port}/session/${browser.sessionId}/window`;
-  await browser.execute(() => {
-    const tauri = (window as unknown as { __TAURI_INTERNALS__: { invoke(command: string): Promise<unknown> } }).__TAURI_INTERNALS__;
-    // Let WebDriver finish this command before exiting the app that is serving it.
-    setTimeout(() => void tauri.invoke("plugin:process|restart"), 500);
-  });
-  await browser.waitUntil(async () => {
-    try {
-      const response = await fetch(previousWindow, { signal: AbortSignal.timeout(1000) });
-      const body = await response.json() as { value?: { error?: string } };
-      return !response.ok && body.value?.error === "invalid session id";
-    } catch {
-      return false; // The old process exited; the new one is still starting.
-    }
-  }, { timeoutMsg: "The restarted SSH Astra process never became ready." });
-  process.env.SSHASTRA_E2E_RESTARTED_DRIVER = new URL(previousWindow).origin;
-  await browser.reloadSession();
-  await prepareWindow();
 }
 
 describe("sshastra", () => {
@@ -217,7 +197,8 @@ describe("sshastra", () => {
       }, tab.replace(/^tab-/, ""), focus);
     }, { timeoutMsg: "The active tab and split focus were never saved." });
 
-    await restartApp();
+    await restartSmokeApp(browser);
+    await prepareWindow();
     await expect(activeTab()).toHaveAttribute("id", tab);
     expect(await $$('[role="tab"]').map((tab) => tab.getAttribute("id"))).toEqual(tabs);
     await expect(focusedPane()).toHaveAttribute("id", focus);
