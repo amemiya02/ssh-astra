@@ -2,6 +2,7 @@ import type { Terminal as XTerm } from "@xterm/xterm";
 import { useCallback, useContext, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { BroadcastPaneContext } from "@/features/workspace/broadcast";
+import { TabActivityContext } from "@/features/workspace/tab-activity";
 import { e2eHooks } from "@/lib/e2e";
 import {
   closeTerminal,
@@ -57,6 +58,7 @@ export function TerminalSurface({
 }: Props) {
   const { t } = useTranslation();
   const { broadcast, tabId } = useContext(BroadcastPaneContext) ?? {};
+  const { activity, tabId: activityTabId } = useContext(TabActivityContext) ?? {};
   const { status } = useShellIntegration(paneId);
   const unavailable = status === "disabled" || status === "unsupported" || status === "timedOut";
   // Read through refs: the Terminal is opened once per mount; later prop changes don't reopen it.
@@ -104,6 +106,7 @@ export function TerminalSurface({
       .current(size(), (event) => {
         if (lifetime.signal.aborted || exited) return;
         if (event.type === "output") {
+          if (activityTabId !== undefined && event.data.length > 0) activity?.output(activityTabId);
           if (e2eHooks) e2eHooks.trackOutput(xterm, event.data);
           else xterm.write(event.data);
           return;
@@ -165,6 +168,9 @@ export function TerminalSurface({
     const onResize = xterm.onResize((next) => {
       if (id !== undefined) void resizeTerminal(id, next);
     });
+    const onBell = xterm.onBell(() => {
+      if (activityTabId !== undefined) activity?.bell(activityTabId);
+    });
 
     return () => {
       lifetime.abort();
@@ -172,10 +178,11 @@ export function TerminalSurface({
       onData.dispose();
       onResize.dispose();
       onBufferChange.dispose();
+      onBell.dispose();
       shellIntegration.close(paneId);
       if (id !== undefined) void closeTerminal(id);
     };
-  }, [broadcast, paneId, tabId]);
+  }, [activity, activityTabId, broadcast, paneId, tabId]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">

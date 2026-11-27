@@ -30,7 +30,7 @@ export type TerminalEvent =
   | { type: "output"; data: Uint8Array }
   /** Remote Terminals only. */
   | { type: "connection"; state: ConnectionState }
-  /** Remote Terminals only: the shell's current directory (ShellIntegration or `reportTerminalCwd`). */
+  /** The shell's current directory, from the local process or remote Shell integration. */
   | { type: "cwd"; path: string }
   | { type: "shellIntegration"; event: ShellIntegrationEvent }
   | { type: "exit"; code: number | null };
@@ -60,9 +60,10 @@ export function decodeTerminalMessage(message: TerminalMessage): TerminalEvent {
 export async function openLocalTerminal(
   size: TerminalSize,
   onEvent: (event: TerminalEvent) => void,
+  cwd?: string,
 ): Promise<TerminalId> {
   const channel = new Channel<TerminalMessage>((message) => onEvent(decodeTerminalMessage(message)));
-  return invoke<TerminalId>("local_terminal_open", { size, onEvent: channel });
+  return invoke<TerminalId>("local_terminal_open", { size, onEvent: channel, cwd });
 }
 
 export function writeTerminal(id: TerminalId, data: string): Promise<void> {

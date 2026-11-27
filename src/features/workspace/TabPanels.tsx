@@ -13,9 +13,11 @@ import { cn } from "@/lib/utils";
 import { BroadcastPaneContext, isBroadcastRecipient, type Broadcast } from "./broadcast";
 import { PaneDivider } from "./PaneDivider";
 import { positionPanes, resizePaneLayout, type PaneBounds, type SplitResize } from "./pane-layout";
+import { TabActivityContext, type TabActivity } from "./tab-activity";
 import { nextRestoreConnection, tabId, tabPanelId, type ConnectionStatus, type Pane, type ReconnectProgress, type Tab } from "./tabs";
 
 interface TabPanelsProps {
+  activity: TabActivity;
   broadcast?: Broadcast;
   tabs: Tab[];
   activeId: string | null;
@@ -27,6 +29,7 @@ interface TabPanelsProps {
   onConnectRestoredPane(paneId: string): void;
   /** A program in the pane set its title (empty string clears it). */
   onTitleChange(paneId: string, title: string): void;
+  onLocalCwd(paneId: string, cwd: string): void;
   onStatusChange(paneId: string, status: ConnectionStatus, reconnecting?: ReconnectProgress): void;
   onResizeSplit(tabId: string, resize: SplitResize): void;
 }
@@ -36,7 +39,7 @@ interface TabPanelsProps {
  * hidden); only the active tab is shown. A tree determines positions, while the pane DOM
  * stays keyed directly under its tab so edits to the tree cannot remount a neighbour.
  */
-export function TabPanels({ tabs, activeId, ...paneProps }: TabPanelsProps) {
+export function TabPanels({ tabs, activeId, activity, ...paneProps }: TabPanelsProps) {
   // Closing the last tab leaves Home, never an empty stage.
   if (tabs.length === 0) return <div className="absolute inset-0">{paneProps.renderHome(true)}</div>;
 
@@ -52,19 +55,21 @@ export function TabPanels({ tabs, activeId, ...paneProps }: TabPanelsProps) {
         hidden={!active}
         className="absolute inset-0"
       >
-        <SplitPanes tab={tab} active={active} nextConnection={nextConnection} {...paneProps} />
+        <TabActivityContext.Provider value={{ activity, tabId: tab.id }}>
+          <SplitPanes tab={tab} active={active} nextConnection={nextConnection} {...paneProps} />
+        </TabActivityContext.Provider>
       </div>
     );
   });
 }
 
-type PaneCallbacks = Omit<TabPanelsProps, "broadcast" | "tabs" | "activeId" | "onResizeSplit">;
+type PaneCallbacks = Omit<TabPanelsProps, "activity" | "broadcast" | "tabs" | "activeId" | "onResizeSplit">;
 
 function SplitPanes({ broadcast, tab, active, nextConnection, onResizeSplit, ...callbacks }: {
   tab: Tab;
   active: boolean;
   nextConnection: string | undefined;
-} & Omit<TabPanelsProps, "tabs" | "activeId">) {
+} & Omit<TabPanelsProps, "activity" | "tabs" | "activeId">) {
   const { t } = useTranslation();
   const [preview, setPreview] = useState<{ id: string; fraction: number } | null>(null);
   const maximized = tab.paneMaximized;
@@ -144,6 +149,7 @@ function PaneContent({
   autoConnect,
   onConnectRestoredPane,
   onTitleChange,
+  onLocalCwd,
   onStatusChange,
   onClosePane,
   onEditHost,
@@ -160,7 +166,14 @@ function PaneContent({
     case "home":
       return renderHome(active);
     case "local-terminal":
-      return <LocalTerminalView active={active} onTitleChange={(title) => onTitleChange(pane.id, title)} />;
+      return (
+        <LocalTerminalView
+          active={active}
+          initialCwd={pane.cwd}
+          onTitleChange={(title) => onTitleChange(pane.id, title)}
+          onCwd={(cwd) => onLocalCwd(pane.id, cwd)}
+        />
+      );
     case "remote-terminal":
       return (
         <RemoteTerminalView

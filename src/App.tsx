@@ -33,6 +33,7 @@ import { ConflictDialog } from "@/features/transfers/ConflictDialog";
 import { transferSummary, transfersStore, useTransfers } from "@/features/transfers/transfersStore";
 import { CloseTerminalsDialog } from "@/features/workspace/CloseTerminalsDialog";
 import { TabStrip } from "@/features/workspace/TabStrip";
+import { createTabActivity } from "@/features/workspace/tab-activity";
 import {
   activePane,
   activeTab,
@@ -89,14 +90,18 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
   const focusedPane = focused && activePane(focused);
   const hasFocusedTerminal = focusedPane?.kind === "local-terminal" || focusedPane?.kind === "remote-terminal";
   const [broadcast] = useState(createBroadcast);
+  const [tabActivity] = useState(createTabActivity);
+  useEffect(() => tabActivity.listen(), [tabActivity]);
   const broadcastMode = useStore(broadcast.store, (snapshot) => snapshot.mode);
   useLayoutEffect(() => {
+    const tabIds = tabs.map((tab) => tab.id);
+    tabActivity.updateWorkspace(activeId, tabIds);
     broadcast.updateWorkspace(
       focusedPaneId,
-      tabs.map((tab) => tab.id),
+      tabIds,
       tabs.flatMap((tab) => tabPanes(tab).map((pane) => pane.id)),
     );
-  }, [broadcast, focusedPaneId, tabs]);
+  }, [activeId, broadcast, focusedPaneId, tabActivity, tabs]);
 
   const toggleBroadcast = useCallback((scope: BroadcastScope) => {
     if (activeId !== null && hasFocusedTerminal) broadcast.toggle(scope, activeId);
@@ -352,6 +357,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
         }}
         tabs={
           <TabStrip
+            activity={tabActivity}
             tabs={tabs}
             activeId={activeId}
             platform={platform}
@@ -375,6 +381,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
         }
         workspace={
           <TabPanels
+            activity={tabActivity}
             broadcast={broadcast}
             tabs={tabs}
             activeId={activeId}
@@ -391,6 +398,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
             onEditHost={(host) => hostsController.actions.edit(hosts.find((saved) => saved.id === host.id) ?? host)}
             onConnectRestoredPane={(paneId) => dispatch({ type: "connectRestoredPane", paneId })}
             onTitleChange={retitle}
+            onLocalCwd={(paneId, cwd) => dispatch({ type: "localCwd", paneId, cwd })}
             onStatusChange={setStatus}
             onResizeSplit={(tabId, resize) => dispatch({ type: "resizeSplit", tabId, ...resize })}
           />

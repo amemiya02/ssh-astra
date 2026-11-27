@@ -22,6 +22,7 @@ describe("terminal preferences", () => {
     expect(prefs.fontFamily).toContain("monospace");
     expect(prefs.ligatures).toBe(false);
     expect(prefs.colorScheme).toBe("app");
+    expect(prefs.bell).toBe("none");
     expect(prefs.copyOnSelect).toBe(true);
     expect(prefs.rightClickPaste).toBe(true);
     expect(prefs.shellIntegration).toBe(true);
@@ -40,6 +41,7 @@ describe("terminal preferences", () => {
       cursorBlink: false,
       wordSeparator: " ,./",
       titleSource: "host" as const,
+      bell: "sound" as const,
       ligatures: true,
       colorScheme: "solarizedDark" as const,
       copyOnSelect: false,
@@ -61,6 +63,7 @@ describe("terminal preferences", () => {
       cursorBlink: "off",
       wordSeparator: " ,./ ",
       titleSource: "directory",
+      bell: "both",
     })).toMatchObject({
       fontWeight: 900,
       lineHeight: 1,
@@ -69,6 +72,7 @@ describe("terminal preferences", () => {
       cursorBlink: true,
       wordSeparator: " ,./ ",
       titleSource: "shell",
+      bell: "none",
     });
     expect(normalizeTerminalPrefs({
       fontWeight: "heavy",

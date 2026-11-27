@@ -155,6 +155,8 @@
     "cancel": "Cancel",
     "lock": "Lock tab",
     "locked": "Locked",
+    "unreadOutput": "Unread Terminal output",
+    "terminalBell": "Terminal bell",
     "color": {
       "label": "Tab colour",
       "automatic": "Automatic",
@@ -749,6 +751,15 @@
         "options": {
           "shell": "Shell title",
           "host": "Host name"
+        }
+      },
+      "bell": {
+        "label": "Terminal bell",
+        "description": "Choose what happens when a program rings the Terminal bell.",
+        "options": {
+          "none": "None",
+          "flash": "Flash tab",
+          "sound": "Sound"
         }
       },
       "copyOnSelect": {
