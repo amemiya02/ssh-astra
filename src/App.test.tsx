@@ -372,7 +372,7 @@ it("renders release notes as Markdown with HTML, scripts, images, and unsafe lin
   offerUpdate([
     "## Improvements",
     "",
-    "- **Faster** reconnects and \`ssh-astra\` fixes",
+    "- **Faster** reconnects and `ssh-astra` fixes",
     "- [Read more](https://example.invalid/release)",
     "",
     "A <span data-release-html=\"fixture\">plain detail</span> remains readable.",
