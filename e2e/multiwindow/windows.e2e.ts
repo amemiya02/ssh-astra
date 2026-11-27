@@ -160,8 +160,19 @@ describe("SSH Astra Windows", function () {
     await browser.waitUntil(async () => (shells = await identities()).length === 2 && shells.every(Boolean));
     const movedTab = await activeTab().getAttribute("id");
     if (!movedTab) throw new Error("The split has no tab ID.");
-    await activeTab().click({ button: "right" });
-    await $('//*[@role="menuitem" and contains(., "Move to New Window")]').click();
+    await browser.execute(() => {
+      // Open the DOM context menu independently of native pointer synthesis.
+      const tab = document.querySelector('[role="tab"][aria-selected="true"]');
+      if (!tab) throw new Error("The active tab is missing before opening its menu.");
+      const bounds = tab.getBoundingClientRect();
+      tab.dispatchEvent(new MouseEvent("contextmenu", {
+        bubbles: true, cancelable: true, button: 2, clientX: bounds.x + 4, clientY: bounds.y + 4,
+      }));
+    });
+    const move = $('//*[@role="menuitem" and contains(., "Move to New Window")]');
+    await move.waitForDisplayed();
+    await expect(move).not.toHaveAttribute("aria-disabled", "true");
+    await move.click();
     await browser.waitUntil(async () => (handles = await browser.getWindowHandles()).length === 3);
     const destination = handles.find((label) => label !== main && label !== second)!;
     await selectWindow(destination);

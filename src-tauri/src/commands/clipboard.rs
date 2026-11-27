@@ -38,6 +38,7 @@ impl ClipboardImages {
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri injects each managed state as an argument.
 pub async fn terminal_save_clipboard_image(
     window: WebviewWindow,
     images: State<'_, ClipboardImages>,
