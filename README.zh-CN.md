@@ -77,6 +77,8 @@ SSH Astra 永不记录终端输入和输出、密码、密钥口令、私钥内�
 
 欢迎提 Issue 和 PR。项目结构与开发约定见 [`CLAUDE.md`](CLAUDE.md)，领域术语见 [`GLOSSARY.md`](GLOSSARY.md)。
 
+在 macOS 上启动 Docker 后运行 `pnpm performance`，即可重跑[性能基线](docs/baseline.md)。
+
 ## 许可证
 
 [MIT](LICENSE)
