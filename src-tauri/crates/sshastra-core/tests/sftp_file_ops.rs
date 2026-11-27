@@ -43,6 +43,7 @@ async fn scratch(sshd: &Sshd) -> (SftpFs, String, tempfile::TempDir) {
         jump_host: None,
         group_id: None,
         terminal_scheme: None,
+        identities_only: false,
         default_directory: None,
         forwards: Vec::new(),
     };

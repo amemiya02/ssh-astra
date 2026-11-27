@@ -43,6 +43,8 @@ pub enum Service {
     Jump,
     /// Accepts public keys only.
     KeyOnly,
+    /// Accepts only the `id_ed25519` fixture and limits authentication to two tries.
+    LimitedAuth,
     /// Keyboard-interactive (PAM asks for the password), alone or after a
     /// public key; no password method.
     KbdInt,
@@ -62,6 +64,7 @@ impl Service {
             Service::Ssh => "ssh",
             Service::Jump => "jump",
             Service::KeyOnly => "keyonly",
+            Service::LimitedAuth => "limitedauth",
             Service::KbdInt => "kbdint",
             Service::Counted => "counted",
             Service::Flaky => "flaky",

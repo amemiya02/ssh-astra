@@ -28,6 +28,7 @@ RUN useradd -m -s /bin/dash dashuser && echo 'dashuser:testpass' | chpasswd
 # test-only; id_ed25519_unauthorized is deliberately left out).
 COPY --chown=tester:tester --chmod=600 keys/authorized_keys /home/tester/.ssh/authorized_keys
 RUN chmod 700 /home/tester/.ssh
+COPY --chmod=644 keys/id_ed25519.pub /etc/ssh/limitedauth-authorized-keys
 
 # A fixed tree for the File panel (SftpFs) tests, owned by root: tester can
 # read it but not `locked/`. `many/` holds 10,000 empty files.

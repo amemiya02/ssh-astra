@@ -120,6 +120,7 @@ fn saving_after_upgrading_from_v0_1_0_keeps_every_host() {
                 auth: HostAuth::Password,
                 jump_host: None,
                 terminal_scheme: None,
+                identities_only: false,
                 default_directory: None,
             },
         )
@@ -159,6 +160,7 @@ fn saving_automatic_auth_keeps_the_explicit_auth_of_v0_3_0_hosts() {
                     auth: HostAuth::Auto,
                     jump_host: None,
                     terminal_scheme: None,
+                    identities_only: false,
                     default_directory: None,
                 },
             )
@@ -166,9 +168,45 @@ fn saving_automatic_auth_keeps_the_explicit_auth_of_v0_3_0_hosts() {
     );
 
     let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    assert_eq!(saved["version"], 6);
+    assert_eq!(saved["version"], 7);
     assert_eq!(saved["hosts"][2]["auth"], json!({ "type": "auto" }));
     assert_eq!(HostStore::open(path).unwrap().list(), expected);
+}
+
+#[test]
+fn version_6_hosts_keep_their_authentication_and_default_to_identities_only_off() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = hosts_path(&dir);
+    fs::write(&path, include_str!("fixtures/hosts-v6/hosts.json")).unwrap();
+    let mut store = HostStore::open(&path).unwrap();
+    let before = store.list().to_vec();
+    assert_eq!(before[0].auth, HostAuth::Auto);
+    assert_eq!(
+        before[1].auth,
+        HostAuth::Key {
+            identity_file: "~/.ssh/build".into()
+        }
+    );
+    assert_eq!(before[2].auth, HostAuth::Password);
+    assert_eq!(before[1].default_directory.as_deref(), Some("/srv/build"));
+    assert!(before.iter().all(|host| !host.identities_only));
+
+    let mut draft = serde_json::to_value(&before[1]).unwrap();
+    draft["identitiesOnly"] = true.into();
+    let edited = store
+        .upsert(
+            Some(before[1].id.clone()),
+            serde_json::from_value(draft).unwrap(),
+        )
+        .unwrap();
+    let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(saved["version"], 7);
+    assert_eq!(saved["hosts"][1]["identitiesOnly"], true);
+    let reopened = HostStore::open(path).unwrap();
+    assert_eq!(
+        reopened.list(),
+        &[before[0].clone(), edited, before[2].clone()]
+    );
 }
 
 #[test]

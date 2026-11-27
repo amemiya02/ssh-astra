@@ -19,6 +19,7 @@ fn host(name: &str) -> ConfigHost {
         port: 22,
         user: LOCAL_USER.into(),
         identity_file: None,
+        identities_only: false,
         jump_host: None,
         forwards: Vec::new(),
     }

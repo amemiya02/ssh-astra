@@ -18,7 +18,7 @@ use std::sync::Arc;
 use russh::client::{self, AuthResult, Handle, KeyboardInteractiveAuthResponse};
 use russh::keys::agent::client::{AgentClient, AgentStream};
 use russh::keys::agent::AgentIdentity;
-use russh::keys::{ssh_key, HashAlg, PrivateKey, PrivateKeyWithHashAlg};
+use russh::keys::{ssh_key, HashAlg, PrivateKey, PrivateKeyWithHashAlg, PublicKey};
 use russh::{AgentAuthError, MethodKind, MethodSet};
 
 use super::handshake::Deadline;
@@ -194,7 +194,7 @@ pub(super) async fn authenticate<H: client::Handler>(
         Method::KeyboardInteractive,
     ] {
         let (name, step) = match method {
-            Method::Agent => ("agent", attempt.agent(agent).await),
+            Method::Agent => ("agent", attempt.agent(agent, home_dir).await),
             Method::KeyFile => ("key-file", attempt.key_files(home_dir).await),
             Method::Password => ("password", attempt.password().await),
             Method::KeyboardInteractive => {
@@ -267,7 +267,11 @@ impl<H: client::Handler> AuthAttempt<'_, '_, H> {
         Ok(self.handle.best_supported_rsa_hash().await?.flatten())
     }
 
-    async fn agent(&mut self, agent: &Agent) -> Result<Step, ConnectError> {
+    async fn agent(
+        &mut self,
+        agent: &Agent,
+        home_dir: Option<&Path>,
+    ) -> Result<Step, ConnectError> {
         if !self.allows(MethodKind::PublicKey) || matches!(agent, Agent::None) {
             return Ok(Step::Skipped);
         }
@@ -275,16 +279,29 @@ impl<H: client::Handler> AuthAttempt<'_, '_, H> {
         let Some(mut client) = agent.connect().await else {
             return Ok(Step::Skipped);
         };
-        let keys: Vec<_> = client
-            .request_identities()
-            .await
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|id| match id {
-                AgentIdentity::PublicKey { key, .. } => Some(key),
-                AgentIdentity::Certificate { .. } => None,
-            })
-            .collect();
+        let selected = match (&self.host.auth, self.host.identities_only) {
+            (HostAuth::Key { identity_file }, true) => {
+                let path = expand_home(identity_file, home_dir);
+                let Some(key) = identity_public_key(&path) else {
+                    return Ok(Step::Skipped);
+                };
+                Some(key)
+            }
+            _ => None,
+        };
+        let identities = client.request_identities().await.unwrap_or_default();
+        let mut public_keys = identities.into_iter().filter_map(|id| match id {
+            AgentIdentity::PublicKey { key, .. } => Some(key),
+            AgentIdentity::Certificate { .. } => None,
+        });
+        let keys: Vec<_> = match selected {
+            // The key comment can differ between the selected file and agent.
+            Some(selected) => public_keys
+                .find(|key| key.key_data() == selected.key_data())
+                .into_iter()
+                .collect(),
+            None => public_keys.collect(),
+        };
         if keys.is_empty() {
             return Ok(Step::Skipped);
         }
@@ -606,6 +623,44 @@ fn is_wrong_passphrase(error: &russh::keys::Error) -> bool {
         error,
         KeyIsEncrypted | KeyIsCorrupt | CouldNotReadKey | Unpad(_) | SshKey(_) | Pkcs8(_)
     )
+}
+
+/// Reads the identity without prompting for or retrieving a passphrase.
+fn identity_public_key(path: &Path) -> Option<PublicKey> {
+    let text = fs::read_to_string(path).ok()?;
+    let text = text.trim();
+    if let Ok(key) = PublicKey::from_openssh(text) {
+        return Some(key);
+    }
+    if let Ok(key) = PrivateKey::from_openssh(text) {
+        // The OpenSSH envelope keeps the public key outside the encrypted part.
+        return Some(key.public_key().clone());
+    }
+    match russh::keys::decode_secret_key(text, None) {
+        Ok(key) => Some(key.public_key().clone()),
+        Err(russh::keys::Error::SshKey(ssh_key::Error::Ppk(error)))
+            if error.to_string() == "private key is encrypted" =>
+        {
+            // ssh-key checked the PPK envelope and its Public-Lines section
+            // before requesting a passphrase for the private key.
+            let mut public_sections = text.lines().enumerate().filter_map(|(line, value)| {
+                value
+                    .strip_prefix("Public-Lines: ")
+                    .map(|count| (line, count))
+            });
+            let (header, count) = public_sections.next()?;
+            if public_sections.next().is_some() {
+                return None;
+            }
+            let encoded: String = text
+                .lines()
+                .skip(header + 1)
+                .take(count.parse().ok()?)
+                .collect();
+            russh::keys::parse_public_key_base64(&encoded).ok()
+        }
+        _ => None,
+    }
 }
 
 /// `~/x` → the local home directory's `x`.

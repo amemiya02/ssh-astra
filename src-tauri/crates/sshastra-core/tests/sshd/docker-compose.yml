@@ -13,6 +13,7 @@
 #             `jump2` (as `deep:22`).
 #   keyonly   published: accepts public keys only (no password, no
 #             keyboard-interactive).
+#   limitedauth  published: one authorized public key, two authentication tries.
 #   kbdint    published: keyboard-interactive (PAM asks for the password)
 #             instead of the password method, either alone or as the second
 #             step after a public key ("partial success").
@@ -73,6 +74,23 @@ services:
     ports: ["127.0.0.1::22"]
     networks: [public]
     command: [/usr/sbin/sshd, -D, -e, -o, PasswordAuthentication=no, -o, KbdInteractiveAuthentication=no]
+  limitedauth:
+    <<: *sshd
+    hostname: limitedauth
+    ports: ["127.0.0.1::22"]
+    networks: [public]
+    command:
+      - /usr/sbin/sshd
+      - -D
+      - -e
+      - -o
+      - PasswordAuthentication=no
+      - -o
+      - KbdInteractiveAuthentication=no
+      - -o
+      - AuthorizedKeysFile=/etc/ssh/limitedauth-authorized-keys
+      - -o
+      - MaxAuthTries=2
   kbdint:
     <<: *sshd
     hostname: kbdint
