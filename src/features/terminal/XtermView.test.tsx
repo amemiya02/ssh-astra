@@ -1,4 +1,5 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { BroadcastPaneContext, createBroadcast } from "@/features/workspace/broadcast";
 import type { Terminal } from "@xterm/xterm";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -27,7 +28,7 @@ vi.mock("@xterm/addon-webgl", () => ({
 
 beforeAll(startI18n);
 
-function mountTerminal() {
+function mountTerminal(broadcast?: ReturnType<typeof createBroadcast>) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
   vi.stubGlobal("matchMedia", () => ({ addListener() {}, removeListener() {} }));
@@ -39,6 +40,7 @@ function mountTerminal() {
   const container = document.body.appendChild(document.createElement("div"));
   const root = createRoot(container);
   let terminal!: Terminal;
+  const input: string[] = [];
   act(() => root.render(
     <ThemeContext.Provider value={{
       theme: appThemes.light,
@@ -48,15 +50,19 @@ function mountTerminal() {
       setDarkTheme() {},
       preview() {},
     }}>
-      <XtermView active attach={(xterm) => {
-        terminal = xterm;
-        return () => {};
-      }} />
+      <BroadcastPaneContext.Provider value={broadcast && { broadcast, tabId: "work", paneId: "source" }}>
+        <XtermView active attach={(xterm) => {
+          terminal = xterm;
+          const subscription = xterm.onData((data) => input.push(data));
+          return () => subscription.dispose();
+        }} />
+      </BroadcastPaneContext.Provider>
     </ThemeContext.Provider>,
   ));
   return {
     container,
     terminal,
+    input,
     cleanup() {
       act(() => root.unmount());
       container.remove();
@@ -167,5 +173,154 @@ it("zooms the open Terminal with Ctrl or Cmd and wheel, within the saved font-si
   } finally {
     cleanup();
     setSetting(terminalSetting, original);
+  }
+});
+
+function broadcastFixture() {
+  const broadcast = createBroadcast();
+  const inTab = vi.fn();
+  const otherTab = vi.fn();
+  const mounted = mountTerminal(broadcast);
+  broadcast.updateWorkspace("source", ["work", "other"], ["source", "peer", "other-peer", "new-peer"]);
+  const removeSource = broadcast.register("work", "source", vi.fn());
+  const removePeer = broadcast.register("work", "peer", inTab);
+  broadcast.register("other", "other-peer", otherTab);
+  broadcast.toggle("tab", "work");
+  return { broadcast, inTab, otherTab, removeSource, removePeer, ...mounted };
+}
+
+it("sends the focused Terminal's keys to live Broadcast recipients and keeps xterm's protocol replies local", async () => {
+  const { terminal, input, inTab, otherTab, broadcast, cleanup } = broadcastFixture();
+  const key = () => act(() => terminal.textarea!.dispatchEvent(new KeyboardEvent("keydown", {
+    bubbles: true, cancelable: true, key: "x", code: "KeyX", keyCode: 88,
+  })));
+
+  try {
+    key();
+    await act(async () => new Promise<void>((resolve) => terminal.write("\x1b[6n", resolve)));
+    expect(input).toEqual(["x", "\x1b[1;1R"]);
+    expect(inTab.mock.calls).toEqual([["x"]]);
+    expect(otherTab).not.toHaveBeenCalled();
+
+    broadcast.toggle("window", "work");
+    key();
+    expect(inTab.mock.calls).toEqual([["x"], ["x"]]);
+    expect(otherTab.mock.calls).toEqual([["x"]]);
+
+    act(() => terminal.textarea!.blur());
+    key();
+    expect(inTab).toHaveBeenCalledTimes(2);
+    expect(otherTab).toHaveBeenCalledTimes(1);
+  } finally {
+    cleanup();
+  }
+});
+
+it("relays IME text committed by xterm as keyboard input", async () => {
+  const { terminal, input, inTab, cleanup } = broadcastFixture();
+  const textarea = terminal.textarea!;
+  try {
+    await act(async () => {
+      textarea.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+      textarea.value = "终端";
+      textarea.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "终端" }));
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    });
+    expect(input).toEqual(["终端"]);
+    expect(inTab.mock.calls).toEqual([["终端"]]);
+  } finally {
+    cleanup();
+  }
+});
+
+const pasteDialog = () => document.querySelector<HTMLElement>('[role="dialog"]');
+
+function pasteText(terminal: Terminal, text: string) {
+  const event = new Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "clipboardData", { value: { getData: () => text } });
+  act(() => terminal.textarea!.dispatchEvent(event));
+}
+
+async function answerPaste(label: string) {
+  const button = [...pasteDialog()!.querySelectorAll("button")].find((node) => node.textContent === label);
+  expect(button).toBeDefined();
+  await act(async () => button!.click());
+}
+
+it.each([
+  { text: "first\nsecond", expected: "first\rsecond", multiline: true, title: "Paste 2 lines?" },
+  { text: "first\nsec\u202Eond", expected: "first\rsec\u202Eond", multiline: false, title: "Paste text with invisible characters?" },
+])("asks once before Broadcasting $title", async ({ text, expected, multiline, title }) => {
+  const original = getSetting(terminalSetting);
+  setSetting(terminalSetting, { ...original, confirmMultilinePaste: multiline });
+  const { terminal, input, inTab, otherTab, broadcast, cleanup } = broadcastFixture();
+  broadcast.toggle("window", "work");
+
+  try {
+    await act(async () => new Promise<void>((resolve) => terminal.write("\x1b[?2004h", resolve)));
+    pasteText(terminal, text);
+    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+    expect(pasteDialog()?.querySelector("h2")?.textContent).toBe(title);
+    if (!multiline) expect(pasteDialog()?.querySelector("mark")?.title).toBe("Line 2, column 4");
+    expect(input).toEqual([]);
+    expect(inTab).not.toHaveBeenCalled();
+    expect(otherTab).not.toHaveBeenCalled();
+
+    await answerPaste("Cancel");
+    expect(pasteDialog()).toBeNull();
+    expect(input).toEqual([]);
+    expect(inTab).not.toHaveBeenCalled();
+    expect(otherTab).not.toHaveBeenCalled();
+
+    pasteText(terminal, text);
+    await answerPaste("Paste");
+    expect(pasteDialog()).toBeNull();
+    const bytes = "\x1b[200~" + expected + "\x1b[201~";
+    expect(input).toEqual([bytes]);
+    expect(inTab.mock.calls).toEqual([[bytes]]);
+    expect(otherTab.mock.calls).toEqual([[bytes]]);
+  } finally {
+    cleanup();
+    setSetting(terminalSetting, original);
+  }
+});
+
+it("does not add new or reconnected peers to a paste that is awaiting approval", async () => {
+  const { terminal, input, inTab, otherTab, broadcast, removePeer, cleanup } = broadcastFixture();
+  const reconnected = vi.fn();
+  const newlyConnected = vi.fn();
+  broadcast.toggle("window", "work");
+
+  try {
+    pasteText(terminal, "first\nsecond");
+    expect(pasteDialog()).not.toBeNull();
+
+    removePeer();
+    broadcast.register("work", "peer", reconnected);
+    broadcast.register("work", "new-peer", newlyConnected);
+    await answerPaste("Paste");
+    expect(input).toEqual(["first\rsecond"]);
+    expect(otherTab.mock.calls).toEqual([["first\rsecond"]]);
+    expect(inTab).not.toHaveBeenCalled();
+    expect(reconnected).not.toHaveBeenCalled();
+    expect(newlyConnected).not.toHaveBeenCalled();
+  } finally {
+    cleanup();
+  }
+});
+
+it("drops a pending Broadcast paste if the source shell restarts before confirmation", async () => {
+  const { terminal, input, inTab, broadcast, removeSource, cleanup } = broadcastFixture();
+  try {
+    pasteText(terminal, "first\nsecond");
+    expect(pasteDialog()).not.toBeNull();
+
+    removeSource();
+    broadcast.register("work", "source", vi.fn());
+    await answerPaste("Paste");
+    expect(input).toEqual([]);
+    expect(inTab).not.toHaveBeenCalled();
+  } finally {
+    cleanup();
   }
 });

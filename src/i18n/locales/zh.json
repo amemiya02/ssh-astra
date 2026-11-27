@@ -456,6 +456,15 @@
       "runningOf": "{{total}} 条中 {{running}} 条运行中"
     }
   },
+  "broadcast": {
+    "toTab": "广播到本标签页",
+    "toWindow": "广播到本窗口",
+    "tabStatus": "广播 · 本标签页",
+    "namedTabStatus": "广播 · {{title}}",
+    "windowStatus": "广播 · 本窗口",
+    "turnOff": "关闭广播",
+    "recipient": "接收广播输入"
+  },
   "status": {
     "noConnections": "没有连接",
     "connectedTo": "已连接：{{hosts}}",

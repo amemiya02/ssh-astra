@@ -4,18 +4,21 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal as XTerm } from "@xterm/xterm";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { exposeTerminal } from "@/lib/e2e";
 import { openExternalUrl, readClipboardText, writeClipboardText } from "@/lib/ipc/system";
 import { useTheme } from "@/theme/theme-context";
 import { resolveTerminalTheme, terminalSearchDecorations, type TerminalColorScheme } from "@/theme/terminal-themes";
 import { PasteConfirmDialog } from "./PasteConfirmDialog";
 import { TerminalSearchBar, type SearchDirection, type SearchResults } from "./TerminalSearchBar";
+import { BroadcastPaneContext, type Broadcast } from "@/features/workspace/broadcast";
 import { currentPlatform, matchTerminalShortcut } from "@/features/workspace/shortcuts";
 import { planPaste, type PendingPaste } from "./terminal-input";
 import { terminalLinkDestination } from "./terminal-links";
 import { zoomTerminalFont, type TerminalPrefs } from "./terminal-prefs";
 import { useTerminalPrefs } from "./terminal-prefs-context";
+
+type BroadcastRecipients = ReturnType<Broadcast["capture"]>;
 
 export const scrollbackLines = 10_000;
 
@@ -47,9 +50,11 @@ function appearanceOptions(
  */
 export function XtermView({ label, active, colorScheme, onTitleChange, attach }: XtermViewProps) {
   const { theme } = useTheme();
+  const { broadcast, paneId } = useContext(BroadcastPaneContext) ?? {};
   const { prefs } = useTerminalPrefs();
   const containerRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
+  const applyingPaste = useRef(false);
   const fitRef = useRef<FitAddon | null>(null);
   const searchRef = useRef<SearchAddon | null>(null);
   const rendererRef = useRef<Renderer | null>(null);
@@ -60,7 +65,7 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
   const onTitleChangeRef = useRef(onTitleChange);
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<SearchResults | null>(null);
-  const [pendingPaste, setPendingPaste] = useState<PendingPaste | null>(null);
+  const [pendingPaste, setPendingPaste] = useState<{ preview: PendingPaste; recipients: BroadcastRecipients } | null>(null);
   const [linkDestination, setLinkDestination] = useState<string | null>(null);
 
   useEffect(() => {
@@ -70,13 +75,27 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
     onTitleChangeRef.current = onTitleChange;
   });
 
-  /** Pastes through xterm (so bracketed paste works), asking first when the plan requires it. */
-  const requestPaste = useCallback((text: string) => {
+  /** Use the source xterm's line endings and bracketed-paste mode for every recipient. */
+  const applyPaste = useCallback((text: string, recipients: BroadcastRecipients) => {
+    const xterm = xtermRef.current;
+    if (!xterm || (recipients && !recipients.canPaste())) return;
+    const relay = recipients && xterm.onData(recipients.send);
+    applyingPaste.current = true;
+    try {
+      xterm.paste(text);
+    } finally {
+      applyingPaste.current = false;
+      relay?.dispose();
+    }
+  }, []);
+
+  const requestPaste = useCallback((text: string, recipients: BroadcastRecipients) => {
+    if (recipients && !recipients.canPaste()) return;
     const plan = planPaste(text, prefsRef.current.confirmMultilinePaste);
     if (!plan) return;
-    if ("ask" in plan) setPendingPaste(plan.ask);
-    else xtermRef.current?.paste(plan.paste);
-  }, []);
+    if ("ask" in plan) setPendingPaste({ preview: plan.ask, recipients });
+    else applyPaste(plan.paste, recipients);
+  }, [applyPaste]);
 
   const fitIfVisible = useCallback(() => {
     // A hidden pane has no size. Fitting it would shrink the shell to a sliver.
@@ -144,16 +163,21 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
     });
     const onTitle = xterm.onTitleChange((title) => onTitleChangeRef.current?.(title));
 
+    const captureRecipients = () => paneId === undefined ? undefined : broadcast?.capture(paneId);
+
     // Every paste goes through the planner; capture runs before xterm's own handler.
     const onPaste = (event: ClipboardEvent) => {
       event.preventDefault();
       event.stopPropagation();
-      requestPaste(event.clipboardData?.getData("text/plain") ?? "");
+      requestPaste(event.clipboardData?.getData("text/plain") ?? "", captureRecipients());
     };
     const onContextMenu = (event: MouseEvent) => {
       if (!prefsRef.current.rightClickPaste) return;
       event.preventDefault();
-      readClipboardText().then(requestPaste, () => undefined);
+      const recipients = captureRecipients();
+      void readClipboardText().then((text) => {
+        if (xtermRef.current === xterm) requestPaste(text, recipients);
+      }, () => undefined);
     };
     const onZoomWheel = (event: WheelEvent) => {
       if ((!event.ctrlKey && !event.metaKey) || event.altKey || event.shiftKey || event.deltaY === 0) return;
@@ -166,6 +190,7 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
     container.addEventListener("wheel", onZoomWheel, { capture: true, passive: false });
 
     const detach = attachRef.current(xterm);
+    const stopBroadcastInput = broadcast && observeBroadcastKeys(container, xterm, captureRecipients, () => applyingPaste.current);
     const unexpose = exposeTerminal(xterm);
     const observer = new ResizeObserver(fitIfVisible);
     observer.observe(container);
@@ -173,6 +198,7 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
     return () => {
       observer.disconnect();
       clearTimeout(copyTimer);
+      stopBroadcastInput?.();
       container.removeEventListener("paste", onPaste, true);
       container.removeEventListener("contextmenu", onContextMenu);
       container.removeEventListener("wheel", onZoomWheel, true);
@@ -187,7 +213,7 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
       searchRef.current = null;
       rendererRef.current = null;
     };
-  }, [fitIfVisible, requestPaste]);
+  }, [broadcast, fitIfVisible, paneId, requestPaste]);
 
   useEffect(() => {
     const xterm = xtermRef.current;
@@ -246,15 +272,62 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
       )}
       {searching && <TerminalSearchBar results={results} onFind={find} onClose={closeSearch} />}
       <PasteConfirmDialog
-        paste={pendingPaste}
+        paste={pendingPaste?.preview ?? null}
         onConfirm={() => {
-          if (pendingPaste) xtermRef.current?.paste(pendingPaste.text);
+          if (pendingPaste) applyPaste(pendingPaste.preview.text, pendingPaste.recipients);
           setPendingPaste(null);
         }}
         onCancel={() => setPendingPaste(null)}
       />
     </div>
   );
+}
+
+/** xterm also emits onData for shell queries and focus reports. Relay only keyboard input. */
+function observeBroadcastKeys(
+  container: HTMLElement, xterm: XTerm, capture: () => BroadcastRecipients, pasting: () => boolean,
+) {
+  const textarea = xterm.textarea;
+  if (!textarea) return;
+  let keyEvent: Event | undefined;
+  let composition: BroadcastRecipients;
+  let compositionTimer: ReturnType<typeof setTimeout> | undefined;
+  const keyboardEvents = ["keydown", "keypress", "input"];
+  const onKeyboardEvent = (event: Event) => {
+    if (event.target === textarea && textarea.ownerDocument.activeElement === textarea) keyEvent = event;
+  };
+  const expectComposition = () => {
+    if (textarea.ownerDocument.activeElement !== textarea) return;
+    const recipients = capture();
+    if (!recipients) return;
+    composition = recipients;
+    clearTimeout(compositionTimer);
+    // xterm finalizes IME text in a zero-delay timer scheduled by its earlier textarea listener.
+    compositionTimer = setTimeout(() => { composition = undefined; }, 0);
+  };
+  const onImeKey = (event: KeyboardEvent) => {
+    if (event.keyCode === 229) expectComposition();
+  };
+  const onData = xterm.onData((data) => {
+    if (pasting() || textarea.ownerDocument.activeElement !== textarea || !data) return;
+    if (keyEvent && keyEvent.eventPhase !== Event.NONE) {
+      capture()?.send(data);
+    } else if (composition && (data === "\x7f" || (!/[\p{Cc}]/u.test(data) && textarea.value.endsWith(data)))) {
+      // A parser-generated protocol reply can arrive while the IME timer is pending.
+      composition.send(data);
+      composition = undefined;
+    }
+  });
+  for (const event of keyboardEvents) container.addEventListener(event, onKeyboardEvent, true);
+  textarea.addEventListener("compositionend", expectComposition);
+  textarea.addEventListener("keydown", onImeKey, true);
+  return () => {
+    clearTimeout(compositionTimer);
+    for (const event of keyboardEvents) container.removeEventListener(event, onKeyboardEvent, true);
+    textarea.removeEventListener("compositionend", expectComposition);
+    textarea.removeEventListener("keydown", onImeKey, true);
+    onData.dispose();
+  };
 }
 
 interface Renderer {

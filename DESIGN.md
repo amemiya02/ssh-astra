@@ -317,7 +317,7 @@ Pickers list light themes first, then dark, Astra's own at the head of each (`ap
 
 **Workspace.** Below the tab strip, the Terminal panel and the File panel (docked right, default 340px, min 240px; or bottom, min 140px; keeping its pixel size as the window resizes) are separated by a 6px gutter, with 6px of ground at the sides and bottom of the main column. Home, Settings and Port forwards are tabs that fill the workspace in a `surface` panel.
 
-Within a tab, the focused pane splits to the right or down. Nested panes share a 1px divider with an 8px drag target. Dividers can also be moved with the arrow keys when focused. The focused pane keeps the primary inset ring, and other panes are dimmed.
+Within a tab, the focused pane splits to the right or down. Nested panes share a 1px divider with an 8px drag target. Dividers can also be moved with the arrow keys when focused. The focused pane keeps the primary inset ring, and other panes are dimmed. Broadcast recipients also show a dashed 1px warning-colour border inset by 2px, including the focused pane. The border sits above the Terminal canvas and leaves room for the focus ring.
 
 **Gutters are the handles.** The 6px gap is the resize handle itself: a 2px by 28px grip in `border` at rest, `muted-foreground/40` on hover, `ring` while focused or dragging.
 
@@ -392,6 +392,8 @@ The Host's tile wherever a Host appears: its initials on its hue at 15%, lettere
 
 ### Status bar
 24px on the ground with a 1px top rule, `text-xs` muted foreground, segments closed by 1px rules; clickable segments take `accent` on hover and an inset focus ring. Every segment is live state, never a placeholder ("No Connections" when there are none).
+
+While Broadcast is active, the first segment shows a warning-colour radio icon and the current scope. Clicking it turns Broadcast off.
 
 ### Theme gallery (signature)
 Settings lists every theme as a card (10px radius, 6px padding, auto-fill at min 10rem, 12px gaps), light and dark in their own groups. Each card is a miniature of the window drawn from that theme's own values (tab strip, sidebar, a few lines of Terminal text, the six ANSI swatches and a primary square) with the name in `text-xs` 500. Checked: primary border, `selected` fill, primary check. Hovering or focusing a card previews that theme across the whole window, Terminals included; leaving restores the committed one; click commits. The status bar's theme menu lists the same themes.

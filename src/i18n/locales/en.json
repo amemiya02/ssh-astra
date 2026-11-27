@@ -456,6 +456,15 @@
       "runningOf": "{{running}} of {{total}} running"
     }
   },
+  "broadcast": {
+    "toTab": "Broadcast to this tab",
+    "toWindow": "Broadcast to this window",
+    "tabStatus": "Broadcast · This tab",
+    "namedTabStatus": "Broadcast · {{title}}",
+    "windowStatus": "Broadcast · This window",
+    "turnOff": "Turn off Broadcast",
+    "recipient": "Receives Broadcast input"
+  },
   "status": {
     "noConnections": "No Connections",
     "connectedTo": "Connected to {{hosts}}",
