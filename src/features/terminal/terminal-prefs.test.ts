@@ -23,6 +23,7 @@ describe("terminal preferences", () => {
     expect(prefs.fontSize).toBe(13);
     expect(prefs.fontFamily).toContain("monospace");
     expect(prefs.ligatures).toBe(false);
+    expect(prefs.inlineImages).toBe(true);
     expect(prefs.colorScheme).toBe("app");
     expect(prefs.bell).toBe("none");
     expect(prefs.copyOnSelect).toBe(true);
@@ -48,6 +49,7 @@ describe("terminal preferences", () => {
       titleSource: "host" as const,
       bell: "sound" as const,
       ligatures: true,
+      inlineImages: false,
       colorScheme: "imported:sample" as const,
       importedSchemes: [{ id: "imported:sample" as const, name: "Sample", palette }],
       highlighting: {
@@ -96,12 +98,20 @@ describe("terminal preferences", () => {
 
   it("keeps the valid parts of a damaged or older saved value and defaults the rest", async () => {
     const backend = memoryBackend({
-      terminal: { fontSize: 400, colorScheme: "neon", copyOnSelect: false, fontFamily: "", shellIntegration: "no" },
+      terminal: {
+        fontSize: 400,
+        colorScheme: "neon",
+        copyOnSelect: false,
+        fontFamily: "",
+        shellIntegration: "no",
+        inlineImages: "off",
+      },
     });
     expect((await openSettings(backend)).get(terminalSetting)).toEqual({
       ...defaultTerminalPrefs,
       fontSize: 32,
       copyOnSelect: false,
+      inlineImages: true,
     });
   });
 
