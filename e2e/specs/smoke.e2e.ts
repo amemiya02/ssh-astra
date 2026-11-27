@@ -158,6 +158,7 @@ describe("sshastra", () => {
 
   it("restores the tab and split layout after restarting and connects only on request", async () => {
     const name = "E2E restored sshd";
+    const firstHostConnected = await $('[role="tab"][aria-selected="true"] [data-status="connected"]').isExisting();
     await $('[role="tab"][id]').click();
     await $("button=New Host").click();
     await $("#host-form-name").setValue(name);
@@ -197,7 +198,15 @@ describe("sshastra", () => {
       }, tab.replace(/^tab-/, ""), focus);
     }, { timeoutMsg: "The active tab and split focus were never saved." });
 
-    await restartSmokeApp(browser);
+    await restartSmokeApp(browser, async () => {
+      const quitDialog = $('[role="dialog"]');
+      await expect(quitDialog.$("h2")).toHaveText("Quit SSH Astra?");
+      // The split shares one Connection. The preceding smoke case may have left another open.
+      const connectionCount = firstHostConnected ? "2 Connections" : "1 Connection";
+      await expect(quitDialog.$(`li=${connectionCount}`)).toBeDisplayed();
+      // The quit can stop WebDriver before the click response arrives.
+      await quitDialog.$("button=Quit").click().catch(() => undefined);
+    });
     await prepareWindow();
     await expect(activeTab()).toHaveAttribute("id", tab);
     expect(await $$('[role="tab"]').map((tab) => tab.getAttribute("id"))).toEqual(tabs);

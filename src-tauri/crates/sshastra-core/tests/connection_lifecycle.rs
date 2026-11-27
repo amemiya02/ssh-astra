@@ -358,6 +358,7 @@ async fn a_file_panel_browses_over_the_terminals_connection() {
     let fx = Fixture::new(sshd);
     fx.server_sees(0).await;
     let prompter = CountingPrompter::new(&fx.sshd);
+    assert_eq!(fx.manager.live_count(), 0);
     assert!(fx.manager.live(&fx.host.id).await.is_none());
     let mut terminal = open_terminal(&fx.connect(&prompter).await).await;
 
@@ -371,14 +372,17 @@ async fn a_file_panel_browses_over_the_terminals_connection() {
 
     fx.server_sees(1).await;
     assert_eq!(prompter.passwords_asked(), 1);
+    assert_eq!(fx.manager.live_count(), 1);
 
     // The File panel alone keeps the Connection open...
     terminal.close().unwrap();
     tokio::time::sleep(Duration::from_millis(500)).await;
     fx.server_sees(1).await;
+    assert_eq!(fx.manager.live_count(), 1);
     // ...until it closes too.
     drop(files);
     fx.server_sees(0).await;
+    assert_eq!(fx.manager.live_count(), 0);
 }
 
 /// A Host on the Jump host's private network.

@@ -15,6 +15,7 @@ export function WorkspaceSection() {
   const orientationLabel = t(settingRows.tabOrientation.title);
   const groupTabsLabel = t(settingRows.groupTabsByHost.title);
   const confirmCloseLabel = t(settingRows.confirmClose.title);
+  const confirmQuitLabel = t(settingRows.confirmQuit.title);
 
   return (
     <>
@@ -59,6 +60,17 @@ export function WorkspaceSection() {
             { value: "off", label: t("settings.off") },
           ]}
           onChange={(value) => setPrefs({ ...prefs, confirmClose: value === "on" })}
+        />
+      </SettingRow>
+      <SettingRow setting={settingRows.confirmQuit}>
+        <SegmentedControl
+          label={confirmQuitLabel}
+          value={prefs.confirmQuit ? "on" : "off"}
+          options={[
+            { value: "on", label: t("settings.on") },
+            { value: "off", label: t("settings.off") },
+          ]}
+          onChange={(value) => setPrefs({ ...prefs, confirmQuit: value === "on" })}
         />
       </SettingRow>
     </>
