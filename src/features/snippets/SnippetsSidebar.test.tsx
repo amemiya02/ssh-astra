@@ -4,10 +4,14 @@ import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { createBroadcast } from "@/features/workspace/broadcast";
 import { startI18n } from "@/i18n";
-import { listSnippets, saveSnippet, type Snippet } from "@/lib/ipc/snippets";
+import { exportSnippets, importSnippets, listSnippets, saveSnippet, type Snippet } from "@/lib/ipc/snippets";
+import { pickOpenPath, pickSavePath } from "@/lib/ipc/system";
 import { SnippetsSidebar } from "./SnippetsSidebar";
 
-vi.mock("@/lib/ipc/snippets", () => ({ listSnippets: vi.fn(), saveSnippet: vi.fn(), deleteSnippet: vi.fn() }));
+vi.mock("@/lib/ipc/snippets", () => ({
+  listSnippets: vi.fn(), saveSnippet: vi.fn(), deleteSnippet: vi.fn(), importSnippets: vi.fn(), exportSnippets: vi.fn(),
+}));
+vi.mock("@/lib/ipc/system", () => ({ pickOpenPath: vi.fn(), pickSavePath: vi.fn() }));
 
 const snippets: Snippet[] = [
   { id: "global", name: "Show path", command: "pwd", group: null, hostIds: [], sendEnter: false },
@@ -87,4 +91,32 @@ it("retains the editor and the saved list when an edit fails", async () => {
   expect(document.querySelector("[role=dialog] [role=alert]")?.textContent).toContain("Disk is full");
   expect(mount.textContent).toContain("Show path");
   expect(write).not.toHaveBeenCalled();
+});
+
+it("uses native pickers for Snippet transfer, reports duplicate names, and only saves the imported commands", async () => {
+  const { render, write } = fixture();
+  const file = "/tmp/sshastra-snippets.json";
+  const imported = { ...snippets[0]!, id: "uptime", name: "Check uptime", command: "uptime" };
+  vi.mocked(pickSavePath).mockResolvedValueOnce(null).mockResolvedValueOnce(file);
+  vi.mocked(pickOpenPath).mockResolvedValueOnce(null).mockResolvedValueOnce(file);
+  vi.mocked(importSnippets).mockResolvedValue({ added: [imported], skipped: ["Show path", "Check uptime", "Show path"] });
+  await render();
+
+  expect(button("Export Snippets")).toBeDefined();
+  await act(async () => button("Export Snippets")!.click());
+  expect(exportSnippets).not.toHaveBeenCalled();
+  await act(async () => button("Export Snippets")!.click());
+  expect(exportSnippets).toHaveBeenCalledExactlyOnceWith(file);
+
+  await act(async () => button("Import Snippets")!.click());
+  expect(importSnippets).not.toHaveBeenCalled();
+  expect(document.querySelector("[role=dialog]")).toBeNull();
+  await act(async () => button("Import Snippets")!.click());
+  expect(importSnippets).toHaveBeenCalledExactlyOnceWith(file);
+  const report = document.querySelector("[role=dialog]")!;
+  expect(report.textContent).toContain("Imported 1 Snippet.");
+  expect([...report.querySelectorAll("li")].map((item) => item.textContent)).toEqual(["Show path", "Check uptime", "Show path"]);
+  expect(write).not.toHaveBeenCalled();
+  act(() => button("Close")!.click());
+  expect(mount.textContent).toContain("Check uptime");
 });

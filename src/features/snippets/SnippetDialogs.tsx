@@ -6,7 +6,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import type { Host, HostId } from "@/lib/ipc/hosts";
-import type { Snippet, SnippetDraft } from "@/lib/ipc/snippets";
+import type { Snippet, SnippetDraft, SnippetImportReport } from "@/lib/ipc/snippets";
 import type { parseSnippet } from "./snippet-template";
 
 const newSnippet: SnippetDraft = { name: "", command: "", group: null, hostIds: [], sendEnter: true };
@@ -112,6 +112,29 @@ export function DeleteSnippetDialog({ snippet, busy, error, onConfirm, onCancel 
       <DialogFooter>
         <Button variant="outline" onClick={onCancel} disabled={busy}>{t("snippets.cancel")}</Button>
         <Button variant="destructive" onClick={onConfirm} disabled={busy}>{t("snippets.delete")}</Button>
+      </DialogFooter>
+    </DialogContent>
+  );
+}
+
+export function SnippetImportDialog({ report, onClose }: { report: SnippetImportReport; onClose(): void }) {
+  const { t } = useTranslation();
+  return (
+    <DialogContent showCloseButton={false} className={dialogClass}>
+      <DialogHeader>
+        <DialogTitle>{t("snippets.transfer.reportTitle")}</DialogTitle>
+        <DialogDescription>{t("snippets.transfer.imported", { count: report.added.length })}</DialogDescription>
+      </DialogHeader>
+      {report.skipped.length > 0 && (
+        <section className="grid min-w-0 gap-1.5">
+          <h3 className="text-sm font-medium">{t("snippets.transfer.skipped")}</h3>
+          <ul className="text-muted-foreground grid max-h-48 gap-1 overflow-y-auto pl-4 text-sm">
+            {report.skipped.map((name, index) => <li key={index} className="list-disc break-all">{name}</li>)}
+          </ul>
+        </section>
+      )}
+      <DialogFooter>
+        <Button type="button" onClick={onClose}>{t("snippets.transfer.close")}</Button>
       </DialogFooter>
     </DialogContent>
   );

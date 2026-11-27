@@ -1,8 +1,11 @@
 //! IPC for the saved Snippet library.
 
+use std::path::PathBuf;
 use std::sync::Mutex;
 
-use sshastra_core::snippets::{Snippet, SnippetDraft, SnippetId, SnippetStore};
+use sshastra_core::snippets::{
+    Snippet, SnippetDraft, SnippetId, SnippetImportReport, SnippetStore,
+};
 use tauri::State;
 
 use crate::error::{CommandError, CommandResult};
@@ -41,4 +44,17 @@ pub fn snippet_save(
 #[tauri::command]
 pub fn snippet_delete(snippets: State<'_, SnippetsState>, id: SnippetId) -> CommandResult<()> {
     snippets.with(|store| Ok(store.delete(&id)?))
+}
+
+#[tauri::command]
+pub fn snippets_export(snippets: State<'_, SnippetsState>, path: PathBuf) -> CommandResult<()> {
+    snippets.with(|store| Ok(store.export_to(&path)?))
+}
+
+#[tauri::command]
+pub fn snippets_import(
+    snippets: State<'_, SnippetsState>,
+    path: PathBuf,
+) -> CommandResult<SnippetImportReport> {
+    snippets.with(|store| Ok(store.import_from(&path)?))
 }

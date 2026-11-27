@@ -117,3 +117,113 @@ fn a_failed_atomic_replacement_leaves_the_previous_snapshot_and_cleans_its_stage
     store.delete(&original.id).unwrap();
     assert!(SnippetStore::open(&path).unwrap().list().is_empty());
 }
+
+#[test]
+fn export_and_import_round_trip_snippet_drafts_and_assign_new_ids() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("snippets.json");
+    let export = dir.path().join("sshastra-snippets.json");
+    let destination = dir.path().join("destination.json");
+    let mut store = SnippetStore::open(&path).unwrap();
+    let original = store.upsert(None, draft()).unwrap();
+    let original_bytes = fs::read(&path).unwrap();
+    store.export_to(&export).unwrap();
+
+    let mut imported = SnippetStore::open(&destination).unwrap();
+    let report = imported.import_from(&export).unwrap();
+    assert!(report.skipped.is_empty());
+    assert_eq!(report.added.len(), 1);
+    assert_eq!(report.added[0].draft, original.draft);
+    assert_ne!(report.added[0].id, original.id);
+    assert_eq!(
+        SnippetStore::open(&destination).unwrap().list(),
+        report.added
+    );
+    assert_eq!(fs::read(&path).unwrap(), original_bytes);
+}
+
+#[test]
+fn import_skips_every_duplicate_name_against_saved_and_earlier_imported_snippets() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("snippets.json");
+    let incoming = dir.path().join("incoming.json");
+    let mut store = SnippetStore::open(&path).unwrap();
+    let original = store.upsert(None, draft()).unwrap();
+    fs::write(
+        &incoming,
+        r#"{"format":"sshastra-snippets","version":1,"snippets":[
+            {"id":"a","name":" Check disk ","command":"different"},
+            {"id":"b","name":" uptime  ","command":"first"},
+            {"id":"c","name":"uptime","command":"second"},
+            {"id":"d","name":"check disk","command":"different case"},
+            {"id":"e","name":"Check disk","command":"different again"}
+        ]}"#,
+    )
+    .unwrap();
+
+    let report = store.import_from(&incoming).unwrap();
+    assert_eq!(report.skipped, ["Check disk", "uptime", "Check disk"]);
+    assert_eq!(report.added.len(), 2);
+    assert_eq!(report.added[0].draft.name, "uptime");
+    assert_eq!(report.added[0].draft.command, "first");
+    assert_eq!(report.added[1].draft.name, "check disk");
+    assert_eq!(store.list()[0], original);
+    assert_eq!(SnippetStore::open(&path).unwrap().list(), store.list());
+
+    let saved = fs::read(&path).unwrap();
+    let repeated = store.import_from(&incoming).unwrap();
+    assert!(repeated.added.is_empty());
+    assert_eq!(
+        repeated.skipped,
+        ["Check disk", "uptime", "uptime", "check disk", "Check disk"]
+    );
+    assert_eq!(fs::read(&path).unwrap(), saved);
+}
+
+#[test]
+fn rejected_imports_leave_the_preexisting_library_intact() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("snippets.json");
+    let incoming = dir.path().join("incoming.json");
+    let backup = dir.path().join("previous.json");
+    let mut store = SnippetStore::open(&path).unwrap();
+    let original = store.upsert(None, draft()).unwrap();
+    let saved = fs::read(&path).unwrap();
+
+    for malformed in [
+        r#"{"format":"sshastra-hosts","version":1,"snippets":[]}"#,
+        r#"{"version":1,"snippets":[{"id":"valid","name":"New","command":"pwd"},
+            {"id":"bad","name":"Check disk","command":" "}]}"#,
+        r#"{"version":1,"snippets":[{"id":"bad","name":"New","command":"pwd","hostIds":"all"}]}"#,
+    ] {
+        fs::write(&incoming, malformed).unwrap();
+        assert!(matches!(
+            store.import_from(&incoming),
+            Err(SnippetStoreError::Corrupt(_))
+        ));
+        assert_eq!(store.list(), std::slice::from_ref(&original));
+        assert_eq!(fs::read(&path).unwrap(), saved);
+    }
+    fs::write(&incoming, r#"{"version":99,"snippets":[]}"#).unwrap();
+    assert!(matches!(
+        store.import_from(&incoming),
+        Err(SnippetStoreError::UnsupportedVersion(99))
+    ));
+    assert_eq!(store.list(), std::slice::from_ref(&original));
+    assert_eq!(fs::read(&path).unwrap(), saved);
+
+    fs::write(
+        &incoming,
+        r#"{"version":1,"snippets":[{"id":"a","name":"New","command":"pwd"}]}"#,
+    )
+    .unwrap();
+    fs::rename(&path, &backup).unwrap();
+    fs::create_dir(&path).unwrap();
+    assert!(matches!(
+        store.import_from(&incoming),
+        Err(SnippetStoreError::Io { .. })
+    ));
+    assert_eq!(store.list(), std::slice::from_ref(&original));
+    assert_eq!(fs::read(&backup).unwrap(), saved);
+    assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 3);
+}

@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::fmt;
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -12,10 +12,17 @@ use crate::fs_util::write_atomically;
 use crate::hosts::HostId;
 
 const CURRENT_VERSION: u32 = 1;
+const EXPORT_FORMAT: &str = "sshastra-snippets";
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct SnippetId(String);
+
+impl SnippetId {
+    fn generate() -> Self {
+        Self(uuid::Uuid::new_v4().to_string())
+    }
+}
 
 impl fmt::Display for SnippetId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -71,6 +78,12 @@ pub struct Snippet {
     pub draft: SnippetDraft,
 }
 
+#[derive(Debug, Serialize)]
+pub struct SnippetImportReport {
+    pub added: Vec<Snippet>,
+    pub skipped: Vec<String>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum SnippetStoreError {
     #[error("could not access Snippets at {path}: {source}")]
@@ -91,6 +104,7 @@ pub enum SnippetStoreError {
 
 #[derive(Deserialize)]
 struct FileVersion {
+    format: Option<String>,
     version: u32,
 }
 
@@ -101,6 +115,8 @@ struct FileV1 {
 
 #[derive(Serialize)]
 struct FileRef<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    format: Option<&'static str>,
     version: u32,
     snippets: &'a [Snippet],
 }
@@ -136,7 +152,7 @@ impl SnippetStore {
         let snippet = match id {
             None => {
                 let snippet = Snippet {
-                    id: SnippetId(uuid::Uuid::new_v4().to_string()),
+                    id: SnippetId::generate(),
                     draft,
                 };
                 snippets.push(snippet.clone());
@@ -160,6 +176,52 @@ impl SnippetStore {
         self.save(snippets)
     }
 
+    /// Export the full Snippet library, including Snippets scoped to other Hosts.
+    pub fn export_to(&self, path: &Path) -> Result<(), SnippetStoreError> {
+        write_file(path, &self.snippets, Some(EXPORT_FORMAT))
+    }
+
+    /// Import a valid Snippet file, skipping names already taken in the library or file.
+    pub fn import_from(&mut self, path: &Path) -> Result<SnippetImportReport, SnippetStoreError> {
+        let bytes = fs::read(path).map_err(|source| SnippetStoreError::Io {
+            path: path.to_owned(),
+            source,
+        })?;
+        let incoming = parse_file(&bytes)?;
+        let mut names: HashSet<_> = self
+            .snippets
+            .iter()
+            .map(|snippet| snippet.draft.name.trim().to_owned())
+            .collect();
+        let mut added = Vec::new();
+        let mut skipped = Vec::new();
+        for (index, snippet) in incoming.into_iter().enumerate() {
+            if snippet.id.0.is_empty() {
+                return Err(SnippetStoreError::Corrupt(format!(
+                    "Snippet {} is missing its ID",
+                    index + 1
+                )));
+            }
+            let draft = snippet.draft.normalized().map_err(|error| {
+                SnippetStoreError::Corrupt(format!("Snippet {}: {error}", index + 1))
+            })?;
+            if names.insert(draft.name.clone()) {
+                added.push(Snippet {
+                    id: SnippetId::generate(),
+                    draft,
+                });
+            } else {
+                skipped.push(draft.name);
+            }
+        }
+        if !added.is_empty() {
+            let mut next = self.snippets.clone();
+            next.extend(added.iter().cloned());
+            self.save(next)?;
+        }
+        Ok(SnippetImportReport { added, skipped })
+    }
+
     fn index(&self, id: &SnippetId) -> Result<usize, SnippetStoreError> {
         self.snippets
             .iter()
@@ -168,31 +230,47 @@ impl SnippetStore {
     }
 
     fn save(&mut self, snippets: Vec<Snippet>) -> Result<(), SnippetStoreError> {
-        let bytes = serde_json::to_vec_pretty(&FileRef {
-            version: CURRENT_VERSION,
-            snippets: &snippets,
-        })
-        .map_err(|error| SnippetStoreError::Corrupt(error.to_string()))?;
-        write_atomically(&self.path, &bytes).map_err(|source| SnippetStoreError::Io {
-            path: self.path.clone(),
-            source,
-        })?;
+        write_file(&self.path, &snippets, None)?;
         self.snippets = snippets;
         Ok(())
     }
 }
 
-fn migrate(bytes: &[u8]) -> Result<Vec<Snippet>, SnippetStoreError> {
+fn write_file(
+    path: &Path,
+    snippets: &[Snippet],
+    format: Option<&'static str>,
+) -> Result<(), SnippetStoreError> {
+    let bytes = serde_json::to_vec_pretty(&FileRef {
+        format,
+        version: CURRENT_VERSION,
+        snippets,
+    })
+    .map_err(|error| SnippetStoreError::Corrupt(error.to_string()))?;
+    write_atomically(path, &bytes).map_err(|source| SnippetStoreError::Io {
+        path: path.to_owned(),
+        source,
+    })
+}
+
+fn parse_file(bytes: &[u8]) -> Result<Vec<Snippet>, SnippetStoreError> {
     let corrupt = |error: serde_json::Error| SnippetStoreError::Corrupt(error.to_string());
-    let FileVersion { version } = serde_json::from_slice(bytes).map_err(corrupt)?;
-    let snippets = match version {
-        1 => {
-            serde_json::from_slice::<FileV1>(bytes)
-                .map_err(corrupt)?
-                .snippets
-        }
-        other => return Err(SnippetStoreError::UnsupportedVersion(other)),
-    };
+    let FileVersion { format, version } = serde_json::from_slice(bytes).map_err(corrupt)?;
+    if let Some(other) = format.filter(|format| format != EXPORT_FORMAT) {
+        return Err(SnippetStoreError::Corrupt(format!(
+            "not an sshastra Snippet library (format {other:?})"
+        )));
+    }
+    match version {
+        1 => Ok(serde_json::from_slice::<FileV1>(bytes)
+            .map_err(corrupt)?
+            .snippets),
+        other => Err(SnippetStoreError::UnsupportedVersion(other)),
+    }
+}
+
+fn migrate(bytes: &[u8]) -> Result<Vec<Snippet>, SnippetStoreError> {
+    let snippets = parse_file(bytes)?;
     let mut ids = HashSet::new();
     for snippet in &snippets {
         if snippet.id.0.is_empty() || !ids.insert(&snippet.id) {
