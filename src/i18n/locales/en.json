@@ -1622,6 +1622,10 @@
       "concurrency": {
         "label": "Simultaneous transfers",
         "description": "How many uploads and downloads run at once; the rest wait their turn. A folder's files copy one after another."
+      },
+      "preventSleep": {
+        "label": "Prevent sleep during transfers",
+        "description": "Keeps uploads, downloads, and copies running when the computer is idle."
       }
     },
     "notifications": {

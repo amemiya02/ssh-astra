@@ -1622,6 +1622,10 @@
       "concurrency": {
         "label": "同时传输数",
         "description": "同时进行的上传和下载数量，其余的排队等待。文件夹内的文件逐个复制。"
+      },
+      "preventSleep": {
+        "label": "传输期间阻止系统睡眠",
+        "description": "电脑空闲时继续上传、下载和复制文件。"
       }
     },
     "notifications": {

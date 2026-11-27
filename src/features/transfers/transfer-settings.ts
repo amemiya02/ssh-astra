@@ -1,19 +1,19 @@
 import { defineSection } from "@/lib/storage";
 
 /**
- * The `transfers` section of the settings file. The core applies `concurrency` as soon as
- * it is saved (`sshastra_core::files::TransferSettings`); lowering it lets running
- * transfers finish. `panelCollapsed` is the transfer panel's own UI state.
+ * The `transfers` section of the settings file. The backend applies `concurrency` and
+ * `preventSleep` as soon as they are saved. `panelCollapsed` is the transfer panel's UI state.
  */
 export interface TransferSettings {
   /** How many transfers run at once; the rest wait in order. */
   concurrency: number;
+  preventSleep: boolean;
   panelCollapsed: boolean;
 }
 
 export const maxConcurrency = 10;
 
-export const defaultTransferSettings: TransferSettings = { concurrency: 3, panelCollapsed: false };
+export const defaultTransferSettings: TransferSettings = { concurrency: 3, preventSleep: true, panelCollapsed: false };
 
 /** The choices on the Settings tab. */
 export const concurrencyChoices = [1, 2, 3, 5, 8] as const;
@@ -24,5 +24,5 @@ export const transferSetting = defineSection<TransferSettings>("transfers", defa
     typeof value.concurrency === "number" && Number.isFinite(value.concurrency)
       ? Math.min(maxConcurrency, Math.max(1, Math.round(value.concurrency)))
       : defaultTransferSettings.concurrency;
-  return { concurrency, panelCollapsed: value.panelCollapsed === true };
+  return { concurrency, preventSleep: value.preventSleep !== false, panelCollapsed: value.panelCollapsed === true };
 });
