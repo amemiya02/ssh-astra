@@ -127,6 +127,7 @@ fn saving_after_upgrading_from_v0_1_0_keeps_every_host() {
                 forward_agent: false,
                 allow_legacy_algorithms: false,
                 open_on_startup: false,
+                agent_access: Default::default(),
                 proxy: Default::default(),
                 keepalive_seconds: None,
                 post_login_command: None,
@@ -178,6 +179,7 @@ fn saving_automatic_auth_keeps_the_explicit_auth_of_v0_3_0_hosts() {
                     forward_agent: false,
                     allow_legacy_algorithms: false,
                     open_on_startup: false,
+                    agent_access: Default::default(),
                     proxy: Default::default(),
                     keepalive_seconds: None,
                     post_login_command: None,
@@ -190,7 +192,7 @@ fn saving_automatic_auth_keeps_the_explicit_auth_of_v0_3_0_hosts() {
     );
 
     let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    assert_eq!(saved["version"], 21);
+    assert_eq!(saved["version"], 22);
     assert_eq!(saved["hosts"][2]["auth"], json!({ "type": "auto" }));
     assert_eq!(HostStore::open(path).unwrap().list(), expected);
 }
@@ -222,7 +224,7 @@ fn version_6_hosts_keep_their_authentication_and_default_to_identities_only_off(
         )
         .unwrap();
     let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    assert_eq!(saved["version"], 21);
+    assert_eq!(saved["version"], 22);
     assert_eq!(saved["hosts"][1]["identitiesOnly"], true);
     let reopened = HostStore::open(path).unwrap();
     assert_eq!(
@@ -250,7 +252,7 @@ fn version_8_hosts_inherit_global_keepalive_until_edited() {
         .unwrap();
 
     let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    assert_eq!(saved["version"], 21);
+    assert_eq!(saved["version"], 22);
     assert!(saved["hosts"][0].get("keepaliveSeconds").is_none());
     assert_eq!(saved["hosts"][1]["keepaliveSeconds"], 0);
     assert!(saved["hosts"][2].get("keepaliveSeconds").is_none());
@@ -281,7 +283,7 @@ fn version_9_hosts_have_no_post_login_command_until_edited() {
         .unwrap();
 
     let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    assert_eq!(saved["version"], 21);
+    assert_eq!(saved["version"], 22);
     assert!(saved["hosts"][0].get("postLoginCommand").is_none());
     assert_eq!(saved["hosts"][1]["postLoginCommand"], command);
     assert!(saved["hosts"][2].get("postLoginCommand").is_none());
@@ -316,7 +318,7 @@ fn version_10_hosts_keep_their_login_command_and_default_terminal_behavior() {
         .unwrap();
 
     let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    assert_eq!(saved["version"], 21);
+    assert_eq!(saved["version"], 22);
     assert!(saved["hosts"][0].get("terminalCharset").is_none());
     assert!(saved["hosts"][0].get("terminalBackspace").is_none());
     assert_eq!(saved["hosts"][1]["terminalCharset"], "gbk");
@@ -348,7 +350,7 @@ fn version_7_hosts_keep_identities_only_and_default_to_agent_forwarding_off() {
         .unwrap();
 
     let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    assert_eq!(saved["version"], 21);
+    assert_eq!(saved["version"], 22);
     assert_eq!(saved["hosts"][0]["forwardAgent"], false);
     assert_eq!(saved["hosts"][1]["forwardAgent"], true);
     assert_eq!(saved["hosts"][1]["identitiesOnly"], true);
@@ -435,7 +437,7 @@ fn version_11_hosts_inherit_the_global_proxy_and_keep_their_terminal_options() {
         .unwrap();
 
     let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    assert_eq!(saved["version"], 21);
+    assert_eq!(saved["version"], 22);
     assert_eq!(saved["hosts"][1]["proxy"]["mode"], "direct");
     assert!(saved["hosts"][0].get("proxy").is_none());
     assert_eq!(
@@ -476,7 +478,7 @@ fn version_12_hosts_keep_their_outbound_proxy_choices() {
         .unwrap();
 
     let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    assert_eq!(saved["version"], 21);
+    assert_eq!(saved["version"], 22);
     assert_eq!(edited.proxy, HostProxy::ProxyCommand("nc %h %p".into()));
     assert_eq!(
         HostStore::open(&path).unwrap().list(),
@@ -507,7 +509,7 @@ fn version_13_hosts_start_without_tags_and_keep_their_proxy_command() {
         .unwrap();
     expected.tags = vec!["Production".into()];
     let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    assert_eq!(saved["version"], 21);
+    assert_eq!(saved["version"], 22);
     assert_eq!(saved["hosts"][0]["tags"], json!(["Production"]));
     assert_eq!(HostStore::open(path).unwrap().list(), &[expected]);
 }
@@ -533,7 +535,7 @@ fn version_14_hosts_keep_their_tags_and_can_set_and_clear_an_icon() {
         )
         .unwrap();
     let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    assert_eq!(saved["version"], 21);
+    assert_eq!(saved["version"], 22);
     assert_eq!(saved["hosts"][0], selected);
     let mut reopened = HostStore::open(&path).unwrap();
     assert_eq!(serde_json::to_value(&reopened.list()[0]).unwrap(), selected);
@@ -572,7 +574,7 @@ fn version_15_hosts_keep_their_icons_and_can_set_and_clear_a_colour() {
     let mut saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     assert_eq!(
         saved.as_object_mut().unwrap().remove("version"),
-        Some(json!(21))
+        Some(json!(22))
     );
     assert_eq!(saved, expected);
     let mut reopened = HostStore::open(&path).unwrap();
@@ -615,7 +617,7 @@ fn version_16_hosts_keep_their_icons_and_colours_before_detection() {
     let mut saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     assert_eq!(
         saved.as_object_mut().unwrap().remove("version"),
-        Some(json!(21))
+        Some(json!(22))
     );
     assert_eq!(saved, expected);
     let mut reopened = HostStore::open(path).unwrap();
@@ -648,7 +650,7 @@ fn legacy_algorithms_require_opt_in_per_host_after_upgrading_from_v17() {
     let mut saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     assert_eq!(
         saved.as_object_mut().unwrap().remove("version"),
-        Some(json!(21))
+        Some(json!(22))
     );
     assert_eq!(saved, expected);
     let mut reopened = HostStore::open(&path).unwrap();
@@ -689,7 +691,7 @@ fn version_18_hosts_keep_their_settings_and_start_without_bookmarks() {
     let mut saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     assert_eq!(
         saved.as_object_mut().unwrap().remove("version"),
-        Some(json!(21))
+        Some(json!(22))
     );
     assert_eq!(saved, expected);
     let reopened = HostStore::open(path).unwrap();
@@ -723,7 +725,7 @@ fn version_19_hosts_keep_their_settings_and_require_an_explicit_startup_opt_in()
     let mut saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     assert_eq!(
         saved.as_object_mut().unwrap().remove("version"),
-        Some(json!(21))
+        Some(json!(22))
     );
     assert_eq!(saved, expected);
     let mut reopened = HostStore::open(&path).unwrap();
@@ -755,7 +757,7 @@ fn a_version_19_file_cannot_enable_startup_connections() {
 }
 
 #[test]
-fn a_version_20_file_keeps_all_existing_forward_kinds_when_saved_as_version_21() {
+fn a_version_20_file_keeps_all_existing_forward_kinds_when_saved_as_version_22() {
     let dir = tempfile::tempdir().unwrap();
     let path = hosts_path(&dir);
     let fixture = include_str!("fixtures/hosts-v20/hosts.json");
@@ -779,7 +781,7 @@ fn a_version_20_file_keeps_all_existing_forward_kinds_when_saved_as_version_21()
     let mut saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     assert_eq!(
         saved.as_object_mut().unwrap().remove("version"),
-        Some(json!(21))
+        Some(json!(22))
     );
     assert_eq!(saved, expected);
     assert_eq!(
@@ -831,4 +833,27 @@ fn a_version_12_file_cannot_enable_a_proxy_command() {
 
     let store = HostStore::open(path).unwrap();
     assert_eq!(store.list()[2].proxy, HostProxy::Inherit);
+}
+
+#[test]
+fn a_version_21_file_keeps_http_forwards_and_defaults_agent_access_to_off() {
+    use sshastra_core::agent::AgentPermission;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = hosts_path(&dir);
+    let fixture = include_str!("fixtures/hosts-v21/hosts.json");
+    let mut expected: serde_json::Value = serde_json::from_str(fixture).unwrap();
+    let mut legacy = expected.clone();
+    legacy["hosts"][1]["agentAccess"] = json!("approval");
+    fs::write(&path, legacy.to_string()).unwrap();
+
+    let mut store = HostStore::open(&path).unwrap();
+    let web = id("h-web");
+    assert_eq!(store.get(&web).unwrap().agent_access, AgentPermission::Off);
+    let draft = serde_json::from_value(expected["hosts"][1].clone()).unwrap();
+    store.upsert(Some(web), draft).unwrap();
+
+    expected["version"] = json!(22);
+    let saved: serde_json::Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    assert_eq!(saved, expected);
 }

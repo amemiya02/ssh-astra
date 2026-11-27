@@ -1,4 +1,4 @@
-import { ArrowDownUp, ChevronRight, CircleDot, Columns2, FileText, House, Lock, PanelLeftClose, PanelLeftOpen, Plus, Rows2, Settings, SquareTerminal, Waypoints, X } from "lucide-react";
+import { ArrowDownUp, Cable, ChevronRight, CircleDot, Columns2, FileText, House, Lock, PanelLeftClose, PanelLeftOpen, Plus, Rows2, Settings, SquareTerminal, Waypoints, X } from "lucide-react";
 import {
   DndContext,
   PointerSensor,
@@ -16,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { IconButton } from "@/components/IconButton";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { agentAccessSetting } from "@/features/agent/agent-access";
 import { HostMonogram } from "@/features/hosts/HostMonogram";
 import { hueClasses } from "@/features/hosts/hostHue";
 import { LocalShellMenu } from "@/features/terminal/LocalShellMenu";
@@ -111,6 +112,7 @@ export function TabStrip({
   const { unread, flashing } = useStore(activity.store);
   const savedById = useMemo(() => new Map(hosts.map((host) => [host.id, host])), [hosts]);
   const outputs = useStore(terminalOutputs.store);
+  const [{ enabled: agentEnabled }] = useSetting(agentAccessSetting);
   const [privacyMode] = useSetting(privacyModeSetting);
   const [{ tabOrientation, verticalTabsCompact, groupTabsByHost: grouping }] = useSetting(workspaceSetting);
   const vertical = tabOrientation === "vertical";
@@ -203,6 +205,14 @@ export function TabStrip({
     ordinals.set(tab.id, ordinal);
   }
 
+  function sharesTerminal(tab: Tab) {
+    return agentEnabled && tabPanes(tab).some((pane) => {
+      if (pane.kind !== "remote-terminal" || !pane.savedHostTerminal) return false;
+      const permission = savedById.get(pane.host.id)?.agentAccess;
+      return permission === "read" || permission === "approval";
+    });
+  }
+
   function renderTab(tab: Tab, grouped = false, hidden = false) {
     const active = tab.id === activeId;
     const pane = activePane(tab);
@@ -214,6 +224,7 @@ export function TabStrip({
     const panes = tabPanes(tab);
     const logging = panes.some(({ id }) => outputs.get(id)?.log);
     const recording = panes.some(({ id }) => outputs.get(id)?.recording);
+    const agentShared = sharesTerminal(tab);
     const details = [
       status && t(`tabs.status.${status}`),
       tab.locked && t("tabs.locked"),
@@ -221,6 +232,7 @@ export function TabStrip({
       bellRang && t("tabs.terminalBell"),
       logging && t("terminal.log.active"),
       recording && t("terminal.recording.active"),
+      agentShared && t("agentAccess.sharedTerminal"),
     ].filter(Boolean).join(", ");
     const label = details ? `${title} (${details})` : title;
     const TabIcon = tab.layout.type === "split"
@@ -310,6 +322,10 @@ export function TabStrip({
             "text-primary size-3 shrink-0",
             compact && "absolute top-0.5 left-1 size-2.5",
           )} />}
+          {agentShared && <Cable aria-hidden data-agent-access className={cn(
+            "text-primary size-3 shrink-0",
+            compact && "absolute bottom-0.5 right-1 size-2.5",
+          )} />}
           {bellRang && <span aria-hidden data-terminal-bell className="pointer-events-none absolute inset-0 rounded-lg" />}
         </button>
         {hue && (
@@ -379,6 +395,7 @@ export function TabStrip({
             const closed = collapsed.has(group.host.id);
             const hasUnread = closed && group.tabs.some(({ id }) => id !== activeId && unread.has(id));
             const bellRang = closed && group.tabs.some(({ id }) => flashing.has(id));
+            const agentShared = closed && group.tabs.some(sharesTerminal);
             const current = closed && group.tabs.some(({ id }) => id === activeId);
             const host = savedById.get(group.host.id) ?? group.host;
             const name = workspaceHostName(host, t, privacyMode);
@@ -387,6 +404,7 @@ export function TabStrip({
               title,
               hasUnread && t("tabs.unreadOutput"),
               bellRang && t("tabs.terminalBell"),
+              agentShared && t("agentAccess.sharedTerminal"),
             ].filter(Boolean).join(", ");
             return [
               <button
@@ -410,6 +428,10 @@ export function TabStrip({
                 {hasUnread && <span aria-hidden data-unread-output className={cn(
                   "bg-primary size-1.5 shrink-0 rounded-full",
                   compact && "absolute top-1 right-1",
+                )} />}
+                {agentShared && <Cable aria-hidden className={cn(
+                  "text-primary size-3 shrink-0",
+                  compact && "absolute bottom-0.5 right-1 size-2.5",
                 )} />}
                 {bellRang && <span aria-hidden data-terminal-bell className="pointer-events-none absolute inset-0 rounded-lg" />}
               </button>,

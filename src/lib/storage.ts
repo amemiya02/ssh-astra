@@ -34,6 +34,7 @@ export interface SettingsBackend {
 export interface Settings {
   get<T>(section: SettingsSection<T>): T;
   set<T>(section: SettingsSection<T>, value: T): void;
+  commit<T>(section: SettingsSection<T>, value: T, immediate: boolean): Promise<void>;
   /** Called after any section changes. Returns the unsubscribe function. */
   subscribe(listener: () => void): () => void;
 }
@@ -49,6 +50,11 @@ function createSettings(backend: SettingsBackend, saved: Record<string, unknown>
   const raw = { ...saved };
   const parsed = new Map<string, unknown>();
   const listeners = new Set<() => void>();
+  function publish<T>(section: SettingsSection<T>, value: T) {
+    raw[section.key] = value;
+    parsed.set(section.key, value);
+    for (const listener of [...listeners]) listener();
+  }
 
   return {
     get<T>(section: SettingsSection<T>): T {
@@ -56,12 +62,15 @@ function createSettings(backend: SettingsBackend, saved: Record<string, unknown>
       return parsed.get(section.key) as T;
     },
     set<T>(section: SettingsSection<T>, value: T) {
-      raw[section.key] = value;
-      parsed.set(section.key, value);
-      for (const listener of [...listeners]) listener();
+      publish(section, value);
       backend.save(section.key, value).catch((error: unknown) => {
         console.warn(`Could not save the ${section.key} settings`, error);
       });
+    },
+    async commit<T>(section: SettingsSection<T>, value: T, immediate: boolean) {
+      if (immediate) publish(section, value);
+      await backend.save(section.key, value);
+      if (!immediate) publish(section, value);
     },
     subscribe(listener) {
       listeners.add(listener);
@@ -137,6 +146,11 @@ export function getSetting<T>(section: SettingsSection<T>): T {
 
 export function setSetting<T>(section: SettingsSection<T>, value: T): void {
   active.set(section, value);
+}
+
+/** Waits for a preference with native side effects. Revocation can apply locally first. */
+export function commitSetting<T>(section: SettingsSection<T>, value: T, immediate = false): Promise<void> {
+  return active.commit(section, value, immediate);
 }
 
 /** Calls `listener` with the section's value whenever it changes. Returns the unsubscribe function. */

@@ -19,7 +19,7 @@ import { ProxyFields } from "@/features/connect/ProxyFields";
 import { inheritedProxyForm, type ProxyField } from "@/features/connect/proxy-form";
 import { readCommandError, refusal, type CommandError, type ConnectPrompt, type PromptAnswer } from "@/lib/ipc/connect";
 import type { testHostConnection } from "@/lib/ipc/connections";
-import { hostIcons, isTemporaryHost, type Group, type Host, type HostDraft, type HostId, type TerminalBackspace, type TerminalCharset } from "@/lib/ipc/hosts";
+import { agentPermissions, hostIcons, isTemporaryHost, type Group, type Host, type HostDraft, type HostId, type TerminalBackspace, type TerminalCharset } from "@/lib/ipc/hosts";
 import { cn } from "@/lib/utils";
 import { ansiHues } from "@/theme/monogram-ink";
 import { TerminalSchemeSelect } from "@/features/terminal/TerminalSchemeSelect";
@@ -442,6 +442,28 @@ export function HostFormDialogContent({
           </Button>
           <div id="host-form-advanced" hidden={!advancedOpen}>
             <div className="grid gap-3.5 pt-2">
+              {!temporary && (
+                <div className="grid gap-1.5">
+                  <Label htmlFor="host-form-agent-access" className="text-xs">{t("agentAccess.title")}</Label>
+                  <Select
+                    value={values.agentAccess}
+                    onValueChange={(agentAccess) => {
+                      const permission = agentPermissions.find((option) => option === agentAccess);
+                      if (permission) setValues((previous) => ({ ...previous, agentAccess: permission }));
+                    }}
+                  >
+                    <SelectTrigger id="host-form-agent-access" aria-describedby="host-form-agent-access-hint" className="h-8">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {agentPermissions.map((permission) => (
+                        <SelectItem key={permission} value={permission}>{t(`agentAccess.permission.${permission}`)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p id="host-form-agent-access-hint" className="text-muted-foreground text-xs">{t("agentAccess.hostHint")}</p>
+                </div>
+              )}
               <div className="flex items-start gap-2">
                 <Checkbox
                   id="host-form-open-on-startup"

@@ -32,6 +32,7 @@ fn draft(name: &str) -> HostDraft {
         forward_agent: false,
         allow_legacy_algorithms: false,
         open_on_startup: false,
+        agent_access: Default::default(),
         proxy: Default::default(),
         keepalive_seconds: None,
         post_login_command: None,
@@ -252,7 +253,7 @@ fn exporting_then_importing_into_an_empty_store_gives_the_same_host_list() {
         exported_web["tags"],
         serde_json::json!(["Production", "East Coast"])
     );
-    assert_eq!(exported["version"], 21);
+    assert_eq!(exported["version"], 22);
     assert_eq!(exported_web["icon"], "server");
     assert_eq!(exported_web["color"], "magenta");
     assert_eq!(renamed(&source.tree(), &imported), imported);
@@ -268,6 +269,7 @@ fn importing_hosts_cannot_enable_startup_connections() {
     let (_a, mut source) = store();
     let startup = HostDraft {
         open_on_startup: true,
+        agent_access: Default::default(),
         proxy: HostProxy::ProxyCommand("nc %h %p".into()),
         ..draft("web")
     };
@@ -520,4 +522,42 @@ fn an_import_whose_jump_hosts_loop_changes_nothing() {
         Err(HostStoreError::JumpHostCycle(_))
     ));
     assert_eq!(store.tree(), before);
+}
+
+#[test]
+fn agent_access_is_local_to_the_host_store() {
+    use sshastra_core::agent::AgentPermission;
+
+    let (dir, mut source) = store();
+    let host = source
+        .upsert(
+            None,
+            HostDraft {
+                agent_access: AgentPermission::Read,
+                ..draft("build")
+            },
+        )
+        .unwrap();
+    let on_disk = HostStore::open(dir.path().join("hosts.json")).unwrap();
+    assert_eq!(
+        on_disk.get(&host.id).unwrap().agent_access,
+        AgentPermission::Read
+    );
+
+    let export = source.export();
+    assert!(!export.contains("agentAccess"));
+
+    let (_dir, mut target) = store();
+    let mut provided: serde_json::Value = serde_json::from_str(&export).unwrap();
+    provided["hosts"][0]["agentAccess"] = "approval".into();
+    target.import(&provided.to_string()).unwrap();
+    assert_eq!(target.list()[0].agent_access, AgentPermission::Off);
+
+    provided["hosts"][0]["agentAccess"] = serde_json::json!({"enabled": true});
+    let (_dir, mut target) = store();
+    target.import(&provided.to_string()).unwrap();
+    assert_eq!(target.list()[0].agent_access, AgentPermission::Off);
+
+    let duplicate = source.duplicate_host(&host.id, "Build copy").unwrap();
+    assert_eq!(duplicate.agent_access, AgentPermission::Off);
 }

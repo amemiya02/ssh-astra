@@ -10,6 +10,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::agent::AgentPermission;
 use crate::forward::{ForwardDraft, ForwardId, ForwardKind, PortForward};
 use crate::fs_util::write_atomically;
 use crate::host_import::{ImportIssue, ParsedConfig};
@@ -24,7 +25,7 @@ pub use transfer::{ImportSummary, EXPORT_FORMAT};
 /// The file format version this build writes, to the store and to export
 /// files. Bump it together with a migration step in [`migrate`], which reads
 /// both.
-const CURRENT_VERSION: u32 = 21;
+const CURRENT_VERSION: u32 = 22;
 
 const MAX_HOST_TAGS: usize = 10;
 const MAX_TAG_LENGTH: usize = 32;
@@ -185,6 +186,13 @@ pub struct Host {
     /// Open a Terminal on this Host when the app starts.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub open_on_startup: bool,
+    /// Agent access authorized locally for this saved Host.
+    #[serde(
+        default,
+        deserialize_with = "AgentPermission::deserialize_saved",
+        skip_serializing_if = "AgentPermission::is_off"
+    )]
+    pub agent_access: AgentPermission,
     /// Outbound proxy choice for this Host when it is the first TCP hop.
     #[serde(default, skip_serializing_if = "HostProxy::is_inherit")]
     pub proxy: HostProxy,
@@ -253,6 +261,9 @@ pub struct HostDraft {
     /// Open a Terminal on this Host when the app starts.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub open_on_startup: bool,
+    /// Agent access authorized locally for this saved Host.
+    #[serde(default, skip_serializing_if = "AgentPermission::is_off")]
+    pub agent_access: AgentPermission,
     /// Outbound proxy choice for this Host when it is the first TCP hop.
     #[serde(default, skip_serializing_if = "HostProxy::is_inherit")]
     pub proxy: HostProxy,
@@ -317,6 +328,7 @@ impl HostDraft {
             forward_agent: self.forward_agent,
             allow_legacy_algorithms: self.allow_legacy_algorithms,
             open_on_startup: self.open_on_startup,
+            agent_access: self.agent_access,
             proxy: self.proxy.normalize().map_err(HostStoreError::Invalid)?,
             keepalive_seconds: self.keepalive_seconds,
             post_login_command: self.post_login_command.filter(|s| !s.trim().is_empty()),
@@ -799,6 +811,7 @@ impl HostStore {
                 forward_agent: entry.forward_agent,
                 allow_legacy_algorithms: false,
                 open_on_startup: false,
+                agent_access: AgentPermission::Off,
                 proxy: entry
                     .proxy_command
                     .map(HostProxy::ProxyCommand)
@@ -863,11 +876,12 @@ impl HostStore {
             .iter()
             .position(|h| &h.id == id)
             .ok_or_else(|| HostStoreError::NotFound(id.clone()))?;
-        // A clone, so every setting (including ones added later) is copied.
+        // A new Host must be opted in separately before any Terminal can be shared.
         let mut copy = Host {
             id: HostId::generate(),
             name: required_name(name)?,
             detected_os: None,
+            agent_access: AgentPermission::Off,
             ..library.hosts[at].clone()
         };
         for forward in &mut copy.forwards {
@@ -1055,7 +1069,8 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
         // v19 adds Bookmarks. Older Hosts default to an empty Bookmark list.
         // v20 adds startup connections, off by default. v21 adds HTTP
         // CONNECT Port forwards without changing existing rules.
-        2 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20
+        // v22 adds local Agent access permissions, off by default.
+        2 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21
         | CURRENT_VERSION => {
             let FileV2 { groups, hosts } = serde_json::from_str(text).map_err(corrupt)?;
             Ok(Library { groups, hosts })
@@ -1099,6 +1114,9 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
             return Err(HostStoreError::Corrupt(
                 "HTTP Port forwards require format version 21".into(),
             ));
+        }
+        if version < 22 {
+            host.agent_access = AgentPermission::Off;
         }
         host.tags = normalize_tags(&host.tags);
         bookmarks::retain_valid(&mut host.bookmarks);

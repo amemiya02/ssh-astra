@@ -130,6 +130,10 @@ export function reportTerminalCwd(id: TerminalId): Promise<void> {
   return invoke("terminal_report_cwd", { id });
 }
 
+export function setTerminalTitle(id: TerminalId, title: string): Promise<void> {
+  return invoke("terminal_set_title", { id, title });
+}
+
 export function closeTerminal(id: TerminalId): Promise<void> {
   return invoke("terminal_close", { id });
 }

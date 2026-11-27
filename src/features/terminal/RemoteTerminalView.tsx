@@ -22,7 +22,7 @@ import {
 } from "@/lib/ipc/connect";
 import { remoteHomeDirectory } from "@/lib/ipc/files";
 import { isTemporaryHost, type Host } from "@/lib/ipc/hosts";
-import { reconnectTerminal, type ConnectionState, type TerminalId } from "@/lib/ipc/terminal";
+import { reconnectTerminal, setTerminalTitle, type ConnectionState, type TerminalId } from "@/lib/ipc/terminal";
 import { transferHost } from "@/lib/ipc/transfers";
 import { useSetting } from "@/lib/storage";
 import type { ConnectionStatus, ReconnectProgress } from "@/features/workspace/tabs";
@@ -73,7 +73,7 @@ interface RemoteTerminalViewProps {
   /** Its shell reported its directory (ShellIntegration, or when asked with `reportTerminalCwd`). */
   onCwd?(path: string): void;
   /** Its Terminal opened (`null`: it ended). */
-  onTerminal?(id: TerminalId | null): void;
+  onTerminal?(id: TerminalId | null, savedHost: boolean): void;
 }
 
 /**
@@ -108,6 +108,8 @@ export function RemoteTerminalView({
   // Set while the Connection is down; the Terminal stays mounted under the overlay.
   const [recovery, setRecovery] = useState<Recovery | null>(null);
   const terminalId = useRef<TerminalId | null>(null);
+  const onSavedHost = useRef(false);
+  const shellTitle = useRef("");
   const dropTarget = useRef<HTMLDivElement>(null);
   const upload = async (paths: string[], directory: string | null) => {
     try {
@@ -145,7 +147,7 @@ export function RemoteTerminalView({
       signal.throwIfAborted();
       let opening = true;
       let exited = false;
-      return openRemoteTerminal(
+      const registered = await openRemoteTerminal(
         host.id,
         size,
         (event) => {
@@ -211,6 +213,8 @@ export function RemoteTerminalView({
       ).finally(() => {
         opening = false;
       });
+      onSavedHost.current = registered.savedHost;
+      return registered.id;
     },
     [host.id, initialCwd, paneId],
   );
@@ -246,7 +250,10 @@ export function RemoteTerminalView({
             onOpenError={onOpenError}
             onOpened={(id) => {
               terminalId.current = id;
-              onTerminalRef.current?.(id);
+              onTerminalRef.current?.(id, onSavedHost.current);
+              if (onSavedHost.current && shellTitle.current) {
+                void setTerminalTitle(id, shellTitle.current).catch(() => undefined);
+              }
               setOpened(true);
               setConnected(true);
               onStatusChange?.("connected");
@@ -257,7 +264,7 @@ export function RemoteTerminalView({
               setConnected(false);
               terminalCwds.resetReport(paneId);
               setDropQuestion(null);
-              onTerminalRef.current?.(null);
+              onTerminalRef.current?.(null, false);
               setRecovery(null);
               onStatusChange?.("disconnected");
             }}
@@ -265,7 +272,14 @@ export function RemoteTerminalView({
             active={active && opened}
             colorScheme={host.terminalScheme}
             historyHostId={temporary ? undefined : host.id}
-            onTitleChange={onTitleChange}
+            onTitleChange={(title) => {
+              const updated = shellTitle.current !== title;
+              shellTitle.current = title;
+              if (updated && onSavedHost.current && terminalId.current !== null) {
+                void setTerminalTitle(terminalId.current, title).catch(() => undefined);
+              }
+              onTitleChange?.(title);
+            }}
           />
         </div>
       )}

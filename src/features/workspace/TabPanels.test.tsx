@@ -39,7 +39,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
     Channel: class<T> {
       constructor(public onmessage: (message: T) => void) {}
     },
-    invoke: vi.fn(async (command: string) => command === "remote_terminal_open" ? ++nextTerminalId : undefined),
+    invoke: vi.fn(async (command: string) => command === "remote_terminal_open" ? { id: ++nextTerminalId, savedHost: true } : undefined),
   };
 });
 

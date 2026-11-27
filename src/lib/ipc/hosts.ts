@@ -26,6 +26,9 @@ export type DetectedOs = Extract<HostIcon,
  */
 export type HostAuth = { type: "auto" } | { type: "password" } | { type: "key"; identityFile: string };
 
+export const agentPermissions = ["off", "read", "approval"] as const;
+export type AgentPermission = (typeof agentPermissions)[number];
+
 export type TerminalCharset = "utf8" | "gbk" | "big5" | "latin1";
 export type TerminalBackspace = "del" | "ctrlH";
 
@@ -64,6 +67,8 @@ export interface HostDraft {
   allowLegacyAlgorithms?: boolean;
   /** Open a Terminal on this saved Host when the app starts. Off when absent. */
   openOnStartup?: boolean;
+  /** Local Agent access for this saved Host. Off when absent. */
+  agentAccess?: AgentPermission;
   /** Outbound proxy choice when this Host is the first hop. */
   proxy?: HostProxy;
   /** Seconds between keepalives; absent follows the global setting, 0 turns them off. */

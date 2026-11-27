@@ -2,6 +2,21 @@
   "app": {
     "name": "SSH Astra"
   },
+  "agentAccess": {
+    "title": "代理存取",
+    "description": "透過 MCP 向本機用戶端分享已授權的遠端終端機資訊。請將用戶端設定為執行 SSH Astra 執行檔，並傳入 mcp 引數。",
+    "permission": {
+      "off": "關閉",
+      "read": "唯讀",
+      "approval": "需要核准"
+    },
+    "hostHint": "兩種存取層級目前都會分享終端機資訊。此權限僅儲存在本機。",
+    "enabled": "代理存取已開啟",
+    "turnOff": "關閉代理存取",
+    "sharedTerminal": "終端機已向代理開放",
+    "startFailed": "無法開啟代理存取。",
+    "saveFailed": "本次執行的代理存取已關閉，但無法儲存設定。"
+  },
   "shell": {
     "workspace": "終端機",
     "navigation": "導航",
@@ -1050,6 +1065,7 @@
       "knownHosts": "已知主機",
       "notifications": "通知",
       "updates": "更新",
+      "agentAccess": "代理存取",
       "diagnostics": "診斷"
     },
     "shortcuts": {
