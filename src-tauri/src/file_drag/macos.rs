@@ -20,9 +20,8 @@ use objc2_app_kit::{
 };
 use objc2_app_kit::{NSFilePromiseProvider, NSFilePromiseProviderDelegate};
 use objc2_foundation::{
-    ns_string, NSArray, NSDictionary, NSError, NSFileCoordinator, NSFileCoordinatorWritingOptions,
-    NSLocalizedDescriptionKey, NSObject, NSObjectProtocol, NSOperationQueue, NSPoint, NSRect,
-    NSSize, NSString, NSURL,
+    ns_string, NSArray, NSDictionary, NSError, NSLocalizedDescriptionKey, NSObject,
+    NSObjectProtocol, NSOperationQueue, NSPoint, NSRect, NSSize, NSString, NSURL,
 };
 use sshastra_core::files::{FsError, FsResult};
 use tauri::{AppHandle, Manager, WebviewWindow};
@@ -114,11 +113,10 @@ define_class!(
             if let Some(delivery) = &state.delivery {
                 delivery.started.store(true, Ordering::Release);
             }
-            let mut error = None;
-            let result = coordinate_copy(url, state.source.clone(), &mut error);
-            if error.is_none() {
-                error = result.as_ref().err().map(promise_error);
-            }
+            // NSFilePromiseReceiver coordinates this callback for the supplied URL.
+            // Taking another write coordination lease on that URL can deadlock Finder.
+            let result = copy_to(url, state.source.clone());
+            let error = result.as_ref().err().map(promise_error);
             complete.call((error.as_ref().map_or(std::ptr::null_mut(), |error| {
                 Retained::as_ptr(error).cast_mut()
             }),));
@@ -316,30 +314,6 @@ pub(super) fn start(
     })
 }
 
-fn coordinate_copy(
-    url: &NSURL,
-    source: Arc<Source>,
-    coordination_error: &mut Option<Retained<NSError>>,
-) -> FsResult<()> {
-    let result = RefCell::new(Err(FsError::Io(
-        "The system did not provide a writable drop location".into(),
-    )));
-    let writer = StackBlock::new(|destination: NonNull<NSURL>| {
-        // The coordinator retains its URL for the duration of this synchronous accessor.
-        *result.borrow_mut() = copy_to(unsafe { destination.as_ref() }, source.clone());
-    });
-    NSFileCoordinator::new().coordinateWritingItemAtURL_options_error_byAccessor(
-        url,
-        NSFileCoordinatorWritingOptions::empty(),
-        Some(coordination_error),
-        &writer,
-    );
-    if let Some(error) = coordination_error {
-        return Err(FsError::Io(error.localizedDescription().to_string()));
-    }
-    result.into_inner()
-}
-
 fn copy_to(url: &NSURL, source: Arc<Source>) -> FsResult<()> {
     if !url.isFileURL() {
         return Err(FsError::InvalidName);
@@ -409,7 +383,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn coordinate_a_promise_at_the_system_path_without_overwriting() {
+    fn writes_the_promise_at_the_system_path_without_overwriting() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("資料.bin");
         let url = NSURL::fileURLWithPath(&NSString::from_str(path.to_str().unwrap()));
@@ -484,7 +458,7 @@ mod tests {
                 })
             }),
         });
-        assert!(coordinate_copy(&url, file, &mut None).is_err());
+        assert!(copy_to(&url, file).is_err());
         assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
     }
 }

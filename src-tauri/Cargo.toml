@@ -87,7 +87,7 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
     "NSWorkspace",
 ] }
 objc2-foundation = { version = "0.3", default-features = false, features = [
-    "std", "block2", "NSArray", "NSDictionary", "NSError", "NSFileCoordinator", "NSGeometry",
+    "std", "block2", "NSArray", "NSDictionary", "NSError", "NSGeometry",
     "NSNotification", "NSObject", "NSOperation", "NSString", "NSURL",
 ] }
 
