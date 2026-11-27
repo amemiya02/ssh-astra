@@ -235,6 +235,9 @@ importers:
       react-resizable-panels:
         specifier: ^4.24.0
         version: 4.24.0(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      rork-plist:
+        specifier: 0.7.0
+        version: 0.7.0
       tailwind-merge:
         specifier: ^3.7.0
         version: 3.7.0
@@ -3699,6 +3702,10 @@ packages:
     resolution: {integrity: sha512-QIiV1J9d0pzN4jeeTH4sjPy0AZ6cAy2cG0ExeoE1+U8Rvj+hR3gYkokx0YbeUNGlZqiQJJ2utcETe0oKXwzsuA==}
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
+
+  rork-plist@0.7.0:
+    resolution: {integrity: sha512-/VdQFvaDY2N2BBp4DB7kBVqIcCLDq/EwoKKycUZQ5XaSQJb5pkqNMVvr+1dwhglJzX+POx2pXrn7po2n/nUkRw==}
+    engines: {node: '>=20'}
 
   run-async@4.0.6:
     resolution: {integrity: sha512-IoDlSLTs3Yq593mb3ZoKWKXMNu3UpObxhgA/Xuid5p4bbfi2jdY1Hj0m1K+0/tEuQTxIGMhQDqGjKb7RuxGpAQ==}
@@ -7881,6 +7888,8 @@ snapshots:
       '@rolldown/binding-wasm32-wasi': 1.2.19
       '@rolldown/binding-win32-arm64-msvc': 1.2.19
       '@rolldown/binding-win32-x64-msvc': 1.2.19
+
+  rork-plist@0.7.0: {}
 
   run-async@4.0.6: {}
 

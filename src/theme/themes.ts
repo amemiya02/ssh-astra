@@ -2,9 +2,8 @@ import type { ITheme } from "@xterm/xterm";
 
 /**
  * The app's themes. One theme paints the whole window: the chrome (`ui`) and the
- * Terminal (`terminal`) together. This and `terminal-themes.ts` are the only places
- * colours are literal; `src/index.css` derives every token from the `--ui-*` variables
- * that `applyTheme` writes from here.
+ * Terminal (`terminal`) together. Literal colours live in theme and Terminal palette definitions.
+ * `src/index.css` derives every token from the `--ui-*` variables that `applyTheme` writes from here.
  */
 
 export const lightThemeIds = ["light", "githubLight", "catppuccinLatte", "solarizedLight"] as const;

@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import sample from "@/theme/fixtures/sample.itermcolors?raw";
+import { parseItermColors } from "@/theme/iterm-colors";
 import { openSettings, type SettingsBackend } from "@/lib/storage";
 import { defaultTerminalPrefs, normalizeTerminalPrefs, terminalSetting } from "./terminal-prefs";
 
@@ -31,6 +33,7 @@ describe("terminal preferences", () => {
 
   it("survives a restart", async () => {
     const backend = memoryBackend();
+    const palette = parseItermColors(sample)!;
     const changed = {
       fontFamily: '"Fira Code", monospace',
       fontSize: 15,
@@ -43,7 +46,8 @@ describe("terminal preferences", () => {
       titleSource: "host" as const,
       bell: "sound" as const,
       ligatures: true,
-      colorScheme: "solarizedDark" as const,
+      colorScheme: "imported:sample" as const,
+      importedSchemes: [{ id: "imported:sample" as const, name: "Sample", palette }],
       highlighting: {
         builtIn: false,
         rules: [{ id: "job", pattern: "job \\d+", kind: "regex" as const, hue: "magenta" as const, enabled: true }],

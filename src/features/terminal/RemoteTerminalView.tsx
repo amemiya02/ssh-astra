@@ -16,7 +16,6 @@ import { isTemporaryHost, type Host } from "@/lib/ipc/hosts";
 import { reconnectTerminal, type ConnectionState, type TerminalId } from "@/lib/ipc/terminal";
 import { useSetting } from "@/lib/storage";
 import type { ConnectionStatus, ReconnectProgress } from "@/features/workspace/tabs";
-import { isTerminalColorScheme } from "@/theme/terminal-themes";
 import { TerminalSurface, type OpenTerminal } from "./TerminalSurface";
 
 /** The tab dot while a dropped Connection is retried. */
@@ -212,7 +211,7 @@ export function RemoteTerminalView({
             }}
             label={displayHost.name}
             active={active && opened}
-            colorScheme={isTerminalColorScheme(host.terminalScheme) ? host.terminalScheme : undefined}
+            colorScheme={host.terminalScheme}
             onTitleChange={onTitleChange}
           />
         </div>

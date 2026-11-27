@@ -16,6 +16,7 @@ export function useTerminalPrefs(): TerminalPrefsValue {
       const current = getSetting(terminalSetting);
       const next = normalizeTerminalPrefs({ ...current, ...patch });
       if (patch.highlighting === undefined) next.highlighting = current.highlighting;
+      if (patch.importedSchemes === undefined) next.importedSchemes = current.importedSchemes;
       setPrefs(next);
     },
     [setPrefs],
