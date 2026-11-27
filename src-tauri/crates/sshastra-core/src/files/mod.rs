@@ -21,7 +21,7 @@ pub use transfer::{
     TransferSettings, TransferState,
 };
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use crate::ssh::BoxFuture;
@@ -61,6 +61,8 @@ pub struct FileEntry {
     pub size: u64,
     pub modified: Option<u64>,
     pub permissions: Option<u32>,
+    pub uid: Option<u32>,
+    pub gid: Option<u32>,
     /// For a symlink, the kind of what it points to (`None` if it dangles);
     /// `None` for anything else.
     pub link_target: Option<FileKind>,
@@ -75,6 +77,26 @@ pub struct Listing {
     pub entries: Vec<FileEntry>,
 }
 
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PermissionScope {
+    #[default]
+    Entry,
+    Recursive,
+    DirectoriesOnly,
+}
+
+/// Ownership edits apply to the selected entry. The scope governs the mode change.
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionChange {
+    pub mode: Option<u32>,
+    pub uid: Option<u32>,
+    pub gid: Option<u32>,
+    #[serde(default)]
+    pub scope: PermissionScope,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum FsError {
     /// The Host has no live Connection to browse over.
@@ -84,6 +106,8 @@ pub enum FsError {
     NotFound(String),
     #[error("permission denied: {0}")]
     PermissionDenied(String),
+    #[error("ownership is unavailable: {0}")]
+    OwnershipUnavailable(String),
     #[error("not a directory: {0}")]
     NotADirectory(String),
     /// Creating or renaming onto a name that is already taken.
@@ -110,6 +134,7 @@ impl FsError {
             Self::NotConnected => "notConnected",
             Self::NotFound(_) => "notFound",
             Self::PermissionDenied(_) => "permissionDenied",
+            Self::OwnershipUnavailable(_) => "ownershipUnavailable",
             Self::NotADirectory(_) => "notADirectory",
             Self::AlreadyExists(_) => "alreadyExists",
             Self::TooLarge { .. } => "tooLarge",
@@ -149,6 +174,10 @@ pub trait RemoteFs: Send + Sync {
     fn canonicalize<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<String>>;
     /// The entries of the directory `path`.
     fn list_dir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<Vec<FileEntry>>>;
+    /// Entries for traversal, with no lookups of symlink targets.
+    fn list_dir_no_follow<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<Vec<FileEntry>>> {
+        self.list_dir(path)
+    }
     /// The metadata of `path`, following symlinks.
     fn stat<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileStat>>;
     /// The metadata of `path` itself: a symlink is [`FileKind::Symlink`].
@@ -177,6 +206,15 @@ pub trait RemoteFs: Send + Sync {
     fn remove_dir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>>;
     /// Sets the permission bits (`0o755`) of `path`, following symlinks.
     fn set_permissions<'a>(&'a self, path: &'a str, mode: u32) -> BoxFuture<'a, FsResult<()>>;
+    /// Sets the requested numeric IDs and keeps either omitted ID.
+    fn set_ownership<'a>(
+        &'a self,
+        path: &'a str,
+        _uid: Option<u32>,
+        _gid: Option<u32>,
+    ) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move { Err(FsError::OwnershipUnavailable(path.to_owned())) })
+    }
 
     // Contents, streamed (transfers); `read_file` / `write_file` wrap them.
 
@@ -311,6 +349,60 @@ pub async fn remove_tree(fs: &dyn RemoteFs, path: &str) -> FsResult<()> {
     Ok(())
 }
 
+/// Applies a File panel permissions edit. Entries that are symlinks are skipped.
+/// Children are changed before their parent so removing search permission does
+/// not prevent changing the rest of the tree.
+pub async fn change_permissions(
+    fs: &dyn RemoteFs,
+    path: &str,
+    change: PermissionChange,
+) -> FsResult<()> {
+    // A trailing slash makes POSIX lstat resolve a directory symlink.
+    let trimmed = path.trim_end_matches('/');
+    let path = if trimmed.is_empty() { path } else { trimmed };
+    let root = fs.lstat(path).await?;
+    if root.kind == FileKind::Symlink {
+        return Ok(());
+    }
+    if change.uid.is_some() || change.gid.is_some() {
+        fs.set_ownership(path, change.uid, change.gid).await?;
+    }
+    let Some(mode) = change.mode else {
+        return Ok(());
+    };
+    if matches!(change.scope, PermissionScope::Entry) {
+        return fs.set_permissions(path, mode).await;
+    }
+    if matches!(change.scope, PermissionScope::DirectoriesOnly) && mode & 0o111 == 0 {
+        return Ok(());
+    }
+    for (path, kind) in walk(fs, path).await?.into_iter().rev() {
+        if kind == FileKind::Symlink
+            || (matches!(change.scope, PermissionScope::DirectoriesOnly) && kind != FileKind::Dir)
+        {
+            continue;
+        }
+        let stat = fs.lstat(&path).await?;
+        let next = match (change.scope, stat.kind) {
+            (_, FileKind::Symlink) => continue,
+            (PermissionScope::DirectoriesOnly, FileKind::Dir) => {
+                let current = stat
+                    .permissions
+                    .ok_or_else(|| FsError::Protocol(format!("{path}: missing permission bits")))?;
+                let next = current | (mode & 0o111);
+                if next == current {
+                    continue;
+                }
+                next
+            }
+            (PermissionScope::DirectoriesOnly, _) => continue,
+            _ => mode,
+        };
+        fs.set_permissions(&path, next).await?;
+    }
+    Ok(())
+}
+
 /// `path` and, for a directory, every entry under it (parents first),
 /// without following symlinks.
 async fn walk(fs: &dyn RemoteFs, path: &str) -> FsResult<Vec<(String, FileKind)>> {
@@ -322,7 +414,7 @@ async fn walk(fs: &dyn RemoteFs, path: &str) -> FsResult<Vec<(String, FileKind)>
         if kind != FileKind::Dir {
             continue;
         }
-        for entry in fs.list_dir(&dir).await? {
+        for entry in fs.list_dir_no_follow(&dir).await? {
             found.push((join(&dir, &entry.name), entry.kind));
         }
     }

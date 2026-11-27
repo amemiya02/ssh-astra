@@ -14,6 +14,7 @@ import { forwardsStore, runningForwards, useForwards } from "@/features/forwards
 import { activeConnections, forwardStatusText, runningRules } from "@/features/forwards/status";
 import { ForwardsSidebar } from "@/features/forwards/ForwardsSidebar";
 import { HomeView } from "@/features/home/HomeView";
+import { rememberHostOpened, useRecordHostConnections } from "@/features/hosts/host-history";
 import { useHosts } from "@/features/hosts/hostsStore";
 import { updateSetting } from "@/features/updates/update-settings";
 import { checkOnStartup, updatesStore } from "@/features/updates/updatesStore";
@@ -21,7 +22,6 @@ import { HostsPanel } from "@/features/hosts/HostsPanel";
 import { useHostsController } from "@/features/hosts/useHostsController";
 import { CommandPalette, type PaletteTab } from "@/features/palette/CommandPalette";
 import { usePaletteActions, type PaletteAction } from "@/features/palette/palette-actions";
-import { rememberHostOpened } from "@/features/palette/recent-hosts";
 import { DiagnosticsPaletteActions } from "@/features/settings/diagnostics-section";
 import { AppShell } from "@/features/shell/AppShell";
 import { zoomTerminalFont } from "@/features/terminal/terminal-prefs";
@@ -318,8 +318,8 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
   const forwardStates = useForwards((s) => s.states);
   const held = useConnections((s) => s.held);
   const connectingHeld = useConnections((s) => s.connecting);
-  const running = runningForwards({ states: forwardStates });
-  const connected = activeConnections(connectedHosts(state), running, hosts, held);
+  const running = useMemo(() => runningForwards({ states: forwardStates }), [forwardStates]);
+  const connected = useMemo(() => activeConnections(connectedHosts(state), running, hosts, held), [state, running, hosts, held]);
   const forwards = runningRules(running, hosts).map(({ rule }) => forwardStatusText(rule, t));
   const reconnecting = reconnectingHosts(state);
   // "Connect only" Hosts can be disconnected from the palette.
@@ -339,6 +339,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
   const transferSpeeds = useTransfers((s) => s.speeds);
   const transfers = transferSummary(transferList, transferSpeeds);
   const connections = useMemo(() => hostConnections(connected, state, connectingHeld), [connected, state, connectingHeld]);
+  useRecordHostConnections(connections);
   const filePanelPane: FilePanelPane | undefined =
     focusedPane?.kind === "remote-terminal"
       ? { id: focusedPane.id, host: focusedPane.host, status: focusedPane.status ?? "connecting" }

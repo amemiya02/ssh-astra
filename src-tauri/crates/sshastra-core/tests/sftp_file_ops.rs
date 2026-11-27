@@ -8,7 +8,9 @@ mod support;
 
 use std::sync::Arc;
 
-use sshastra_core::files::{self, FileKind, FsError, RemoteFs, SftpFs};
+use sshastra_core::files::{
+    self, FileKind, FsError, PermissionChange, PermissionScope, RemoteFs, SftpFs,
+};
 use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::ssh::{
@@ -264,4 +266,159 @@ async fn changing_permissions_sets_exactly_the_bits_asked_for() {
         fs.stat("/srv/files/hello.txt").await.unwrap().permissions,
         Some(0o640)
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn changing_numeric_ownership_preserves_unspecified_ids_and_reports_denial() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let (fs, root, _dir) = scratch(&sshd).await;
+    let path = files::join(&root, "owned");
+    fs.create_empty_file(&path).await.unwrap();
+    let get_ids = |command| sshd.run_as_tester(command).trim().parse::<u32>().unwrap();
+    let uid = get_ids("id -u");
+    let old_gid = get_ids("id -g");
+    let gid = get_ids("getent group sftp-test | cut -d: -f3");
+    assert_ne!(old_gid, gid);
+    let before = fs.list_dir(&root).await.unwrap();
+    assert_eq!((before[0].uid, before[0].gid), (Some(uid), Some(old_gid)));
+
+    files::change_permissions(
+        &fs,
+        &path,
+        PermissionChange {
+            gid: Some(gid),
+            ..PermissionChange::default()
+        },
+    )
+    .await
+    .unwrap();
+    let after = fs.list_dir(&root).await.unwrap();
+    assert_eq!((after[0].uid, after[0].gid), (Some(uid), Some(gid)));
+    assert_eq!(after[0].permissions, before[0].permissions);
+
+    files::change_permissions(
+        &fs,
+        &path,
+        PermissionChange {
+            uid: Some(uid),
+            gid: Some(old_gid),
+            ..PermissionChange::default()
+        },
+    )
+    .await
+    .unwrap();
+    let restored = fs.list_dir(&root).await.unwrap();
+    assert_eq!(
+        (restored[0].uid, restored[0].gid),
+        (Some(uid), Some(old_gid))
+    );
+
+    assert_eq!(
+        files::change_permissions(
+            &fs,
+            &path,
+            PermissionChange {
+                uid: Some(0),
+                ..PermissionChange::default()
+            },
+        )
+        .await,
+        Err(FsError::PermissionDenied(path))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn recursive_permissions_apply_to_the_tree_and_skip_links() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let (fs, root, _dir) = scratch(&sshd).await;
+    sshd.run_as_tester(&format!(
+        "cd '{root}' && mkdir -p tree/sub outside && touch tree/sub/file outside/keep \
+         && chmod 755 tree tree/sub outside && chmod 644 tree/sub/file outside/keep \
+         && ln -s ../outside tree/dir-link && ln -s ../outside/keep tree/file-link \
+         && ln -s missing tree/dangling && ln -s outside top-link"
+    ));
+
+    files::change_permissions(
+        &fs,
+        &files::join(&root, "tree"),
+        PermissionChange {
+            mode: Some(0o700),
+            scope: PermissionScope::Recursive,
+            ..PermissionChange::default()
+        },
+    )
+    .await
+    .unwrap();
+    files::change_permissions(
+        &fs,
+        &files::join(&root, "top-link/"),
+        PermissionChange {
+            mode: Some(0o700),
+            scope: PermissionScope::Recursive,
+            ..PermissionChange::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    for relative in ["tree", "tree/sub", "tree/sub/file"] {
+        assert_eq!(
+            fs.stat(&files::join(&root, relative))
+                .await
+                .unwrap()
+                .permissions,
+            Some(0o700)
+        );
+    }
+    for (relative, expected) in [("outside", 0o755), ("outside/keep", 0o644)] {
+        assert_eq!(
+            fs.stat(&files::join(&root, relative))
+                .await
+                .unwrap()
+                .permissions,
+            Some(expected)
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn execute_only_adds_selected_bits_to_directories_and_preserves_files() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let (fs, root, _dir) = scratch(&sshd).await;
+    sshd.run_as_tester(&format!(
+        "cd '{root}' && mkdir -p tree/sub && touch tree/sub/file && chmod 1750 tree \
+         && chmod 700 tree/sub && chmod 640 tree/sub/file"
+    ));
+
+    files::change_permissions(
+        &fs,
+        &files::join(&root, "tree"),
+        PermissionChange {
+            mode: Some(0o051),
+            scope: PermissionScope::DirectoriesOnly,
+            ..PermissionChange::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    for (relative, expected) in [
+        ("tree", 0o1751),
+        ("tree/sub", 0o711),
+        ("tree/sub/file", 0o640),
+    ] {
+        assert_eq!(
+            fs.stat(&files::join(&root, relative))
+                .await
+                .unwrap()
+                .permissions,
+            Some(expected)
+        );
+    }
 }
