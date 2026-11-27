@@ -63,6 +63,9 @@ whoami = { version = "2", default-features = false, features = ["std"] }
 # Never in release builds (see the `e2e` feature).
 tauri-plugin-wdio-webdriver = { version = "=1.5.1", optional = true }
 
+[target.'cfg(any(windows, target_os = "macos", target_os = "linux"))'.dependencies]
+tauri-plugin-notification = "=2.8.0"
+
 [features]
 # The E2E build (`pnpm e2e:build`): embeds the WebDriver server and keeps
 # credentials out of the system keychain. `lib.rs` refuses it in release builds.

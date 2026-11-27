@@ -587,6 +587,19 @@
     "transferDone": "Transfer complete: {{name}}",
     "transferFailed": "Transfer failed: {{name}}. {{reason}}"
   },
+  "notifications": {
+    "transfers": {
+      "title": "Transfer batch finished",
+      "body": "{{completed}} completed, {{failed}} failed, {{cancelled}} cancelled."
+    },
+    "reconnect": {
+      "title": "Connection lost",
+      "body": "Could not reconnect to {{host}}."
+    },
+    "terminal": {
+      "title": "Terminal notification"
+    }
+  },
   "status": {
     "noConnections": "No Connections",
     "connectedTo": "Connected to {{hosts}}",
@@ -826,6 +839,7 @@
       "connection": "Connection",
       "transfers": "Transfers",
       "shortcuts": "Shortcuts",
+      "notifications": "Notifications",
       "updates": "Updates",
       "diagnostics": "Diagnostics"
     },
@@ -1082,6 +1096,24 @@
       "concurrency": {
         "label": "Simultaneous transfers",
         "description": "How many uploads and downloads run at once; the rest wait their turn. A folder's files copy one after another."
+      }
+    },
+    "notifications": {
+      "transfers": {
+        "label": "Transfer batches",
+        "description": "Notify when a group of uploads, downloads, or copies finishes in the background."
+      },
+      "reconnect": {
+        "label": "Failed reconnections",
+        "description": "Notify when a dropped Connection cannot reconnect in the background."
+      },
+      "longCommand": {
+        "label": "Long-running commands",
+        "description": "Notify when a long-running Terminal command finishes in the background."
+      },
+      "terminal": {
+        "label": "Terminal programs",
+        "description": "Allow programs in a Terminal to send a notification while the window is in the background."
       }
     },
     "diagnostics": {

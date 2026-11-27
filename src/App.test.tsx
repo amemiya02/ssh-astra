@@ -481,7 +481,7 @@ it("closes a Local terminal and an unconnected restored pane without asking", as
 
 it.each([
   ["reconnecting", { connection: { state: "reconnecting", attempt: 1, attempts: 3 } }],
-  ["disconnected", { connection: { state: "disconnected", reason: "Connection closed" } }],
+  ["disconnected", { connection: { state: "disconnected", reason: "Connection closed", reportReconnectFailure: false } }],
   ["exited", { exitCode: 0 }],
 ] satisfies [string, TerminalMessage][])("closes a %s remote Terminal without asking", async (_, message) => {
   await render(workspace({ type: "open", tabId: "work", pane: remote("a") }));

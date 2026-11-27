@@ -291,10 +291,15 @@ async fn after_the_retries_fail_only_a_manual_reconnect_brings_it_back() {
             }
         );
     }
-    let ConnectionState::Disconnected { reason } = events.state(EVENT_WAIT).await else {
+    let ConnectionState::Disconnected {
+        reason,
+        report_reconnect_failure,
+    } = events.state(EVENT_WAIT).await
+    else {
         panic!("expected Disconnected after the last retry");
     };
     assert!(reason.contains("the test took it down"), "{reason}");
+    assert!(report_reconnect_failure);
     // The first connect and three retries, then it stops trying by itself:
     // the next event (below) is the manual reconnect's first try, not a
     // fourth automatic one.
@@ -312,6 +317,49 @@ async fn after_the_retries_fail_only_a_manual_reconnect_brings_it_back() {
     assert_eq!(events.state(EVENT_WAIT).await, ConnectionState::Connected);
     assert_eq!(fx.connects.load(Ordering::SeqCst), 5);
     events.shell_pid(&mut terminal).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn two_terminals_report_one_failed_reconnection_for_their_shared_connection() {
+    let Some(sshd) = support::sshd(Service::Flaky) else {
+        return;
+    };
+    let _turn = SERVER.lock().await;
+    let fx = Fixture::new(sshd);
+    let (mut first, mut first_events) = fx.open().await;
+    let (mut second, mut second_events) = fx.open().await;
+    first_events.shell_pid(&mut first).await;
+    second_events.shell_pid(&mut second).await;
+
+    fx.down.store(true, Ordering::SeqCst);
+    fx.sshd.drop_connections();
+    let mut failures = 0;
+    for events in [&mut first_events, &mut second_events] {
+        loop {
+            if let ConnectionState::Disconnected {
+                report_reconnect_failure,
+                ..
+            } = events.state(EVENT_WAIT).await
+            {
+                failures += usize::from(report_reconnect_failure);
+                break;
+            }
+        }
+    }
+    assert_eq!(failures, 1);
+
+    first.reconnect().unwrap();
+    assert!(matches!(
+        first_events.state(EVENT_WAIT).await,
+        ConnectionState::Reconnecting { .. }
+    ));
+    assert!(matches!(
+        first_events.state(EVENT_WAIT).await,
+        ConnectionState::Disconnected {
+            report_reconnect_failure: false,
+            ..
+        }
+    ));
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -414,11 +414,17 @@ The lower-right corner of the workspace stacks up to three in-app toasts above t
 
 Additional toasts queue in arrival order. A normal toast stays on screen for five seconds. An error stays until dismissed with its labeled close button. Persistent live regions announce normal messages politely and errors assertively without moving focus.
 
+### System notifications
+
+The desktop app posts system notifications while its window is in the background. Each upload, download, or copy request produces one summary after all its transfers finish, including failed and cancelled items. A lost Connection can report one failed reconnection across the Terminals sharing it. Program requests show under a localized Terminal notification title, with up to one notification per Terminal per second. Existing in-app toasts follow their own visibility rules.
+
+Settings → Notifications has independent controls for transfer batches, failed reconnections, long-running commands, and Terminal programs. The native notification click restores the main window when the desktop reports activation. See the [platform checks](docs/notifications.md) for permissions and activation behavior.
+
 ### Settings navigation
 
 The top search field filters settings across all categories. Results keep their category headings and the original controls. Search matches titles, descriptions, and keywords in both English and Simplified Chinese. Clearing the field returns to the selected category. Choosing a category clears the search and scrolls its rows to the top.
 
-The left navigation lists Appearance, Terminal, Files, Connection, Transfers, Shortcuts, Updates, and Diagnostics in that order when available. Appearance includes workspace layout and interface language. Updates and Diagnostics use the installed app's native features. The current category uses the `selected` surface, and narrow workspaces place the categories in a horizontally scrolling row above the controls. Notifications and Agent access can appear when they have settings available.
+The left navigation lists Appearance, Terminal, Files, Connection, Transfers, Shortcuts, Notifications, Updates, and Diagnostics in that order when available. Appearance includes workspace layout and interface language. Notifications, Updates, and Diagnostics use the installed app's native features. The current category uses the `selected` surface, and narrow workspaces place the categories in a horizontally scrolling row above the controls. Agent access can appear when it has settings available.
 
 Settings → Connection accepts a custom Unix agent socket or Windows named pipe in a text field. The field saves on Enter or blur. Clearing it returns new Connections to the system agent. A Connection uses the same source for authentication and agent forwarding when its Host enables forwarding.
 
