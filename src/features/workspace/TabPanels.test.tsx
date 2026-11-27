@@ -69,6 +69,7 @@ function renderWorkspace(initialPane: Pane = local("a")) {
           tabs={state.tabs}
           activeId={state.activeId}
           platform="mac"
+          titleSource="shell"
           onActivate={(id) => dispatch({ type: "activate", id })}
           onTabAction={dispatch}
           onMove={() => {}}
