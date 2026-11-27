@@ -22,6 +22,7 @@ const sources: ImportOption[] = [
   fileSource("putty", ["reg"]),
   fileSource("mobaxterm", ["mxtsessions", "moba"]),
   folderSource("xshell"),
+  folderSource("securecrt"),
 ];
 
 function fileSource(kind: "csv" | "putty" | "mobaxterm", extensions: string[]): ImportOption {
@@ -38,7 +39,7 @@ function fileSource(kind: "csv" | "putty" | "mobaxterm", extensions: string[]): 
   };
 }
 
-function folderSource(kind: "xshell"): ImportOption {
+function folderSource(kind: "xshell" | "securecrt"): ImportOption {
   return {
     kind,
     description: (t) => t(`hosts.import.${kind}.help`),
