@@ -261,14 +261,18 @@ it("records a replacement in Settings and uses it in the window and command pale
   const initial = workspace({ type: "open", tabId: "settings", pane: newPane({ kind: "settings" }, "settings") });
   const mac = currentPlatform() === "mac";
   const mods = mac ? { metaKey: true } : { ctrlKey: true, shiftKey: true };
-  async function press(key: string, code: string, modifiers: KeyboardEventInit = mods) {
+  async function press(key: string, code: string, modifiers: KeyboardEventInit = mods, target = document.activeElement ?? document.body) {
     const event = new KeyboardEvent("keydown", { key, code, bubbles: true, cancelable: true, ...modifiers });
-    await act(async () => (document.activeElement ?? document.body).dispatchEvent(event));
+    await act(async () => target.dispatchEvent(event));
     return event.defaultPrevented;
   }
 
   await render(initial);
   await clickButton("Shortcuts");
+  await clickButton("Edit shortcut for New Local terminal");
+  expect(await press("j", "KeyJ", {}, document.body)).toBe(false);
+  expect(await press("Escape", "Escape", {})).toBe(true);
+  expect(settingsFile.shortcuts).toBeUndefined();
   await clickButton("Edit shortcut for New Local terminal");
   if (!mac) {
     expect(await press("w", "KeyW", { ctrlKey: true })).toBe(true);

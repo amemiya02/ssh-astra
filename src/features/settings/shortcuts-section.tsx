@@ -72,7 +72,8 @@ function ShortcutRow({ name, setting, shortcuts, overrides }: {
   }, [name, platform]);
 
   useLayoutEffect(() => {
-    if (!recording || !context) return;
+    const target = recordButton.current;
+    if (!recording || !context || !target) return;
     const handler = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey) {
         setRecording(false);
@@ -89,7 +90,7 @@ function ShortcutRow({ name, setting, shortcuts, overrides }: {
         apply(result.chord);
       }
     };
-    return context.registerCapture(handler);
+    return context.registerCapture(target, handler);
   }, [apply, context, platform, recording]);
 
   const action = t(setting.title);

@@ -6,7 +6,7 @@ type Capture = (event: KeyboardEvent) => void;
 
 export const ShortcutCaptureContext = createContext<{
   platform: Platform;
-  registerCapture(handler: Capture): () => void;
+  registerCapture(target: EventTarget, handler: Capture): () => void;
 } | null>(null);
 
 /** Whether a key press is headed for a Terminal (xterm's hidden textarea lives inside `.xterm`). */
@@ -17,11 +17,12 @@ function keyFocus(target: EventTarget | null): KeyFocus {
 /** Dispatches window shortcuts and gives the Settings recorder first use of the same key presses. */
 export function useWorkspaceShortcuts(platform: Platform, run: (command: WorkspaceCommand) => void) {
   const runRef = useRef(run);
-  const capture = useRef<Capture | null>(null);
-  const registerCapture = useCallback((handler: Capture) => {
-    capture.current = handler;
+  const capture = useRef<{ target: EventTarget; handler: Capture } | null>(null);
+  const registerCapture = useCallback((target: EventTarget, handler: Capture) => {
+    const recording = { target, handler };
+    capture.current = recording;
     return () => {
-      if (capture.current === handler) capture.current = null;
+      if (capture.current === recording) capture.current = null;
     };
   }, []);
   useEffect(() => {
@@ -31,10 +32,11 @@ export function useWorkspaceShortcuts(platform: Platform, run: (command: Workspa
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.isComposing) return;
-      if (capture.current) {
+      const recording = capture.current;
+      if (recording && recording.target === event.target) {
         event.preventDefault();
         event.stopPropagation();
-        if (!event.repeat) capture.current(event);
+        if (!event.repeat) recording.handler(event);
         return;
       }
       const command = matchShortcut(event, getResolvedShortcuts(platform), keyFocus(event.target));
