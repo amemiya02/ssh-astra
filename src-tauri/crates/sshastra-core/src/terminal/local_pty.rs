@@ -6,6 +6,8 @@ use std::thread;
 
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use super::local_cwd::LocalCwdReader;
 use super::{Result, Terminal, TerminalError, TerminalEvent, TerminalSize};
 
 const READ_BUFFER: usize = 64 * 1024;
@@ -78,7 +80,8 @@ impl ShellCommand {
 /// a Local terminal.
 ///
 /// Output is pushed to the event sink from a background thread as soon as the
-/// shell produces it; nothing is polled.
+/// shell produces it. On macOS and Linux the reader also reports changes to
+/// the shell process's working directory.
 pub struct LocalPty {
     writer: Box<dyn Write + Send>,
     /// Shared with the waiter thread, which drops it once the shell exits (on
@@ -103,7 +106,7 @@ impl LocalPty {
         drop(pair.slave);
 
         let killer = child.clone_killer();
-        let mut reader = pair.master.try_clone_reader().map_err(spawn_err)?;
+        let mut reader = OutputReader::new(pair.master.as_ref(), child.process_id())?;
         let writer = pair.master.take_writer().map_err(spawn_err)?;
         let master = Arc::new(Mutex::new(Some(pair.master)));
 
@@ -112,7 +115,7 @@ impl LocalPty {
             .spawn(move || {
                 let mut buf = vec![0u8; READ_BUFFER];
                 loop {
-                    match reader.read(&mut buf) {
+                    match reader.read(&mut buf, &mut sink) {
                         // EOF, or EIO on Linux once the shell side is closed.
                         Ok(0) | Err(_) => break,
                         Ok(n) => sink(TerminalEvent::Output(buf[..n].to_vec())),
@@ -140,6 +143,36 @@ impl LocalPty {
             master,
             killer,
         })
+    }
+}
+
+enum OutputReader {
+    Plain(Box<dyn Read + Send>),
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    WithCwd(LocalCwdReader),
+}
+
+impl OutputReader {
+    fn new(master: &dyn MasterPty, _pid: Option<u32>) -> Result<Self> {
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        if let Some(pid) = _pid {
+            if let Some(reader) = LocalCwdReader::new(master, pid).map_err(spawn_err)? {
+                return Ok(Self::WithCwd(reader));
+            }
+        }
+        Ok(Self::Plain(master.try_clone_reader().map_err(spawn_err)?))
+    }
+
+    fn read(
+        &mut self,
+        buf: &mut [u8],
+        _sink: &mut impl FnMut(TerminalEvent),
+    ) -> std::io::Result<usize> {
+        match self {
+            Self::Plain(reader) => reader.read(buf),
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            Self::WithCwd(reader) => reader.read(buf, _sink),
+        }
     }
 }
 

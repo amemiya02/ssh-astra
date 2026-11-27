@@ -29,6 +29,7 @@ interface TabPanelsProps {
   onConnectRestoredPane(paneId: string): void;
   /** A program in the pane set its title (empty string clears it). */
   onTitleChange(paneId: string, title: string): void;
+  onLocalCwd(paneId: string, cwd: string): void;
   onStatusChange(paneId: string, status: ConnectionStatus, reconnecting?: ReconnectProgress): void;
   onResizeSplit(tabId: string, resize: SplitResize): void;
 }
@@ -148,6 +149,7 @@ function PaneContent({
   autoConnect,
   onConnectRestoredPane,
   onTitleChange,
+  onLocalCwd,
   onStatusChange,
   onClosePane,
   onEditHost,
@@ -164,7 +166,14 @@ function PaneContent({
     case "home":
       return renderHome(active);
     case "local-terminal":
-      return <LocalTerminalView active={active} onTitleChange={(title) => onTitleChange(pane.id, title)} />;
+      return (
+        <LocalTerminalView
+          active={active}
+          initialCwd={pane.cwd}
+          onTitleChange={(title) => onTitleChange(pane.id, title)}
+          onCwd={(cwd) => onLocalCwd(pane.id, cwd)}
+        />
+      );
     case "remote-terminal":
       return (
         <RemoteTerminalView

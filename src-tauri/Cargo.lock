@@ -5476,6 +5476,7 @@ dependencies = [
  "encoding_rs",
  "hmac",
  "keyring",
+ "libc",
  "log",
  "notify",
  "portable-pty",

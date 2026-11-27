@@ -3,6 +3,8 @@
 //! IPC layer and the UI treat them the same way.
 
 mod encoding;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod local_cwd;
 mod local_pty;
 mod registry;
 mod shell_integration;
@@ -54,8 +56,8 @@ pub enum TerminalEvent {
     /// A remote Terminal's Connection dropped, is being reopened, or is back
     /// (with a new shell). Local terminals never send it.
     Connection(ConnectionState),
-    /// A remote Terminal's shell reported its current directory (ShellIntegration,
-    /// OSC 7). Sent after the output that carried it.
+    /// The shell's current directory, read from the local process on macOS/Linux
+    /// or reported by the remote shell (Shell integration or OSC 7).
     Cwd(String),
     /// Prompt or command state from an interactive shell with Shell integration.
     ShellIntegration(ShellIntegrationEvent),

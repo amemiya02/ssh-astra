@@ -17,6 +17,8 @@ const dim = (text: string) => `\x1b[2m${text}\x1b[0m`;
 interface LocalTerminalViewProps {
   /** Whether its tab is shown; becoming active refits and focuses the Terminal. */
   active?: boolean;
+  initialCwd?: string;
+  onCwd?(cwd: string): void;
   /** The shell set a window title (OSC 0/2); an empty string clears it. */
   onTitleChange?(title: string): void;
 }
@@ -26,17 +28,20 @@ interface LocalTerminalViewProps {
  * Stays mounted while its tab is hidden. When the shell exits or cannot start,
  * Enter starts a new one in the same tab.
  */
-export function LocalTerminalView({ active = true, onTitleChange }: LocalTerminalViewProps) {
+export function LocalTerminalView({ active = true, initialCwd, onCwd, onTitleChange }: LocalTerminalViewProps) {
   const { t } = useTranslation();
   const { broadcast, tabId, paneId } = useContext(BroadcastPaneContext) ?? {};
   const { activity, tabId: activityTabId } = useContext(TabActivityContext) ?? {};
   // Read through refs so a language change or a new callback never recreates the Terminal.
   const tRef = useRef(t);
   const onTitleChangeRef = useRef(onTitleChange);
+  const onCwdRef = useRef(onCwd);
+  const initialCwdRef = useRef(initialCwd);
 
   useEffect(() => {
     tRef.current = t;
     onTitleChangeRef.current = onTitleChange;
+    onCwdRef.current = onCwd;
   });
 
   const attach = useCallback((xterm: XTerm) => {
@@ -60,7 +65,7 @@ export function LocalTerminalView({ active = true, onTitleChange }: LocalTermina
       onTitleChangeRef.current?.("");
     };
 
-    const start = () => {
+    const start = (cwd?: string) => {
       waitingForRestart = false;
       xterm.options.cursorBlink = true;
       // The exit message can arrive before the open call resolves; this shell must not be adopted then.
@@ -72,6 +77,10 @@ export function LocalTerminalView({ active = true, onTitleChange }: LocalTermina
           xterm.write(event.data);
           return;
         }
+        if (event.type === "cwd") {
+          onCwdRef.current?.(event.path);
+          return;
+        }
         // Local terminals have no Connection and no ShellIntegration.
         if (event.type !== "exit") return;
         exited = true;
@@ -81,7 +90,7 @@ export function LocalTerminalView({ active = true, onTitleChange }: LocalTermina
             : tRef.current("terminal.exited", { code: event.code });
         xterm.write(`\r\n${dim(message)}\r\n`);
         offerRestart();
-      }).then(
+      }, cwd).then(
         (opened) => {
           if (disposed || exited) {
             void closeTerminal(opened);
@@ -125,7 +134,7 @@ export function LocalTerminalView({ active = true, onTitleChange }: LocalTermina
     const onBell = xterm.onBell(() => {
       if (activityTabId !== undefined) activity?.bell(activityTabId);
     });
-    start();
+    start(initialCwdRef.current);
 
     return () => {
       disposed = true;

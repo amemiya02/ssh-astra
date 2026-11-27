@@ -398,6 +398,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
             onEditHost={(host) => hostsController.actions.edit(hosts.find((saved) => saved.id === host.id) ?? host)}
             onConnectRestoredPane={(paneId) => dispatch({ type: "connectRestoredPane", paneId })}
             onTitleChange={retitle}
+            onLocalCwd={(paneId, cwd) => dispatch({ type: "localCwd", paneId, cwd })}
             onStatusChange={setStatus}
             onResizeSplit={(tabId, resize) => dispatch({ type: "resizeSplit", tabId, ...resize })}
           />
