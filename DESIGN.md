@@ -517,9 +517,9 @@ Show live counts for Connections, unfinished transfers (including paused transfe
 
 ### Host import
 
-Import Hosts opens the same source picker from Home, the Hosts sidebar, and the command palette. The OpenSSH option reads `~/.ssh/config` directly. The CSV option opens the native file picker and shows the expected headers and Group path separator. Cancelling the native picker returns to the source picker.
+Import Hosts opens the same source picker from Home, the Hosts sidebar, and the command palette. The OpenSSH option reads `~/.ssh/config` directly. CSV and PuTTY open the native file picker for a CSV file or a registry export from PuTTY’s Sessions key. The CSV option also shows the expected headers and Group path separator. Cancelling the native picker returns to the source picker.
 
-The report lists imported Hosts, skipped names, and problems. CSV problems identify the starting line of the record. The OpenSSH report shows each saved ProxyCommand as literal shell text beside its Host.
+The report lists imported Hosts, skipped names, and problems. CSV problems identify the starting line of the record. PuTTY problems identify the affected session or registry file line. PuTTY reports omitted options and credentials without displaying their values. The OpenSSH report shows each saved ProxyCommand as literal shell text beside its Host.
 
 ### Connection view
 A remote Terminal pane shows a scrollable Connection view on the workspace surface until its shell opens. The progress list groups steps by Host in route order, including each named Jump host. Reach server, Verify host key and Log in apply to each hop. Open shell applies to the destination. An extra step appears while this pane waits for another connection attempt.

@@ -18,18 +18,23 @@ const sources: ImportOption[] = [
     kind: "sshConfig",
     choose: async () => ({ kind: "sshConfig" }),
   },
-  {
-    kind: "csv",
-    description: (t) => t("hosts.import.csv.help"),
+  fileSource("csv", "csv"),
+  fileSource("putty", "reg"),
+];
+
+function fileSource(kind: "csv" | "putty", extension: string): ImportOption {
+  return {
+    kind,
+    description: (t) => t(`hosts.import.${kind}.help`),
     async choose(t) {
       const path = await pickOpenPath({
-        title: t("hosts.import.csv.chooseFile"),
-        filters: [{ name: t("hosts.import.csv.fileType"), extensions: ["csv"] }],
+        title: t(`hosts.import.${kind}.chooseFile`),
+        filters: [{ name: t(`hosts.import.${kind}.fileType`), extensions: [extension] }],
       });
-      return path ? { kind: "csv", path } : null;
+      return path ? { kind, path } : null;
     },
-  },
-];
+  };
+}
 
 export function HostImportDialogContent({ onImport, onClose }: {
   onImport(source: HostImportSource): Promise<void>;

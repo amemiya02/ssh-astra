@@ -206,7 +206,7 @@
     "connectFailed": "無法連線到 {{name}}：{{message}}",
     "import": {
       "action": "匯入 Host…",
-      "keywords": "ssh config openssh csv 匯入",
+      "keywords": "ssh config openssh csv 匯入 putty",
       "pickerTitle": "匯入 Host",
       "chooseSource": "選擇要從哪裡匯入 Host。",
       "sshConfig": {
@@ -223,6 +223,15 @@
         "title": "CSV 匯入結果",
         "nothing": "CSV 檔案中沒有可匯入的 Host。",
         "error": "無法匯入 CSV 檔案：{{message}}"
+      },
+      "putty": {
+        "action": "PuTTY 登錄匯出檔…",
+        "help": "選擇從 PuTTY 的 Sessions 登錄機碼匯出的 .reg 檔案。",
+        "chooseFile": "選擇 PuTTY 登錄匯出檔",
+        "fileType": "PuTTY 登錄匯出檔",
+        "title": "PuTTY 匯入結果",
+        "nothing": "PuTTY 登錄匯出檔中沒有可匯入的主機。",
+        "error": "無法匯入 PuTTY 登錄匯出檔：{{message}}"
       },
       "summary": "匯入 {{imported}} 個，略過 {{skipped}} 個，無法匯入 {{failed}} 個。",
       "imported": "已匯入",
@@ -244,7 +253,14 @@
         "csvMissingField": "必須填寫 {{field}}。",
         "csvInvalidPort": "Port 必須是 1 到 65535 之間的整數。",
         "csvInvalidGroup": "Group 路徑中的每一層都需要名稱。",
-        "csvMalformedRecord": "這筆 CSV 記錄的引號格式有誤。"
+        "csvMalformedRecord": "這筆 CSV 記錄的引號格式有誤。",
+        "puttyFile": "請選擇具備有效檔頭和文字編碼的 Windows 登錄匯出檔案（.reg）。",
+        "puttySessionName": "此登錄機碼中的 PuTTY 工作階段名稱或群組路徑無效。",
+        "puttyCredentials": "已略過儲存的認證資訊。",
+        "puttyUnsupportedProtocol": "此 PuTTY 工作階段使用的通訊協定並非 SSH。",
+        "puttyDefaultUser": "PuTTY 未儲存使用者名稱，已使用本機使用者名稱。",
+        "puttyInvalidOption": "PuTTY 選項 {{option}} 缺失或無效。",
+        "puttyUnsupportedOptions": "已略過 PuTTY 選項：{{options}}。"
       }
     },
     "transfer": {

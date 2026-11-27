@@ -1,0 +1,64 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions]
+[HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions\Default%20Settings]
+"HostName"=""
+"UserName"="default-user"
+"PublicKeyFile"="C:\\Keys\\default.ppk"
+
+[HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions\Work\North%20America]
+[HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions\Work\North%20America\Web%20%25%5C%20%E9%9B%B2]
+"Present"=dword:00000001
+"Protocol"="ssh"
+"HostName"="deploy@web.example.test"
+"UserName"="ignored"
+"PortNumber"=dword:00000899
+"PublicKeyFile"="C:\\Test Keys\\web \"A\".ppk"
+"ProxyMethod"=dword:00000006
+"ProxyHost"="BASTION HOST"
+"ProxyPort"=dword:00000050
+"ProxyPassword"="PUTTY_TEST_PROXY_PASSWORD"
+"Password"="PUTTY_TEST_SESSION_PASSWORD"
+"Passphrase"=hex:50,55,54,54,59,5f,\
+  54,45,53,54
+"RemoteCommand"="echo PUTTY_TEST_COMMAND"
+"TerminalType"="PUTTY_TEST_TERMINAL"
+"PingInterval"=dword:00000001
+"PingIntervalSecs"=dword:0000000a
+
+[HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions\Other%20Web]
+"HostName"="[2001:db8::1]"
+"UserName"="ops"
+"ProxyMethod"=dword:00000006
+"ProxyHost"="bastion Host"
+"ProxyUsername"="audit"
+
+[HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions\Bastion%20Host]
+"HostName"="bastion.example.test"
+"PortNumber"=dword:00000016
+"UserName"="staging"
+"PublicKeyFile"="C:\\Keys\\jump.ppk"
+"ProxyMethod"=dword:00000006
+"ProxyHost"="edge.example.test"
+"ProxyUsername"="edge"
+"ProxyPort"=dword:000008ae
+
+[HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions\A/B]
+"HostName"="flat.example.test"
+
+[HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions\Caf%E9]
+"HostName"="cafe.example.test"
+"UserName"="ops"
+"ProxyMethod"=dword:00000005
+"ProxyTelnetCommand"="tool PUTTY_TEST_PROXY_COMMAND"
+
+[HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions\Bad%20Port]
+"HostName"="bad.example.test"
+"PortNumber"="PUTTY_TEST_BAD_PORT"
+
+[HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions\Old%20Telnet]
+"Protocol"="telnet"
+"HostName"="telnet.example.test"
+
+[HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\SshHostKeys]
+"rsa2@22:old.example.test"="PUTTY_TEST_HOST_KEY"
