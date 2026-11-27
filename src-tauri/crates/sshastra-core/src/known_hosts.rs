@@ -323,28 +323,5 @@ fn hashed_matches(salt_and_hash: &str, name: &str) -> bool {
 /// Case-insensitive glob with `*` (any run) and `?` (any one character).
 fn glob_matches(pattern: &str, name: &str) -> bool {
     let pattern: Vec<char> = pattern.to_lowercase().chars().collect();
-    let name: Vec<char> = name.to_lowercase().chars().collect();
-    let (mut p, mut n) = (0, 0);
-    let mut backtrack: Option<(usize, usize)> = None;
-    while n < name.len() {
-        match pattern.get(p) {
-            Some('*') => {
-                backtrack = Some((p, n));
-                p += 1;
-            }
-            Some(&c) if c == '?' || c == name[n] => {
-                p += 1;
-                n += 1;
-            }
-            _ => match backtrack {
-                Some((star, matched)) => {
-                    p = star + 1;
-                    n = matched + 1;
-                    backtrack = Some((star, matched + 1));
-                }
-                None => return false,
-            },
-        }
-    }
-    pattern[p..].iter().all(|&c| c == '*')
+    crate::wildcard::matches(&pattern, &name.to_lowercase())
 }

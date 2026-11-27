@@ -56,6 +56,7 @@ import type { FileBrowserStore } from "./fileBrowsers";
 import type { FileMove, FolderSize, SelectMode } from "./fileBrowserStore";
 import { errorText, operationErrorText } from "./fileErrors";
 import { FileOperationDialog, MoveFailureDialog, type FileOperation } from "./FileOperationDialogs";
+import { FileNameSearch } from "./FileNameSearch";
 import { filesSetting } from "./file-prefs";
 import {
   childPath,
@@ -116,11 +117,16 @@ export function FileBrowser({
   const error = useStore(store, (s) => s.error);
   const canPaste = useStore(store, (s) => s.cut !== null && s.cut.directory !== s.path && !s.moving);
   const [operation, setOperation] = useState<FileOperation | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
   const moveFailures = useStore(store, (s) => s.moveFailures);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const panel = useRef<HTMLDivElement>(null);
   const dragged = useRef<FileMove | undefined>(undefined);
   const focusPanel = () => panel.current?.focus({ preventScroll: true });
+  const toggleSearch = exchange?.side === "local" ? undefined : () => {
+    if (searchOpen) focusPanel();
+    setSearchOpen(!searchOpen);
+  };
   const paste = enableMove && canPaste ? () => void store.getState().pasteCutEntries() : undefined;
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const target = event.target;
@@ -144,18 +150,25 @@ export function FileBrowser({
     <div ref={panel} tabIndex={-1} onKeyDown={onKeyDown}
       className="focus-visible:ring-ring/50 flex h-full flex-col outline-none focus-visible:ring-[3px] focus-visible:ring-inset">
       {/* Sibling keys must differ: PathBar and FileTable sharing the path as key made React keep the old path bar. */}
-      <PathBar key={`path:${path ?? ""}`} store={store} focusPanel={focusPanel} onOperation={setOperation} />
+      <PathBar key={`path:${path ?? ""}`} store={store} focusPanel={focusPanel} onOperation={setOperation}
+        searchOpen={searchOpen} onToggleSearch={toggleSearch} />
       {error && path !== null && (
         <p role="alert" className="text-destructive px-3 pb-1.5 text-xs">
           {errorText(t, error, hostName)}
         </p>
       )}
       {/* Keyed by path: a new directory starts scrolled to the top with nothing focused. */}
-      {path !== null && (
+      {path !== null && (searchOpen ? (
+        <FileNameSearch store={store} path={path}
+          onClose={() => {
+            focusPanel();
+            setSearchOpen(false);
+          }} />
+      ) : (
         <FileTable key={`table:${path}`} store={store} path={path}
           onOperation={setOperation} onDownload={onDownload} exchange={exchange}
           enableMove={enableMove} onPaste={paste} />
-      )}
+      ))}
       {operation && (
         <FileOperationDialog
           store={store}
@@ -201,10 +214,12 @@ function pathCrumbs(path: string) {
   return crumbs;
 }
 
-function PathBar({ store, focusPanel, onOperation }: {
+function PathBar({ store, focusPanel, onOperation, searchOpen, onToggleSearch }: {
   store: FileBrowserStore;
   focusPanel(): void;
   onOperation(operation: FileOperation): void;
+  searchOpen: boolean;
+  onToggleSearch?: () => void;
 }) {
   const { t } = useTranslation();
   const path = useStore(store, (s) => s.path);
@@ -238,7 +253,7 @@ function PathBar({ store, focusPanel, onOperation }: {
         event.preventDefault();
         if (!draft?.trim()) return;
         const editor = input.current;
-        await store.getState().navigate(draft);
+        await store.getState().navigate(draft.trim());
         const { error, loading } = store.getState();
         if (error || loading) return;
         if (document.activeElement === editor || (!editor?.isConnected && document.activeElement === document.body)) {
@@ -324,6 +339,12 @@ function PathBar({ store, focusPanel, onOperation }: {
           </>
         )}
       </div>
+      {onToggleSearch && (
+        <IconButton type="button" label={t("files.search.open")} className="size-6"
+          aria-pressed={searchOpen} disabled={path === null} onClick={onToggleSearch}>
+          <Search />
+        </IconButton>
+      )}
       <IconButton
         type="button"
         label={t("files.newFile")}
@@ -376,6 +397,8 @@ function FileTable({
   const cut = useStore(store, (s) => s.cut);
   const moving = useStore(store, (s) => s.moving);
   const folderSizes = useStore(store, (s) => s.folderSizes);
+  const revealed = useStore(store, (s) =>
+    s.revealedName !== null && s.selection.has(s.revealedName) ? s.revealedName : null);
   const canStartMove = enableMove && !moving;
   const [prefs, setPrefs] = useSetting(filesSetting);
   const [filter, setFilter] = useState("");
@@ -389,9 +412,9 @@ function FileTable({
     : `${columnWidths[key]}rem`).join(" ");
   const rows = useMemo(() => {
     const query = filter.trim().toLocaleLowerCase();
-    const shown = shownEntries(entries, sort, prefs.showHidden);
+    const shown = shownEntries(entries, sort, prefs.showHidden, revealed);
     return query ? shown.filter((entry) => entry.name.toLocaleLowerCase().includes(query)) : shown;
-  }, [entries, sort, prefs.showHidden, filter]);
+  }, [entries, sort, prefs.showHidden, filter, revealed]);
   const order = useMemo(() => rows.map((r) => r.name), [rows]);
   const dateFormat = useMemo(
     () => new Intl.DateTimeFormat(i18n.language, { dateStyle: "short", timeStyle: "short" }),
@@ -419,7 +442,19 @@ function FileTable({
     busy: boolean;
     failure: CommandError | null;
   } | null>(null);
-  const focusIndex = focused === null ? -1 : order.indexOf(focused);
+  const focusName = focused ?? revealed;
+  const focusIndex = focusName === null ? -1 : order.indexOf(focusName);
+  const revealedIndex = revealed === null ? -1 : order.indexOf(revealed);
+  useLayoutEffect(() => {
+    const element = scroller.current;
+    if (!element || revealedIndex < 0) return;
+    const top = revealedIndex * rowHeight;
+    const height = element.clientHeight - (header.current?.offsetHeight ?? 0);
+    if (top < element.scrollTop || top + rowHeight > element.scrollTop + height) {
+      element.scrollTop = top;
+    }
+    grid.current?.focus({ preventScroll: true });
+  }, [revealedIndex, revealed]);
   const { start, end } = visibleRows({ scrollTop, viewport, rowHeight, count: rows.length, overscan });
   const baseId = useId();
   const rowId = (index: number) => `${baseId}-row-${index}`;
