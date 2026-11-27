@@ -8,6 +8,8 @@ export type ConnectionStatus = "connecting" | "connected" | "disconnected";
  * `PaneContent` (`TabPanels.tsx`).
  */
 export type PaneKind =
+  /** The Host vault: search, recent and every Host as a card. One per window. */
+  | { kind: "home" }
   | { kind: "local-terminal" }
   | { kind: "remote-terminal"; host: Host }
   | { kind: "sftp"; host: Host }
@@ -21,6 +23,8 @@ export type PaneKind =
  */
 function singletonKey(pane: PaneKind): string | undefined {
   switch (pane.kind) {
+    case "home":
+      return "home";
     case "settings":
       return "settings";
     case "sftp":
@@ -80,6 +84,16 @@ export type TabsAction =
 
 export const emptyTabs: TabsState = { tabs: [], activeId: null };
 
+/** What the app opens with: the Home tab, no Terminal. */
+export function startupTabs(): TabsState {
+  return tabsReducer(emptyTabs, { type: "open", tabId: crypto.randomUUID(), pane: newPane({ kind: "home" }) });
+}
+
+/** Panes a split can sit beside: Terminals and tabs that open a Local terminal next to them. */
+export function canSplit(pane: Pane): boolean {
+  return pane.kind !== "sftp" && pane.kind !== "home";
+}
+
 /** DOM ids linking a tab to its panel (aria-controls / aria-labelledby). */
 export const tabId = (id: string) => `tab-${id}`;
 export const tabPanelId = (id: string) => `tabpanel-${id}`;
@@ -136,12 +150,14 @@ export function remoteTerminalPaneIds(state: TabsState): string[] {
  */
 export function tabTitle(
   tab: Tab,
-  t: (key: "tabs.localTerminal" | "tabs.settings" | "tabs.portForwards" | "tabs.sftp") => string,
+  t: (key: "tabs.home" | "tabs.localTerminal" | "tabs.settings" | "tabs.portForwards" | "tabs.sftp") => string,
   ordinal: number,
 ): string {
   const pane = activePane(tab);
   if (pane.title) return pane.title;
   switch (pane.kind) {
+    case "home":
+      return t("tabs.home");
     case "local-terminal": {
       const name = t("tabs.localTerminal");
       return ordinal > 1 ? `${name} ${ordinal}` : name;
@@ -196,7 +212,7 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
     }
     case "split": {
       const tab = activeTab(state);
-      if (!tab || activePane(tab).kind === "sftp") return state;
+      if (!tab || !canSplit(activePane(tab))) return state;
       const at = tab.panes.findIndex((pane) => pane.id === tab.activePaneId) + 1;
       const panes = [...tab.panes.slice(0, at), action.pane, ...tab.panes.slice(at)];
       return replaceTab(state, { ...tab, panes, activePaneId: action.pane.id, orientation: action.orientation });

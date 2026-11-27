@@ -21,8 +21,16 @@ describe("layout settings", () => {
   });
 
   it("restores the dock and panel sizes saved before a restart", () => {
-    const saved = { dock: "bottom", groups: { shell: { sidebar: 22, main: 78 } } };
+    const saved = { dock: "bottom", sidebarView: "forwards", groups: { shell: { sidebar: 22, main: 78 } } };
     expect(layoutSetting.parse(saved)).toEqual(saved);
+  });
+
+  it("shows the Host list unless the saved sidebar view is a known one", () => {
+    expect(defaultShellLayout.sidebarView).toBe("hosts");
+    expect(layoutSetting.parse({ dock: "right", groups: {} }).sidebarView).toBe("hosts");
+    expect(layoutSetting.parse({ sidebarView: "forwards" }).sidebarView).toBe("forwards");
+    expect(layoutSetting.parse({ sidebarView: "files" }).sidebarView).toBe("hosts");
+    expect(layoutSetting.parse({ sidebarView: 3 }).sidebarView).toBe("hosts");
   });
 
   it("falls back to the default layout when the saved value is not an object", () => {
@@ -43,6 +51,7 @@ describe("layout settings", () => {
     };
     expect(layoutSetting.parse(saved)).toEqual({
       dock: "right",
+      sidebarView: "hosts",
       groups: { shell: { sidebar: 30, main: 70 } },
     });
   });

@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { getSetting, setSetting, useSetting } from "@/lib/storage";
-import { layoutSetting, type FilePanelDock, type GroupLayout } from "./shell-layout";
+import { layoutSetting, type FilePanelDock, type GroupLayout, type SidebarView } from "./shell-layout";
 
 /** The persisted main window layout, saved whenever it changes. */
 export function useShellLayout() {
@@ -17,5 +17,10 @@ export function useShellLayout() {
     if (prev.dock !== dock) setSetting(layoutSetting, { ...prev, dock });
   }, []);
 
-  return { layout, saveGroup, setDock };
+  const setSidebarView = useCallback((sidebarView: SidebarView) => {
+    const prev = getSetting(layoutSetting);
+    if (prev.sidebarView !== sidebarView) setSetting(layoutSetting, { ...prev, sidebarView });
+  }, []);
+
+  return { layout, saveGroup, setDock, setSidebarView };
 }

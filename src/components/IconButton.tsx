@@ -8,11 +8,13 @@ interface IconButtonProps extends Omit<ComponentProps<typeof Button>, "children"
   label: string;
   /** Optional shortcut hint shown after the label in the tooltip. */
   shortcut?: string;
+  /** Which side the tooltip opens on; below by default, beside for a vertical rail. */
+  tooltipSide?: "top" | "right" | "bottom" | "left";
   children: ReactNode;
 }
 
 /** A quiet 26px icon button for chrome (tab strip, panel headers, status bar). */
-export function IconButton({ label, shortcut, className, children, ...props }: IconButtonProps) {
+export function IconButton({ label, shortcut, tooltipSide = "bottom", className, children, ...props }: IconButtonProps) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -26,7 +28,7 @@ export function IconButton({ label, shortcut, className, children, ...props }: I
           {children}
         </Button>
       </TooltipTrigger>
-      <TooltipContent side="bottom" sideOffset={4}>
+      <TooltipContent side={tooltipSide} sideOffset={4}>
         {label}
         {shortcut && <span className="text-background/60 ml-2">{shortcut}</span>}
       </TooltipContent>

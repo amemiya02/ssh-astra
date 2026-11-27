@@ -6,7 +6,9 @@ import { paletteActions } from "@/features/palette/palette-actions";
 import { startI18n } from "@/i18n";
 import { ThemeProvider } from "@/theme/ThemeProvider";
 import { AppShell } from "./AppShell";
+import { getSetting } from "@/lib/storage";
 import { useFilePanelDock } from "./file-panel-dock";
+import { layoutSetting } from "./shell-layout";
 
 let root: Root | null = null;
 
@@ -50,7 +52,13 @@ function render() {
     root!.render(
       <ThemeProvider>
         <TooltipProvider>
-          <AppShell sidebar={null} tabs={null} workspace={null} filePanel={<DockState />} onOpenSettings={() => {}} />
+          <AppShell
+            sidebar={{ hosts: <p>hosts view</p>, forwards: <p>forwards view</p> }}
+            nav={{ activeKind: null, onHome() {}, onSftp() {}, onLocalTerminal() {}, onSettings() {} }}
+            tabs={null}
+            workspace={null}
+            filePanel={<DockState />}
+          />
         </TooltipProvider>
       </ThemeProvider>,
     ),
@@ -75,6 +83,39 @@ describe("AppShell", () => {
     act(() => toggleAction()!.run());
 
     expect(dock()).toBe("shown");
+  });
+
+  it("shows the Host list first and switches the sidebar view from the command palette", () => {
+    const container = render();
+    const view = (text: string) => [...container.querySelectorAll("aside > div")].find((el) => el.textContent === text)!;
+    expect(view("hosts view").hasAttribute("hidden")).toBe(false);
+    expect(view("forwards view").hasAttribute("hidden")).toBe(true);
+
+    act(() => paletteActions.list().find((a) => a.id === "shell.showForwards")!.run());
+
+    expect(view("hosts view").hasAttribute("hidden")).toBe(true);
+    expect(view("forwards view").hasAttribute("hidden")).toBe(false);
+    expect(getSetting(layoutSetting).sidebarView).toBe("forwards");
+
+    act(() => paletteActions.list().find((a) => a.id === "shell.showHosts")!.run());
+    expect(getSetting(layoutSetting).sidebarView).toBe("hosts");
+  });
+
+  it("marks the open sidebar view on the rail, and its button collapses and reopens the column", () => {
+    const container = render();
+    const button = (label: string) => container.querySelector<HTMLButtonElement>(`nav button[aria-label="${label}"]`)!;
+    expect(button("Hosts").getAttribute("aria-pressed")).toBe("true");
+    expect(button("Port forwards").getAttribute("aria-pressed")).toBe("false");
+
+    act(() => button("Port forwards").click());
+    expect(button("Hosts").getAttribute("aria-pressed")).toBe("false");
+    expect(button("Port forwards").getAttribute("aria-pressed")).toBe("true");
+
+    act(() => button("Port forwards").click());
+    expect(button("Port forwards").getAttribute("aria-pressed")).toBe("false");
+
+    act(() => button("Port forwards").click());
+    expect(button("Port forwards").getAttribute("aria-pressed")).toBe("true");
   });
 
   it("withdraws the action when the shell unmounts", () => {
