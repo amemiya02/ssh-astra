@@ -490,6 +490,36 @@
     }
   },
   "connect": {
+    "progress": {
+      "connecting": "Connecting",
+      "failed": "Connection failed",
+      "jumpHost": "Jump host: {{name}}",
+      "announcement": "{{host}}: {{stage}}",
+      "seconds": "{{duration}} s",
+      "retry": "Retry",
+      "close": "Close",
+      "stage": {
+        "waiting": "Wait for the existing connection",
+        "reused": "Use existing connection",
+        "reach": "Reach server",
+        "hostKey": "Verify host key",
+        "authenticate": "Log in",
+        "shell": "Open shell"
+      },
+      "status": {
+        "pending": "Pending",
+        "running": "In progress",
+        "succeeded": "Complete",
+        "failed": "Failed"
+      },
+      "method": {
+        "none": "check server methods",
+        "agent": "SSH agent",
+        "keyFile": "private key",
+        "password": "password",
+        "keyboardInteractive": "keyboard-interactive"
+      }
+    },
     "cancel": "Cancel",
     "hostKey": {
       "title": "Unknown host key",

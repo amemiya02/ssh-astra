@@ -490,6 +490,36 @@
     }
   },
   "connect": {
+    "progress": {
+      "connecting": "正在连接",
+      "failed": "连接失败",
+      "jumpHost": "跳板：{{name}}",
+      "announcement": "{{host}}：{{stage}}",
+      "seconds": "{{duration}} 秒",
+      "retry": "重试",
+      "close": "关闭",
+      "stage": {
+        "waiting": "等待已有的连接",
+        "reused": "使用已有的连接",
+        "reach": "到达服务器",
+        "hostKey": "核对主机密钥",
+        "authenticate": "登录",
+        "shell": "打开 shell"
+      },
+      "status": {
+        "pending": "未开始",
+        "running": "进行中",
+        "succeeded": "已完成",
+        "failed": "失败"
+      },
+      "method": {
+        "none": "检查服务端认证方法",
+        "agent": "SSH 代理",
+        "keyFile": "私钥",
+        "password": "密码",
+        "keyboardInteractive": "键盘交互式认证"
+      }
+    },
     "cancel": "取消",
     "hostKey": {
       "title": "未知的主机密钥",

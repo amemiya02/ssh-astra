@@ -410,6 +410,11 @@ Settings lists every theme as a card (10px radius, 6px padding, auto-fill at min
 - **Basic information** is always visible and includes the name, address, port, user, authentication, Group, and Jump host. New Hosts start with Automatic authentication. The private key field appears when Private key is selected. Group shows the current location or the selected destination for a new Host. Use the Host list's move action to change a saved Host's Group.
 - **Advanced** is a full-width disclosure below Basic information. It starts collapsed and contains Terminal colours, the File panel folder, and the action to clear a saved Host's credentials. A save error attached to an advanced field opens the section, displays the message by the field, and moves focus to it.
 
+### Connection view
+A remote Terminal pane shows a scrollable Connection view on the workspace surface until its shell opens. The progress list groups steps by Host in route order, including each named Jump host. Reach server, Verify host key and Log in apply to each hop. Open shell applies to the destination. An extra step appears while this pane waits for another connection attempt.
+
+Rows pair a status icon and explicit status text with the current authentication method and right-aligned elapsed time. The active icon uses `warning`, completed icons use `success`, and the failed row uses `destructive`. The existing Connection error panel explains the failure. Retry is the primary action and starts a new attempt in the same pane. Edit Host opens the Host editor, and Close closes the pane.
+
 ### Security surfaces
 - **Fingerprint block:** `muted` fill, 1px border, 10px radius, 12px by 14px padding; a `text-xs` muted label above the fingerprint in mono, breaking anywhere, selectable.
 - **Connection error panel:** 10px radius, 12px by 14px padding, destructive at 8% (12% dark) fill and a 30% destructive border. A host key mismatch is red and blocks.

@@ -90,9 +90,8 @@ pub async fn local_terminal_open(
 }
 
 /// Opens a Terminal on a saved Host, connecting first (through its Jump
-/// hosts, if any) if needed. Questions
-/// for the user (trust this host key? password?) arrive on `on_prompt`; answer
-/// them with `prompt_answer`. If the Connection drops later, the Terminal
+/// hosts, if any) if needed. Progress and questions for the user arrive on
+/// `on_prompt`. Answer questions with `prompt_answer`. If the Connection drops later, the Terminal
 /// reconnects on its own (asking on `on_prompt` again if needed); see
 /// `terminal_reconnect`.
 #[tauri::command]
@@ -115,9 +114,10 @@ pub async fn remote_terminal_open(
         pending: Arc::clone(&pending),
         channel: on_prompt,
     });
+    let (target, prompts) = (host.clone(), prompter.clone());
     let connect = move || {
         let (app, hops, host, prompter) =
-            (app.clone(), hops.clone(), host.clone(), prompter.clone());
+            (app.clone(), hops.clone(), target.clone(), prompts.clone());
         async move { connect_host(&app, &hops, &host, prompter).await }
     };
     let shell_integration = settings
@@ -128,8 +128,15 @@ pub async fn remote_terminal_open(
         reconnect: ReconnectPolicy::default(),
         shell_integration,
     };
-    let terminal =
-        RemoteTerminal::open_with(connect, options, size, channel_sink(on_event)).await?;
+    let terminal = RemoteTerminal::open_with_progress(
+        connect,
+        options,
+        size,
+        channel_sink(on_event),
+        &host,
+        prompter.as_ref(),
+    )
+    .await?;
     Ok(registry.insert(Box::new(terminal)))
 }
 

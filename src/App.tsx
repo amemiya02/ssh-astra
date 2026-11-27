@@ -287,6 +287,8 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
               />
             )}
             onFocusPane={(paneId) => dispatch({ type: "focusPane", paneId })}
+            onClosePane={(paneId) => dispatch({ type: "closePane", paneId })}
+            onEditHost={(host) => hostsController.actions.edit(hosts.find((saved) => saved.id === host.id) ?? host)}
             onConnectRestoredPane={(paneId) => dispatch({ type: "connectRestoredPane", paneId })}
             onTitleChange={retitle}
             onStatusChange={setStatus}
