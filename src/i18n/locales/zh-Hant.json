@@ -18,9 +18,10 @@
     "saveFailed": "本次執行的代理存取已關閉，但無法儲存設定。",
     "activity": {
       "title": "近期代理活動",
-      "description": "本機最多保留最近 30 天內的 500 次呼叫，記錄工具名稱、已授權的 Host 和路徑以及結果。",
+      "description": "本機保留最近 30 天的工具呼叫，記錄工具名稱、已授權的 Host 和路徑以及結果。",
       "refresh": "重新整理",
       "clear": "清除活動記錄",
+      "loadOlder": "載入更早的活動記錄",
       "loading": "正在載入代理活動記錄…",
       "loadFailed": "無法載入代理活動記錄。",
       "clearFailed": "無法清除代理活動記錄。",

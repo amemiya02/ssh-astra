@@ -233,9 +233,57 @@ async fn call(backend: &dyn AgentBackend, tool: &str, arguments: Value) -> Value
 }
 
 #[tokio::test]
+async fn more_than_five_hundred_unexpired_calls_are_available_across_pages_after_restart() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("agent-activity");
+    let log = AgentActivityLog::new(path.clone());
+    let now = UNIX_EPOCH + Duration::from_secs(1_790_000_000);
+    let backend = TestBackend::new(Vec::new);
+    let request =
+        br#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_terminals"}}"#;
+    for milliseconds in 0..517 {
+        let mut activity = None;
+        dispatch_recording(request, || true, &backend, &mut activity).await;
+        log.record(activity.unwrap(), now + Duration::from_millis(milliseconds))
+            .unwrap();
+    }
+    drop(log);
+    let log = AgentActivityLog::new(path);
+    let now = now + Duration::from_secs(1);
+    let mut page = log.list(now, None).unwrap();
+    assert!(page.next_before.is_some());
+    assert!(page.records.len() < 517);
+    let mut activity = None;
+    dispatch_recording(request, || true, &backend, &mut activity).await;
+    log.record(activity.unwrap(), now).unwrap();
+    let mut records = Vec::new();
+    loop {
+        records.extend(page.records);
+        let Some(before) = page.next_before else {
+            break;
+        };
+        page = log.list(now, Some(before)).unwrap();
+    }
+    let timestamps: Vec<u64> = records
+        .into_iter()
+        .map(|record| {
+            serde_json::to_value(record).unwrap()["timestamp"]
+                .as_u64()
+                .unwrap()
+        })
+        .collect();
+    assert_eq!(
+        timestamps,
+        (1_790_000_000_000..1_790_000_000_517)
+            .rev()
+            .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
 async fn records_the_authorized_target_without_capturing_protocol_or_tool_output() {
     let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("agent-activity.json");
+    let path = directory.path().join("agent-activity");
     let log = AgentActivityLog::new(path.clone());
     let now = UNIX_EPOCH + Duration::from_secs(1_790_000_000);
     let backend = TestBackend::new(Vec::new);
@@ -246,7 +294,13 @@ async fn records_the_authorized_target_without_capturing_protocol_or_tool_output
         .unwrap();
     assert_eq!(response_data(&response)["data"], "synthetic file\n");
     log.record(activity.unwrap(), now).unwrap();
-    let saved = std::fs::read_to_string(&path).unwrap();
+    let shard = std::fs::read_dir(path.join("records"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let saved = std::fs::read_to_string(&shard).unwrap();
     assert!(!saved.contains("private-request-id"));
     assert!(!saved.contains("synthetic file"));
     assert_eq!(
@@ -258,8 +312,12 @@ async fn records_the_authorized_target_without_capturing_protocol_or_tool_output
     {
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(
-            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            std::fs::metadata(&shard).unwrap().permissions().mode() & 0o777,
             0o600
+        );
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o700
         );
     }
 }
@@ -267,43 +325,61 @@ async fn records_the_authorized_target_without_capturing_protocol_or_tool_output
 #[tokio::test]
 async fn activity_prunes_on_read_and_write_and_can_be_cleared() {
     let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("agent-activity.json");
+    let path = directory.path().join("agent-activity");
     let log = AgentActivityLog::new(path.clone());
     let first = UNIX_EPOCH + Duration::from_secs(1_790_000_000);
     let day = Duration::from_secs(24 * 60 * 60);
+    let second = first + Duration::from_secs(1);
     let boundary = first + 30 * day;
     let past_boundary = boundary + Duration::from_millis(1);
     let backend = TestBackend::new(Vec::new);
     let request =
         br#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_terminals"}}"#;
-    for time in [first, first + day] {
+    for time in [first - day, first, second] {
         let mut activity = None;
         dispatch_recording(request, || true, &backend, &mut activity).await;
         log.record(activity.unwrap(), time).unwrap();
     }
-    assert_eq!(log.list(boundary).unwrap().len(), 2);
-    assert_eq!(log.list(past_boundary).unwrap().len(), 1);
-    let disk = || serde_json::from_slice::<Value>(&std::fs::read(&path).unwrap()).unwrap();
-    assert_eq!(disk().as_array().unwrap().len(), 1);
+    drop(log);
+    let log = AgentActivityLog::new(path.clone());
+    // Startup expires whole days. Reading a page then prunes the cutoff day precisely.
+    log.prune(boundary).unwrap();
+    assert_eq!(log.list(boundary, None).unwrap().records.len(), 2);
+    assert_eq!(log.list(past_boundary, None).unwrap().records.len(), 1);
+    let disk = || {
+        std::fs::read_dir(path.join("records"))
+            .unwrap()
+            .map(|entry| {
+                let file = std::fs::read(entry.unwrap().path()).unwrap();
+                serde_json::from_slice::<Vec<Value>>(&file).unwrap()
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(disk().iter().map(Vec::len).collect::<Vec<_>>(), [1]);
 
     let mut activity = None;
     dispatch_recording(request, || true, &backend, &mut activity).await;
     log.record(activity.unwrap(), past_boundary + day).unwrap();
     let persisted = disk();
-    assert_eq!(persisted.as_array().unwrap().len(), 1);
-    assert_eq!(persisted[0]["tool"], "list_terminals");
-    assert_eq!(persisted[0]["outcome"], "allowed");
+    assert_eq!(persisted.iter().map(Vec::len).collect::<Vec<_>>(), [1]);
+    assert_eq!(persisted[0][0]["tool"], "list_terminals");
+    assert_eq!(persisted[0][0]["outcome"], "allowed");
 
     log.clear().unwrap();
     log.clear().unwrap();
-    assert!(log.list(past_boundary + day).unwrap().is_empty());
-    assert!(!path.exists());
+    assert!(log
+        .list(past_boundary + day, None)
+        .unwrap()
+        .records
+        .is_empty());
+    assert!(!path.join("records").exists());
+    assert!(!path.join("cleared").exists());
 }
 
 #[tokio::test]
 async fn activity_omits_unapproved_targets_and_unknown_tool_names() {
     let directory = tempfile::tempdir().unwrap();
-    let log = AgentActivityLog::new(directory.path().join("agent-activity.json"));
+    let log = AgentActivityLog::new(directory.path().join("agent-activity"));
     let now = UNIX_EPOCH + Duration::from_secs(1_790_000_000);
     let backend = TestBackend::new(Vec::new);
     for (tool, arguments) in [
@@ -330,7 +406,7 @@ async fn activity_omits_unapproved_targets_and_unknown_tool_names() {
         log.record(activity.unwrap(), now).unwrap();
     }
     assert_eq!(
-        serde_json::to_value(log.list(now).unwrap()).unwrap(),
+        serde_json::to_value(log.list(now, None).unwrap().records).unwrap(),
         json!([
             {"timestamp":1_790_000_000_000_u64,"tool":"read_file","host":"Build","path":"/unavailable","outcome":"failed"},
             {"timestamp":1_790_000_000_000_u64,"tool":"unknown","outcome":"failed"},

@@ -76,9 +76,7 @@ fn isolated_directory() -> tempfile::TempDir {
 }
 
 fn activity_log(directory: &tempfile::TempDir) -> Arc<AgentActivityLog> {
-    Arc::new(AgentActivityLog::new(
-        directory.path().join("activity.json"),
-    ))
+    Arc::new(AgentActivityLog::new(directory.path().join("activity")))
 }
 
 #[test]
@@ -133,7 +131,8 @@ fn stdio_discovers_and_calls_the_read_tools_through_local_ipc() {
         json!({"screen":"rendered","scrollback":"history","truncated":false})
     );
     drop(server);
-    let activity = serde_json::to_value(log.list(SystemTime::now()).unwrap()).unwrap();
+    let activity =
+        serde_json::to_value(log.list(SystemTime::now(), None).unwrap().records).unwrap();
     let mut calls = activity.as_array().unwrap().clone();
     for call in &mut calls {
         assert!(call
@@ -163,7 +162,8 @@ fn a_stalled_tool_call_records_a_timeout_without_returning_content() {
         assert_eq!(error.kind(), io::ErrorKind::TimedOut);
         assert!(client.read_u8().await.is_err());
     });
-    let activity = serde_json::to_value(log.list(SystemTime::now()).unwrap()).unwrap();
+    let activity =
+        serde_json::to_value(log.list(SystemTime::now(), None).unwrap().records).unwrap();
     assert_eq!(activity.as_array().unwrap().len(), 1);
     assert_eq!(activity[0]["tool"], "read_terminal");
     assert_eq!(activity[0]["host"], "Build");

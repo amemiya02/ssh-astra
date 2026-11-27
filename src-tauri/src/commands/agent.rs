@@ -9,8 +9,8 @@ use std::time::SystemTime;
 
 use serde::Serialize;
 use sshastra_core::agent::{
-    ActivityRecord, AgentActivityLog, AgentBackend, DirectoryRead, OpenTerminal, ReadError,
-    ReadTarget, TerminalScreen, SCREEN_BYTE_LIMIT,
+    ActivityCursor, ActivityPage, AgentActivityLog, AgentBackend, DirectoryRead, OpenTerminal,
+    ReadError, ReadTarget, TerminalScreen, SCREEN_BYTE_LIMIT,
 };
 use sshastra_core::files::{FsError, FsResult, SftpFs};
 use sshastra_core::ssh::{BoxFuture, Connection};
@@ -266,8 +266,9 @@ pub(crate) fn terminal_agent_screen(
 #[tauri::command]
 pub(crate) async fn agent_activity_list(
     activity: State<'_, Arc<AgentActivityLog>>,
-) -> CommandResult<Vec<ActivityRecord>> {
-    Ok(activity.list(SystemTime::now())?)
+    before: Option<ActivityCursor>,
+) -> CommandResult<ActivityPage> {
+    Ok(activity.list(SystemTime::now(), before)?)
 }
 
 #[tauri::command]

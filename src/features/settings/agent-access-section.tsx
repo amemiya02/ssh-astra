@@ -4,7 +4,7 @@ import { SegmentedControl } from "@/components/SegmentedControl";
 import { Button } from "@/components/ui/button";
 import { agentAccessSetting, setAgentAccess } from "@/features/agent/agent-access";
 import { showToast } from "@/features/toasts/toastStore";
-import { clearAgentActivity, listAgentActivity, type AgentActivity } from "@/lib/ipc/agent";
+import { clearAgentActivity, listAgentActivity, type AgentActivityPage } from "@/lib/ipc/agent";
 import { useSetting } from "@/lib/storage";
 import { SettingRow } from "./SettingRow";
 import { settingRows } from "./setting-rows";
@@ -34,9 +34,9 @@ export function AgentAccessSection() {
 
 function AgentActivityList() {
   const { t, i18n } = useTranslation();
-  const [snapshot, setSnapshot] = useState<AgentActivity[] | "loading" | "loadFailed">("loading");
+  const [snapshot, setSnapshot] = useState<AgentActivityPage | "loading" | "loadFailed">("loading");
   const [revision, setRevision] = useState(0);
-  const [clearing, setClearing] = useState(false);
+  const [pending, setPending] = useState<"clearing" | "loadingOlder" | null>(null);
 
   useEffect(() => {
     let current = true;
@@ -48,39 +48,53 @@ function AgentActivityList() {
   }, [revision]);
 
   async function clear() {
-    setClearing(true);
+    setPending("clearing");
     try {
       await clearAgentActivity();
-      setSnapshot([]);
+      setSnapshot({ records: [] });
     } catch {
       showToast((translate) => translate("agentAccess.activity.clearFailed"), "error");
     } finally {
-      setClearing(false);
+      setPending(null);
+    }
+  }
+
+  async function loadOlder(page: AgentActivityPage) {
+    setPending("loadingOlder");
+    try {
+      const older = await listAgentActivity(page.nextBefore);
+      setSnapshot({ records: [...page.records, ...older.records], nextBefore: older.nextBefore });
+    } catch {
+      showToast((translate) => translate("agentAccess.activity.loadFailed"), "error");
+    } finally {
+      setPending(null);
     }
   }
 
   const dateFormat = new Intl.DateTimeFormat(i18n.resolvedLanguage, { dateStyle: "medium", timeStyle: "medium" });
-  const status = typeof snapshot === "string" ? snapshot : snapshot.length === 0 ? "empty" : null;
+  const page = typeof snapshot === "object" ? snapshot : null;
+  const status = typeof snapshot === "string" ? snapshot : snapshot.records.length === 0 ? "empty" : null;
+  const busy = snapshot === "loading" || pending !== null;
 
   return (
     <div>
       <SettingRow setting={settingRows.agentActivity}>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" disabled={snapshot === "loading" || clearing} onClick={() => {
+          <Button variant="outline" size="sm" disabled={busy} onClick={() => {
             setSnapshot("loading");
             setRevision((value) => value + 1);
           }}>
             {t("agentAccess.activity.refresh")}
           </Button>
-          <Button variant="outline" size="sm" disabled={snapshot === "loading" || clearing || status === "empty"} onClick={() => void clear()}>
+          <Button variant="outline" size="sm" disabled={busy || status === "empty"} onClick={() => void clear()}>
             {t("agentAccess.activity.clear")}
           </Button>
         </div>
       </SettingRow>
       {status && <p role="status" className="text-muted-foreground pb-3 text-xs">{t(`agentAccess.activity.${status}`)}</p>}
-      {Array.isArray(snapshot) && snapshot.length > 0 && (
+      {page && page.records.length > 0 && (
         <ul aria-label={t("agentAccess.activity.title")} className="divide-y border-t">
-          {snapshot.map(({ timestamp, tool, host, path, outcome }, index) => (
+          {page.records.map(({ timestamp, tool, host, path, outcome }, index) => (
             <li key={`${timestamp}-${index}`} className="space-y-1 py-2.5">
               <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                 <span className="text-sm">
@@ -96,6 +110,13 @@ function AgentActivityList() {
             </li>
           ))}
         </ul>
+      )}
+      {page?.nextBefore && (
+        <div className="border-t py-3">
+          <Button variant="outline" size="sm" disabled={busy} onClick={() => void loadOlder(page)}>
+            {t(pending === "loadingOlder" ? "agentAccess.activity.loading" : "agentAccess.activity.loadOlder")}
+          </Button>
+        </div>
       )}
     </div>
   );

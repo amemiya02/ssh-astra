@@ -157,10 +157,8 @@ pub fn run() {
             #[cfg(feature = "e2e")]
             let vault: Arc<dyn credentials::CredentialVault> = Arc::new(credentials::NoVault);
             let hosts = HostsState::new(hosts);
-            let agent_activity = Arc::new(AgentActivityLog::new(
-                config_dir.join("agent-activity.json"),
-            ));
-            if agent_activity.list(SystemTime::now()).is_err() {
+            let agent_activity = Arc::new(AgentActivityLog::new(config_dir.join("agent-activity")));
+            if agent_activity.prune(SystemTime::now()).is_err() {
                 log::warn!("Could not expire old Agent access activity");
             }
             let agent_service = AgentService::new(

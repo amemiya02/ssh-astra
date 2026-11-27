@@ -12,7 +12,7 @@ use crate::hosts::HostId;
 use crate::ssh::BoxFuture;
 use crate::terminal::TerminalId;
 
-pub use activity::{ActivityCall, ActivityRecord, AgentActivityLog};
+pub use activity::{ActivityCall, ActivityCursor, ActivityPage, AgentActivityLog};
 use activity::{Outcome, Tool};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

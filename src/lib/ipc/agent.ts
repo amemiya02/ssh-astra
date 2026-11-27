@@ -8,5 +8,16 @@ export interface AgentActivity {
   outcome: "allowed" | "denied" | "timedOut" | "failed";
 }
 
-export const listAgentActivity = () => invoke<AgentActivity[]>("agent_activity_list");
+interface ActivityCursor {
+  day: number;
+  segment: number;
+}
+
+export interface AgentActivityPage {
+  records: AgentActivity[];
+  nextBefore?: ActivityCursor;
+}
+
+export const listAgentActivity = (before?: ActivityCursor) =>
+  invoke<AgentActivityPage>("agent_activity_list", { before });
 export const clearAgentActivity = () => invoke<void>("agent_activity_clear");

@@ -424,7 +424,7 @@ The privacy toggle sits beside the theme menu. Its pressed state uses the `selec
 
 When Agent access is enabled, a status bar segment shows its name and a cable icon. Click it to turn access off for all Hosts. The tab strip shows the same icon and names the shared state in the tab label whenever an open Terminal in that tab is exposed. A collapsed Host group carries the icon for its shared tabs.
 
-Settings → Agent access lists recent tool calls newest first. Each row shows the MCP tool, result, local time, and any permitted Host or path. Refresh and Clear activity are available while Agent access is off.
+Settings → Agent access lists recent tool calls newest first. Each row shows the MCP tool, result, local time, and any permitted Host or path. Load older activity retrieves earlier calls. Refresh and Clear activity are available while Agent access is off.
 
 ### Toasts
 
