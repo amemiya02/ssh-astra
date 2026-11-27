@@ -11,13 +11,28 @@ import { workspaceSetting } from "./workspace-prefs";
 
 export function QuitConfirmation({ interruptions }: { interruptions: InterruptionCounts }) {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
+  const [connectionsAtQuit, setConnectionsAtQuit] = useState<number | null>(null);
+  const checking = useRef(false);
   const cancel = useRef<HTMLButtonElement>(null);
-  const requestQuit = useEffectEvent((event: CloseRequestedEvent) => {
-    const { connections, transfers, forwards } = interruptions;
-    if (getSetting(workspaceSetting).confirmQuit && (connections || transfers || forwards)) {
+  const requestQuit = useEffectEvent(async (event: CloseRequestedEvent) => {
+    if (!getSetting(workspaceSetting).confirmQuit) return;
+    if (checking.current || connectionsAtQuit !== null) {
       event.preventDefault();
-      setOpen(true);
+      return;
+    }
+    checking.current = true;
+    try {
+      // A transfer can hold a Connection after its last visible Terminal or File panel closes.
+      const live = await invoke<number>("quit_live_connection_count").catch((error: unknown) => {
+        console.warn("Could not count live Connections before quitting", error);
+      });
+      const connections = live ?? interruptions.connections;
+      if (connections || interruptions.transfers || interruptions.forwards) {
+        event.preventDefault();
+        setConnectionsAtQuit(connections);
+      }
+    } finally {
+      checking.current = false;
     }
   });
 
@@ -26,8 +41,8 @@ export function QuitConfirmation({ interruptions }: { interruptions: Interruptio
     // Register before the passive effects that can restore remote Connections.
     let active = true;
     const subscription = getCurrentWindow().onCloseRequested((event) => {
-      if (active) requestQuit(event);
-      else event.preventDefault();
+      if (active) return requestQuit(event);
+      event.preventDefault();
     });
     void subscription.catch((error: unknown) => console.warn("Could not listen for app quit requests", error));
     return () => {
@@ -44,7 +59,7 @@ export function QuitConfirmation({ interruptions }: { interruptions: Interruptio
   }, [t]);
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={connectionsAtQuit !== null} onOpenChange={(open) => { if (!open) setConnectionsAtQuit(null); }}>
       <DialogContent showCloseButton={false} className="sm:max-w-100" onOpenAutoFocus={(event) => {
         event.preventDefault();
         cancel.current?.focus();
@@ -54,12 +69,12 @@ export function QuitConfirmation({ interruptions }: { interruptions: Interruptio
           <DialogDescription asChild>
             <div>
               <p>{t("quit.interruptions")}</p>
-              <InterruptionList {...interruptions} />
+              <InterruptionList {...interruptions} connections={connectionsAtQuit ?? 0} />
             </div>
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <Button ref={cancel} variant="outline" onClick={() => setOpen(false)}>{t("tabs.cancel")}</Button>
+          <Button ref={cancel} variant="outline" onClick={() => setConnectionsAtQuit(null)}>{t("tabs.cancel")}</Button>
           <Button variant="destructive" onClick={() => {
             void getCurrentWindow().destroy().catch((error: unknown) => console.warn("Could not quit SSH Astra", error));
           }}>{t("quit.confirm")}</Button>

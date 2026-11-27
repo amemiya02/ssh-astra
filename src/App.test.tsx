@@ -59,6 +59,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
       if (command === "transfers_watch") return initialTransfers;
       if (command === "forwards_watch") return initialForwards;
       if (command === "connections_watch") return initialHeld;
+      if (command === "quit_live_connection_count") return liveConnectionCount;
       if (command === "hosts_import_ssh_config") return {
         tree: { hosts: savedHosts, groups: [] },
         report: {
@@ -115,6 +116,7 @@ let savedHosts: Host[] = [];
 let initialTransfers: Transfer[] = [];
 let initialForwards: ForwardEvent[] = [];
 let initialHeld: string[] = [];
+let liveConnectionCount: number | undefined;
 let saveTemporaryError: { kind: string; message: string } | undefined;
 const panelListings = new Map<string, Listing>();
 const remote = (id: string) => newPane({ kind: "remote-terminal", host }, id);
@@ -172,6 +174,7 @@ afterEach(async () => {
   initialTransfers = [];
   initialForwards = [];
   initialHeld = [];
+  liveConnectionCount = undefined;
   vi.mocked(invoke).mockClear();
   vi.mocked(check).mockReset();
   vi.mocked(openUrl).mockClear();
@@ -756,6 +759,17 @@ it("quits without asking when the workspace is idle", async () => {
   await requestWindowClose();
   expect(dialog()).toBeNull();
   expect(windowDestroys()).toHaveLength(1);
+});
+
+it("confirms quit when a transfer or File panel is the last holder of a Connection", async () => {
+  enableDesktopWindow();
+  liveConnectionCount = 1;
+  await render(workspace());
+
+  await requestWindowClose();
+  expect(dialog()?.querySelector("h2")?.textContent).toBe("Quit SSH Astra?");
+  expect(dialog()?.querySelector("li")?.textContent).toBe("1 Connection");
+  expect(windowDestroys()).toHaveLength(0);
 });
 
 it("saves a separate quit preference and applies it while a Connection is open", async () => {

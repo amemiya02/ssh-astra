@@ -152,6 +152,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             #[cfg(desktop)]
             quit::quit_menu_localize,
+            #[cfg(desktop)]
+            quit::quit_live_connection_count,
             commands::home::home_first_paint,
             commands::hosts::hosts_list,
             commands::hosts::host_save,

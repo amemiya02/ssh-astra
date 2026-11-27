@@ -1,3 +1,4 @@
+use sshastra_core::ssh::ConnectionManager;
 use tauri::menu::{Menu, MenuEvent, MenuItem, MenuItemKind, Submenu};
 use tauri::{AppHandle, Manager, State};
 
@@ -58,4 +59,9 @@ pub fn quit_menu_localize(
         submenu.set_text(file).map_err(|error| error.to_string())?;
     }
     menu.quit.set_text(quit).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn quit_live_connection_count(connections: State<'_, ConnectionManager>) -> usize {
+    connections.live_count()
 }
