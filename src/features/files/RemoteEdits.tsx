@@ -146,6 +146,7 @@ function statusText(t: TFunction, edit: RemoteEditItem, hostName: string): strin
 
 function conflictErrorText(t: TFunction, error: NonNullable<RemoteEditItem["error"]>) {
   if (error.kind === "uploadFailed") return t("files.edit.uploadFailed", { message: error.message });
+  if (error.kind === "editConflictExpired") return t("files.edit.conflict.changed");
   if (error.kind === "binary") return t("files.edit.question.binary.title");
   if (error.kind === "tooLarge") return t("files.edit.question.tooLarge.title");
   return t("files.edit.conflict.resolveFailed", { message: error.message });

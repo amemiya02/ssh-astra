@@ -624,6 +624,7 @@
         "copyName": "{{name}}（遠端版本）",
         "paused": "已保留本機變更，上傳已暫停。",
         "resolving": "正在處理衝突…",
+        "changed": "衝突已變更，請檢視最新狀態。",
         "resolveFailed": "無法解決衝突：{{message}}"
       },
       "question": {

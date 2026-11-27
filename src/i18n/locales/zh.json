@@ -624,6 +624,7 @@
         "copyName": "{{name}}（远端版本）",
         "paused": "已保留本地改动，上传已暂停。",
         "resolving": "正在处理冲突…",
+        "changed": "冲突已变化，请查看最新状态。",
         "resolveFailed": "无法解决冲突：{{message}}"
       },
       "question": {

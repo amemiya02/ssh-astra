@@ -624,6 +624,7 @@
         "copyName": "{{name}} (remote version)",
         "paused": "Local changes kept. Uploads paused.",
         "resolving": "Resolving conflict…",
+        "changed": "The conflict has changed. Review the latest status.",
         "resolveFailed": "Could not resolve the conflict: {{message}}"
       },
       "question": {
