@@ -5,6 +5,7 @@ import { notifySystem } from "@/features/notifications/system-notifications";
 import { BroadcastPaneContext } from "@/features/workspace/broadcast";
 import { TabActivityContext } from "@/features/workspace/tab-activity";
 import { e2eHooks } from "@/lib/e2e";
+import type { HostId } from "@/lib/ipc/hosts";
 import {
   closeTerminal,
   resizeTerminal,
@@ -39,6 +40,7 @@ interface Props {
   active?: boolean;
   /** The Host's own colour scheme, overriding the global one. */
   colorScheme?: string | null;
+  historyHostId?: HostId;
   /** The program set a window title (OSC 0/2); an empty string clears it. */
   onTitleChange?(title: string): void;
 }
@@ -56,6 +58,7 @@ export function TerminalSurface({
   label,
   active = true,
   colorScheme,
+  historyHostId,
   onTitleChange,
 }: Props) {
   const { t } = useTranslation();
@@ -210,7 +213,8 @@ export function TerminalSurface({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1">
-        <XtermView label={label} active={active} colorScheme={colorScheme} onTitleChange={onTitleChange} attach={attach} />
+        <XtermView label={label} active={active} colorScheme={colorScheme} onTitleChange={onTitleChange} attach={attach}
+          historyHostId={historyHostId} canPasteHistory={() => shellIntegration.canPasteAtPrompt(paneId)} />
       </div>
       {unavailable && (
         <p className="border-border text-muted-foreground shrink-0 border-t px-3 py-1 text-xs" role="status">

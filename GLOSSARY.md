@@ -46,6 +46,10 @@ _Avoid_: Session, console, shell tab
 A saved command, optionally with variables, that the user can send to a Terminal.
 _Avoid_: Macro, script, quick command
 
+**Command history**:
+Command lines the app records locally for each saved Host after the user runs them in a Terminal.
+_Avoid_: Shell history, which belongs to the shell
+
 **Local terminal**:
 A Terminal running a shell on the user's own machine, with no Connection.
 _Avoid_: Local session

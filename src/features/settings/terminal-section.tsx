@@ -14,17 +14,17 @@ import { settingRows } from "./setting-rows";
 import { TerminalHighlightingSettings } from "./terminal-highlighting-settings";
 import { TerminalSchemeSettings } from "./terminal-scheme-settings";
 
-type BooleanPref = "ligatures" | "cursorBlink" | "copyOnSelect" | "confirmMultilinePaste" | "shellIntegration" | "autoLog" | "inlineImages";
+type BooleanPref = "ligatures" | "cursorBlink" | "copyOnSelect" | "confirmMultilinePaste" | "shellIntegration" | "commandHistory" | "autoLog" | "inlineImages";
 
 export function TerminalSection() {
   const { t } = useTranslation();
   const { prefs, updatePrefs } = useTerminalPrefs();
 
-  const toggle = (key: BooleanPref) => {
+  const toggle = (key: BooleanPref, description?: string) => {
     const setting = settingRows[key];
     const label = t(setting.title);
     return (
-      <SettingRow key={key} setting={setting}>
+      <SettingRow key={key} setting={setting} description={description}>
         <SegmentedControl
           label={label}
           value={prefs[key] ? "on" : "off"}
@@ -162,6 +162,9 @@ export function TerminalSection() {
       </SettingRow>
       {toggle("confirmMultilinePaste")}
       {toggle("shellIntegration")}
+      {toggle("commandHistory", !prefs.shellIntegration
+        ? t("settings.terminal.commandHistory.shellIntegrationDisabled")
+        : undefined)}
       {toggle("autoLog")}
       <SettingRow setting={settingRows.logDirectory}>
         <div className="flex min-w-0 max-w-72 flex-wrap items-center justify-end gap-2">

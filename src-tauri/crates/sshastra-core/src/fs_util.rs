@@ -8,6 +8,26 @@ use std::time::Duration;
 /// Writes a sibling temp file, flushes it to disk, then renames it over
 /// `path`: readers see either the old file or the new one, never a mix.
 pub(crate) fn write_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    write_atomically_with(
+        path,
+        bytes,
+        fs::OpenOptions::new().write(true).create_new(true),
+    )
+}
+
+/// Atomic replacement for files containing private user data.
+pub(crate) fn write_atomically_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    write_atomically_with(path, bytes, &options)
+}
+
+fn write_atomically_with(path: &Path, bytes: &[u8], options: &fs::OpenOptions) -> io::Result<()> {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(dir)?;
     let file_name = path
@@ -16,8 +36,8 @@ pub(crate) fn write_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {
         .unwrap_or_default();
     let tmp = dir.join(format!(".{file_name}.{}.tmp", uuid::Uuid::new_v4()));
 
+    let mut file = options.open(&tmp)?;
     let result = (|| {
-        let mut file = fs::File::create(&tmp)?;
         file.write_all(bytes)?;
         file.sync_all()?;
         drop(file);

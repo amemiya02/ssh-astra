@@ -27,7 +27,7 @@ use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::settings::SettingsStore;
 use sshastra_core::snippets::SnippetStore;
 use sshastra_core::ssh::{Agent, ConnectionManager};
-use sshastra_core::terminal::TerminalRegistry;
+use sshastra_core::terminal::{CommandHistory, TerminalRegistry};
 use tauri::Manager;
 use tauri_plugin_window_state::StateFlags;
 
@@ -116,6 +116,7 @@ pub fn run() {
                 .unwrap_or_else(|_| config_dir.clone())
                 .join("terminal-logs");
             app.manage(TerminalOutputDirectory(terminal_output_directory));
+            app.manage(CommandHistory::new(config_dir.join("command-history")));
             let hosts = HostStore::open(config_dir.join("hosts.json")).map_err(Into::into);
             // Shared with the `ssh` command line; without a home directory,
             // fall back to a file of our own.
@@ -213,6 +214,8 @@ pub fn run() {
             commands::forwards::forward_stop,
             commands::settings::settings_load,
             commands::settings::settings_set,
+            commands::command_history::command_history_list,
+            commands::command_history::command_history_clear,
             commands::known_hosts::known_hosts_list,
             commands::known_hosts::known_hosts_reveal,
             commands::notifications::notification_show,

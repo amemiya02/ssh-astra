@@ -28,6 +28,7 @@ use sshastra_core::terminal::{
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, State};
 
+use super::command_history;
 use super::connections::{detect_os_on_current_connection, HostRoute};
 use super::settings::SettingsState;
 use crate::error::CommandResult;
@@ -270,6 +271,12 @@ pub async fn remote_terminal_open(
         options,
         size,
         output.wrap(move |event| {
+            if let TerminalEvent::ShellIntegration(ShellIntegrationEvent::CommandStart {
+                command_line: Some(command),
+            }) = &event
+            {
+                command_history::record(&reconnect_app, &reconnect_host_id, command);
+            }
             let reconnected =
                 matches!(event, TerminalEvent::Connection(ConnectionState::Connected));
             sink(event);
