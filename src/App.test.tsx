@@ -74,6 +74,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
         const target = { ...args!.target!, user: args!.target!.user ?? "local-user" };
         return { ...host, ...target, id: `temporary-${++nextTemporaryId}`, name: quickConnectLabel(target), auth: { type: "auto" } };
       }
+      if (command === "take_ssh_links") return sshLinks.splice(0);
       if (command === "temporary_host_save") {
         if (saveTemporaryError) throw saveTemporaryError;
         const saved = { ...args!.draft!, id: args!.hostId!, groupId: null, forwards: [] };
@@ -274,6 +275,7 @@ afterEach(async () => {
   panelListings.clear();
   remoteOpenFixtures.clear();
   localShellPrograms.clear();
+  sshLinks.length = 0;
   clearMocks();
   vi.unstubAllGlobals();
 });
@@ -295,6 +297,7 @@ async function render(initialTabs: TabsState, strict = false) {
 }
 
 const desktopIPC = vi.fn();
+const sshLinks: QuickConnectTarget[] = [];
 
 function enableDesktopWindow() {
   vi.stubGlobal("isTauri", true);
@@ -314,6 +317,51 @@ const tabIds = () => [...document.querySelectorAll('[role="tab"]')].map((tab) =>
 const remoteOpenHostIds = () => vi.mocked(invoke).mock.calls
   .filter(([command]) => command === "remote_terminal_open")
   .map(([, args]) => (args as { hostId: string }).hostId);
+
+it("waits for approval of a cold SSH link and opens the exact saved Host", async () => {
+  const target = { address: host.address, user: host.user, port: host.port };
+  savedHosts = [{ ...host, id: "wrong-user", user: "another-user" }, host];
+  await hostsStore.getState().load();
+  enableDesktopWindow();
+  sshLinks.push(target);
+  await render(emptyTabs, true);
+
+  const confirmation = dialog()!;
+  expect(confirmation?.querySelector("h2")?.textContent).toBe("Open SSH link?");
+  expect(confirmation.textContent).toContain(host.address);
+  expect(confirmation.textContent).toContain(host.port.toString());
+  expect(confirmation.textContent).toContain(host.user);
+  expect(document.activeElement?.textContent).toBe("Cancel");
+  expect(remoteOpenHostIds()).toEqual([]);
+  expect(invoke).not.toHaveBeenCalledWith("temporary_host_create", expect.anything());
+
+  await clickButton("Connect", confirmation);
+  expect(remoteOpenHostIds()).toEqual([host.id]);
+  expect(invoke).toHaveBeenCalledWith("remote_terminal_open", expect.objectContaining({ expectedTarget: target }));
+});
+
+it("handles warm SSH links individually and uses Quick connect only after approval", async () => {
+  savedHosts = [host];
+  await hostsStore.getState().load();
+  enableDesktopWindow();
+  await render(emptyTabs);
+  expect(dialog()).toBeNull();
+
+  const first = { address: "cancel.example.test", user: "cancelled", port: 22 };
+  const second = { address: host.address, user: host.user, port: host.port + 1 };
+  sshLinks.push(first, second);
+  await act(async () => emit("ssh-link-pending"));
+  expect(dialog()?.textContent).toContain(first.address);
+  await clickButton("Cancel", dialog()!);
+  expect(dialog()?.textContent).toContain(second.port.toString());
+  expect(invoke).not.toHaveBeenCalledWith("temporary_host_create", expect.anything());
+  expect(remoteOpenHostIds()).toEqual([]);
+
+  await clickButton("Connect", dialog()!);
+  expect(dialog()).toBeNull();
+  expect(invoke).toHaveBeenCalledWith("temporary_host_create", { target: second });
+  expect(remoteOpenHostIds()).toEqual([expect.stringMatching(/^temporary-/)]);
+});
 
 it("opens each startup Host once and leaves a restored split's Host disconnected in layout-only mode", async () => {
   const restored = { ...host, openOnStartup: true };

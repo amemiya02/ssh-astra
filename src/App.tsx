@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { connectionsStore, useConnections } from "@/features/connect/connectionsStore";
 import { hostConnections } from "@/features/connect/hostConnection";
+import { SshLinkConfirmation } from "@/features/connect/SshLinkConfirmation";
 import { CommandDialog, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { FilePanelContent, type FilePanelPane } from "@/features/files/FilePanelContent";
 import { terminalCwds } from "@/features/files/terminalCwds";
@@ -67,6 +68,7 @@ import { ShortcutCaptureContext, useWorkspaceShortcuts } from "@/features/worksp
 import { serializeWorkspaceLayout, workspaceLayoutSetting } from "@/features/workspace/workspace-layout";
 import { workspaceSetting } from "@/features/workspace/workspace-prefs";
 import { createTemporaryHost, forgetTemporaryHost, isTemporaryHost, type Host, type HostId, type QuickConnectTarget } from "@/lib/ipc/hosts";
+import type { SshLinkTarget } from "@/lib/ipc/ssh-links";
 import { newWindow } from "@/lib/ipc/windows";
 import { getSetting, setSetting, useSetting } from "@/lib/storage";
 
@@ -162,9 +164,9 @@ export function App({ initialTabs, startupTabsAcrossWindows }: {
   );
   const openLocalTerminal = useCallback(() => openTab(localTerminal), [openTab]);
   const openRemoteTerminal = useCallback(
-    (host: Host, startupOrder?: number) => {
+    (host: Host, startupOrder?: number, expectedTarget?: SshLinkTarget) => {
       if (!isTemporaryHost(host)) rememberHostOpened(host.id);
-      openTab({ kind: "remote-terminal", host }, startupOrder);
+      openTab({ kind: "remote-terminal", host, expectedTarget }, startupOrder);
     },
     [openTab],
   );
@@ -559,6 +561,10 @@ export function App({ initialTabs, startupTabsAcrossWindows }: {
       )}
       {hostsController.dialogs}
       <ConflictDialog />
+      <SshLinkConfirmation onConnect={(target, host) => {
+        if (host) openRemoteTerminal(host, undefined, target);
+        else void openQuickConnect(target);
+      }} />
       {pendingClose && (
         <CloseTerminalsDialog
           count={pendingClose.count}

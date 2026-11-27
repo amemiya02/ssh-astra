@@ -1,4 +1,5 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
+import type { SshLinkTarget } from "./ssh-links";
 import type { HostId } from "./hosts";
 import { decodeTerminalMessage, type ConnectionState, type TerminalEvent, type TerminalMessage, type TerminalId, type TerminalSize } from "./terminal";
 
@@ -128,10 +129,11 @@ export async function openRemoteTerminal(
   ask: (prompt: ConnectPrompt) => Promise<PromptAnswer>,
   updates: ConnectUpdates,
   cwd?: string,
+  expectedTarget?: SshLinkTarget,
 ): Promise<{ id: TerminalId; savedHost: boolean }> {
   const onPrompt = connectPromptChannel(ask, updates);
   const events = new Channel<TerminalMessage>((message) =>
     onEvent(decodeTerminalMessage(message)),
   );
-  return invoke("remote_terminal_open", { hostId, size, onEvent: events, onPrompt, cwd });
+  return invoke("remote_terminal_open", { hostId, size, onEvent: events, onPrompt, cwd, expectedTarget });
 }
