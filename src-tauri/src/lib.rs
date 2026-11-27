@@ -16,6 +16,8 @@ mod prompts;
 #[cfg(desktop)]
 mod quit;
 mod terminal_handoff;
+#[cfg(desktop)]
+mod tray;
 #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
 mod wake;
 mod windows;
@@ -121,6 +123,7 @@ pub fn run() {
         .setup(|app| {
             #[cfg(target_os = "macos")]
             file_drag::capture_mouse_events();
+            app.manage(ForwardsState::new(app.handle()));
             #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
             commands::notifications::listen(app.handle())?;
             #[cfg(not(feature = "e2e"))]
@@ -230,13 +233,14 @@ pub fn run() {
             app.manage(Vault(vault));
             // Each primary instance owns one scratch directory for remote edits.
             app.manage(remote_editor());
+            #[cfg(desktop)]
+            tray::setup(app.handle());
             windows::restore(app)?;
             Ok(())
         })
         .manage(windows::Windows::default())
         .manage(TerminalRegistry::default())
         .manage(ClipboardImages::default())
-        .manage(ForwardsState::default())
         .manage(ConnectionsState::default())
         .manage(TemporaryHosts::default())
         .manage(FsRegistry::default())
@@ -264,6 +268,8 @@ pub fn run() {
             windows::window_try_close,
             windows::window_startup_workspaces,
             windows::window_settings_saved,
+            #[cfg(desktop)]
+            tray::tray_update,
             #[cfg(desktop)]
             quit::quit_application,
             #[cfg(target_os = "macos")]

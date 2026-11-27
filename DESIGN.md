@@ -482,6 +482,7 @@ The panel groups CPU usage and core count, 1-, 5-, and 15-minute load, memory, s
 - Find by name opens an inline search below the remote path bar. Match a substring or a wildcard pattern with `*` and `?`. Show each result's parent path and report when only part of the tree could be searched. Selecting a result returns to the file list with the entry selected and in view.
 - Alt+Left and Alt+Right browse history when focus is in the File panel outside text fields. Each panel keeps its own history in memory. Opening a different directory from a previous point in history replaces the forward entries.
 - Settings → Files lets a Terminal follow navigation in its paired File panel. It is off by default. A successful navigation changes the Terminal's directory only at a confirmed empty prompt. The setting explains the Shell integration requirement and how to enable it.
+- Settings → Files shows which local application opens a Remote edit. System default is selected initially. The native picker selects an application, and the row shows its path and a control to return to system default. If the chosen application fails to open the file, a successful system-default fallback shows a toast.
 
 ### File panel list
 

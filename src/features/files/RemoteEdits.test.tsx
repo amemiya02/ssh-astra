@@ -2,6 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ToastRegion } from "@/features/toasts/ToastRegion";
 import { startI18n } from "@/i18n";
 import type { EditEvent } from "@/lib/ipc/edit";
 import { createFileBrowserStore, type FilesApi } from "./fileBrowserStore";
@@ -44,7 +45,7 @@ afterEach(() => {
   container.remove();
 });
 
-async function render() {
+async function render(showToasts = false) {
   const store = createFileBrowserStore(api, "host");
   await store.getState().connect();
   container = document.createElement("div");
@@ -54,6 +55,7 @@ async function render() {
     root!.render(
       <TooltipProvider>
         <RemoteEdits store={store} hostName="web-1" />
+        {showToasts && <ToastRegion />}
       </TooltipProvider>,
     ),
   );
@@ -86,5 +88,17 @@ describe("RemoteEdits", () => {
     act(() => button("Stop editing app.conf")!.click());
     expect(api.closeRemoteEdit).toHaveBeenCalledWith(3);
     expect(container.textContent).toBe("");
+  });
+
+  it("announces a fallback to the system application without changing the edit status", async () => {
+    const store = await render(true);
+    await act(() => store.getState().open({ name: "app.conf", kind: "file", size: 1, modified: null, permissions: null, linkTarget: null }));
+    act(() => editEvents({ state: "uploaded" }));
+    act(() => editEvents({ state: "applicationFallback" }));
+
+    const notice = "The selected application couldn’t open app.conf. Opened it with the system default.";
+    expect(container.querySelector('[aria-live="polite"]')?.textContent).toBe(notice);
+    expect(container.textContent).toContain("Saved to web-1");
+    act(() => button(`Dismiss notification: ${notice}`)!.click());
   });
 });

@@ -54,6 +54,10 @@ export const settingRows = {
     { en: "workspace exit disconnect warning shutdown prompt", zh: "工作区 退出 断开 警告 提示", "zh-Hant": "工作區 離開 結束 中斷 警告 提示" }, "settings.confirmQuit.description",
   ),
 
+  closeToTray: row("appearance", "settings.closeToTray.label",
+    { en: "window background notification area system tray", zh: "窗口 后台 系统 托盘", "zh-Hant": "視窗 背景 系統 通知區域 選單列" }, "settings.closeToTray.description",
+  ),
+
   localShell: row("terminal", "settings.terminal.localShell.label",
     { en: "local terminal bash zsh powershell cmd WSL", zh: "本地 终端 命令行 bash zsh powershell cmd WSL", "zh-Hant": "本機 終端機 命令列 bash zsh powershell cmd WSL" },
     "settings.terminal.localShell.description",
@@ -145,6 +149,10 @@ export const settingRows = {
   terminalFollowsFilePanel: row("files", "settings.files.terminalFollowsFilePanel.label",
     { en: "shell integration directory cd idle bash zsh", zh: "Shell 集成 切换目录 空闲 bash zsh", "zh-Hant": "Shell 整合 切換目錄 閒置 bash zsh" },
     "settings.files.terminalFollowsFilePanel.description",
+  ),
+  remoteEditApplication: row("files", "settings.files.remoteEditApplication.label",
+    { en: "remote edit editor application program SFTP", zh: "远程编辑 编辑器 应用 程序 SFTP", "zh-Hant": "遠端編輯 編輯器 應用程式 SFTP" },
+    "settings.files.remoteEditApplication.description",
   ),
   osDetection: row("connection", "settings.connection.osDetection.label",
     { en: "OS Linux distribution automatic icon", zh: "系统 OS Linux 发行版 自动 图标", "zh-Hant": "系統 OS Linux 發行版 自動 圖示" }, "settings.connection.osDetection.description",

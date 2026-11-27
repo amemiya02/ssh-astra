@@ -5576,6 +5576,7 @@ dependencies = [
  "chrono",
  "futures-util",
  "gtk",
+ "libloading",
  "log",
  "objc2",
  "objc2-app-kit",

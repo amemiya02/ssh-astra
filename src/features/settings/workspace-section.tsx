@@ -1,3 +1,4 @@
+import { isTauri } from "@tauri-apps/api/core";
 import { useContext } from "react";
 import { useTranslation } from "react-i18next";
 import { SegmentedControl } from "@/components/SegmentedControl";
@@ -73,6 +74,19 @@ export function WorkspaceSection() {
           onChange={(value) => setPrefs({ ...prefs, confirmQuit: value === "on" })}
         />
       </SettingRow>
+      {isTauri() && (
+        <SettingRow setting={settingRows.closeToTray}>
+          <SegmentedControl
+            label={t(settingRows.closeToTray.title)}
+            value={prefs.closeToTray ? "on" : "off"}
+            options={[
+              { value: "on", label: t("settings.on") },
+              { value: "off", label: t("settings.off") },
+            ]}
+            onChange={(value) => setPrefs({ ...prefs, closeToTray: value === "on" })}
+          />
+        </SettingRow>
+      )}
     </>
   );
 }

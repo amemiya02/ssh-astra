@@ -71,6 +71,7 @@ import {
   type Tab,
   type TabsState,
 } from "@/features/workspace/tabs";
+import { useTray } from "@/features/workspace/use-tray";
 import { ShortcutCaptureContext, useWorkspaceShortcuts } from "@/features/workspace/use-workspace-shortcuts";
 import { serializeWorkspaceLayout, workspaceLayoutSetting } from "@/features/workspace/workspace-layout";
 import { workspaceSetting } from "@/features/workspace/workspace-prefs";
@@ -215,6 +216,7 @@ export function App({ initialTabs, startupTabsAcrossWindows, incomingMove }: {
     },
     [openTab],
   );
+  useTray(openRemoteTerminal);
   const openSelectedHosts = (hosts: readonly Host[]) => {
     // Queue these like restored Terminals so each Host can show its prompts in turn.
     let order = nextQueuedOrder(tabs);

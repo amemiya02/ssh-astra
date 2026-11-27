@@ -1,5 +1,5 @@
 //! Remote editing: a remote file is downloaded to a temp file, opened in the
-//! user's own editor (the system default application), and uploaded again
+//! user's chosen or system default application, and uploaded again
 //! each time it is saved there.
 //!
 //! [`RemoteEditor`] owns every open edit. Temp files live under its root, one
@@ -24,16 +24,29 @@ use tokio::task::JoinHandle;
 use crate::files::{FileKind, FsError, RemoteFs, READ_FILE_LIMIT};
 use crate::hosts::HostId;
 
-/// Opens a local file in the user's default application for it. The app
-/// uses the system opener; tests record the call.
+/// Opens a local file in the system default or user-selected application.
 pub trait Opener: Send + Sync {
     fn open(&self, path: &Path) -> Result<(), String>;
+    fn open_application(&self, path: &Path, application: &Path) -> Result<(), String>;
 }
 
 /// Identifies an open edit across the IPC boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct EditId(u64);
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct OpenEditOptions<'a> {
+    pub allow_binary: bool,
+    pub application: Option<&'a Path>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenedEdit {
+    pub id: EditId,
+    pub application_fallback: bool,
+}
 
 /// What happens to an open edit after it was opened.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -90,6 +103,17 @@ struct Edit {
     /// Stops watching when dropped.
     _watcher: RecommendedWatcher,
     uploads: JoinHandle<()>,
+}
+
+fn find_open<'a>(
+    edits: &'a HashMap<EditId, Edit>,
+    host_id: &HostId,
+    remote_path: &str,
+) -> Option<(EditId, &'a Path)> {
+    edits
+        .iter()
+        .find(|(_, edit)| &edit.host_id == host_id && edit.remote_path == remote_path)
+        .map(|(id, edit)| (*id, edit.local_path.as_path()))
 }
 
 /// Every open remote edit.
@@ -154,8 +178,15 @@ impl RemoteEditor {
         remote_path: &str,
         on_event: impl Fn(EditEvent) + Send + Sync + 'static,
     ) -> Result<EditId, EditError> {
-        self.open_with(fs, host_id, remote_path, false, on_event)
-            .await
+        self.open_with(
+            fs,
+            host_id,
+            remote_path,
+            OpenEditOptions::default(),
+            on_event,
+        )
+        .await
+        .map(|opened| opened.id)
     }
 
     /// Like [`open`](Self::open), for a file the user chose to edit although
@@ -167,28 +198,34 @@ impl RemoteEditor {
         remote_path: &str,
         on_event: impl Fn(EditEvent) + Send + Sync + 'static,
     ) -> Result<EditId, EditError> {
-        self.open_with(fs, host_id, remote_path, true, on_event)
-            .await
+        self.open_with(
+            fs,
+            host_id,
+            remote_path,
+            OpenEditOptions {
+                allow_binary: true,
+                ..OpenEditOptions::default()
+            },
+            on_event,
+        )
+        .await
+        .map(|opened| opened.id)
     }
 
-    async fn open_with(
+    /// Opens a new or existing edit with the current application preference.
+    /// If the selected application fails, tries the system default and reports the fallback.
+    pub async fn open_with(
         &self,
         fs: Arc<dyn RemoteFs>,
         host_id: &HostId,
         remote_path: &str,
-        allow_binary: bool,
+        options: OpenEditOptions<'_>,
         on_event: impl Fn(EditEvent) + Send + Sync + 'static,
-    ) -> Result<EditId, EditError> {
+    ) -> Result<OpenedEdit, EditError> {
         // Already open: show it again rather than download over unsaved or
         // not yet uploaded changes.
-        let open = self
-            .lock()
-            .iter()
-            .find(|(_, e)| &e.host_id == host_id && e.remote_path == remote_path)
-            .map(|(id, e)| (*id, e.local_path.clone()));
-        if let Some((id, local_path)) = open {
-            self.opener.open(&local_path).map_err(EditError::Open)?;
-            return Ok(id);
+        if let Some((id, local_path)) = find_open(&self.lock(), host_id, remote_path) {
+            return self.launch(id, local_path, options.application);
         }
 
         let stat = fs.stat(remote_path).await?;
@@ -204,7 +241,12 @@ impl RemoteEditor {
         }
         // `read_file` enforces the limit too, should the file have grown.
         let contents = fs.read_file(remote_path).await?;
-        if !allow_binary && contents.iter().take(BINARY_SNIFF).any(|&b| b == 0) {
+        // Another Window may have finished opening the same file while this one was downloading it.
+        let mut edits = self.lock();
+        if let Some((id, local_path)) = find_open(&edits, host_id, remote_path) {
+            return self.launch(id, local_path, options.application);
+        }
+        if !options.allow_binary && contents.iter().take(BINARY_SNIFF).any(|&b| b == 0) {
             return Err(EditError::Binary);
         }
         let id = EditId(self.next_id.fetch_add(1, Ordering::Relaxed) + 1);
@@ -235,11 +277,11 @@ impl RemoteEditor {
             }
         }
         let opened = watcher.and_then(|w| {
-            self.opener.open(&local_path).map_err(EditError::Open)?;
-            Ok(w)
+            let opened = self.launch(id, &local_path, options.application)?;
+            Ok((w, opened))
         });
-        let watcher = match opened {
-            Ok(w) => w,
+        let (watcher, opened) = match opened {
+            Ok(result) => result,
             Err(e) => {
                 let _ = std::fs::remove_dir_all(&dir);
                 return Err(e);
@@ -259,7 +301,7 @@ impl RemoteEditor {
             }
             .run(changed, retries),
         );
-        self.lock().insert(
+        edits.insert(
             id,
             Edit {
                 host_id: host_id.clone(),
@@ -270,7 +312,28 @@ impl RemoteEditor {
                 uploads,
             },
         );
-        Ok(id)
+        Ok(opened)
+    }
+
+    fn launch(
+        &self,
+        id: EditId,
+        path: &Path,
+        application: Option<&Path>,
+    ) -> Result<OpenedEdit, EditError> {
+        if let Some(application) = application {
+            if self.opener.open_application(path, application).is_ok() {
+                return Ok(OpenedEdit {
+                    id,
+                    application_fallback: false,
+                });
+            }
+        }
+        self.opener.open(path).map_err(EditError::Open)?;
+        Ok(OpenedEdit {
+            id,
+            application_fallback: application.is_some(),
+        })
     }
 
     /// The temp file of an open edit.
