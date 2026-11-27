@@ -396,8 +396,8 @@ impl ConnectionManager {
         }
     }
 
-    /// Reports each newly authenticated shared Connection. The listener runs
-    /// synchronously while the Host's connect slot is still held.
+    /// Reports each newly authenticated shared Connection after publishing it
+    /// in the Host's slot. Reusing a live Connection leaves it unchanged.
     pub fn with_connection_listener(
         mut self,
         listener: impl Fn(&HostId, ConnectionAvailability) + Send + Sync + 'static,
@@ -748,8 +748,9 @@ impl ConnectionManager {
         }
         let connection = Arc::new(establish().await?);
         *current = Arc::downgrade(&connection);
+        drop(current);
         if let Some(listener) = &self.connection_listener {
-            let weak = current.clone();
+            let weak = Arc::downgrade(&connection);
             listener(
                 id,
                 Box::new(move || {

@@ -152,9 +152,9 @@ pub enum ConflictAnswer {
 type Listener = dyn Fn(&Transfer) + Send + Sync;
 
 /// Runs transfers; see the module docs. [`upload`](Self::upload),
-/// [`download`](Self::download), and [`copy_remote`](Self::copy_remote) must
-/// be called on a Tokio runtime, which runs every transfer. Other methods
-/// may be called anywhere.
+/// [`download`](Self::download), and the other enqueue methods must be
+/// called on a Tokio runtime, which runs every transfer. Other methods may
+/// be called anywhere.
 #[derive(Clone)]
 pub struct TransferQueue {
     inner: Arc<Inner>,
@@ -241,7 +241,9 @@ impl Location {
     fn host_id(&self) -> Option<&HostId> {
         match self {
             Self::Local(_) => None,
-            Self::Remote { host_id, .. } => host_id.as_ref(),
+            Self::Remote { host_id, host, .. } => host_id
+                .as_ref()
+                .or_else(|| host.as_ref().map(|host| &host.id)),
         }
     }
 
@@ -259,12 +261,11 @@ impl Location {
     async fn open(&self, local: &Arc<dyn LocalFs>) -> FsResult<Side> {
         match self {
             Self::Local(path) => Ok(Side::Local(local.clone(), path.clone())),
-            Self::Remote {
-                path,
-                open,
-                host_id,
-                ..
-            } => Ok(Side::Remote(open().await?, path.clone(), host_id.clone())),
+            Self::Remote { path, open, .. } => Ok(Side::Remote(
+                open().await?,
+                path.clone(),
+                self.host_id().cloned(),
+            )),
         }
     }
 }
@@ -437,13 +438,13 @@ impl TransferQueue {
             source: Location::Remote {
                 path: source_path,
                 open: source.open,
-                host_id: Some(source.host.id.clone()),
+                host_id: None,
                 host: Some(source.host),
             },
             target: Location::Remote {
                 path,
                 open: target.open,
-                host_id: Some(target.host.id.clone()),
+                host_id: None,
                 host: Some(target.host),
             },
         })
@@ -453,6 +454,9 @@ impl TransferQueue {
     /// A Host-to-Host transfer needs both Connections when it retries.
     pub fn connection_restored(&self, host: &HostId, live: ConnectionAvailability) {
         let mut st = self.inner.lock();
+        if !live() {
+            return;
+        }
         st.connections.insert(host.clone(), live);
         let waiting: Vec<_> = st
             .entries

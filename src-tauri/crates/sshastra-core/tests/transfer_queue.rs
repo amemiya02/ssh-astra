@@ -745,6 +745,85 @@ async fn a_disconnected_host_transfer_waits_for_both_hosts_and_retries_once() {
 }
 
 #[tokio::test]
+async fn a_transfer_resumes_when_reconnect_precedes_the_failure_event() {
+    let h = Harness::new();
+    h.local.file("/payload", "contents");
+    h.remote.dir("/incoming");
+    let host = HostId::from("host".to_owned());
+    let live = Arc::new(AtomicBool::new(true));
+    h.queue.connection_restored(
+        &host,
+        Box::new({
+            let live = live.clone();
+            move || live.load(Ordering::SeqCst)
+        }),
+    );
+
+    let started = Arc::new(Notify::new());
+    let finish = Arc::new(Notify::new());
+    let opener = h.opener();
+    let open: OpenRemote = Arc::new({
+        let first = AtomicBool::new(true);
+        let started = started.clone();
+        let finish = finish.clone();
+        move || {
+            if first.swap(false, Ordering::SeqCst) {
+                let finish = finish.clone();
+                started.notify_one();
+                Box::pin(async move {
+                    finish.notified().await;
+                    Err(FsError::NotConnected)
+                })
+            } else {
+                opener()
+            }
+        }
+    });
+    let id = h
+        .queue
+        .upload_to(host.clone(), open, "/payload".into(), "/incoming".into());
+    tokio::time::timeout(Duration::from_secs(5), started.notified())
+        .await
+        .unwrap();
+    live.store(false, Ordering::SeqCst);
+    h.queue.connection_restored(&host, Box::new(|| true));
+    finish.notify_one();
+
+    h.until_state(id, TransferState::Done).await;
+    assert_eq!(h.remote.read("/incoming/payload").unwrap(), b"contents");
+}
+
+#[tokio::test]
+async fn a_permission_failure_stays_failed_when_the_host_reconnects() {
+    let h = Harness::new();
+    h.local.file("/payload", "contents");
+    h.remote.dir("/incoming");
+    h.remote
+        .deny_creation
+        .lock()
+        .unwrap()
+        .insert("/incoming".into());
+    let host = HostId::from("host".to_owned());
+    h.queue.connection_restored(&host, Box::new(|| true));
+    let id = h.queue.upload_to(
+        host.clone(),
+        h.opener(),
+        "/payload".into(),
+        "/incoming".into(),
+    );
+    h.until_settled().await;
+    let failure = h.transfer(id).state;
+    assert!(
+        matches!(&failure, TransferState::Failed { message } if message.starts_with("permission denied:"))
+    );
+
+    h.remote.deny_creation.lock().unwrap().clear();
+    h.queue.connection_restored(&host, Box::new(|| true));
+    assert_eq!(h.transfer(id).state, failure);
+    assert_eq!(h.remote.read("/incoming/payload"), None);
+}
+
+#[tokio::test]
 async fn copying_between_hosts_preserves_the_nested_tree_and_identifies_both_hosts() {
     let h = Harness::new();
     let source = MemoryFs::new();

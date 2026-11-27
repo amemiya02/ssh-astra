@@ -204,7 +204,13 @@ impl RemoteFs for SftpFs {
             while let Some(done) = links.join_next().await {
                 let Ok((index, target)) = done else { continue };
                 // A dangling or unreadable link keeps `link_target: None`.
-                entries[index].link_target = target.ok().map(|m| kind(&m));
+                entries[index].link_target = match target {
+                    Ok(meta) => Some(kind(&meta)),
+                    Err(e) if connection_was_lost(&self.connection, &e) => {
+                        return Err(FsError::NotConnected);
+                    }
+                    Err(_) => None,
+                };
             }
             Ok(entries)
         })
