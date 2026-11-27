@@ -65,6 +65,7 @@ async fn log_files_record_an_ssh_connection_without_password_or_terminal_data() 
         group_id: None,
         forwards: Vec::new(),
         bookmarks: Vec::new(),
+        open_ssh_source: None,
     };
     let manager = ConnectionManager::new(KnownHosts::new(sandbox.path().join("known_hosts")));
     let connection = manager

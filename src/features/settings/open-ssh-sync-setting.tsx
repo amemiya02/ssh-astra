@@ -11,35 +11,18 @@ import {
   refreshOpenSshSync,
   type OpenSshPreview,
 } from "@/lib/ipc/ssh-config-export";
-import { defineSection, useSetting } from "@/lib/storage";
+import { useSetting } from "@/lib/storage";
+import { OpenSshReadSettings } from "@/features/hosts/openSshSync";
+import { openSshProblems, openSshSyncSetting } from "@/features/hosts/openSshSyncSetting";
 import { SettingRow } from "./SettingRow";
 import { settingRows } from "./setting-rows";
 import { useSettingRowVisible } from "./settings-view";
 
-const problems = ["configChanged", "missingInclude", "includeConflict", "fragmentExists", "homeUnavailable", "hostsUnavailable", "io"] as const;
-type Problem = typeof problems[number];
-
-type Reason = "userAlias" | "duplicateAlias" | "invalidField" | "unsupportedProxy" | "jumpUnavailable"
-  | "httpForward" | "manualForward" | "invalidForward";
-
-interface OpenSshStatus {
-  enabled: boolean;
-  includeLine?: string;
-  report?: {
-    aliases: string[];
-    issues: { host: string; alias: string; reason: Reason }[];
-  };
-  problem?: Problem;
-}
-
-const openSshSyncSetting = defineSection<OpenSshStatus>("openSshSync", { enabled: false }, (raw) => {
-  const status = raw as Partial<OpenSshStatus> | null;
-  return { ...status, enabled: status?.enabled === true };
-});
+type Problem = typeof openSshProblems[number];
 
 function problemFrom(error: unknown): Problem {
   const kind = typeof error === "object" && error !== null && "kind" in error ? error.kind : undefined;
-  return problems.find((problem) => problem === kind) ?? "io";
+  return openSshProblems.find((problem) => problem === kind) ?? "io";
 }
 
 export function OpenSshSyncSetting() {
@@ -125,6 +108,7 @@ function VisibleOpenSshSyncSetting() {
           )}
         </div>
       )}
+      <OpenSshReadSettings status={status} />
       <Dialog open={Boolean(preview) && !status.enabled} onOpenChange={(open) => { if (!open) cancel(); }}>
         {preview && (
           <DialogContent showCloseButton={false}>

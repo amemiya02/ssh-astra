@@ -67,6 +67,7 @@ async fn connect(port: &str, scratch: &Path) -> Arc<dyn RemoteFs> {
         default_directory: None,
         forwards: Vec::new(),
         bookmarks: Vec::new(),
+        open_ssh_source: None,
     };
     let connection = manager
         .connect(&host, Arc::new(FixtureLogin(key.fingerprint())))

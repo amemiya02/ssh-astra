@@ -18,6 +18,7 @@ import { activeConnections, forwardStatusText, runningRules } from "@/features/f
 import { ForwardsSidebar } from "@/features/forwards/ForwardsSidebar";
 import { HomeView } from "@/features/home/HomeView";
 import { rememberHostOpened, useRecordHostConnections } from "@/features/hosts/host-history";
+import { OpenSshStartupOffer } from "@/features/hosts/openSshSync";
 import { hostsStore, useHosts } from "@/features/hosts/hostsStore";
 import { updateSetting } from "@/features/updates/update-settings";
 import { UpdateNotice } from "@/features/updates/UpdateNotice";
@@ -604,6 +605,7 @@ export function App({ initialTabs, startupTabsAcrossWindows, incomingMove }: {
           {t("quickConnect.failed")}
         </p>
       )}
+      {startupTabsAcrossWindows !== null && <OpenSshStartupOffer />}
       {hostsController.dialogs}
       <ConflictDialog />
       <SshLinkConfirmation onConnect={(target, host) => {

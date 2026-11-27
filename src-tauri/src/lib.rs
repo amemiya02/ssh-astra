@@ -184,11 +184,14 @@ pub fn run() {
                 connection_settings,
                 settings.changes(),
             );
-            match &hosts {
-                Ok(store) => open_ssh.rebuild(store.list(), None),
-                Err(_) => open_ssh.unavailable_hosts(),
+            let hosts_available = hosts.is_ok();
+            if !hosts_available {
+                open_ssh.unavailable_hosts();
             }
             let hosts = HostsState::new(hosts, open_ssh);
+            if hosts_available {
+                OpenSshSync::sync_at_startup(hosts.clone());
+            }
             let agent_activity = Arc::new(AgentActivityLog::new(config_dir.join("agent-activity")));
             if agent_activity.prune(SystemTime::now()).is_err() {
                 log::warn!("Could not expire old Agent access activity");
@@ -315,6 +318,7 @@ pub fn run() {
             commands::ssh_config_export::ssh_config_export_enable,
             commands::ssh_config_export::ssh_config_export_disable,
             commands::ssh_config_export::ssh_config_export_refresh,
+            commands::ssh_config_export::ssh_config_sync_import,
             commands::agent::agent_activity_list,
             commands::agent::agent_activity_clear,
             commands::command_history::command_history_list,

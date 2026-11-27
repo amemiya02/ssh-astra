@@ -5,7 +5,7 @@ use std::net::Ipv6Addr;
 use std::path::{Component, Path, PathBuf};
 
 use encoding_rs::{Encoding, WINDOWS_1252};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::forward::ForwardDraft;
 
@@ -26,7 +26,8 @@ pub use xshell::parse_xshell;
 
 /// A Host as the source describes it, ready to save. `jump_host` names
 /// another `ConfigHost` (or an already saved Host) by name.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ConfigHost {
     pub name: String,
     pub address: String,
