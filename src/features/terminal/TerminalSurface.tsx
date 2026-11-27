@@ -14,7 +14,11 @@ import type { TerminalColorScheme } from "@/theme/terminal-themes";
 import { XtermView } from "./XtermView";
 import { shellIntegration, useShellIntegration } from "./shellIntegration";
 
-export type OpenTerminal = (size: TerminalSize, onEvent: (event: TerminalEvent) => void) => Promise<TerminalId>;
+export type OpenTerminal = (
+  size: TerminalSize,
+  onEvent: (event: TerminalEvent) => void,
+  signal: AbortSignal,
+) => Promise<TerminalId>;
 
 interface Props {
   paneId: string;
@@ -23,7 +27,7 @@ interface Props {
   /** Called if `open` rejects; the view stays mounted. */
   onOpenError?: (error: unknown) => void;
   /** The backend Terminal is running. */
-  onOpened?(): void;
+  onOpened?(id: TerminalId): void;
   /** The backend Terminal ended (its shell exited or its Connection dropped). */
   onExit?(): void;
   label: string;
@@ -71,14 +75,14 @@ export function TerminalSurface({
 
   const attach = useCallback((xterm: XTerm) => {
     let id: TerminalId | undefined;
-    let disposed = false;
+    const lifetime = new AbortController();
     let exited = false;
     shellIntegration.open(paneId);
     const size = () => ({ cols: xterm.cols, rows: xterm.rows });
 
     openRef
       .current(size(), (event) => {
-        if (disposed || exited) return;
+        if (lifetime.signal.aborted || exited) return;
         if (event.type === "output") {
           if (e2eHooks) e2eHooks.trackOutput(xterm, event.data);
           else xterm.write(event.data);
@@ -105,20 +109,20 @@ export function TerminalSurface({
         xterm.options.cursorBlink = false;
         onTitleChangeRef.current?.("");
         onExitRef.current?.();
-      })
+      }, lifetime.signal)
       .then(
         (opened) => {
-          if (disposed || exited) {
+          if (lifetime.signal.aborted || exited) {
             void closeTerminal(opened);
             return;
           }
           id = opened;
-          onOpenedRef.current?.();
+          onOpenedRef.current?.(opened);
           // Catch up on any resize that happened while connecting.
           void resizeTerminal(opened, size());
         },
         (error: unknown) => {
-          if (disposed) return;
+          if (lifetime.signal.aborted) return;
           shellIntegration.close(paneId);
           onOpenErrorRef.current?.(error);
         },
@@ -138,7 +142,7 @@ export function TerminalSurface({
     });
 
     return () => {
-      disposed = true;
+      lifetime.abort();
       onData.dispose();
       onResize.dispose();
       onBufferChange.dispose();

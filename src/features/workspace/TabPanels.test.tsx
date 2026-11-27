@@ -36,6 +36,8 @@ function renderWorkspace() {
         activeId={state.activeId}
         renderHome={() => null}
         onFocusPane={(paneId) => dispatch({ type: "focusPane", paneId })}
+        onClosePane={(paneId) => dispatch({ type: "closePane", paneId })}
+        onEditHost={() => {}}
         onTitleChange={() => {}}
         onStatusChange={() => {}}
         onResizeSplit={(tabId, resize) => dispatch({ type: "resizeSplit", tabId, ...resize })}

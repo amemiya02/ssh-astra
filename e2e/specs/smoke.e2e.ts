@@ -130,4 +130,56 @@ describe("sshastra", () => {
     // The listing reloads by itself once the upload into the folder shown is done.
     await listing.$(`span=${uploadName}`).waitForDisplayed();
   });
+
+  it("shows the failed login and retries in the same tab", async () => {
+    const name = "E2E retry sshd";
+    await $('[role="tab"][id]').click();
+    await $("button=New Host").click();
+    await $("#host-form-name").setValue(name);
+    await $("#host-form-address").setValue("127.0.0.1");
+    await $("#host-form-port").clearValue();
+    await $("#host-form-port").setValue(String(sshd.port()));
+    await $("#host-form-user").setValue(sshd.USER);
+    await $("button=Save").click();
+    await $(`//*[@role='tabpanel' and not(@hidden)]//button[contains(., '${name}')]`).click();
+
+    const tab = $('[role="tab"][aria-selected="true"]');
+    const panel = await tab.getAttribute("aria-controls");
+    const pane = await $(`#${panel} [id^="pane-"]`).getAttribute("id");
+    const passwordSelector = '[role="dialog"] input[type="password"]';
+    const trust = $("button=Trust and connect");
+    await browser.waitUntil(async () => await $(passwordSelector).isDisplayed() || await trust.isDisplayed());
+    if (await trust.isDisplayed()) await trust.click();
+
+    let answered = "";
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const password = $(`${passwordSelector}:not([id="${answered}"])`);
+      await password.waitForDisplayed();
+      answered = await password.getAttribute("id");
+      await password.setValue("e2e-incorrect-password");
+      await $("button=Connect").click();
+    }
+
+    const failedPane = $(`#${pane}`);
+    await expect(failedPane.$("li*=Log in")).toHaveText(expect.stringContaining("Failed"));
+    await expect(failedPane.$('[role="alert"]')).toBeDisplayed();
+    await expect(failedPane.$("button=Close")).toBeDisplayed();
+    await failedPane.$("button=Edit Host").click();
+    await expect($("h2=Edit Host")).toBeDisplayed();
+    await expect($("#host-form-name")).toHaveValue(name);
+    await $('[role="dialog"]').$("button=Cancel").click();
+    await failedPane.$("button=Retry").click();
+
+    const password = $(passwordSelector);
+    await password.waitForDisplayed();
+    await password.setValue(sshd.PASSWORD);
+    await $("button=Connect").click();
+
+    await expect(tab).toHaveAttribute("aria-controls", panel);
+    await expect(failedPane.$(".xterm")).toBeDisplayed();
+    const input = await failedPane.$("textarea.xterm-helper-textarea");
+    await browser.execute((textarea) => textarea.focus(), input);
+    await typeCommand(`echo "e2e-retry-ok-${run}"`);
+    await waitForTerminalText(new RegExp(`^e2e-retry-ok-${run}$`, "m"), "the retried Terminal's output");
+  });
 });

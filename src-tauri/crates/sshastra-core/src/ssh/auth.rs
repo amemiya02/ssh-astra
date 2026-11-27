@@ -20,9 +20,10 @@ use russh::keys::{HashAlg, PrivateKey, PrivateKeyWithHashAlg};
 use russh::{AgentAuthError, MethodKind, MethodSet};
 
 use super::handshake::Deadline;
+use super::progress::ActiveStep;
 use super::{
-    ConnectError, KeyboardInteractivePrompt, KeyboardInteractiveQuestion, PassphrasePrompt,
-    PasswordPrompt, Prompter,
+    AuthMethod, ConnectError, KeyboardInteractivePrompt, KeyboardInteractiveQuestion,
+    PassphrasePrompt, PasswordPrompt, Prompter,
 };
 use crate::credentials::{CredentialKind, CredentialVault};
 use crate::hosts::{Host, HostAuth, HostId};
@@ -131,7 +132,8 @@ impl Saved {
     }
 }
 
-struct AuthAttempt<'a, H: client::Handler> {
+struct AuthAttempt<'a, 'step, H: client::Handler> {
+    progress: &'a mut ActiveStep<'step>,
     handle: &'a mut Handle<H>,
     host: &'a Host,
     prompter: &'a dyn Prompter,
@@ -147,7 +149,9 @@ pub(super) async fn authenticate<H: client::Handler>(
     vault: &Arc<dyn CredentialVault>,
     prompter: &dyn Prompter,
     deadline: Arc<Deadline>,
+    progress: &mut ActiveStep<'_>,
 ) -> Result<(), ConnectError> {
+    progress.method(AuthMethod::None);
     log_auth(&host.id, "none", "attempting");
     let none = handle.authenticate_none(&host.user).await;
     log_auth(&host.id, "none", auth_result(&none));
@@ -158,6 +162,7 @@ pub(super) async fn authenticate<H: client::Handler>(
         } => remaining_methods,
     };
     let mut attempt = AuthAttempt {
+        progress,
         handle,
         host,
         prompter,
@@ -227,7 +232,7 @@ enum Method {
     KeyboardInteractive,
 }
 
-impl<H: client::Handler> AuthAttempt<'_, H> {
+impl<H: client::Handler> AuthAttempt<'_, '_, H> {
     fn allows(&self, method: MethodKind) -> bool {
         self.allowed.contains(&method)
     }
@@ -270,6 +275,7 @@ impl<H: client::Handler> AuthAttempt<'_, H> {
         if keys.is_empty() {
             return Ok(Step::Skipped);
         }
+        self.progress.method(AuthMethod::Agent);
         let rsa_hash = self.rsa_hash().await?;
         for key in keys {
             let hash = key.algorithm().is_rsa().then_some(rsa_hash).flatten();
@@ -302,6 +308,7 @@ impl<H: client::Handler> AuthAttempt<'_, H> {
         if !self.allows(MethodKind::PublicKey) {
             return Ok(Step::Skipped);
         }
+        self.progress.method(AuthMethod::KeyFile);
         log_auth(&self.host.id, "key-file", "attempting");
         let path = expand_home(identity_file);
         let key = match load_key(&path, self.prompter, &self.saved).await? {
@@ -323,6 +330,7 @@ impl<H: client::Handler> AuthAttempt<'_, H> {
         if !self.allows(MethodKind::Password) {
             return Ok(Step::Skipped);
         }
+        self.progress.method(AuthMethod::Password);
         let mut retry = false;
         if let Some(password) = self.saved.get(CredentialKind::Password).await {
             if let Some(step) = self.try_password(password).await? {
@@ -375,6 +383,10 @@ impl<H: client::Handler> AuthAttempt<'_, H> {
     }
 
     async fn keyboard_interactive(&mut self) -> Result<Step, ConnectError> {
+        if !self.allows(MethodKind::KeyboardInteractive) {
+            return Ok(Step::Skipped);
+        }
+        self.progress.method(AuthMethod::KeyboardInteractive);
         for _ in 0..ATTEMPTS {
             if !self.allows(MethodKind::KeyboardInteractive) {
                 break;

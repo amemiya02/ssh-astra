@@ -1,5 +1,5 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
-import { answerPrompts, type ConnectPrompt, type PromptAnswer } from "./connect";
+import { connectPromptChannel, type ConnectPrompt, type PromptAnswer } from "./connect";
 import type { HostId } from "./hosts";
 
 /** A Host's Connection started or stopped being held by "Connect only" (`sshastra_core::ssh::HeldEvent`). */
@@ -21,8 +21,7 @@ export function watchConnections(onEvent: (event: HeldEvent) => void): Promise<H
  * auto-start Port forwards and keeps the Connection open with no Terminal.
  */
 export function connectHost(hostId: HostId, ask: (prompt: ConnectPrompt) => Promise<PromptAnswer>): Promise<void> {
-  const handle = answerPrompts(ask);
-  const onPrompt = new Channel<ConnectPrompt>((prompt) => void handle(prompt));
+  const onPrompt = connectPromptChannel(ask);
   return invoke("host_connect", { hostId, onPrompt });
 }
 

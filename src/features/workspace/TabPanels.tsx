@@ -6,6 +6,7 @@ import { LocalTerminalView } from "@/features/terminal/LocalTerminalView";
 import { SftpWorkspace } from "@/features/files/SftpWorkspace";
 import { terminalCwds } from "@/features/files/terminalCwds";
 import { RemoteTerminalView } from "@/features/terminal/RemoteTerminalView";
+import type { Host } from "@/lib/ipc/hosts";
 import { cn } from "@/lib/utils";
 import { PaneDivider } from "./PaneDivider";
 import { positionPanes, resizePaneLayout, type PaneBounds, type SplitResize } from "./pane-layout";
@@ -17,6 +18,8 @@ interface TabPanelsProps {
   /** Home, drawn for the Home tab (or when no tab is open). `active`: it is the pane shown. */
   renderHome(active: boolean): ReactNode;
   onFocusPane(paneId: string): void;
+  onClosePane(paneId: string): void;
+  onEditHost(host: Host): void;
   /** A program in the pane set its title (empty string clears it). */
   onTitleChange(paneId: string, title: string): void;
   onStatusChange(paneId: string, status: ConnectionStatus, reconnecting?: ReconnectProgress): void;
@@ -108,6 +111,8 @@ function PaneContent({
   active,
   onTitleChange,
   onStatusChange,
+  onClosePane,
+  onEditHost,
   renderHome,
 }: { pane: Pane; active: boolean } & PaneCallbacks) {
   switch (pane.kind) {
@@ -120,6 +125,8 @@ function PaneContent({
         <RemoteTerminalView
           paneId={pane.id}
           host={pane.host}
+          onClose={() => onClosePane(pane.id)}
+          onEditHost={() => onEditHost(pane.host)}
           active={active}
           onTitleChange={(title) => onTitleChange(pane.id, title)}
           onStatusChange={(status, reconnecting) => onStatusChange(pane.id, status, reconnecting)}

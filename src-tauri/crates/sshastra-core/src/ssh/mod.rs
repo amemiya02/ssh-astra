@@ -24,15 +24,18 @@
 mod auth;
 mod handshake;
 mod held;
+mod progress;
 mod remote_listen;
 mod remote_terminal;
 mod shell;
 
 pub use auth::Agent;
 pub use held::{HeldConnections, HeldEvent};
+pub use progress::{AuthMethod, ConnectProgress, ConnectStage, ProgressStatus};
 pub use remote_terminal::{ReconnectPolicy, RemoteTerminal, RemoteTerminalOptions};
 pub use shell::RemoteShell;
 
+use progress::HopProgress;
 pub(crate) use remote_listen::RemoteListener;
 use remote_listen::Routes;
 
@@ -178,9 +181,12 @@ pub struct KeyboardInteractiveQuestion {
     pub echo: bool,
 }
 
-/// Asks the user to decide during a connect. Implemented by the UI layer.
+/// Asks the user to decide and reports progress during a connect.
 /// Every `None` answer means the user cancelled, which cancels the connect.
 pub trait Prompter: Send + Sync {
+    /// Reports progress without waiting for a reply.
+    fn progress(&self, _progress: ConnectProgress) {}
+
     /// Should this new host key be trusted (and written to known_hosts)?
     fn confirm_host_key(&self, prompt: HostKeyPrompt) -> BoxFuture<'_, bool>;
     /// The password.
@@ -410,13 +416,13 @@ impl ConnectionManager {
     ) -> Result<Arc<Connection>, ConnectError> {
         let mut via = None;
         for jump in jump_hosts {
-            let hop = self.hop(jump, via, prompter.clone()).await;
+            let hop = self.hop(jump, via, prompter.clone(), true).await;
             via = Some(hop.map_err(|e| ConnectError::JumpHost {
                 name: jump.name.clone(),
                 source: Box::new(e),
             })?);
         }
-        self.hop(host, via, prompter).await
+        self.hop(host, via, prompter, false).await
     }
 
     /// The live Connection to `host`, or a new one opened directly or, with
@@ -426,7 +432,13 @@ impl ConnectionManager {
         host: &Host,
         via: Option<Arc<Connection>>,
         prompter: Arc<dyn Prompter>,
+        jump_host: bool,
     ) -> Result<Arc<Connection>, ConnectError> {
+        let progress = HopProgress {
+            host,
+            jump_host,
+            prompter: prompter.as_ref(),
+        };
         log::info!(
             "connection identity {}",
             serde_json::json!({
@@ -435,13 +447,15 @@ impl ConnectionManager {
             })
         );
         let result = self
-            .shared(&host.id, || async move {
+            .shared(progress, || async {
+                let reach = progress.start(ConnectStage::Reach);
                 match via {
                     None => {
                         log::info!("connection hop={} step=tcp result=starting", host.id);
                         let stream = open_tcp(host).await;
                         log_hop(&host.id, "tcp", &stream);
-                        self.establish(host, stream?, prompter, None).await
+                        self.establish(progress, reach.finish(stream)?, prompter.clone(), None)
+                            .await
                     }
                     Some(jump) => {
                         log::info!(
@@ -450,7 +464,13 @@ impl ConnectionManager {
                         );
                         let stream = jump.open_tunnel(host).await;
                         log_hop(&host.id, "jump-tunnel", &stream);
-                        self.establish(host, stream?, prompter, Some(jump)).await
+                        self.establish(
+                            progress,
+                            reach.finish(stream)?,
+                            prompter.clone(),
+                            Some(jump),
+                        )
+                        .await
                     }
                 }
             })
@@ -498,19 +518,28 @@ impl ConnectionManager {
         Ok(session)
     }
 
-    /// The live Connection in `id`'s slot, or the one `establish` opens,
+    /// The live Connection in the Host's slot, or the one `establish` opens,
     /// which is then kept there for later connects.
     async fn shared<F, Fut>(
         &self,
-        id: &HostId,
+        progress: HopProgress<'_>,
         establish: F,
     ) -> Result<Arc<Connection>, ConnectError>
     where
         F: FnOnce() -> Fut,
         Fut: Future<Output = Result<Connection, ConnectError>>,
     {
+        let id = &progress.host.id;
         let slot = self.slot(id);
-        let mut current = slot.lock().await;
+        let mut current = match slot.try_lock() {
+            Ok(current) => current,
+            Err(_) => {
+                let waiting = progress.start(ConnectStage::Waiting);
+                let current = slot.lock().await;
+                waiting.end(ProgressStatus::Succeeded);
+                current
+            }
+        };
         if let Some(live) = current.upgrade().filter(|c| !c.is_closed()) {
             log::info!("connection hop={id} step=connect result=reused");
             return Ok(live);
@@ -535,7 +564,7 @@ impl ConnectionManager {
     /// within the handshake timeout (which stops while a prompt is open).
     async fn establish<S>(
         &self,
-        host: &Host,
+        progress: HopProgress<'_>,
         stream: S,
         prompter: Arc<dyn Prompter>,
         via: Option<Arc<Connection>>,
@@ -548,7 +577,7 @@ impl ConnectionManager {
             inner: prompter,
             deadline: Arc::clone(&deadline),
         });
-        let work = self.handshake(host, stream, prompter, via, Arc::clone(&deadline));
+        let work = self.handshake(progress, stream, prompter, via, Arc::clone(&deadline));
         handshake::within(&deadline, work)
             .await
             .unwrap_or(Err(ConnectError::TimedOut))
@@ -556,7 +585,7 @@ impl ConnectionManager {
 
     async fn handshake<S>(
         &self,
-        host: &Host,
+        progress: HopProgress<'_>,
         stream: S,
         prompter: Arc<dyn Prompter>,
         via: Option<Arc<Connection>>,
@@ -565,6 +594,8 @@ impl ConnectionManager {
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
+        let host = progress.host;
+        let host_key = progress.start(ConnectStage::HostKey);
         let failure = Arc::new(Mutex::new(None));
         let routes = Routes::default();
         let handler = ClientHandler {
@@ -584,8 +615,9 @@ impl ConnectionManager {
                 recorded.unwrap_or_else(|| error.into())
             });
         log_hop(&host.id, "handshake", &handshake);
-        let mut handle = handshake?;
+        let mut handle = host_key.finish(handshake)?;
 
+        let mut login = progress.start(ConnectStage::Authenticate);
         let authenticated = auth::authenticate(
             &mut handle,
             host,
@@ -593,10 +625,11 @@ impl ConnectionManager {
             &self.vault,
             prompter.as_ref(),
             deadline,
+            &mut login,
         )
         .await;
         log_hop(&host.id, "authentication", &authenticated);
-        authenticated?;
+        login.finish(authenticated)?;
         // Different Jump routes and accounts may expose different files
         // at the same SFTP path, including when the server uses chroots.
         let file_namespace = format!(

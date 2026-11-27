@@ -20,6 +20,19 @@ export type ConnectPrompt =
       prompts: { text: string; echo: boolean }[];
     };
 
+/** A step reported by `sshastra_core::ssh::ConnectProgress`. */
+export interface ConnectProgress {
+  hostId: HostId;
+  hostName: string;
+  jumpHost: boolean;
+  stage: "waiting" | "reach" | "hostKey" | "authenticate" | "shell";
+  status: "running" | "succeeded" | "failed";
+  elapsedMs: number;
+  method: "none" | "agent" | "keyFile" | "password" | "keyboardInteractive" | null;
+}
+
+type PromptMessage = ConnectPrompt | { type: "progress"; progress: ConnectProgress };
+
 /**
  * `null` means the user cancelled, which cancels the connect. `save` keeps the
  * password or passphrase in the system keychain once it proves right.
@@ -78,6 +91,18 @@ export function answerPrompts(
   };
 }
 
+/** Progress shares the prompt Channel and carries no question id. */
+export function connectPromptChannel(
+  ask: (prompt: ConnectPrompt) => Promise<PromptAnswer>,
+  onProgress?: (progress: ConnectProgress) => void,
+): Channel<PromptMessage> {
+  const handle = answerPrompts(ask);
+  return new Channel<PromptMessage>((message) => {
+    if (message.type === "progress") onProgress?.(message.progress);
+    else void handle(message);
+  });
+}
+
 function sendPromptAnswer(id: number, answer: PromptAnswer): Promise<void> {
   return invoke("prompt_answer", { id, answer });
 }
@@ -93,9 +118,9 @@ export async function openRemoteTerminal(
   size: TerminalSize,
   onEvent: (event: TerminalEvent) => void,
   ask: (prompt: ConnectPrompt) => Promise<PromptAnswer>,
+  onProgress: (progress: ConnectProgress) => void,
 ): Promise<TerminalId> {
-  const handle = answerPrompts(ask);
-  const onPrompt = new Channel<ConnectPrompt>((prompt) => void handle(prompt));
+  const onPrompt = connectPromptChannel(ask, onProgress);
   const events = new Channel<TerminalMessage>((message) =>
     onEvent(decodeTerminalMessage(message)),
   );

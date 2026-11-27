@@ -286,6 +286,8 @@ export function App() {
               />
             )}
             onFocusPane={(paneId) => dispatch({ type: "focusPane", paneId })}
+            onClosePane={(paneId) => dispatch({ type: "closePane", paneId })}
+            onEditHost={(host) => hostsController.actions.edit(hosts.find((saved) => saved.id === host.id) ?? host)}
             onTitleChange={retitle}
             onStatusChange={setStatus}
             onResizeSplit={(tabId, resize) => dispatch({ type: "resizeSplit", tabId, ...resize })}

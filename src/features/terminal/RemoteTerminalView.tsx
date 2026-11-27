@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ConnectErrorPanel } from "@/features/connect/ConnectErrorPanel";
+import { ConnectionView, type ObservedProgress } from "@/features/connect/ConnectionView";
 import { ConnectPromptDialog } from "@/features/connect/ConnectPromptDialog";
 import { DisconnectedOverlay } from "@/features/connect/DisconnectedOverlay";
 import {
@@ -23,6 +23,13 @@ const statusAfterDrop: Record<ConnectionState["state"], ConnectionStatus> = {
   disconnected: "disconnected",
 };
 
+/** One entry per Host and step, keeping the order in which the route was reported. */
+function updateConnectionSteps(previous: ObservedProgress[], progress: ObservedProgress): ObservedProgress[] {
+  const index = previous.findIndex((step) => step.hostId === progress.hostId && step.stage === progress.stage);
+  if (index < 0) return [...previous, progress];
+  return previous.map((step, i) => i === index ? progress : step);
+}
+
 interface PendingPrompt {
   prompt: ConnectPrompt;
   resolve: (answer: PromptAnswer) => void;
@@ -33,6 +40,8 @@ interface RemoteTerminalViewProps {
   host: Host;
   /** Whether its tab is shown. A question asked while hidden waits until the tab is shown. */
   active?: boolean;
+  onEditHost(): void;
+  onClose(): void;
   onTitleChange?(title: string): void;
   /**
    * Connecting until the shell runs, then connected; disconnected once it ends or the connect fails.
@@ -53,6 +62,8 @@ export function RemoteTerminalView({
   paneId,
   host,
   active = true,
+  onEditHost,
+  onClose,
   onTitleChange,
   onStatusChange,
   onCwd,
@@ -60,20 +71,8 @@ export function RemoteTerminalView({
 }: RemoteTerminalViewProps) {
   const [pending, setPending] = useState<PendingPrompt | null>(null);
   const [error, setError] = useState<CommandError | null>(null);
-  const pendingRef = useRef<PendingPrompt | null>(null);
-  const show = useCallback((next: PendingPrompt | null) => {
-    pendingRef.current = next;
-    setPending(next);
-  }, []);
-
-  // Closing the tab mid-connect refuses the open question so the backend stops waiting.
-  useEffect(
-    () => () => {
-      const open = pendingRef.current;
-      if (open) open.resolve(refusal(open.prompt));
-    },
-    [],
-  );
+  const [opened, setOpened] = useState(false);
+  const [steps, setSteps] = useState<ObservedProgress[]>([]);
 
   // Set while the Connection is down; the Terminal stays mounted under the overlay.
   const [lost, setLost] = useState<Exclude<ConnectionState, { state: "connected" }> | null>(null);
@@ -88,13 +87,14 @@ export function RemoteTerminalView({
   });
 
   const open = useCallback<OpenTerminal>(
-    async (size, onEvent) => {
-      const id = await openRemoteTerminal(
+    (size, onEvent, signal) => {
+      let opening = true;
+      return openRemoteTerminal(
         host.id,
         size,
         (event) => {
+          if (signal.aborted) return;
           if (event.type === "cwd") return onCwdRef.current?.(event.path);
-          if (event.type === "exit") onTerminalRef.current?.(null);
           onEvent(event);
           if (event.type !== "connection") return;
           const state = event.state;
@@ -104,13 +104,34 @@ export function RemoteTerminalView({
             state.state === "reconnecting" ? { attempt: state.attempt, attempts: state.attempts } : undefined,
           );
         },
-        (prompt) => new Promise((resolve) => show({ prompt, resolve })),
-      );
-      terminalId.current = id;
-      onTerminalRef.current?.(id);
-      return id;
+        (prompt) => new Promise((resolve) => {
+          if (signal.aborted) {
+            resolve(refusal(prompt));
+            return;
+          }
+          const cancel = () => {
+            setPending((current) => current?.prompt.id === prompt.id ? null : current);
+            resolve(refusal(prompt));
+          };
+          signal.addEventListener("abort", cancel, { once: true });
+          setPending({
+            prompt,
+            resolve: (answer) => {
+              signal.removeEventListener("abort", cancel);
+              resolve(answer);
+            },
+          });
+        }),
+        (progress) => {
+          if (!opening || signal.aborted) return;
+          const observed = { ...progress, receivedAt: performance.now() };
+          setSteps((previous) => updateConnectionSteps(previous, observed));
+        },
+      ).finally(() => {
+        opening = false;
+      });
     },
-    [host.id, show],
+    [host.id],
   );
   const reconnect = useCallback(() => {
     if (terminalId.current !== null) void reconnectTerminal(terminalId.current);
@@ -118,38 +139,59 @@ export function RemoteTerminalView({
   const onOpenError = useCallback(
     (e: unknown) => {
       setError(readCommandError(e));
+      setSteps((previous) => previous.map((step) => step.status === "running"
+        ? { ...step, status: "failed", elapsedMs: step.elapsedMs + Math.max(0, performance.now() - step.receivedAt) }
+        : step));
       onStatusChange?.("disconnected");
     },
     [onStatusChange],
   );
 
+  const retry = () => {
+    setSteps([]);
+    setError(null);
+    onStatusChange?.("connecting");
+  };
+
   return (
     <div className="relative h-full">
-      {error ? (
-        <ConnectErrorPanel error={error} />
-      ) : (
-        <TerminalSurface
-          paneId={paneId}
-          open={open}
-          onOpenError={onOpenError}
-          onOpened={() => onStatusChange?.("connected")}
-          onExit={() => {
-            setLost(null);
-            onStatusChange?.("disconnected");
-          }}
-          label={host.name}
-          active={active}
-          colorScheme={isTerminalColorScheme(host.terminalScheme) ? host.terminalScheme : undefined}
-          onTitleChange={onTitleChange}
-        />
+      {!error && (
+        // Keep the measured grid and its buffered output ready for the shell.
+        <div className={opened ? "h-full" : "invisible h-full"} inert={!opened}>
+          <TerminalSurface
+            paneId={paneId}
+            open={open}
+            onOpenError={onOpenError}
+            onOpened={(id) => {
+              terminalId.current = id;
+              onTerminalRef.current?.(id);
+              setOpened(true);
+              onStatusChange?.("connected");
+            }}
+            onExit={() => {
+              terminalId.current = null;
+              setOpened(true);
+              onTerminalRef.current?.(null);
+              setLost(null);
+              onStatusChange?.("disconnected");
+            }}
+            label={host.name}
+            active={active && opened}
+            colorScheme={isTerminalColorScheme(host.terminalScheme) ? host.terminalScheme : undefined}
+            onTitleChange={onTitleChange}
+          />
+        </div>
       )}
-      {lost && !error && <DisconnectedOverlay state={lost} onReconnect={reconnect} />}
+      {!opened && (
+        <ConnectionView host={host} steps={steps} error={error} onRetry={retry} onEditHost={onEditHost} onClose={onClose} />
+      )}
+      {lost && <DisconnectedOverlay state={lost} onReconnect={reconnect} />}
       {pending && (
         <ConnectPromptDialog
           prompt={pending.prompt}
           open={active}
           onAnswer={(answer) => {
-            show(null);
+            setPending(null);
             pending.resolve(answer);
           }}
         />

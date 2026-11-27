@@ -20,8 +20,10 @@ use tokio::time::Instant;
 
 use tokio::sync::mpsc;
 
+use super::progress::HopProgress;
 use super::shell::ShellEvent;
-use super::{ConnectError, Connection, RemoteShell};
+use super::{ConnectError, ConnectStage, Connection, Prompter, RemoteShell};
+use crate::hosts::Host;
 use crate::terminal::{
     ConnectionState, Result, ShellIntegrationEvent, ShellIntegrationStatus, ShellOutput, Terminal,
     TerminalError, TerminalEvent, TerminalSize, INJECTION,
@@ -104,9 +106,53 @@ impl RemoteTerminal {
         Fut: Future<Output = Result<Arc<Connection>, ConnectError>> + Send + 'static,
         F: FnMut(TerminalEvent) + Send + 'static,
     {
+        Self::open_inner(connect, options, size, sink, None).await
+    }
+
+    /// Like [`open_with`](Self::open_with), reporting progress while opening
+    /// the initial shell. The `connect` callback reports the Connection steps.
+    pub async fn open_with_progress<C, Fut, F>(
+        connect: C,
+        options: RemoteTerminalOptions,
+        size: TerminalSize,
+        sink: F,
+        host: &Host,
+        prompter: &dyn Prompter,
+    ) -> Result<Self, ConnectError>
+    where
+        C: Fn() -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Arc<Connection>, ConnectError>> + Send + 'static,
+        F: FnMut(TerminalEvent) + Send + 'static,
+    {
+        let progress = HopProgress {
+            host,
+            jump_host: false,
+            prompter,
+        };
+        Self::open_inner(connect, options, size, sink, Some(progress)).await
+    }
+
+    async fn open_inner<C, Fut, F>(
+        connect: C,
+        options: RemoteTerminalOptions,
+        size: TerminalSize,
+        sink: F,
+        progress: Option<HopProgress<'_>>,
+    ) -> Result<Self, ConnectError>
+    where
+        C: Fn() -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Arc<Connection>, ConnectError>> + Send + 'static,
+        F: FnMut(TerminalEvent) + Send + 'static,
+    {
         let integration = options.shell_integration;
         let (shell_tx, shell_events) = mpsc::unbounded_channel();
-        let shell = start_shell(&connect().await?, size, &shell_tx).await?;
+        let connection = connect().await?;
+        let step = progress.map(|progress| progress.start(ConnectStage::Shell));
+        let shell = start_shell(&connection, size, &shell_tx).await;
+        let shell = match step {
+            Some(step) => step.finish(shell)?,
+            None => shell?,
+        };
         let (commands, command_rx) = mpsc::unbounded_channel();
         let runner = Runner {
             connect: Box::new(move || Box::pin(connect())),

@@ -1,5 +1,5 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
-import { answerPrompts, type ConnectPrompt, type PromptAnswer } from "./connect";
+import { connectPromptChannel, type ConnectPrompt, type PromptAnswer } from "./connect";
 import type { HostId } from "./hosts";
 
 /** Mirrors `sshastra_core::forward::ForwardId`. */
@@ -86,8 +86,7 @@ export function startForward(
   id: ForwardId,
   ask: (prompt: ConnectPrompt) => Promise<PromptAnswer>,
 ): Promise<void> {
-  const handle = answerPrompts(ask);
-  const onPrompt = new Channel<ConnectPrompt>((prompt) => void handle(prompt));
+  const onPrompt = connectPromptChannel(ask);
   return invoke("forward_start", { hostId, id, onPrompt });
 }
 
