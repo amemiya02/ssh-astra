@@ -1,4 +1,4 @@
-import { Columns2, House, Plus, Rows2, Settings, SquareTerminal, Waypoints, X } from "lucide-react";
+import { Columns2, House, Lock, Plus, Rows2, Settings, SquareTerminal, Waypoints, X } from "lucide-react";
 import {
   DndContext,
   PointerSensor,
@@ -14,12 +14,15 @@ import {
 import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
-import { hostHue, hueClasses } from "@/features/hosts/hostHue";
+import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { hueClasses } from "@/features/hosts/hostHue";
 import { cn } from "@/lib/utils";
+import { TabMenu } from "./TabMenu";
 import { shortcutLabel, type Platform } from "./shortcuts";
 import {
   activePane,
   canSplit,
+  tabHue,
   tabId,
   tabPanelId,
   tabStatus,
@@ -28,6 +31,7 @@ import {
   type PaneKind,
   type SplitOrientation,
   type Tab,
+  type TabCustomizationAction,
 } from "./tabs";
 
 interface TabStripProps {
@@ -36,6 +40,7 @@ interface TabStripProps {
   platform: Platform;
   onActivate(id: string): void;
   onClose(id: string): void;
+  onCustomize(action: TabCustomizationAction): void;
   /** Drop the dragged tab `id` at index `to`. */
   onMove(id: string, to: number): void;
   onNewLocalTerminal(): void;
@@ -74,6 +79,7 @@ export function TabStrip({
   platform,
   onActivate,
   onClose,
+  onCustomize,
   onMove,
   onNewLocalTerminal,
   onSplit,
@@ -85,9 +91,10 @@ export function TabStrip({
   const [drop, setDrop] = useState<DropTarget | null>(null);
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "Delete" && activeId) {
+    if (!(event.target instanceof Element) || !event.currentTarget.contains(event.target)) return;
+    if (event.key === "Delete" && selected) {
       event.preventDefault();
-      onClose(activeId);
+      if (!selected.locked) onClose(selected.id);
       return;
     }
     const index = tabs.findIndex((tab) => tab.id === activeId);
@@ -151,16 +158,17 @@ export function TabStrip({
         >
           {tabs.map((tab, index) => {
             const active = tab.id === activeId;
-            const kind = activePane(tab).kind;
+            const pane = activePane(tab);
+            const kind = pane.kind;
             const ordinal = tabs.slice(0, index + 1).filter((other) => activePane(other).kind === kind).length;
             const title = tabTitle(tab, t, ordinal);
             const status = tabStatus(tab);
-            const label = status ? `${title} (${t(`tabs.status.${status}`)})` : title;
-            const pane = activePane(tab);
+            const details = [status && t(`tabs.status.${status}`), tab.locked && t("tabs.locked")].filter(Boolean).join(", ");
+            const label = details ? `${title} (${details})` : title;
             const TabIcon = tab.layout.type === "split"
               ? tab.layout.orientation === "horizontal" ? Columns2 : Rows2
               : kindIcons[kind];
-            const hue = "host" in pane ? hueClasses[hostHue(pane.host.id)].line : null;
+            const hue = tabHue(tab);
             return (
               <DraggableTab
                 key={tab.id}
@@ -171,7 +179,8 @@ export function TabStrip({
                     ? "bg-surface text-foreground border-border"
                     : "text-muted-foreground hover:bg-accent/60 hover:text-foreground active:bg-accent border-transparent",
                 )}
-                onAuxClick={() => onClose(tab.id)}
+                onAuxClick={() => !tab.locked && onClose(tab.id)}
+                menu={<TabMenu tab={tab} title={title} onCustomize={onCustomize} />}
               >
                 {drop?.id === tab.id && dragging !== tab.id && (
                   <span
@@ -188,7 +197,7 @@ export function TabStrip({
                   role="tab"
                   aria-selected={active}
                   aria-controls={tabPanelId(tab.id)}
-                  aria-keyshortcuts="Delete"
+                  aria-keyshortcuts={tab.locked ? undefined : "Delete"}
                   aria-label={label}
                   tabIndex={active ? 0 : -1}
                   title={label}
@@ -210,21 +219,32 @@ export function TabStrip({
                 {hue && (
                   <span
                     aria-hidden
-                    className={cn("pointer-events-none absolute inset-x-2.5 -bottom-px h-0.5 rounded-full", hue, !active && "opacity-40")}
+                    className={cn(
+                      "pointer-events-none absolute inset-x-2.5 -bottom-px h-0.5 rounded-full",
+                      !tab.color && hueClasses[hue].line,
+                      !tab.color && !active && "opacity-40",
+                    )}
+                    style={tab.color ? { backgroundColor: `var(--ansi-${tab.color}-ink)` } : undefined}
                   />
                 )}
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  aria-label={t("tabs.close", { title })}
-                  className={cn(
-                    "text-muted-foreground hover:bg-accent hover:text-foreground active:bg-accent/70 focus-visible:ring-ring/50 mr-1 grid size-5 shrink-0 place-items-center rounded-md outline-none focus-visible:opacity-100 focus-visible:ring-2",
-                    !active && "opacity-0 group-hover/tab:opacity-100",
-                  )}
-                  onClick={() => onClose(tab.id)}
-                >
-                  <X className="size-3.5" aria-hidden />
-                </button>
+                {tab.locked ? (
+                  <span aria-hidden className="text-muted-foreground mr-1 grid size-5 shrink-0 place-items-center">
+                    <Lock className="size-3.5" />
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    aria-label={t("tabs.close", { title })}
+                    className={cn(
+                      "text-muted-foreground hover:bg-accent hover:text-foreground active:bg-accent/70 focus-visible:ring-ring/50 mr-1 grid size-5 shrink-0 place-items-center rounded-md outline-none focus-visible:opacity-100 focus-visible:ring-2",
+                      !active && "opacity-0 group-hover/tab:opacity-100",
+                    )}
+                    onClick={() => onClose(tab.id)}
+                  >
+                    <X className="size-3.5" aria-hidden />
+                  </button>
+                )}
               </DraggableTab>
             );
           })}
@@ -265,30 +285,37 @@ function DraggableTab({
   id,
   className,
   onAuxClick,
+  menu,
   children,
 }: {
   id: string;
   className: string;
   /** Middle-click. */
   onAuxClick(): void;
+  menu: ReactNode;
   children: ReactNode;
 }) {
   const drag = useDraggable({ id });
   const drop = useDroppable({ id });
   return (
-    <div
-      ref={(el) => {
-        drag.setNodeRef(el);
-        drop.setNodeRef(el);
-      }}
-      {...drag.listeners}
-      data-dragging={drag.isDragging || undefined}
-      className={className}
-      onAuxClick={(event) => {
-        if (event.button === 1) onAuxClick();
-      }}
-    >
-      {children}
-    </div>
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div
+          ref={(el) => {
+            drag.setNodeRef(el);
+            drop.setNodeRef(el);
+          }}
+          {...drag.listeners}
+          data-dragging={drag.isDragging || undefined}
+          className={className}
+          onAuxClick={(event) => {
+            if (event.button === 1) onAuxClick();
+          }}
+        >
+          {children}
+        </div>
+      </ContextMenuTrigger>
+      {menu}
+    </ContextMenu>
   );
 }
