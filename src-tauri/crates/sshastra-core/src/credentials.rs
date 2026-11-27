@@ -1,5 +1,5 @@
-//! The CredentialVault: Host passwords and key passphrases the user chose to
-//! save, kept in the operating system's secret store (macOS Keychain, Windows
+//! The CredentialVault: Host passwords, key passphrases and outbound proxy
+//! passwords kept in the operating system's secret store (macOS Keychain, Windows
 //! Credential Manager, Secret Service on Linux) under "Host id + kind". No
 //! credential is ever written to sshastra's own files.
 //!
@@ -22,10 +22,24 @@ pub enum CredentialKind {
     Password,
     /// The passphrase of the Host's private key file.
     KeyPassphrase,
+    /// The password for this Host's outbound proxy override.
+    ProxyPassword,
+    /// The password for the app-wide outbound proxy.
+    GlobalProxyPassword,
 }
 
 impl CredentialKind {
-    pub const ALL: [CredentialKind; 2] = [CredentialKind::Password, CredentialKind::KeyPassphrase];
+    /// Every Host-scoped credential kind.
+    pub const ALL: [CredentialKind; 3] = [
+        CredentialKind::Password,
+        CredentialKind::KeyPassphrase,
+        CredentialKind::ProxyPassword,
+    ];
+
+    /// The application-wide account for the global proxy credential.
+    pub fn global_proxy_owner() -> HostId {
+        HostId::from("global-outbound-proxy".to_owned())
+    }
 
     /// The account name of `host`'s entry of this kind in the system store,
     /// e.g. `<host id>:password`.
@@ -33,6 +47,8 @@ impl CredentialKind {
         let kind = match self {
             CredentialKind::Password => "password",
             CredentialKind::KeyPassphrase => "key-passphrase",
+            CredentialKind::ProxyPassword => "proxy-password",
+            CredentialKind::GlobalProxyPassword => "global-proxy-password",
         };
         format!("{host}:{kind}")
     }

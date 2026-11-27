@@ -1,4 +1,6 @@
+import type { ProxyConfig } from "@/lib/ipc/hosts";
 import { defineSection } from "@/lib/storage";
+import { readProxyConfig } from "./proxy-form";
 
 /**
  * The `connection` section of the settings file. The core reads it
@@ -10,6 +12,7 @@ export interface ConnectionSettings {
   keepaliveSeconds: number;
   /** Unix socket or Windows named pipe. A blank path uses the system agent. */
   agentPath: string;
+  proxy?: ProxyConfig;
 }
 
 export const maxKeepaliveSeconds = 3600;
@@ -27,5 +30,6 @@ export const connectionSetting = defineSection<ConnectionSettings>("connection",
       ? Math.min(maxKeepaliveSeconds, Math.round(value))
       : defaultConnectionSettings.keepaliveSeconds;
   const agentPath = typeof record.agentPath === "string" && record.agentPath.trim() ? record.agentPath : "";
-  return { keepaliveSeconds, agentPath };
+  const proxy = readProxyConfig(record.proxy);
+  return proxy ? { keepaliveSeconds, agentPath, proxy } : { keepaliveSeconds, agentPath };
 });

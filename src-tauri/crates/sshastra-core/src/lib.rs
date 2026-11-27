@@ -9,6 +9,7 @@ pub mod forward;
 mod fs_util;
 pub mod hosts;
 pub mod known_hosts;
+pub mod proxy;
 pub mod settings;
 pub mod ssh;
 pub mod ssh_config;

@@ -1,0 +1,57 @@
+{
+  "version": 11,
+  "groups": [],
+  "hosts": [
+    {
+      "id": "h-auto",
+      "name": "web",
+      "address": "web.example.com",
+      "port": 22,
+      "user": "dev",
+      "auth": {
+        "type": "auto"
+      },
+      "identitiesOnly": false,
+      "forwardAgent": false,
+      "jumpHost": null,
+      "groupId": null,
+      "forwards": []
+    },
+    {
+      "id": "h-key",
+      "name": "build",
+      "address": "build.example.com",
+      "port": 22,
+      "user": "dev",
+      "auth": {
+        "type": "key",
+        "identityFile": "~/.ssh/build"
+      },
+      "identitiesOnly": true,
+      "forwardAgent": true,
+      "keepaliveSeconds": 0,
+      "postLoginCommand": " printf '%s' \"$HOME\"",
+      "jumpHost": null,
+      "defaultDirectory": "/srv/build",
+      "groupId": null,
+      "forwards": [],
+      "terminalCharset": "gbk",
+      "terminalBackspace": "ctrlH"
+    },
+    {
+      "id": "h-password",
+      "name": "pi",
+      "address": "raspberrypi.local",
+      "port": 22,
+      "user": "pi",
+      "auth": {
+        "type": "password"
+      },
+      "identitiesOnly": false,
+      "forwardAgent": false,
+      "jumpHost": null,
+      "groupId": null,
+      "forwards": []
+    }
+  ]
+}

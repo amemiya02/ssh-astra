@@ -11,6 +11,8 @@
 #             reached through `jump` (as `jump2:22`).
 #   deep      on the deep network only: reachable only through `jump` then
 #             `jump2` (as `deep:22`).
+#   proxy    SOCKS5 and HTTP CONNECT listeners, with and without fixture auth.
+#   proxy-target  on the outbound-proxy network only: reached via proxy.
 #   keyonly   published: accepts public keys only (no password, no
 #             keyboard-interactive).
 #   certificate published: accepts only user certificates from the test CA.
@@ -69,6 +71,23 @@ services:
     <<: *sshd
     hostname: deep
     networks: [deep]
+  proxy:
+    image: python:3.12-alpine
+    volumes: ["./proxy.py:/app/proxy.py:ro"]
+    command: [python, /app/proxy.py]
+    ports: ["127.0.0.1::1080", "127.0.0.1::1081", "127.0.0.1::3128", "127.0.0.1::3129"]
+    networks: [public, outbound-proxy]
+    healthcheck:
+      test: [CMD, python, -c, "import socket; socket.create_connection(('127.0.0.1', 3129), 1).close()"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
+  proxy-target:
+    <<: *sshd
+    hostname: proxy-target
+    networks:
+      outbound-proxy:
+        aliases: [proxy-target.test]
   keyonly:
     <<: *sshd
     hostname: keyonly
@@ -169,6 +188,8 @@ services:
 
 networks:
   public: {}
+  outbound-proxy:
+    internal: true
   private:
     internal: true
   deep:

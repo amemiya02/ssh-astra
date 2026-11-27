@@ -165,3 +165,17 @@ describe("hostFormFrom", () => {
     expect(result.ok && result.draft.auth).toEqual({ type: "auto" });
   });
 });
+
+it("writes a direct or custom first-hop proxy choice to the Host draft", () => {
+  const direct = parseHostForm({ ...valid, proxy: { mode: "direct", address: "", port: "", username: "" } });
+  expect(direct).toMatchObject({ ok: true, draft: { proxy: { mode: "direct" } } });
+
+  const proxy = { mode: "socks5", address: "[2001:db8::1]", port: "1080", username: "dev" } as const;
+  expect(parseHostForm({ ...valid, proxy })).toMatchObject({
+    ok: true,
+    draft: { proxy: { mode: "override", config: { kind: "socks5", address: "[2001:db8::1]", port: 1080, username: "dev" } } },
+  });
+  const invalid = { ...valid, proxy: { ...proxy, address: "[::1]:1080" } };
+  expect(parseHostForm(invalid)).toMatchObject({ ok: false, errors: { proxyAddress: "proxyAddress" } });
+  expect(parseHostForm({ ...invalid, jumpHost: "jump" }, "test")).toMatchObject({ ok: true });
+});

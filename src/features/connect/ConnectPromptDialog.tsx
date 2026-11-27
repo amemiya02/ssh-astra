@@ -266,12 +266,12 @@ function PasswordQuestion({
       }}
     >
       <DialogHeader>
-        <DialogTitle>{t("connect.password.title", { user: prompt.user, host: prompt.host })}</DialogTitle>
-        <DialogDescription>{t("connect.password.description")}</DialogDescription>
+        <DialogTitle>{t(prompt.proxy ? "proxy.prompt.title" : "connect.password.title", { user: prompt.user, host: prompt.host })}</DialogTitle>
+        <DialogDescription>{t(prompt.proxy ? "proxy.prompt.description" : "connect.password.description")}</DialogDescription>
       </DialogHeader>
       <div className="grid gap-1.5">
         <Label htmlFor={inputId} className="text-xs">
-          {t("connect.password.label")}
+          {t(prompt.proxy ? "proxy.prompt.label" : "connect.password.label")}
         </Label>
         <Input
           id={inputId}
@@ -286,7 +286,7 @@ function PasswordQuestion({
         />
         {prompt.retry && (
           <p id={`${inputId}-retry`} role="alert" className="text-destructive text-xs">
-            {t("connect.password.retry")}
+            {t(prompt.proxy ? "proxy.prompt.retry" : "connect.password.retry")}
           </p>
         )}
       </div>
