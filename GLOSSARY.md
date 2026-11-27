@@ -50,6 +50,10 @@ _Avoid_: Local session
 A local plain-text file of a Terminal's output while logging is active. The same file continues across a remote Terminal's reconnections.
 _Avoid_: Session log
 
+**Recording**:
+A timed record of a Terminal's output and size changes that can be replayed with an asciicast player.
+_Avoid_: Session recording, capture
+
 **Broadcast**:
 Sending the focused Terminal's keyboard input or paste to every running Terminal in the selected tab or window.
 _Avoid_: Sync input, multi-exec

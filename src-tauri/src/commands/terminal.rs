@@ -9,6 +9,7 @@
 //! - Shell integration markers and availability are JSON
 //!   `{ "shellIntegration": { "type": "promptStart" } }` (or the matching event),
 //! - Terminal log status is JSON `{ "terminalLog": { "state": "active" } }`,
+//! - Recording status is JSON `{ "recording": { "state": "active" } }`,
 //! - the final message is JSON `{ "exitCode": number | null }`.
 //!
 //! Local terminals and remote Terminals share every command after `open`.
@@ -19,8 +20,9 @@ use serde::Serialize;
 use sshastra_core::hosts::HostId;
 use sshastra_core::ssh::{RemoteTerminal, RemoteTerminalOptions};
 use sshastra_core::terminal::{
-    ConnectionState, LocalPty, ShellCommand, ShellIntegrationEvent, TerminalEvent, TerminalId,
-    TerminalLog, TerminalLogStatus, TerminalRegistry, TerminalSettings, TerminalSize, REPORT_CWD,
+    ConnectionState, LocalPty, OutputKind, OutputStatus, ShellCommand, ShellIntegrationEvent,
+    TerminalEvent, TerminalId, TerminalOutput, TerminalRegistry, TerminalSettings, TerminalSize,
+    REPORT_CWD,
 };
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, State};
@@ -47,9 +49,9 @@ struct ShellIntegrationMessage {
     shell_integration: ShellIntegrationEvent,
 }
 
-pub struct TerminalLogDirectory(pub PathBuf);
+pub struct TerminalOutputDirectory(pub PathBuf);
 
-impl TerminalLogDirectory {
+impl TerminalOutputDirectory {
     fn resolve(&self, settings: &TerminalSettings) -> PathBuf {
         settings
             .log_directory
@@ -66,21 +68,30 @@ fn terminal_settings(settings: &SettingsState) -> TerminalSettings {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct TerminalLogMessage {
-    terminal_log: TerminalLogStatus,
+enum OutputMessage {
+    TerminalLog(OutputStatus),
+    Recording(OutputStatus),
 }
 
-fn terminal_log(
+fn terminal_output(
     host: &str,
+    size: TerminalSize,
     settings: &TerminalSettings,
-    directory: &TerminalLogDirectory,
+    directory: &TerminalOutputDirectory,
     on_event: &Channel<InvokeResponseBody>,
-) -> Arc<TerminalLog> {
+) -> Arc<TerminalOutput> {
     let on_event = on_event.clone();
-    Arc::new(TerminalLog::new(
+    Arc::new(TerminalOutput::new(
         host,
+        size,
         settings.auto_log.then(|| directory.resolve(settings)),
-        move |terminal_log| send_json(&on_event, &TerminalLogMessage { terminal_log }),
+        move |kind, status| {
+            let message = match kind {
+                OutputKind::Log => OutputMessage::TerminalLog(status),
+                OutputKind::Recording => OutputMessage::Recording(status),
+            };
+            send_json(&on_event, &message);
+        },
     ))
 }
 
@@ -130,7 +141,7 @@ fn channel_sink(
 pub async fn local_terminal_open(
     registry: State<'_, TerminalRegistry>,
     settings: State<'_, SettingsState>,
-    log_directory: State<'_, TerminalLogDirectory>,
+    output_directory: State<'_, TerminalOutputDirectory>,
     size: TerminalSize,
     on_event: Channel<InvokeResponseBody>,
     cwd: Option<PathBuf>,
@@ -144,14 +155,15 @@ pub async fn local_terminal_open(
     };
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     let _ = cwd;
-    let log = terminal_log(
+    let output = terminal_output(
         "Local",
+        size,
         &terminal_settings(&settings),
-        &log_directory,
+        &output_directory,
         &on_event,
     );
-    let pty = LocalPty::spawn(command, size, log.wrap(channel_sink(on_event, None)))?;
-    Ok(registry.insert_logged(Box::new(pty), log))
+    let pty = LocalPty::spawn(command, size, output.wrap(channel_sink(on_event, None)))?;
+    Ok(registry.insert_with_output(Box::new(pty), output))
 }
 
 /// Opens a Terminal on a Host, connecting first (through its Jump
@@ -167,7 +179,7 @@ pub async fn remote_terminal_open(
     registry: State<'_, TerminalRegistry>,
     settings: State<'_, SettingsState>,
     pending: State<'_, Arc<PendingPrompts>>,
-    log_directory: State<'_, TerminalLogDirectory>,
+    output_directory: State<'_, TerminalOutputDirectory>,
     host_id: HostId,
     size: TerminalSize,
     on_event: Channel<InvokeResponseBody>,
@@ -186,19 +198,19 @@ pub async fn remote_terminal_open(
         async move { route.connect(&app, prompter).await }
     };
     let settings = terminal_settings(&settings);
-    let log = terminal_log(&host.name, &settings, &log_directory, &on_event);
+    let output = terminal_output(&host.name, size, &settings, &output_directory, &on_event);
     let mut options = RemoteTerminalOptions::for_host(&host, settings.shell_integration);
     options.initial_cwd = cwd;
     let terminal = RemoteTerminal::open_with_progress(
         connect,
         options,
         size,
-        log.wrap(channel_sink(on_event, Some(on_prompt))),
+        output.wrap(channel_sink(on_event, Some(on_prompt))),
         host,
         prompter,
     )
     .await?;
-    Ok(registry.insert_logged(Box::new(terminal), log))
+    Ok(registry.insert_with_output(Box::new(terminal), output))
 }
 
 /// Tries a remote Terminal's dropped Connection again now (the overlay's
@@ -258,10 +270,10 @@ pub async fn terminal_close(
 pub async fn terminal_log_start(
     registry: State<'_, TerminalRegistry>,
     settings: State<'_, SettingsState>,
-    log_directory: State<'_, TerminalLogDirectory>,
+    output_directory: State<'_, TerminalOutputDirectory>,
     id: TerminalId,
 ) -> CommandResult<()> {
-    registry.start_log(id, &log_directory.resolve(&terminal_settings(&settings)))?;
+    registry.start_log(id, &output_directory.resolve(&terminal_settings(&settings)))?;
     Ok(())
 }
 
@@ -272,4 +284,25 @@ pub async fn terminal_log_stop(
     id: TerminalId,
 ) -> CommandResult<()> {
     Ok(registry.stop_log(id)?)
+}
+
+/// Starts recording Terminal output and size changes to an asciicast v2 file.
+#[tauri::command]
+pub async fn terminal_recording_start(
+    registry: State<'_, TerminalRegistry>,
+    settings: State<'_, SettingsState>,
+    output_directory: State<'_, TerminalOutputDirectory>,
+    id: TerminalId,
+) -> CommandResult<()> {
+    registry.start_recording(id, &output_directory.resolve(&terminal_settings(&settings)))?;
+    Ok(())
+}
+
+/// Finishes writing this Terminal's Recording and closes the file.
+#[tauri::command]
+pub async fn terminal_recording_stop(
+    registry: State<'_, TerminalRegistry>,
+    id: TerminalId,
+) -> CommandResult<()> {
+    Ok(registry.stop_recording(id)?)
 }

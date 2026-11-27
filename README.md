@@ -59,6 +59,12 @@ Start or stop a Terminal log from its tab menu or the command palette. An active
 
 Each UTF-8 file is named using the Host name (or `Local`) and start time in UTC. Remote Terminals keep writing to the same file when they reconnect. Logs contain plain-text shell output, including any commands the shell echoes. When the save folder is left at its default, files go into `terminal-logs` in SSH Astra's data directory.
 
+### Recordings
+
+Choose **Start Recording** or **Stop Recording** from the Terminal context menu, tab menu, or command palette. The tab shows a recording indicator while any of its Terminals is recording. A Recording and a Terminal log can run at the same time.
+
+Each `.cast` file contains timed Terminal output and grid size changes in asciicast v2 format. It uses the same naming and **Terminal output folder** setting as Terminal logs. Play it with `asciinema play /path/to/recording.cast`.
+
 ### Terminal protocol support
 
 SSH Astra uses xterm.js 6.0.0.
