@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowRight, ArrowUp, Check, ChevronDown, ChevronRight, RotateCw, Trash2, X } from "lucide-react";
-import { useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
 import { SegmentedControl } from "@/components/SegmentedControl";
@@ -26,18 +26,21 @@ import {
  * row with progress, speed and time left, cancel or retry. Collapsible to its header; hidden
  * while there are no transfers.
  */
-export function TransfersPanel({ dock }: { dock: FilePanelDock }) {
+export function TransfersPanel({ dock, visible }: { dock: FilePanelDock; visible: boolean }) {
   const { t } = useTranslation();
   const transfers = useTransfers((s) => s.transfers);
   const speeds = useTransfers((s) => s.speeds);
   const [settings, setSettings] = useSetting(transferSetting);
   const [view, setView] = useState<"active" | "done">("active");
+  const collapsed = settings.panelCollapsed;
+  useLayoutEffect(() => {
+    if (visible && !collapsed) return transfersStore.getState().trackVisiblePanel();
+  }, [collapsed, visible]);
   if (transfers.length === 0) return null;
 
   const active = activeTransfers(transfers);
   const done = doneTransfers(transfers);
   const shown = view === "active" ? active : done;
-  const collapsed = settings.panelCollapsed;
   const toggle = () => setSettings({ ...settings, panelCollapsed: !collapsed });
 
   return (

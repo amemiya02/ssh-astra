@@ -557,6 +557,15 @@
     "turnOn": "开启隐私模式",
     "turnOff": "关闭隐私模式"
   },
+  "toast": {
+    "filesCopied": "已复制文件。",
+    "copied": "已复制到剪贴板。",
+    "editUploadFailed": "远程编辑上传失败：{{name}}。{{reason}}",
+    "forwardFailed": "端口转发失败。{{reason}}",
+    "dismiss": "关闭通知：{{message}}",
+    "transferDone": "传输完成：{{name}}",
+    "transferFailed": "传输失败：{{name}}。{{reason}}"
+  },
   "status": {
     "noConnections": "没有连接",
     "connectedTo": "已连接：{{hosts}}",

@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import i18n, { startI18n } from "@/i18n";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ToastRegion } from "@/features/toasts/ToastRegion";
 import { terminalSetting } from "@/features/terminal/terminal-prefs";
 import { getSetting, setSetting } from "@/lib/storage";
 import sample from "@/theme/fixtures/sample.itermcolors?raw";
@@ -24,7 +25,7 @@ it("imports a selected palette, lets the user pick it, and falls back after remo
   const picker = () => container.querySelector<HTMLButtonElement>('button[aria-label="Colour scheme"]')!;
 
   try {
-    act(() => root.render(<TooltipProvider><TerminalSection /></TooltipProvider>));
+    act(() => root.render(<TooltipProvider><TerminalSection /><ToastRegion /></TooltipProvider>));
     const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
     const button = [...container.querySelectorAll("button")].find((button) => button.textContent === "Import .itermcolors")!;
     const openFilePicker = vi.spyOn(input, "click");
@@ -35,7 +36,8 @@ it("imports a selected palette, lets the user pick it, and falls back after remo
     const file = { name: "Example.itermcolors", size: bytes.length, arrayBuffer: () => Promise.resolve(bytes.buffer) };
     Object.defineProperty(input, "files", { value: [file] });
     await act(async () => { input.dispatchEvent(new Event("change", { bubbles: true })); });
-    expect(container.querySelector('[role="status"]')?.textContent).toBe("Colour scheme imported.");
+    expect(container.querySelector('[role="status"][aria-live="polite"]')?.textContent).toBe("Colour scheme imported.");
+    act(() => container.querySelector<HTMLButtonElement>('button[aria-label="Dismiss notification: Colour scheme imported."]')!.click());
     expect(picker().textContent).toBe("Match app theme");
 
     await act(async () => { picker().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); });

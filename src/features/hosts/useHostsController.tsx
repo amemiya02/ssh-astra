@@ -4,6 +4,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { ConnectPromptDialog } from "@/features/connect/ConnectPromptDialog";
 import { connectionsStore, useConnections } from "@/features/connect/connectionsStore";
 import { usePaletteActions } from "@/features/palette/palette-actions";
+import { showToast } from "@/features/toasts/toastStore";
 import { readCommandError, refusal, type ConnectPrompt, type PromptAnswer } from "@/lib/ipc/connect";
 import { testHostConnection } from "@/lib/ipc/connections";
 import { isTemporaryHost, type Host, type HostDraft, type HostId, type ImportReport, type TemporaryHost } from "@/lib/ipc/hosts";
@@ -11,6 +12,7 @@ import { pickOpenPath, pickSavePath } from "@/lib/ipc/system";
 import { ConfirmRemoveDialogContent, HostFormDialogContent, type Removal } from "./HostDialogs";
 import type { HostListActions } from "./HostList";
 import { ImportReportDialogContent } from "./ImportReportDialog";
+import { importReportSummary } from "./importReportSummary";
 import type { DragItem } from "./hostTree";
 import { hostsStore, useHosts } from "./hostsStore";
 
@@ -70,7 +72,7 @@ export function useHostsController(openers: HostOpeners, onTemporaryHostSaved: (
     [],
   );
   const [importReport, setImportReport] = useState<ImportReport | null>(null);
-  /** The outcome of the last export or import. */
+  /** The outcome of the last export. */
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
@@ -88,7 +90,7 @@ export function useHostsController(openers: HostOpeners, onTemporaryHostSaved: (
   const attempt = useCallback(
     async <T,>(
       change: () => Promise<T>,
-      failed: "hosts.actionFailed" | "hosts.transfer.exportFailed" | "hosts.transfer.importFailed" = "hosts.actionFailed",
+      failed: "hosts.actionFailed" | "hosts.transfer.exportFailed" = "hosts.actionFailed",
     ): Promise<T | undefined> => {
       setActionError(null);
       setNotice(null);
@@ -114,16 +116,20 @@ export function useHostsController(openers: HostOpeners, onTemporaryHostSaved: (
         if (exported) setNotice(t("hosts.transfer.exported"));
       },
       async importHosts() {
-        const summary = await attempt(async () => {
+        setActionError(null);
+        setNotice(null);
+        try {
           const path = await pickOpenPath({ title: t("hosts.transfer.import"), filters });
-          return path ? hostsStore.getState().importHosts(path) : null;
-        }, "hosts.transfer.importFailed");
-        if (!summary) return;
-        const added = t("hosts.transfer.imported", { hosts: summary.hostsAdded, groups: summary.groupsAdded });
-        const skipped = summary.skippedHosts.length
-          ? " " + t("hosts.transfer.skipped", { names: summary.skippedHosts.join(", ") })
-          : "";
-        setNotice(added + skipped);
+          if (!path) return;
+          const { hostsAdded: hosts, groupsAdded: groups, skippedHosts } = await hostsStore.getState().importHosts(path);
+          showToast((translate) => {
+            const added = translate("hosts.transfer.imported", { hosts, groups });
+            return skippedHosts.length ? added + " " + translate("hosts.transfer.skipped", { names: skippedHosts.join(", ") }) : added;
+          });
+        } catch (e) {
+          const { message } = readCommandError(e);
+          showToast((translate) => translate("hosts.transfer.importFailed", { message }), "error");
+        }
       },
     };
   }, [t, attempt]);
@@ -134,10 +140,14 @@ export function useHostsController(openers: HostOpeners, onTemporaryHostSaved: (
     hostsStore
       .getState()
       .importSshConfig()
-      .then(setImportReport, (e: unknown) =>
-        setActionError(t("hosts.import.error", { message: readCommandError(e).message })),
-      );
-  }, [t]);
+      .then((report) => {
+        setImportReport(report);
+        showToast((t) => importReportSummary(t, report), report.issues.some((issue) => issue.dropped) ? "error" : "status");
+      }, (e: unknown) => {
+        const { message } = readCommandError(e);
+        showToast((t) => t("hosts.import.error", { message }), "error");
+      });
+  }, []);
 
   usePaletteActions(
     useMemo(

@@ -50,7 +50,8 @@ import {
 import { currentPlatform, matchFileHistoryShortcut, matchFileClipboardShortcut, shortcutLabel } from "@/features/workspace/shortcuts";
 import type { CommandError } from "@/lib/ipc/connect";
 import type { FileEntry } from "@/lib/ipc/files";
-import { writeClipboardText } from "@/lib/ipc/system";
+import { copyTextWithToast } from "@/features/toasts/copyFeedback";
+import { showToast } from "@/features/toasts/toastStore";
 import { useSetting } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import type { FileBrowserStore } from "./fileBrowsers";
@@ -384,7 +385,7 @@ function PathBar({ store, focusPanel, onOperation, searchOpen, onToggleSearch }:
         type="button"
         label={t("files.copyPath")}
         disabled={path === null}
-        onClick={() => path !== null && void writeClipboardText(path)}
+        onClick={() => path !== null && void copyTextWithToast(path).catch(() => undefined)}
       >
         <Copy />
       </IconButton>
@@ -560,6 +561,7 @@ function FileTable({
   const copyEntries = remoteClipboard && ((names: string[]) => {
     store.getState().clearCut();
     remoteClipboard.copy(names.map((name) => childPath(path, name)));
+    showToast((t) => t("toast.filesCopied"));
   });
 
   const onKeyDown = (event: KeyboardEvent) => {
@@ -988,7 +990,7 @@ function FileRow({
             {t("files.download")}
           </ContextMenuItem>
         )}
-        <ContextMenuItem onSelect={() => void writeClipboardText(childPath(path, entry.name))}>
+        <ContextMenuItem onSelect={() => void copyTextWithToast(childPath(path, entry.name)).catch(() => undefined)}>
           <Copy />
           {t("files.copyPath")}
         </ContextMenuItem>

@@ -1,3 +1,4 @@
+import { showToast } from "@/features/toasts/toastStore";
 import { createSnapshotWatch } from "@/lib/ipc/watchSnapshot";
 import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
@@ -25,6 +26,8 @@ export interface TransfersState {
   speeds: Record<TransferId, number>;
   /** Loads the current transfers and follows the backend's changes. Call once. */
   watch(): Promise<void>;
+  /** Registers an expanded Transfers panel until the returned cleanup is called. */
+  trackVisiblePanel(): () => void;
   upload(hostId: HostId, paths: string[], remoteDir: string): Promise<void>;
   download(hostId: HostId, paths: string[], localDir: string): Promise<void>;
   copyRemote(source: TransferHost, paths: string[], target: TransferHost, remoteDir: string): Promise<void>;
@@ -46,9 +49,11 @@ export function isFinished(t: Transfer): boolean {
 export function createTransfersStore(
   api: TransfersApi,
   now: () => number = () => performance.now(),
+  onHiddenFinish?: (transfer: Transfer) => void,
 ): StoreApi<TransfersState> {
   /** The latest progress seen of each transfer, to measure its speed. */
   const samples = new Map<TransferId, { at: number; bytes: number }>();
+  const visiblePanels = new Set<symbol>();
   return createStore<TransfersState>()((set, get) => {
     const apply = (transfer: Transfer) => {
       const { transfers, speeds } = get();
@@ -72,6 +77,10 @@ export function createTransfersStore(
         delete nextSpeeds[transfer.id];
       }
       set({ transfers: next, speeds: nextSpeeds });
+      const { type } = transfer.state;
+      if (!visiblePanels.size && (type === "done" || type === "failed") && transfers[index]?.state.type !== type) {
+        onHiddenFinish?.(transfer);
+      }
     };
 
     return {
@@ -90,6 +99,12 @@ export function createTransfersStore(
         },
         apply,
       ),
+
+      trackVisiblePanel() {
+        const panel = Symbol();
+        visiblePanels.add(panel);
+        return () => { visiblePanels.delete(panel); };
+      },
 
       async upload(hostId, paths, remoteDir) {
         await api.uploadFiles(hostId, paths, remoteDir);
@@ -156,7 +171,10 @@ export function transferSummary(
 }
 
 /** The app's transfers store, backed by the Tauri TransferQueue commands. */
-export const transfersStore = createTransfersStore(ipc);
+export const transfersStore = createTransfersStore(ipc, undefined, ({ name, state }) => {
+  if (state.type === "done") showToast((t) => t("toast.transferDone", { name }));
+  if (state.type === "failed") showToast((t) => t("toast.transferFailed", { name, reason: state.message }), "error");
+});
 
 export function useTransfers<T>(selector: (state: TransfersState) => T): T {
   return useStore(transfersStore, selector);

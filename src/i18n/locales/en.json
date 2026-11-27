@@ -557,6 +557,15 @@
     "turnOn": "Turn on privacy mode",
     "turnOff": "Turn off privacy mode"
   },
+  "toast": {
+    "filesCopied": "Files copied.",
+    "copied": "Copied to clipboard.",
+    "editUploadFailed": "Remote edit upload failed: {{name}}. {{reason}}",
+    "forwardFailed": "Port forward failed. {{reason}}",
+    "dismiss": "Dismiss notification: {{message}}",
+    "transferDone": "Transfer complete: {{name}}",
+    "transferFailed": "Transfer failed: {{name}}. {{reason}}"
+  },
   "status": {
     "noConnections": "No Connections",
     "connectedTo": "Connected to {{hosts}}",
