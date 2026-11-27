@@ -27,6 +27,17 @@ export interface EditQuestion {
 /** How a click changes the selection: plain, Cmd/Ctrl, Shift. */
 export type SelectMode = "only" | "toggle" | "range";
 
+/** Entries captured in one directory for a cut or a drag. */
+export interface FileMove {
+  directory: string;
+  names: readonly string[];
+}
+
+export interface MoveFailure {
+  name: string;
+  error: CommandError;
+}
+
 export interface FileBrowserState {
   /** `closed` until `connect`, and again after `disconnect` or a failed open. */
   phase: "closed" | "opening" | "open";
@@ -73,6 +84,18 @@ export interface FileBrowserState {
   createFile(name: string): Promise<CommandError | null>;
   /** Renames `name` to `newName` (never over an existing entry) and selects it. */
   rename(name: string, newName: string): Promise<CommandError | null>;
+  /** This panel's cut entries, kept while browsing elsewhere on its Host. */
+  cut: FileMove | null;
+  moving: boolean;
+  moveFailures: MoveFailure[];
+  cutEntries(names: readonly string[]): void;
+  /** Moves the cut entries into the current directory, keeping only failures available to retry. */
+  pasteCutEntries(): Promise<MoveFailure[]>;
+  /** Moves dragged entries into a folder in their listing. Other drop targets are ignored. */
+  dropIntoFolder(source: FileMove, folder: string): Promise<MoveFailure[]>;
+  clearMoveFailures(): void;
+  /** Refreshes an affected directory when it is shown by this panel. */
+  refreshAfterMove(directories: readonly string[]): Promise<void>;
   /** How many entries deleting `names` removes, folders' contents included. */
   countForDelete(names: readonly string[]): Promise<{ count: number } | { error: CommandError }>;
   /** Deletes `names`, folders with everything in them. */
@@ -98,6 +121,7 @@ export function createFileBrowserStore(
   startPath?: string | null,
   local?: { openPath(path: string): Promise<void>; windows: boolean },
   editsForPanel = createSharedRemoteEdits(api),
+  refreshHostAfterMove?: (directories: readonly string[]) => Promise<void>,
 ): StoreApi<FileBrowserState> {
   let fsId: FsId | null = null;
   let opening: Promise<void> | null = null;
@@ -106,6 +130,7 @@ export function createFileBrowserStore(
   /** Bumped by each listing request; only the latest one is shown. */
   let request = 0;
   let listingNavigation = false;
+  const pendingMoveRefresh = new Set<string>();
   let anchor: string | null = null;
   /** Only successful listings enter history, using the canonical paths returned by the filesystem. */
   const history: string[] = [];
@@ -148,6 +173,13 @@ export function createFileBrowserStore(
       } catch (e) {
         if (mine !== request) return;
         set({ loading: false, ...(preserveError ? {} : { error: readCommandError(e) }) });
+      } finally {
+        if (mine === request && pendingMoveRefresh.size > 0) {
+          const current = get().path;
+          const refresh = current !== null && pendingMoveRefresh.has(current);
+          pendingMoveRefresh.clear();
+          if (refresh) await list(current, true, { preserveError: true });
+        }
       }
     };
 
@@ -206,6 +238,40 @@ export function createFileBrowserStore(
         ? { kind: "invalidName", message: name }
         : null;
 
+    const move = async (source: FileMove, destination: string, folderLink = false): Promise<MoveFailure[]> => {
+      const id = fsId;
+      if (id === null || get().moving || source.names.length === 0) return [];
+      const generation = openGeneration;
+      set({ moving: true, moveFailures: [] });
+      const failures: MoveFailure[] = [];
+      for (const name of source.names) {
+        const from = childPath(source.directory, name);
+        try {
+          if (generation !== openGeneration) throw notOpen;
+          if (destination === from || destination.startsWith(childPath(from, ""))) {
+            throw { kind: "moveIntoSelf", message: "cannot move an entry into itself" } satisfies CommandError;
+          }
+          await api.renameFile(id, from, childPath(destination, name));
+        } catch (error) {
+          failures.push({ name, error: readCommandError(error) });
+        }
+      }
+      // Resolve folder links for refresh only. Rename must use the exact row path.
+      const targetPath = folderLink && generation === openGeneration && destination === destination.trim()
+        ? await api.listFiles(id, destination).then((listing) => listing.path, () => destination)
+        : destination;
+      const refresh = refreshHostAfterMove ?? get().refreshAfterMove;
+      await refresh([source.directory, targetPath]);
+      set({
+        moving: false,
+        moveFailures: failures,
+        ...(get().cut === source
+          ? { cut: failures.length ? { directory: source.directory, names: failures.map(({ name }) => name) } : null }
+          : {}),
+      });
+      return failures;
+    };
+
     return {
       phase: "closed",
       edits: [],
@@ -217,6 +283,9 @@ export function createFileBrowserStore(
       selection: new Set(),
       canGoBack: false,
       canGoForward: false,
+      cut: null,
+      moving: false,
+      moveFailures: [],
 
       connect() {
         if (get().phase === "open") return Promise.resolve();
@@ -309,6 +378,33 @@ export function createFileBrowserStore(
         invalidName(name) ?? operate((id, dir) => api.createEmptyFile(id, childPath(dir, name)), name),
       rename: async (name, newName) =>
         invalidName(newName) ?? operate((id, dir) => api.renameFile(id, childPath(dir, name), childPath(dir, newName)), newName),
+      cutEntries(names) {
+        const { path, moving } = get();
+        if (fsId !== null && path !== null && !moving && names.length > 0) {
+          set({ cut: { directory: path, names: [...names] } });
+        }
+      },
+      async pasteCutEntries() {
+        const { path, cut, moving } = get();
+        if (fsId === null || path === null || cut === null || path === cut.directory || moving) return [];
+        return move(cut, path);
+      },
+      async dropIntoFolder(source, folder) {
+        const { path, entries } = get();
+        if (path === null || path !== source.directory) return [];
+        const entry = entries.find(({ name }) => name === folder);
+        return entry && isDirLike(entry) ? move(source, childPath(path, folder), entry.kind === "symlink") : [];
+      },
+      clearMoveFailures: () => set({ moveFailures: [] }),
+      async refreshAfterMove(directories) {
+        if (fsId === null) return;
+        const { path, loading } = get();
+        if (loading && listingNavigation) {
+          for (const directory of directories) pendingMoveRefresh.add(directory);
+        } else if (path !== null && directories.includes(path)) {
+          await list(path, true, { preserveError: true });
+        }
+      },
       async countForDelete(names) {
         const dir = get().path;
         if (fsId === null || dir === null) return { error: notOpen };
@@ -325,6 +421,7 @@ export function createFileBrowserStore(
         openGeneration += 1;
         request += 1;
         opening = null;
+        pendingMoveRefresh.clear();
         if (fsId !== null) void api.closeFiles(fsId).catch(() => {});
         fsId = null;
         set({ phase: "closed", loading: false });

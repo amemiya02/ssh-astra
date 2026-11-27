@@ -3,8 +3,8 @@ import type { PaneDirection } from "./pane-layout";
 import type { SplitOrientation } from "./tabs";
 
 /**
- * Every keyboard shortcut in the app, as tables per platform: macOS uses Cmd; Windows and Linux use
- * Ctrl+Shift and avoid plain Ctrl+letter, which the shell owns.
+ * Keyboard shortcut tables by platform. Window-wide bindings on Windows and Linux
+ * avoid plain Ctrl+letter, which the shell owns when a Terminal is focused.
  */
 export type Platform = "mac" | "other";
 
@@ -40,6 +40,7 @@ export interface KeyChord {
 
 type Modifier = "meta" | "ctrl" | "alt" | "shift";
 type FileHistoryShortcut = "fileBack" | "fileForward";
+type FileMoveShortcut = "fileCut" | "filePaste";
 
 export const paneSwapShortcuts = [
   { name: "swapPaneLeft", code: "ArrowLeft", direction: "left" },
@@ -65,6 +66,7 @@ export type ShortcutName =
   | "terminalZoomIn"
   | "terminalZoomOut"
   | FileHistoryShortcut
+  | FileMoveShortcut
   | "find";
 
 type Binding = ({ code: string; key?: never } | { key: string; code?: never }) & {
@@ -171,6 +173,14 @@ const fileHistoryBindings: { code: string; mods: Modifier[]; name: FileHistorySh
   { name: "fileForward", code: "ArrowRight", mods: ["alt"] },
 ];
 
+function fileMoveBindings(platform: Platform): { code: string; mods: Modifier[]; name: FileMoveShortcut }[] {
+  const mod = platform === "mac" ? "meta" : "ctrl";
+  return [
+    { name: "fileCut", code: "KeyX", mods: [mod] },
+    { name: "filePaste", code: "KeyV", mods: [mod] },
+  ];
+}
+
 function pressed(chord: KeyChord, mod: Modifier): boolean {
   return { meta: chord.metaKey, ctrl: chord.ctrlKey, alt: chord.altKey, shift: chord.shiftKey }[mod];
 }
@@ -203,6 +213,11 @@ export function matchFileHistoryShortcut(chord: KeyChord) {
   return fileHistoryBindings.find((b) => b.code === chord.code && exactly(chord, b.mods))?.name ?? null;
 }
 
+/** File movement uses native cut and paste chords, scoped to the File panel. */
+export function matchFileMoveShortcut(chord: KeyChord, platform: Platform) {
+  return fileMoveBindings(platform).find((b) => b.code === chord.code && exactly(chord, b.mods))?.name ?? null;
+}
+
 const macSymbols: Record<Modifier, string> = { ctrl: "⌃", alt: "⌥", shift: "⇧", meta: "⌘" };
 const pcNames: Record<Modifier, string> = { ctrl: "Ctrl", alt: "Alt", shift: "Shift", meta: "Win" };
 
@@ -217,7 +232,8 @@ function keyName(code: string): string {
 
 /** How a named shortcut is written on `platform`, for tooltips: `⇧⌘D`, `Ctrl+Shift+T`. */
 export function shortcutLabel(name: ShortcutName, platform: Platform): string {
-  const binding = [...bindings[platform], ...terminalBindings[platform], ...fileHistoryBindings].find((b) => b.name === name);
+  const binding = [...bindings[platform], ...terminalBindings[platform], ...fileHistoryBindings, ...fileMoveBindings(platform)]
+    .find((b) => b.name === name);
   if (!binding) return "";
   const key = binding.code === undefined ? binding.key : keyName(binding.code);
   if (platform === "mac") {

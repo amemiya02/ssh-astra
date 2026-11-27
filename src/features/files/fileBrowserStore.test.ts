@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { EditEvent } from "@/lib/ipc/edit";
 import type { FileEntry, Listing } from "@/lib/ipc/files";
 import { createFileBrowserStore, followConnection, type FilesApi } from "./fileBrowserStore";
+import { createFileBrowsers } from "./fileBrowsers";
 
 const entry = (name: string, kind: FileEntry["kind"] = "file"): FileEntry => ({
   name,
@@ -102,6 +103,72 @@ const shown = (store: Awaited<ReturnType<typeof connected>>["store"]) => ({
 });
 
 describe("fileBrowserStore", () => {
+  it("refreshes the source and destination views when pasting cut entries into another folder", async () => {
+    const browsers = createFileBrowsers(fakeApi());
+    const panel = browsers.get("moving", "host-1");
+    const source = browsers.get("source", "host-1");
+    const unrelated = browsers.get("unrelated", "host-2");
+    await Promise.all([panel.getState().connect(), source.getState().connect(), unrelated.getState().connect()]);
+
+    panel.getState().cutEntries(["notes.txt"]);
+    await panel.getState().navigate("/home/me/src");
+    expect(await panel.getState().pasteCutEntries()).toEqual([]);
+
+    expect(shown(panel)).toEqual({ path: "/home/me/src", names: ["main.rs", "lib.rs", "notes.txt"] });
+    expect(shown(source)).toEqual({ path: "/home/me", names: ["src"] });
+    expect(shown(unrelated)).toEqual({ path: "/home/me", names: ["notes.txt", "src"] });
+    expect(panel.getState().cut).toBeNull();
+  });
+
+  it("preserves both entries on a name conflict and keeps only failed cuts available for retry", async () => {
+    const dirs = {
+      "/home/me": ["notes.txt", "draft.txt", "locked.txt", "src/"],
+      "/home/me/src": ["notes.txt"],
+    };
+    const api = fakeApi({}, dirs);
+    const rename = api.renameFile;
+    api.renameFile = (id, from, to) => from.endsWith("/locked.txt")
+      ? Promise.reject({ kind: "permissionDenied", message: "denied", details: { path: from } })
+      : rename(id, from, to);
+    const store = createFileBrowserStore(api, "host-1");
+    await store.getState().connect();
+    store.getState().cutEntries(["notes.txt", "draft.txt", "locked.txt"]);
+    await store.getState().navigate("/home/me/src");
+
+    expect(await store.getState().pasteCutEntries()).toMatchObject([
+      { name: "notes.txt", error: { kind: "alreadyExists", details: { path: "/home/me/src/notes.txt" } } },
+      { name: "locked.txt", error: { kind: "permissionDenied" } },
+    ]);
+
+    expect(store.getState().cut?.names).toEqual(["notes.txt", "locked.txt"]);
+    expect(store.getState().error).toBeNull();
+    expect(shown(store).names).toEqual(["notes.txt", "draft.txt"]);
+    await store.getState().goBack();
+    expect(shown(store).names).toEqual(["notes.txt", "locked.txt", "src"]);
+  });
+
+  it("finishes navigation before refreshing a directory whose listing was in flight during the move", async () => {
+    const api = fakeApi();
+    const browsers = createFileBrowsers(api);
+    const moving = browsers.get("moving", "host-1");
+    const browsing = browsers.get("browsing", "host-1");
+    await Promise.all([moving.getState().connect(), browsing.getState().connect()]);
+    moving.getState().cutEntries(["notes.txt"]);
+    await moving.getState().navigate("/home/me/src");
+
+    const snapshot = await api.listFiles(7, "/home/me/src");
+    let finishListing!: () => void;
+    vi.mocked(api.listFiles).mockImplementationOnce(() => new Promise((resolve) => {
+      finishListing = () => resolve(snapshot);
+    }));
+    const navigation = browsing.getState().navigate("/home/me/src");
+    await moving.getState().pasteCutEntries();
+    finishListing();
+    await navigation;
+
+    expect(shown(browsing)).toEqual({ path: "/home/me/src", names: ["main.rs", "lib.rs", "notes.txt"] });
+  });
+
   it("opens over the Host's Connection at the home directory", async () => {
     const { api, store } = await connected();
 

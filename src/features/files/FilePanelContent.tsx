@@ -118,7 +118,7 @@ function RemoteFilePanel({ pane, onOpenSftp }: { pane: FilePanelPane; onOpenSftp
   } else if (ready) {
     body = (
       <div ref={dropZone} className="relative h-full">
-        <FileBrowser store={store} hostName={pane.host.name} onDownload={(names) => void download(names)} />
+        <FileBrowser store={store} hostName={pane.host.name} onDownload={(names) => void download(names)} enableMove />
         {over && (
           <div className="bg-selected ring-ring pointer-events-none absolute inset-1 flex items-center justify-center rounded-lg ring-2 ring-inset">
             <p className="bg-surface shadow-panel rounded-md px-3 py-1.5 text-xs font-medium">
