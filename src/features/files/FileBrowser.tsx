@@ -3,9 +3,11 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  Calculator,
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  CircleAlert,
   ClipboardPaste,
   Copy,
   Download,
@@ -22,11 +24,13 @@ import {
   FolderPlus,
   FolderSymlink,
   KeyRound,
+  LoaderCircle,
   Pencil,
   Scissors,
   Trash2,
   Upload,
   Search,
+  X,
 } from "lucide-react";
 import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -49,7 +53,7 @@ import { writeClipboardText } from "@/lib/ipc/system";
 import { useSetting } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import type { FileBrowserStore } from "./fileBrowsers";
-import type { FileMove, SelectMode } from "./fileBrowserStore";
+import type { FileMove, FolderSize, SelectMode } from "./fileBrowserStore";
 import { errorText, operationErrorText } from "./fileErrors";
 import { FileOperationDialog, MoveFailureDialog, type FileOperation } from "./FileOperationDialogs";
 import { filesSetting } from "./file-prefs";
@@ -371,6 +375,7 @@ function FileTable({
   const loading = useStore(store, (s) => s.loading);
   const cut = useStore(store, (s) => s.cut);
   const moving = useStore(store, (s) => s.moving);
+  const folderSizes = useStore(store, (s) => s.folderSizes);
   const canStartMove = enableMove && !moving;
   const [prefs, setPrefs] = useSetting(filesSetting);
   const [filter, setFilter] = useState("");
@@ -653,6 +658,14 @@ function FileTable({
                               else onOperation({ kind, names });
                             }}
                             onDownload={onDownload && (() => onDownload(names))}
+                            folderSize={entry.kind === "dir" && exchange?.side !== "local" ? {
+                              current: folderSizes.get(entry.name),
+                              calculate: () => void store.getState().calculateFolderSize(entry.name),
+                              cancel: () => {
+                                grid.current?.focus({ preventScroll: true });
+                                store.getState().cancelFolderSize(entry.name);
+                              },
+                            } : undefined}
                           />
                         );
                       })}
@@ -744,6 +757,7 @@ function FileRow({
   cut,
   onCut,
   onPaste,
+  folderSize,
 }: {
   id: string;
   index: number;
@@ -766,6 +780,7 @@ function FileRow({
   cut: boolean;
   onCut?: () => void;
   onPaste?: () => void;
+  folderSize?: { current?: FolderSize; calculate(): void; cancel(): void };
 }) {
   const { t } = useTranslation();
   const renameOnMenuClose = useRef(false);
@@ -781,6 +796,9 @@ function FileRow({
     setDropRef(node);
   }, [setDragRef, setDropRef]);
   const { Icon, color } = entryIcons[fileIconKind(entry)];
+  const size = folderSize?.current;
+  const sizeError = size?.state === "failed" ? operationErrorText(t, size.error) : undefined;
+  const cancelSize = t("files.folderSize.cancel", { name: entry.name });
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -812,7 +830,32 @@ function FileRow({
             {nameEditor ?? <span className="truncate">{entry.name}</span>}
           </div>
           <div role="gridcell" className="text-muted-foreground truncate px-1 text-right tabular-nums">
-            {entry.kind === "file" ? formatSize(entry.size) : ""}
+            {entry.kind === "file" && formatSize(entry.size)}
+            {size?.state === "complete" && formatSize(size.bytes)}
+            {size?.state === "calculating" && (
+              <span className="inline-flex items-center gap-1">
+                <span role="status" className="sr-only">{t("files.folderSize.calculating", { name: entry.name })}</span>
+                <LoaderCircle className="size-3 motion-safe:animate-spin" aria-hidden />
+                <IconButton
+                  label={cancelSize}
+                  className="size-5 [&_svg]:size-3"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onDoubleClick={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    folderSize?.cancel();
+                  }}
+                >
+                  <X />
+                </IconButton>
+              </span>
+            )}
+            {sizeError && (
+              <span className="text-destructive inline-flex" title={sizeError}>
+                <span role="alert" className="sr-only">{sizeError}</span>
+                <CircleAlert className="size-3.5" aria-hidden />
+              </span>
+            )}
           </div>
           {modified !== undefined && (
             <div role="gridcell" title={modified} className="text-muted-foreground truncate px-1 tabular-nums">
@@ -836,6 +879,13 @@ function FileRow({
         }}
       >
         {dir && <ContextMenuItem onSelect={onOpen}>{t("files.open")}</ContextMenuItem>}
+        {folderSize && (size?.state === "calculating" ? (
+          <ContextMenuItem onSelect={folderSize.cancel}><X />{cancelSize}</ContextMenuItem>
+        ) : (
+          <ContextMenuItem onSelect={folderSize.calculate}>
+            <Calculator />{t("files.folderSize.calculate")}
+          </ContextMenuItem>
+        ))}
         {isFileLike(entry) && (
           <ContextMenuItem onSelect={onOpen}>
             <FilePen />

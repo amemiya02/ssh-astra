@@ -158,6 +158,32 @@ pub async fn files_count(
     Ok(total)
 }
 
+/// Calculates a folder's size. The request ID is sent once cancellation can
+/// be delivered, including when the File panel has already asked to cancel.
+#[tauri::command]
+pub async fn files_folder_size(
+    registry: State<'_, FsRegistry>,
+    id: FsId,
+    path: String,
+    on_start: Channel<u64>,
+) -> CommandResult<Option<u64>> {
+    let (request, fs, cancelled) = registry
+        .start_folder_size(id)
+        .ok_or_else(CommandError::not_open)?;
+    let result = if on_start.send(request).is_ok() {
+        fs.folder_size(&path, cancelled).await.map_err(Into::into)
+    } else {
+        Ok(None)
+    };
+    registry.cancel_folder_size(id, request);
+    result
+}
+
+#[tauri::command]
+pub fn files_cancel_folder_size(registry: State<'_, FsRegistry>, id: FsId, request_id: u64) {
+    registry.cancel_folder_size(id, request_id);
+}
+
 /// Deletes `paths`, directories with everything in them; symlinks are
 /// deleted, not followed. Stops at the first failure.
 #[tauri::command]

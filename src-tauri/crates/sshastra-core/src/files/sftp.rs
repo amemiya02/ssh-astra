@@ -8,12 +8,12 @@ use russh_sftp::client::fs::Metadata;
 use russh_sftp::client::{RawSftpSession, SftpSession};
 use russh_sftp::protocol::{OpenFlags, Packet, StatusCode};
 use tokio::io::AsyncSeekExt;
-use tokio::sync::OnceCell;
+use tokio::sync::{oneshot, OnceCell};
 use tokio::task::JoinSet;
 
 use super::{
-    join, publish_by_plain_rename, FileEntry, FileKind, FileReader, FileStat, FileWriter, FsError,
-    FsResult, RemoteFs,
+    cancellable_folder_scan, join, publish_by_plain_rename, sum_folder, FileEntry, FileKind,
+    FileReader, FileStat, FileWriter, FsError, FsResult, RemoteFs,
 };
 use crate::ssh::{BoxFuture, Connection};
 
@@ -35,13 +35,22 @@ impl SftpFs {
         connection: Arc<Connection>,
         channel: russh::Channel<russh::client::Msg>,
     ) -> FsResult<Self> {
+        Self::request_sftp(&channel).await?;
+        Self::from_stream(connection, channel.into_stream()).await
+    }
+
+    async fn request_sftp(channel: &russh::Channel<russh::client::Msg>) -> FsResult<()> {
         channel
             .request_subsystem(true, "sftp")
             .await
-            .map_err(|e| FsError::Protocol(e.to_string()))?;
-        let session = SftpSession::new(channel.into_stream())
-            .await
-            .map_err(|e| error("", e))?;
+            .map_err(|e| FsError::Protocol(e.to_string()))
+    }
+
+    async fn from_stream(
+        connection: Arc<Connection>,
+        stream: russh::ChannelStream<russh::client::Msg>,
+    ) -> FsResult<Self> {
+        let session = SftpSession::new(stream).await.map_err(|e| error("", e))?;
         session.set_timeout(REQUEST_TIMEOUT_SECS);
         Ok(Self {
             session: Arc::new(session),
@@ -157,6 +166,43 @@ impl RemoteFs for SftpFs {
                     Ok(entry(name, &item.metadata()))
                 })
                 .collect()
+        })
+    }
+
+    fn folder_size<'a>(
+        &'a self,
+        path: &'a str,
+        mut cancelled: oneshot::Receiver<()>,
+    ) -> BoxFuture<'a, FsResult<Option<u64>>> {
+        Box::pin(async move {
+            if !matches!(
+                cancelled.try_recv(),
+                Err(oneshot::error::TryRecvError::Empty)
+            ) {
+                return Ok(None);
+            }
+            // The scan owns its channel. Dropping read_dir can leave a remote
+            // directory handle open, so cancellation closes the whole scan channel.
+            // Wait for the SSH channel ID before closing an aborted open.
+            let channel = self
+                .connection
+                .open_session_channel()
+                .await
+                .map_err(|e| FsError::Protocol(e.to_string()))?;
+            tokio::select! {
+                biased;
+                _ = &mut cancelled => {
+                    let _ = channel.close().await;
+                    return Ok(None);
+                }
+                result = Self::request_sftp(&channel) => result?,
+            }
+            let stream = channel.into_stream();
+            cancellable_folder_scan(cancelled, async move {
+                let scan = Self::from_stream(Arc::clone(&self.connection), stream).await?;
+                sum_folder(&scan, path).await
+            })
+            .await
         })
     }
 

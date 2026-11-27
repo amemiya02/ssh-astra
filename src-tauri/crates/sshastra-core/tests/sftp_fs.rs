@@ -5,9 +5,9 @@
 mod support;
 
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-use sshastra_core::files::{self, FileKind, FsError, RemoteFs, SftpFs};
+use sshastra_core::files::{self, FileKind, FsError, FsRegistry, RemoteFs, SftpFs};
 use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::ssh::{
@@ -65,6 +65,62 @@ async fn home_is_the_users_home_directory() {
     let (fs, _dir) = sftp(&sshd).await;
 
     assert_eq!(fs.home().await.unwrap(), "/home/tester");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn folder_size_totals_nested_files_and_ignores_symlinks() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let (fs, _dir) = sftp(&sshd).await;
+    let (_cancel, cancelled) = tokio::sync::oneshot::channel();
+
+    assert_eq!(
+        fs.folder_size("/srv/files/docs", cancelled).await.unwrap(),
+        Some(15)
+    );
+
+    let (_cancel, cancelled) = tokio::sync::oneshot::channel();
+    assert_eq!(
+        fs.folder_size("/srv/files/docs-link/", cancelled).await,
+        Err(FsError::NotADirectory("/srv/files/docs-link".into()))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn cancelling_folder_sizes_leaves_the_file_panel_session_usable() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let (fs, _dir) = sftp(&sshd).await;
+    let registry = FsRegistry::default();
+    let id = registry.insert(Arc::new(fs));
+
+    // Repeatedly cancel after the scan has started opening its SFTP channel.
+    // OpenSSH allows ten concurrent session channels on this Connection.
+    for _ in 0..12 {
+        let (request, fs, cancelled) = registry.start_folder_size(id).unwrap();
+        let mut scan = fs.folder_size("/srv/files/many", cancelled);
+        tokio::select! {
+            biased;
+            finished = &mut scan => panic!("scan finished before cancellation: {finished:?}"),
+            _ = std::future::ready(()) => {}
+        }
+        registry.cancel_folder_size(id, request);
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(5), scan)
+                .await
+                .expect("scan should stop promptly")
+                .unwrap(),
+            None
+        );
+    }
+
+    let fs = registry.get(id).unwrap();
+    assert_eq!(
+        fs.stat("/srv/files/docs").await.unwrap().kind,
+        FileKind::Dir
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

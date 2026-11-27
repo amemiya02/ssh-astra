@@ -75,6 +75,7 @@ function fakeApi(overrides: Partial<FilesApi> = {}, dirs: Record<string, string[
     countFiles: vi.fn((_id: number, paths: string[]) =>
       Promise.resolve(paths.reduce((n, p) => n + 1 + (dirs[p]?.length ?? 0), 0)),
     ),
+    folderSize: vi.fn(() => Promise.resolve(0)),
     deleteFiles: vi.fn((_id: number, paths: string[]) => {
       for (const path of paths) {
         const { dir, index } = find(path);
