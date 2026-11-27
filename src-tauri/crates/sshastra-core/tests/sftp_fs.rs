@@ -86,15 +86,15 @@ async fn promised_regular_file_reads_from_an_offset_and_refuses_links_or_stale_m
         return;
     };
     let (fs, _dir) = sftp(&sshd).await;
-    let path = "/srv/files/hello.txt";
+    let path = "/srv/files/docs/readme.txt";
     let entry = fs.lstat(path).await.unwrap();
     let mut reader = fs
-        .open_regular_read_at(path, 2, Some(6), entry.modified)
+        .open_regular_read_at(path, 2, Some(7), entry.modified)
         .await
         .unwrap();
     let mut suffix = Vec::new();
     reader.read_to_end(&mut suffix).await.unwrap();
-    assert_eq!(suffix, b"llo\n");
+    assert_eq!(suffix, b"nual\n");
     assert!(fs
         .open_regular_read_at(path, 0, Some(5), entry.modified)
         .await
