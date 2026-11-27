@@ -1292,6 +1292,18 @@
       "label": "关闭终端前确认",
       "description": "关闭已连接的远程终端前询问。"
     },
+    "launchAtLogin": {
+      "label": "开机启动",
+      "description": "登录系统时打开 SSH Astra。",
+      "unavailable": "无法读取系统的登录启动设置。",
+      "error": "无法更改 SSH Astra 的登录启动设置。"
+    },
+    "startInTray": {
+      "label": "启动时仅留在托盘",
+      "description": "登录系统时启动 SSH Astra。如果系统托盘可用，则隐藏窗口。",
+      "requiresLoginLaunch": "开启开机启动后可调整此设置。",
+      "error": "无法保存托盘启动设置。"
+    },
     "closeToTray": {
       "label": "关闭到托盘",
       "description": "系统托盘可用时，关闭最后一个窗口后 SSH Astra 继续运行。"
