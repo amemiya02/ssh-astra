@@ -3,6 +3,7 @@ import { SegmentedControl } from "@/components/SegmentedControl";
 import { connectionSetting, keepaliveChoices } from "@/features/connect/connection-settings";
 import { useSetting } from "@/lib/storage";
 import { SettingRow } from "./SettingRow";
+import { SettingTextField } from "./SettingTextField";
 import { settingRows } from "./setting-rows";
 
 export function ConnectionSection() {
@@ -14,19 +15,30 @@ export function ConnectionSection() {
     ? [...keepaliveChoices]
     : [...keepaliveChoices, settings.keepaliveSeconds].sort((a, b) => a - b);
   return (
-    <SettingRow setting={settingRows.keepalive}>
-      <SegmentedControl
-        label={label}
-        value={String(settings.keepaliveSeconds)}
-        options={choices.map((seconds) => ({
-          value: String(seconds),
-          label:
-            seconds === 0
-              ? t("settings.connection.keepalive.off")
-              : t("settings.connection.keepalive.seconds", { count: seconds }),
-        }))}
-        onChange={(value) => setSettings({ ...settings, keepaliveSeconds: Number(value) })}
-      />
-    </SettingRow>
+    <>
+      <SettingRow setting={settingRows.keepalive}>
+        <SegmentedControl
+          label={label}
+          value={String(settings.keepaliveSeconds)}
+          options={choices.map((seconds) => ({
+            value: String(seconds),
+            label:
+              seconds === 0
+                ? t("settings.connection.keepalive.off")
+                : t("settings.connection.keepalive.seconds", { count: seconds }),
+          }))}
+          onChange={(value) => setSettings({ ...settings, keepaliveSeconds: Number(value) })}
+        />
+      </SettingRow>
+      <SettingRow setting={settingRows.agentPath}>
+        <SettingTextField
+          id="settings-connection-agent-path"
+          label={t(settingRows.agentPath.title)}
+          value={settings.agentPath}
+          onCommit={(path) => setSettings(connectionSetting.parse({ ...settings, agentPath: path }))}
+          className="h-8 w-64 max-w-full font-mono"
+        />
+      </SettingRow>
+    </>
   );
 }

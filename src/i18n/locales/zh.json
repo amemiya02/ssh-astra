@@ -938,6 +938,10 @@
         "description": "空闲的 Connection 多久确认一次服务器仍在。连续三次没有回应即视为掉线。对新的 Connection 生效。",
         "off": "关",
         "seconds": "{{count}} 秒"
+      },
+      "agentPath": {
+        "label": "自定义 SSH 代理路径",
+        "description": "填写本机 Unix 套接字或 Windows 命名管道路径，用于 SSH 认证和 SSH 代理转发。留空则使用系统 SSH 代理。对新连接生效。"
       }
     },
     "transfers": {
