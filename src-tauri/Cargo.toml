@@ -1,6 +1,11 @@
 [workspace]
 members = [".", "crates/sshastra-core"]
+exclude = ["vendor/russh"]
 resolver = "2"
+
+[patch.crates-io]
+# Observe automatic keepalive replies. See vendor/russh/SSH-ASTRA.md.
+russh = { path = "vendor/russh" }
 
 [workspace.package]
 version = "0.3.0"

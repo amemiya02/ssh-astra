@@ -441,9 +441,24 @@ impl Session {
     }
 
     pub fn send_keepalive(&mut self, want_reply: bool) -> Result<(), crate::Error> {
-        self.open_global_requests
-            .push_back(crate::session::GlobalRequestResponse::Keepalive);
+        self.queue_keepalive(want_reply, crate::session::GlobalRequestResponse::Keepalive)
+    }
+
+    pub(super) fn send_timed_keepalive(&mut self) -> Result<(), crate::Error> {
+        self.queue_keepalive(true, crate::session::GlobalRequestResponse::TimedKeepalive(None))?;
+        self.keepalive_waiting_for_flush = true;
+        Ok(())
+    }
+
+    fn queue_keepalive(
+        &mut self,
+        want_reply: bool,
+        response: crate::session::GlobalRequestResponse,
+    ) -> Result<(), crate::Error> {
         if let Some(ref mut enc) = self.common.encrypted {
+            if want_reply {
+                self.open_global_requests.push_back(response);
+            }
             push_packet!(enc.write, {
                 msg::GLOBAL_REQUEST.encode(&mut enc.write)?;
                 "keepalive@openssh.com".encode(&mut enc.write)?;

@@ -836,6 +836,8 @@ pub(crate) struct NewKeys {
 pub(crate) enum GlobalRequestResponse {
     /// request was for Keepalive, ignore result
     Keepalive,
+    /// An automatic client keepalive, timestamped when flushed for transport.
+    TimedKeepalive(Option<russh_util::time::Instant>),
     /// request was for Keepalive but with notification of the result
     Ping(oneshot::Sender<()>),
     /// request was for NoMoreSessions, disallow additional sessions

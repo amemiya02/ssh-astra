@@ -64,6 +64,7 @@ use russh::keys::{Algorithm, PublicKeyOrCertificate};
 use russh::{cipher, kex, Preferred};
 use tokio::io::{AsyncRead, AsyncWrite, BufReader};
 use tokio::net::TcpStream;
+use tokio::sync::watch;
 
 use crate::credentials::{CredentialVault, NoVault};
 use crate::files::{FsError, SftpFs};
@@ -970,6 +971,9 @@ impl ConnectionManager {
         let host_key = progress.start(ConnectStage::HostKey);
         let failure = Arc::new(Mutex::new(None));
         let routes = Routes::default();
+        let config = self.client_config(host);
+        let (keepalive_samples, keepalive_rtt) =
+            config.keepalive_interval.map(|_| watch::channel(None)).unzip();
         let agent = self.agent.lock().unwrap_or_else(|p| p.into_inner()).clone();
         let agent_forwarding = (matches!(purpose, ConnectionPurpose::Shared)
             && host.forward_agent
@@ -983,6 +987,7 @@ impl ConnectionManager {
         });
         let handler = ClientHandler {
             routes: routes.clone(),
+            keepalive_samples,
             agent_forwarding: agent_forwarding.clone(),
             endpoint: Arc::clone(&endpoint),
             host_keys: match purpose {
@@ -999,7 +1004,7 @@ impl ConnectionManager {
             failure: failure.clone(),
         };
         log::info!("connection hop={} step=handshake result=starting", host.id);
-        let handshake = client::connect_stream(self.client_config(host), stream, handler)
+        let handshake = client::connect_stream(config, stream, handler)
             .await
             .map_err(|error| {
                 let recorded = failure.lock().ok().and_then(|mut f| f.take());
@@ -1039,6 +1044,7 @@ impl ConnectionManager {
         );
         Ok(Connection {
             handle,
+            keepalive_rtt,
             endpoint,
             routes,
             agent_forwarding,
@@ -1089,6 +1095,7 @@ async fn open_tcp(host: &Host) -> Result<TcpStream, ConnectError> {
 /// One live, authenticated SSH transport to a Host.
 pub struct Connection {
     handle: Handle<ClientHandler>,
+    keepalive_rtt: Option<watch::Receiver<Option<Duration>>>,
     endpoint: Arc<Endpoint>,
     file_namespace: String,
     /// Ports the server listens on for us, and who gets their connections.
@@ -1110,6 +1117,12 @@ impl std::fmt::Debug for Connection {
 }
 
 impl Connection {
+    /// The most recent scheduled keepalive's round-trip time and future updates.
+    /// Returns no stream when keepalives are disabled for this Connection.
+    pub fn watch_keepalive_rtt(&self) -> Option<watch::Receiver<Option<Duration>>> {
+        self.keepalive_rtt.clone()
+    }
+
     pub(crate) fn file_namespace(&self) -> &str {
         &self.file_namespace
     }
@@ -1223,6 +1236,7 @@ impl Connection {
 
 struct ClientHandler {
     routes: Routes,
+    keepalive_samples: Option<watch::Sender<Option<Duration>>>,
     agent_forwarding: Option<Arc<AgentForwarding>>,
     endpoint: Arc<Endpoint>,
     host_keys: Arc<HostKeys>,
@@ -1233,6 +1247,12 @@ struct ClientHandler {
 
 impl client::Handler for ClientHandler {
     type Error = russh::Error;
+
+    fn keepalive_rtt(&mut self, rtt: Duration) {
+        if let Some(samples) = &self.keepalive_samples {
+            samples.send_replace(Some(rtt));
+        }
+    }
 
     async fn check_server_key(
         &mut self,

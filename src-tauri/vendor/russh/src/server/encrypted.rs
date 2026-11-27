@@ -1953,7 +1953,7 @@ impl Session {
             msg::REQUEST_SUCCESS => {
                 trace!("Global Request Success");
                 match self.open_global_requests.pop_front() {
-                    Some(GlobalRequestResponse::Keepalive) => {
+                    Some(GlobalRequestResponse::Keepalive | GlobalRequestResponse::TimedKeepalive(_)) => {
                         map_err!(ensure_end(r))?;
                         // ignore keepalives
                     }
@@ -1999,7 +1999,7 @@ impl Session {
                 trace!("global request failure");
                 map_err!(ensure_end(r))?;
                 match self.open_global_requests.pop_front() {
-                    Some(GlobalRequestResponse::Keepalive) => {
+                    Some(GlobalRequestResponse::Keepalive | GlobalRequestResponse::TimedKeepalive(_)) => {
                         // ignore keepalives
                     }
                     Some(GlobalRequestResponse::Ping(return_channel)) => {

@@ -5,12 +5,18 @@ import { filterSettingsRows } from "./settings-search";
 describe("settings search", () => {
   const rows = Object.values(settingRows);
 
-  it.each(["  KEEPALIVE  ", "间隔", "間隔", "three missed checks", "三次", "heartbeat", "心跳"])(
+  it.each(["  KEEPALIVE interval  ", "间隔", "間隔", "three missed checks", "三次", "heartbeat", "心跳"])(
     "finds the Connection keepalive setting by title, description, or keyword in any language (%s)",
     (query) => {
       expect(filterSettingsRows(rows, query)).toEqual([settingRows.keepalive]);
     },
   );
+
+  it("finds latency under Terminal settings and surfaces both keepalive settings", () => {
+    expect(filterSettingsRows(rows, "SSH RTT")).toEqual([settingRows.showLatency]);
+    expect(filterSettingsRows(rows, "保活 往返")).toEqual([settingRows.showLatency]);
+    expect(filterSettingsRows(rows, "keepalive")).toEqual([settingRows.showLatency, settingRows.keepalive]);
+  });
 
   it("requires every search term, including terms from different languages", () => {
     expect(filterSettingsRows(rows, "regex 自定义")).toEqual([settingRows.customHighlighting]);

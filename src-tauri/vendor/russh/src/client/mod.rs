@@ -100,6 +100,7 @@ pub struct Session {
     inbound_channel_sender: Sender<Msg>,
     inbound_channel_receiver: Receiver<Msg>,
     open_global_requests: VecDeque<GlobalRequestResponse>,
+    keepalive_waiting_for_flush: bool,
     server_sig_algs: Option<Vec<Algorithm>>,
     /// Number of EXT_INFO messages received (RFC 8308 allows at most two).
     ext_info_count: u8,
@@ -1333,6 +1334,7 @@ impl Session {
             pending_reads: Vec::new(),
             pending_len: 0,
             open_global_requests: VecDeque::new(),
+            keepalive_waiting_for_flush: false,
             server_sig_algs: None,
             ext_info_count: 0,
         }
@@ -1486,7 +1488,7 @@ impl Session {
                             debug!("Timeout, server not responding to keepalives");
                             return Err(crate::Error::KeepaliveTimeout.into());
                         }
-                        self.send_keepalive(true)?;
+                        self.send_timed_keepalive()?;
                     }
                 }
                 () = &mut inactivity_timer => {
@@ -1558,11 +1560,8 @@ impl Session {
             }
 
             if self.common.received_data {
-                // Reset the number of failed keepalive attempts. We don't
-                // bother detecting keepalive response messages specifically
-                // (OpenSSH_9.6p1 responds with REQUEST_FAILURE aka 82). Instead
-                // we assume that the server is still alive if we receive any
-                // data from it.
+                // Any received data demonstrates liveness, including a
+                // keepalive reply using SSH_MSG_REQUEST_FAILURE.
                 self.common.alive_timeouts = 0;
             }
             if (self.common.received_data || keepalive_elapsed)
@@ -1917,11 +1916,26 @@ impl Session {
             // order, kex or not.
             let is_rekeying = self.kex.active() && !self.common.disconnected;
             let rekey_requested = enc.rekey_wanted; // enc.flush resets rekey_wanted
-            if enc.flush(
+            let wants_rekey = enc.flush(
                 &self.common.config.as_ref().limits,
                 &mut self.common.packet_writer,
                 is_rekeying,
-            )? && !self.kex.active()
+            )?;
+            if self.keepalive_waiting_for_flush && !is_rekeying {
+                self.keepalive_waiting_for_flush = false;
+                let sent_at = Instant::now();
+                // Requests queued during key exchange acquire a timestamp only
+                // when their connection-layer packets can leave the client.
+                for request in self.open_global_requests.iter_mut().rev() {
+                    if let GlobalRequestResponse::TimedKeepalive(timestamp) = request {
+                        if timestamp.is_some() {
+                            break;
+                        }
+                        *timestamp = Some(sent_at);
+                    }
+                }
+            }
+            if wants_rekey && !self.kex.active()
                 && (rekey_requested || matches!(enc.state, EncryptedState::Authenticated))
             {
                 self.begin_rekey()?;
@@ -2782,6 +2796,10 @@ impl Default for Config {
 /// and you can simply define them as `async fn` instead.
 pub trait Handler: Sized + Send {
     type Error: From<crate::Error> + Send + core::fmt::Debug;
+
+    /// Reports the round-trip time of a scheduled client keepalive, including
+    /// replies using SSH_MSG_REQUEST_FAILURE.
+    fn keepalive_rtt(&mut self, _rtt: Duration) {}
 
     /// Called when the server sends us an authentication banner. This
     /// is usually meant to be shown to the user, see

@@ -18,6 +18,7 @@ use std::str::FromStr;
 
 use bytes::Bytes;
 use log::{debug, error, info, trace, warn};
+use russh_util::time::Instant;
 use ssh_encoding::{Decode, Encode, Reader};
 use ssh_key::{Algorithm, PublicKey, Signature};
 
@@ -968,6 +969,12 @@ impl Session {
             Some((&msg::REQUEST_SUCCESS, mut r)) => {
                 trace!("Global Request Success");
                 match self.open_global_requests.pop_front() {
+                    Some(GlobalRequestResponse::TimedKeepalive(sent_at)) => {
+                        map_err!(ensure_end(&r))?;
+                        if let Some(sent_at) = sent_at {
+                            client.keepalive_rtt(Instant::now().duration_since(sent_at));
+                        }
+                    }
                     Some(GlobalRequestResponse::Keepalive) => {
                         map_err!(ensure_end(&r))?;
                         // ignore keepalives
@@ -1042,6 +1049,11 @@ impl Session {
                 trace!("global request failure");
                 map_err!(ensure_end(&r))?;
                 match self.open_global_requests.pop_front() {
+                    Some(GlobalRequestResponse::TimedKeepalive(sent_at)) => {
+                        if let Some(sent_at) = sent_at {
+                            client.keepalive_rtt(Instant::now().duration_since(sent_at));
+                        }
+                    }
                     Some(GlobalRequestResponse::Keepalive) => {
                         // ignore keepalives
                     }

@@ -420,6 +420,8 @@ The Host editor offers platform and generic icons and an Automatic choice. Its H
 
 While Broadcast is active, the first segment shows a warning-colour radio icon and the current scope. Clicking it turns Broadcast off.
 
+When enabled in Terminal settings, the latency segment beside the focused remote Terminal's address shows its most recent SSH keepalive round-trip time in tabular milliseconds. It reads “Latency unavailable” before the first sample or when the Connection cannot provide one.
+
 The privacy toggle sits beside the theme menu. Its pressed state uses the `selected` surface and an eye-off icon. While active, Host cards, rows, tabs, and the status bar show Host names in place of connection details. Address search remains available and the Port forward count stays visible.
 
 When Agent access is enabled, a status bar segment shows its name and a cable icon. Click it to turn access off for all Hosts. The tab strip shows the same icon and names the shared state in the tab label whenever an open Terminal in that tab is exposed. A collapsed Host group carries the icon for its shared tabs.
