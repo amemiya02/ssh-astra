@@ -168,7 +168,10 @@ fn exports_and_imports_bookmarks_with_each_host() {
     assert_eq!(reopened.list()[0].name, "web");
     assert_ne!(reopened.list()[0].id, web.id);
     assert_eq!(reopened.list()[0].bookmarks[0].path, "/srv/web");
-    assert_eq!(reopened.list()[0].bookmarks[0].name.as_deref(), Some("Live"));
+    assert_eq!(
+        reopened.list()[0].bookmarks[0].name.as_deref(),
+        Some("Live")
+    );
     assert_eq!(reopened.list()[1].name, "other");
     assert_eq!(reopened.list()[1].bookmarks[0].path, "/");
     assert_eq!(reopened.list()[1].bookmarks[0].name, None);

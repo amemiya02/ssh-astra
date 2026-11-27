@@ -675,14 +675,20 @@ fn version_18_hosts_keep_their_settings_and_start_without_bookmarks() {
     fs::write(&path, fixture).unwrap();
     let mut store = HostStore::open(&path).unwrap();
     let mut expected: serde_json::Value = serde_json::from_str(fixture).unwrap();
-    assert_eq!(expected.as_object_mut().unwrap().remove("version"), Some(json!(18)));
+    assert_eq!(
+        expected.as_object_mut().unwrap().remove("version"),
+        Some(json!(18))
+    );
     assert_eq!(serde_json::to_value(store.tree()).unwrap(), expected);
     assert!(store.list().iter().all(|host| host.bookmarks.is_empty()));
 
     store.add_bookmark(&id("h-web"), "/srv/sites").unwrap();
     expected["hosts"][1]["bookmarks"] = json!([{ "path": "/srv/sites" }]);
     let mut saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    assert_eq!(saved.as_object_mut().unwrap().remove("version"), Some(json!(19)));
+    assert_eq!(
+        saved.as_object_mut().unwrap().remove("version"),
+        Some(json!(19))
+    );
     assert_eq!(saved, expected);
     let reopened = HostStore::open(path).unwrap();
     assert_eq!(serde_json::to_value(reopened.tree()).unwrap(), expected);

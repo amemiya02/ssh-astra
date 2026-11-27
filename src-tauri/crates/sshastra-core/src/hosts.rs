@@ -1024,7 +1024,8 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
         // v16 adds an optional ANSI hue with the same automatic default.
         // v17 stores the detected OS, v18 adds legacy algorithm opt-in, and
         // v19 adds Bookmarks. Older Hosts default to an empty Bookmark list.
-        2 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | CURRENT_VERSION => {
+        2 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18
+        | CURRENT_VERSION => {
             let FileV2 { groups, hosts } = serde_json::from_str(text).map_err(corrupt)?;
             Ok(Library { groups, hosts })
         }

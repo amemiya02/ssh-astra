@@ -6,7 +6,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 
-use sshastra_core::hosts::{Bookmark, Host, HostAuth, HostDraft, HostId, HostStore, HostStoreError};
+use sshastra_core::hosts::{
+    Bookmark, Host, HostAuth, HostDraft, HostId, HostStore, HostStoreError,
+};
 
 fn draft(name: &str) -> HostDraft {
     HostDraft {
@@ -50,11 +52,16 @@ fn bookmark_edits_survive_restart_host_edits_and_duplication() {
     store.add_bookmark(&host.id, "/elsewhere").unwrap();
     store.add_bookmark(&host.id, folder).unwrap();
     store.delete_bookmark(&host.id, "/elsewhere").unwrap();
-    store.upsert(Some(host.id.clone()), draft("new name")).unwrap();
+    store
+        .upsert(Some(host.id.clone()), draft("new name"))
+        .unwrap();
     let copy = store.duplicate_host(&host.id, "copy").unwrap();
 
     let mut reopened = HostStore::open(&path).unwrap();
-    let expected = [Bookmark { path: folder.into(), name: Some("Work".into()) }];
+    let expected = [Bookmark {
+        path: folder.into(),
+        name: Some("Work".into()),
+    }];
     assert_eq!(reopened.get(&host.id).unwrap().name, "new name");
     assert_eq!(reopened.get(&host.id).unwrap().bookmarks, expected);
     assert_eq!(reopened.get(&copy.id).unwrap().bookmarks, expected);
@@ -63,7 +70,13 @@ fn bookmark_edits_survive_restart_host_edits_and_duplication() {
     reopened.delete_bookmark(&host.id, folder).unwrap();
     let reopened = HostStore::open(&path).unwrap();
     assert!(reopened.get(&host.id).unwrap().bookmarks.is_empty());
-    assert_eq!(reopened.get(&copy.id).unwrap().bookmarks, [Bookmark { path: folder.into(), name: None }]);
+    assert_eq!(
+        reopened.get(&copy.id).unwrap().bookmarks,
+        [Bookmark {
+            path: folder.into(),
+            name: None
+        }]
+    );
 }
 
 #[test]

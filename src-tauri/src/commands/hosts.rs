@@ -5,8 +5,8 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 use sshastra_core::hosts::{
-    Bookmark, DetectedOs, Group, GroupId, Host, HostDraft, HostId, HostStore, HostTree, ImportReport,
-    ImportSummary,
+    Bookmark, DetectedOs, Group, GroupId, Host, HostDraft, HostId, HostStore, HostTree,
+    ImportReport, ImportSummary,
 };
 use sshastra_core::ssh_config::{parse_user_config, ParseContext};
 use tauri::{ipc::Channel, State};
