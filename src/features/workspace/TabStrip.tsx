@@ -13,6 +13,7 @@ import {
 } from "@dnd-kit/core";
 import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { useStore } from "zustand";
 import { IconButton } from "@/components/IconButton";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { hueClasses } from "@/features/hosts/hostHue";
@@ -20,6 +21,7 @@ import type { TerminalTitleSource } from "@/features/terminal/terminal-prefs";
 import { cn } from "@/lib/utils";
 import { TabMenu } from "./TabMenu";
 import { shortcutLabel, type Platform } from "./shortcuts";
+import type { TabActivity } from "./tab-activity";
 import {
   activePane,
   canSplit,
@@ -36,6 +38,7 @@ import {
 } from "./tabs";
 
 interface TabStripProps {
+  activity: TabActivity;
   tabs: Tab[];
   activeId: string | null;
   platform: Platform;
@@ -75,6 +78,7 @@ const kindIcons = {
  * shows its Connection state as a dot, named in the tooltip, and underlines itself in the Host's hue.
  */
 export function TabStrip({
+  activity,
   tabs,
   activeId,
   platform,
@@ -86,6 +90,7 @@ export function TabStrip({
   onSplit,
 }: TabStripProps) {
   const { t } = useTranslation();
+  const { unread, flashing } = useStore(activity.store);
   const selected = tabs.find((tab) => tab.id === activeId);
   const listRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<string | null>(null);
@@ -164,7 +169,14 @@ export function TabStrip({
             const ordinal = tabs.slice(0, index + 1).filter((other) => activePane(other).kind === kind).length;
             const title = tabTitle(tab, t, ordinal, titleSource);
             const status = tabStatus(tab);
-            const details = [status && t(`tabs.status.${status}`), tab.locked && t("tabs.locked")].filter(Boolean).join(", ");
+            const hasUnreadOutput = !active && unread.has(tab.id);
+            const bellRang = flashing.has(tab.id);
+            const details = [
+              status && t(`tabs.status.${status}`),
+              tab.locked && t("tabs.locked"),
+              hasUnreadOutput && t("tabs.unreadOutput"),
+              bellRang && t("tabs.terminalBell"),
+            ].filter(Boolean).join(", ");
             const label = details ? `${title} (${details})` : title;
             const TabIcon = tab.layout.type === "split"
               ? tab.layout.orientation === "horizontal" ? Columns2 : Rows2
@@ -216,6 +228,8 @@ export function TabStrip({
                     <TabIcon className="size-3.5 shrink-0 opacity-70" aria-hidden />
                   )}
                   <span className="truncate">{title}</span>
+                  {hasUnreadOutput && <span aria-hidden data-unread-output className="bg-primary size-1.5 shrink-0 rounded-full" />}
+                  {bellRang && <span aria-hidden data-terminal-bell className="pointer-events-none absolute inset-0 rounded-lg" />}
                 </button>
                 {hue && (
                   <span

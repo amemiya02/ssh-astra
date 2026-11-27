@@ -19,6 +19,7 @@ export interface TerminalPrefs {
   /** Literal characters that separate words when selecting with the mouse. */
   wordSeparator: string;
   titleSource: TerminalTitleSource;
+  bell: (typeof terminalBellModes)[number];
   /** Draw programming ligatures (`->`, `!=`) when the font has them. */
   ligatures: boolean;
   colorScheme: TerminalColorScheme;
@@ -38,6 +39,7 @@ export interface TerminalPrefs {
 export const minFontSize = 8;
 export const maxFontSize = 32;
 export const cursorStyles = ["block", "bar", "underline"] as const;
+export const terminalBellModes = ["none", "flash", "sound"] as const;
 export type TerminalTitleSource = "shell" | "host";
 
 export const terminalNumberFields = {
@@ -57,6 +59,7 @@ export const defaultTerminalPrefs: TerminalPrefs = {
   cursorBlink: true,
   wordSeparator: ' ()[]{}\',"`',
   titleSource: "shell",
+  bell: "none",
   ligatures: false,
   colorScheme: "app",
   copyOnSelect: true,
@@ -99,6 +102,7 @@ export function normalizeTerminalPrefs(raw: Partial<Record<keyof TerminalPrefs, 
       ? raw.wordSeparator
       : d.wordSeparator,
     titleSource: raw.titleSource === "host" ? "host" : d.titleSource,
+    bell: terminalBellModes.find((mode) => mode === raw.bell) ?? d.bell,
     ligatures: bool(raw.ligatures, d.ligatures),
     colorScheme: isTerminalColorScheme(raw.colorScheme) ? raw.colorScheme : d.colorScheme,
     copyOnSelect: bool(raw.copyOnSelect, d.copyOnSelect),

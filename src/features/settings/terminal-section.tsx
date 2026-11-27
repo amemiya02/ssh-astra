@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { Input } from "@/components/ui/input";
 import { useTerminalPrefs } from "@/features/terminal/terminal-prefs-context";
-import { cursorStyles, terminalNumberFields, type TerminalPrefs, type TerminalTitleSource } from "@/features/terminal/terminal-prefs";
+import { cursorStyles, terminalBellModes, terminalNumberFields, type TerminalPrefs, type TerminalTitleSource } from "@/features/terminal/terminal-prefs";
 import { TerminalSchemeSelect } from "@/features/terminal/TerminalSchemeSelect";
 import { SettingRow } from "./SettingRow";
 
@@ -101,6 +101,7 @@ export function TerminalSection() {
   const cursorLabel = t("settings.terminal.cursorStyle.label");
   const separatorLabel = t("settings.terminal.wordSeparator.label");
   const titleLabel = t("settings.terminal.titleSource.label");
+  const bellLabel = t("settings.terminal.bell.label");
 
   return (
     <>
@@ -155,6 +156,14 @@ export function TerminalSection() {
             { value: "host", label: t("settings.terminal.titleSource.options.host") },
           ]}
           onChange={(titleSource) => updatePrefs({ titleSource })}
+        />
+      </SettingRow>
+      <SettingRow label={bellLabel} description={t("settings.terminal.bell.description")}>
+        <SegmentedControl
+          label={bellLabel}
+          value={prefs.bell}
+          options={terminalBellModes.map((value) => ({ value, label: t(`settings.terminal.bell.options.${value}`) }))}
+          onChange={(bell) => updatePrefs({ bell })}
         />
       </SettingRow>
       {toggle("copyOnSelect")}
