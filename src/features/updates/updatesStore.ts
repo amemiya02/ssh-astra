@@ -100,9 +100,12 @@ export function createUpdatesStore(api: UpdatesApi): StoreApi<UpdatesState> {
   }));
 }
 
-/** The startup check: silent, and skipped when the user turned automatic checks off. */
-export function checkOnStartup(store: StoreApi<UpdatesState>, settings: UpdateSettings): Promise<void> {
-  return settings.checkOnStartup ? store.getState().check("automatic") : Promise.resolve();
+/** Schedules the silent startup check and returns its cancellation callback. */
+export function checkOnStartup(store: StoreApi<UpdatesState>, settings: () => UpdateSettings): () => void {
+  const timer = setTimeout(() => {
+    if (settings().checkOnStartup) void store.getState().check("automatic");
+  }, 5_000);
+  return () => clearTimeout(timer);
 }
 
 /** The app's updates store, backed by the updater plugin. */

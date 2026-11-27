@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AvailableUpdate, DownloadProgress } from "@/lib/ipc/updates";
 import { checkOnStartup, createUpdatesStore, type UpdatesApi } from "./updatesStore";
 
@@ -133,14 +133,51 @@ describe("updates store", () => {
     store.getState().dismiss();
     expect(store.getState().status).toEqual({ type: "idle" });
   });
+});
 
-  it("checks on startup only when automatic checks are on", async () => {
-    const on = setup(() => Promise.resolve(update("0.2.0")));
-    await checkOnStartup(on.store, { checkOnStartup: true });
-    expect(on.store.getState().status).toEqual({ type: "available", version: "0.2.0" });
+describe("startup updates", () => {
+  afterEach(() => vi.useRealTimers());
 
-    const off = setup(() => Promise.resolve(update("0.2.0")));
-    await checkOnStartup(off.store, { checkOnStartup: false });
-    expect(off.api.checkForUpdate).not.toHaveBeenCalled();
+  it("waits five seconds before checking for updates", async () => {
+    vi.useFakeTimers();
+    const { api, store } = setup(() => Promise.resolve(update()));
+    checkOnStartup(store, () => ({ checkOnStartup: true }));
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(api.checkForUpdate).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(api.checkForUpdate).toHaveBeenCalledTimes(1);
+    expect(store.getState().status).toEqual({ type: "available", version: "0.2.0" });
+  });
+
+  it("honors the automatic check setting when the delay elapses", async () => {
+    vi.useFakeTimers();
+    const { api, store } = setup(() => Promise.resolve(null));
+    const settings = { checkOnStartup: true };
+    checkOnStartup(store, () => settings);
+    settings.checkOnStartup = false;
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(api.checkForUpdate).not.toHaveBeenCalled();
+  });
+
+  it("checks manually while the startup delay is pending", async () => {
+    vi.useFakeTimers();
+    const { api, store } = setup(() => Promise.resolve(null));
+    checkOnStartup(store, () => ({ checkOnStartup: true }));
+
+    await store.getState().check("manual");
+    expect(api.checkForUpdate).toHaveBeenCalledTimes(1);
+    expect(store.getState().status).toEqual({ type: "upToDate" });
+  });
+
+  it("cancels a scheduled check when the window unmounts", async () => {
+    vi.useFakeTimers();
+    const { api, store } = setup(() => Promise.resolve(null));
+    const cancel = checkOnStartup(store, () => ({ checkOnStartup: true }));
+    cancel();
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(api.checkForUpdate).not.toHaveBeenCalled();
   });
 });
