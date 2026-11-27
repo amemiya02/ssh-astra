@@ -12,8 +12,10 @@ use std::time::Duration;
 
 use sshastra_core::files::{
     ConflictAnswer, FileEntry, FileKind, FileReader, FileStat, FileWriter, FsError, FsResult,
-    LocalFs, OpenRemote, RemoteFs, Transfer, TransferDirection, TransferQueue, TransferState,
+    LocalFs, OpenRemote, RemoteFs, RemoteTransfer, Transfer, TransferDirection, TransferHost,
+    TransferQueue, TransferState,
 };
+use sshastra_core::hosts::HostId;
 use sshastra_core::ssh::BoxFuture;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::{futures::OwnedNotified, Notify, Semaphore};
@@ -628,6 +630,125 @@ impl Harness {
 // ---------------------------------------------------------------------------
 // Tests.
 
+fn remote_endpoint(fs: &Arc<MemoryFs>, id: &str, name: &str) -> RemoteTransfer {
+    let fs = fs.clone();
+    RemoteTransfer {
+        host: TransferHost {
+            id: HostId::from(id.to_owned()),
+            name: name.to_owned(),
+            temporary: false,
+        },
+        open: Arc::new(move || {
+            let fs: Arc<dyn RemoteFs> = fs.clone();
+            Box::pin(async move { Ok(fs) })
+        }),
+    }
+}
+
+#[tokio::test]
+async fn copying_between_hosts_preserves_the_nested_tree_and_identifies_both_hosts() {
+    let h = Harness::new();
+    let source = MemoryFs::new();
+    source.dir("/site");
+    source.file("/site/index.html", "<h1>");
+    source.dir("/site/assets");
+    source.dir("/site/assets/empty");
+    source.file("/site/assets/app.js", "js");
+    h.remote.dir("/incoming");
+
+    let id = h.queue.copy_remote(
+        remote_endpoint(&source, "source", "Web"),
+        "/site".into(),
+        remote_endpoint(&h.remote, "target", "Backup"),
+        "/incoming".into(),
+    );
+    h.until_state(id, TransferState::Done).await;
+
+    assert_eq!(h.remote.tree("/incoming/site"), source.tree("/site"));
+    assert_eq!(h.local.written_bytes.load(Ordering::SeqCst), 0);
+    let transfer = h.transfer(id);
+    assert_eq!(transfer.direction, TransferDirection::Copy);
+    assert_eq!(transfer.source, "/site");
+    assert_eq!(transfer.target, "/incoming/site");
+    assert_eq!(transfer.source_host.unwrap().name, "Web");
+    assert_eq!(
+        transfer.target_host.unwrap().id,
+        HostId::from("target".to_owned())
+    );
+    assert_eq!((transfer.files_done, transfer.files_total), (2, 2));
+    assert_eq!((transfer.bytes_done, transfer.bytes_total), (6, 6));
+}
+
+#[tokio::test]
+async fn cancelling_a_host_copy_preserves_the_conflicting_destination_and_releases_its_slot() {
+    let h = Harness::new();
+    let source = MemoryFs::new();
+    source.file("/shared", vec![7; 10_000]);
+    source.break_reads("/shared", Break::Stall);
+    source.file("/next", "next");
+    h.remote.dir("/backup");
+    h.remote.file("/backup/shared", "original");
+    h.queue.set_concurrency(1);
+    let copy = |path: &str| {
+        h.queue.copy_remote(
+            remote_endpoint(&source, "source", "Web"),
+            path.into(),
+            remote_endpoint(&h.remote, "target", "Backup"),
+            "/backup".into(),
+        )
+    };
+
+    let first = copy("/shared");
+    let next = copy("/next");
+    assert_eq!(next_conflict(&h, first).await, "/backup/shared");
+    assert_eq!(h.transfer(next).state, TransferState::Queued);
+    h.queue.answer(first, ConflictAnswer::Overwrite);
+    h.until("copy to make progress", |all| all[0].bytes_done > 0)
+        .await;
+
+    h.queue.cancel(first);
+    h.until_state(first, TransferState::Cancelled).await;
+    h.until_state(next, TransferState::Done).await;
+    assert_eq!(
+        h.remote.tree("/backup"),
+        [
+            ("next".into(), Node::File(b"next".to_vec(), 0o644)),
+            ("shared".into(), Node::File(b"original".to_vec(), 0o644)),
+        ]
+    );
+    assert_eq!(source.read("/shared"), Some(vec![7; 10_000]));
+}
+
+#[tokio::test]
+async fn one_host_copy_does_not_block_the_same_path_on_another_destination() {
+    let h = Harness::new();
+    let source = MemoryFs::new();
+    let other_target = MemoryFs::new();
+    source.file("/shared", vec![7; 10_000]);
+    source.break_reads("/shared", Break::Stall);
+    h.queue.set_concurrency(2);
+
+    let copy = |target, id| {
+        h.queue.copy_remote(
+            remote_endpoint(&source, "source", "Web"),
+            "/shared".into(),
+            remote_endpoint(target, id, id),
+            "/".into(),
+        )
+    };
+    let first = copy(&h.remote, "first-backup");
+    h.until("first copy to make progress", |all| all[0].bytes_done > 0)
+        .await;
+
+    source.break_reads.lock().unwrap().remove("/shared");
+    let second = copy(&other_target, "second-backup");
+    h.until_state(second, TransferState::Done).await;
+    assert_eq!(other_target.read("/shared"), Some(vec![7; 10_000]));
+    assert_eq!(h.transfer(first).state, TransferState::Running);
+    h.queue.cancel(first);
+    h.until_state(first, TransferState::Cancelled).await;
+}
+
 #[tokio::test]
 async fn uploading_a_file_copies_it_into_the_remote_directory() {
     let h = Harness::new();
@@ -1136,12 +1257,18 @@ async fn an_interrupted_overwrite_keeps_the_original_in_both_directions() {
 }
 
 #[tokio::test]
-async fn an_interrupted_upload_and_download_resume_from_their_staged_bytes() {
-    for direction in [TransferDirection::Upload, TransferDirection::Download] {
+async fn interrupted_transfers_resume_from_their_staged_bytes() {
+    for direction in [
+        TransferDirection::Upload,
+        TransferDirection::Download,
+        TransferDirection::Copy,
+    ] {
         let h = Harness::new();
+        let other_remote = MemoryFs::new();
         let (source, target) = match direction {
             TransferDirection::Upload => (&h.local, &h.remote),
             TransferDirection::Download => (&h.remote, &h.local),
+            TransferDirection::Copy => (&other_remote, &h.remote),
         };
         let bytes: Vec<_> = (0..400_000).map(|i| (i % 251) as u8).collect();
         source.file("/big", bytes.clone());
@@ -1150,6 +1277,12 @@ async fn an_interrupted_upload_and_download_resume_from_their_staged_bytes() {
         let id = match direction {
             TransferDirection::Upload => h.upload("/big", "/to"),
             TransferDirection::Download => h.download("/big", "/to"),
+            TransferDirection::Copy => h.queue.copy_remote(
+                remote_endpoint(source, "source", "Web"),
+                "/big".into(),
+                remote_endpoint(target, "target", "Backup"),
+                "/to".into(),
+            ),
         };
         h.until_settled().await;
         assert!(matches!(h.transfer(id).state, TransferState::Failed { .. }));

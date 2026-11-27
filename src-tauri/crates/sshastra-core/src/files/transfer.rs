@@ -1,5 +1,5 @@
-//! The TransferQueue: uploads and downloads of files and (recursively)
-//! folders between the local disk ([`LocalFs`]) and a Host ([`RemoteFs`]).
+//! The TransferQueue: copies of files and (recursively) folders between
+//! the local disk ([`LocalFs`]) and a Host ([`RemoteFs`]), or between two Hosts.
 //!
 //! Each [`Transfer`] is one item the user dropped or picked. At most
 //! [`TransferQueue::set_concurrency`] transfers run at once (the rest wait,
@@ -19,7 +19,7 @@ use tokio::sync::{oneshot, watch};
 
 use super::staged_write::{OpenedWrite, Partial, Side, StageLease, StageSlots, StagedWrite};
 use super::{join, FileKind, FileStat, FsError, FsResult, LocalFs, RemoteFs};
-use crate::ssh::BoxFuture;
+use crate::{hosts::HostId, ssh::BoxFuture};
 
 /// The most often a running transfer reports its byte progress.
 pub const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
@@ -65,6 +65,7 @@ pub struct TransferId(u64);
 pub enum TransferDirection {
     Upload,
     Download,
+    Copy,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -91,6 +92,22 @@ impl TransferState {
     }
 }
 
+/// A Host's identity and display label at the time of a transfer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TransferHost {
+    pub id: HostId,
+    pub name: String,
+    #[serde(default)]
+    pub temporary: bool,
+}
+
+/// The live filesystem opener for a Host-to-Host transfer endpoint.
+#[derive(Clone)]
+pub struct RemoteTransfer {
+    pub host: TransferHost,
+    pub open: OpenRemote,
+}
+
 /// One transfer as the transfer panel shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -102,6 +119,10 @@ pub struct Transfer {
     /// Where it comes from and goes to (the copy's own path, not its parent).
     pub source: String,
     pub target: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_host: Option<TransferHost>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_host: Option<TransferHost>,
     pub state: TransferState,
     /// At least one existing file in this transfer was written in place.
     pub unprotected: bool,
@@ -125,9 +146,10 @@ pub enum ConflictAnswer {
 
 type Listener = dyn Fn(&Transfer) + Send + Sync;
 
-/// Runs transfers; see the module docs. [`upload`](Self::upload) and
-/// [`download`](Self::download) must be called on a Tokio runtime, which
-/// every transfer then runs on; the other methods may be called anywhere.
+/// Runs transfers; see the module docs. [`upload`](Self::upload),
+/// [`download`](Self::download), and [`copy_remote`](Self::copy_remote) must
+/// be called on a Tokio runtime, which runs every transfer. Other methods
+/// may be called anywhere.
 pub struct TransferQueue {
     inner: Arc<Inner>,
 }
@@ -139,7 +161,7 @@ struct Inner {
     /// Held while a conflict question is open, so the user gets one at a time.
     asking: tokio::sync::Mutex<()>,
     stages: StageSlots,
-    /// The runtime of the latest upload/download call.
+    /// The runtime of the latest enqueue call.
     runtime: Mutex<Option<tokio::runtime::Handle>>,
 }
 
@@ -169,11 +191,56 @@ struct Entry {
 struct Job {
     direction: TransferDirection,
     name: String,
-    open: OpenRemote,
-    /// The local copy's path (upload source / download target).
-    local: PathBuf,
-    /// The remote copy's path (upload target / download source).
-    remote: String,
+    source: Location,
+    target: Location,
+}
+
+#[derive(Clone)]
+enum Location {
+    Local(PathBuf),
+    Remote {
+        path: String,
+        open: OpenRemote,
+        host: Option<TransferHost>,
+    },
+}
+
+impl Location {
+    fn display(&self) -> String {
+        match self {
+            Self::Local(path) => path.display().to_string(),
+            Self::Remote { path, .. } => path.clone(),
+        }
+    }
+
+    fn host(&self) -> Option<&TransferHost> {
+        match self {
+            Self::Local(_) => None,
+            Self::Remote { host, .. } => host.as_ref(),
+        }
+    }
+
+    fn opener(&self) -> Option<&OpenRemote> {
+        match self {
+            Self::Local(_) => None,
+            Self::Remote { open, .. } => Some(open),
+        }
+    }
+
+    fn is_absolute_remote_path(&self) -> bool {
+        matches!(self, Self::Remote { path, .. } if path.starts_with('/') && !path.contains('\0'))
+    }
+
+    async fn open(&self, local: &Arc<dyn LocalFs>) -> FsResult<Side> {
+        match self {
+            Self::Local(path) => Ok(Side::Local(local.clone(), path.clone())),
+            Self::Remote { path, open, host } => Ok(Side::Remote(
+                open().await?,
+                path.clone(),
+                host.as_ref().map(|host| host.id.clone()),
+            )),
+        }
+    }
 }
 
 impl TransferQueue {
@@ -216,31 +283,64 @@ impl TransferQueue {
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| local.display().to_string());
-        let remote = join(&remote_dir, &name);
+        let path = join(&remote_dir, &name);
         self.enqueue(Job {
             direction: TransferDirection::Upload,
             name,
-            open,
-            local,
-            remote,
+            source: Location::Local(local),
+            target: Location::Remote {
+                path,
+                open,
+                host: None,
+            },
         })
     }
 
     /// Queues copying the remote file or folder `remote` into the local
     /// directory `local_dir`.
     pub fn download(&self, open: OpenRemote, remote: String, local_dir: PathBuf) -> TransferId {
-        let name = remote
-            .rsplit('/')
-            .find(|s| !s.is_empty())
-            .unwrap_or(&remote)
-            .to_owned();
+        let name = remote_name(&remote).to_owned();
         let local = local_dir.join(&name);
         self.enqueue(Job {
             direction: TransferDirection::Download,
             name,
-            open,
-            local,
-            remote,
+            source: Location::Remote {
+                path: remote,
+                open,
+                host: None,
+            },
+            target: Location::Local(local),
+        })
+    }
+
+    /// Queues copying an absolute path into a directory on another Host.
+    /// Bytes stream through this process using the two live Connections.
+    pub fn copy_remote(
+        &self,
+        source: RemoteTransfer,
+        source_path: String,
+        target: RemoteTransfer,
+        target_dir: String,
+    ) -> TransferId {
+        let name = remote_name(&source_path).to_owned();
+        let path = if target_dir.is_empty() {
+            name.clone()
+        } else {
+            join(&target_dir, &name)
+        };
+        self.enqueue(Job {
+            direction: TransferDirection::Copy,
+            name,
+            source: Location::Remote {
+                path: source_path,
+                open: source.open,
+                host: Some(source.host),
+            },
+            target: Location::Remote {
+                path,
+                open: target.open,
+                host: Some(target.host),
+            },
         })
     }
 
@@ -349,10 +449,6 @@ impl TransferQueue {
     fn enqueue(&self, job: Job) -> TransferId {
         *self.inner.runtime.lock().unwrap_or_else(|p| p.into_inner()) =
             Some(tokio::runtime::Handle::current());
-        let (source, target) = match job.direction {
-            TransferDirection::Upload => (job.local.display().to_string(), job.remote.clone()),
-            TransferDirection::Download => (job.remote.clone(), job.local.display().to_string()),
-        };
         let mut st = self.inner.lock();
         st.next_id += 1;
         let id = TransferId(st.next_id);
@@ -360,8 +456,10 @@ impl TransferQueue {
             id,
             direction: job.direction,
             name: job.name.clone(),
-            source,
-            target,
+            source: job.source.display(),
+            target: job.target.display(),
+            source_host: job.source.host().cloned(),
+            target_host: job.target.host().cloned(),
             state: TransferState::Queued,
             unprotected: false,
             bytes_done: 0,
@@ -465,17 +563,35 @@ impl Inner {
         job: &Job,
         mut cancelled: watch::Receiver<bool>,
     ) {
-        let remote = cancellable(&mut cancelled, async {
-            if job.direction == TransferDirection::Download {
-                check_download_name(&job.name)?;
+        let sides = cancellable(&mut cancelled, async {
+            match job.direction {
+                TransferDirection::Download => check_download_name(&job.name)?,
+                TransferDirection::Copy => {
+                    check_remote_name(&job.name)?;
+                    if job.source.host().map(|host| &host.id)
+                        == job.target.host().map(|host| &host.id)
+                        || !job.source.is_absolute_remote_path()
+                        || !job.target.is_absolute_remote_path()
+                    {
+                        return Err(FsError::Io(
+                            "copy requires absolute paths on two different Hosts".into(),
+                        ));
+                    }
+                }
+                TransferDirection::Upload => {}
             }
-            (job.open)().await
+            Ok::<_, FsError>((
+                job.source.open(&self.local).await?,
+                job.target.open(&self.local).await?,
+            ))
         })
         .await;
-        let (remote, mut result) = match remote {
-            Ok(remote) => {
-                let result = self.attempt(id, job, remote.clone(), &mut cancelled).await;
-                (Some(remote), result)
+        let (target, mut result) = match sides {
+            Ok((source, target)) => {
+                let result = self
+                    .attempt(id, job, &source, &target, &mut cancelled)
+                    .await;
+                (Some(target), result)
             }
             Err(e) => (None, Err(e)),
         };
@@ -491,7 +607,11 @@ impl Inner {
                     .expect("a running transfer is listed");
                 std::mem::take(&mut entry.partials)
             };
-            self.cleanup(partials, remote.as_deref()).await;
+            let live_target = match &target {
+                Some(Side::Remote(fs, ..)) => Some(fs.as_ref()),
+                _ => None,
+            };
+            self.cleanup(partials, live_target).await;
         }
         self.finish(id, result);
     }
@@ -574,17 +694,11 @@ impl Inner {
         &self,
         id: TransferId,
         job: &Job,
-        remote: Arc<dyn RemoteFs>,
+        source: &Side,
+        target: &Side,
         cancelled: &mut watch::Receiver<bool>,
     ) -> Result<(), Stop> {
-        let downloading = job.direction == TransferDirection::Download;
-        let remote = Side::Remote(remote, job.remote.clone());
-        let local = Side::Local(Arc::clone(&self.local), job.local.clone());
-        let (source, target) = match job.direction {
-            TransferDirection::Upload => (local, remote),
-            TransferDirection::Download => (remote, local),
-        };
-        let items = cancellable(cancelled, walk(&source, downloading)).await?;
+        let items = cancellable(cancelled, walk(source, job.direction)).await?;
 
         self.update(id, |entry| {
             let files = items
@@ -662,9 +776,12 @@ impl Inner {
                     if !*cancelled.borrow() {
                         stage.park().await;
                     }
-                    if let Some(retained) =
-                        stage.partial(&source, source_stat, &job.open, partial.as_deref())
-                    {
+                    if let Some(retained) = stage.partial(
+                        &source,
+                        source_stat,
+                        job.target.opener(),
+                        partial.as_deref(),
+                    ) {
                         let retained = Arc::new(retained);
                         *partial = Some(retained.clone());
                         let mut st = self.lock();
@@ -875,6 +992,19 @@ struct Item {
 }
 
 /// Accepts only a single filename representable on the receiving filesystem.
+fn remote_name(path: &str) -> &str {
+    path.rsplit('/')
+        .find(|part| !part.is_empty())
+        .unwrap_or(path)
+}
+
+fn check_remote_name(name: &str) -> FsResult<()> {
+    if matches!(name, "" | "." | "..") || name.contains(['/', '\0']) {
+        return Err(FsError::Io(format!("invalid remote filename: {name:?}")));
+    }
+    Ok(())
+}
+
 fn check_download_name(name: &str) -> FsResult<()> {
     let invalid = matches!(name, "" | "." | "..") || name.contains(['/', '\0']);
     #[cfg(windows)]
@@ -909,7 +1039,7 @@ fn check_download_name(name: &str) -> FsResult<()> {
 /// The source's folders (each before its contents) and files. Symlinks to
 /// files are copied as files; symlinks to folders are not followed (they
 /// could loop), nor are sockets, devices and FIFOs.
-async fn walk(source: &Side, downloading: bool) -> FsResult<Vec<Item>> {
+async fn walk(source: &Side, direction: TransferDirection) -> FsResult<Vec<Item>> {
     let root = source.stat().await?;
     match root.kind {
         FileKind::File => {
@@ -936,8 +1066,10 @@ async fn walk(source: &Side, downloading: bool) -> FsResult<Vec<Item>> {
             stat: None,
         });
         for entry in entries {
-            if downloading {
-                check_download_name(&entry.name)?;
+            match direction {
+                TransferDirection::Download => check_download_name(&entry.name)?,
+                TransferDirection::Copy => check_remote_name(&entry.name)?,
+                TransferDirection::Upload => {}
             }
             let rel = if dir.is_empty() {
                 entry.name.clone()

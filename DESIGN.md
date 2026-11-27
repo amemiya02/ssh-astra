@@ -440,6 +440,7 @@ Settings lists every theme as a card (10px radius, 6px padding, auto-fill at min
 - F2 and the row menu’s Rename action edit the name within the row. Enter saves, and Escape cancels. Show validation and rename errors below the list and keep the name editable.
 - In the remote row menu, Compress takes the selection and opens a name dialog for a new .tar.gz in the current folder. Extract appears for a single supported archive and confirms the new sibling folder. Keep conflicts, missing tools and other operation errors in the dialog.
 - The footer shows item and selected counts after filtering. When selected entries are hidden, show their count alongside the visible selection.
+- **Show another Host's File panel** opens a second File panel for a connected Host with an open Terminal. The panels stack in the right dock and sit side by side in the bottom dock. Drop selected entries into the other panel or onto a folder row there. Copy and Paste also work when switching Terminal tabs. Transfers shows both Host names, with both full paths in the row tooltip.
 
 ### Menus, tooltips, dialogs
 - **Menus:** `raised` fill, 1px border, 8px radius, 4px padding, `shadow-overlay`; items 6px radius, `accent` on focus, destructive items red.

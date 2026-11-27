@@ -3,7 +3,7 @@ import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import type { HostId } from "@/lib/ipc/hosts";
 import * as ipc from "@/lib/ipc/transfers";
-import type { ConflictAnswer, Transfer, TransferId } from "@/lib/ipc/transfers";
+import type { ConflictAnswer, Transfer, TransferHost, TransferId } from "@/lib/ipc/transfers";
 
 /** The TransferQueue commands the store uses (`@/lib/ipc/transfers`); a fake in tests. */
 export type TransfersApi = Pick<
@@ -11,6 +11,7 @@ export type TransfersApi = Pick<
   | "watchTransfers"
   | "uploadFiles"
   | "downloadFiles"
+  | "copyRemoteFiles"
   | "cancelTransfer"
   | "retryTransfer"
   | "answerConflict"
@@ -26,6 +27,7 @@ export interface TransfersState {
   watch(): Promise<void>;
   upload(hostId: HostId, paths: string[], remoteDir: string): Promise<void>;
   download(hostId: HostId, paths: string[], localDir: string): Promise<void>;
+  copyRemote(source: TransferHost, paths: string[], target: TransferHost, remoteDir: string): Promise<void>;
   cancel(id: TransferId): Promise<void>;
   retry(id: TransferId): Promise<void>;
   answer(id: TransferId, answer: ConflictAnswer): Promise<void>;
@@ -95,6 +97,10 @@ export function createTransfersStore(
 
       async download(hostId, paths, localDir) {
         await api.downloadFiles(hostId, paths, localDir);
+      },
+
+      async copyRemote(source, paths, target, remoteDir) {
+        await api.copyRemoteFiles(source, paths, target, remoteDir);
       },
 
       cancel: (id) => api.cancelTransfer(id),

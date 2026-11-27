@@ -34,6 +34,7 @@ function setup(initial: Transfer[] = []) {
       return Promise.resolve(initial);
     }),
     uploadFiles: vi.fn(() => Promise.resolve([1])),
+    copyRemoteFiles: vi.fn(async () => []),
     downloadFiles: vi.fn(() => Promise.resolve([1])),
     cancelTransfer: vi.fn(() => Promise.resolve()),
     retryTransfer: vi.fn(() => Promise.resolve()),

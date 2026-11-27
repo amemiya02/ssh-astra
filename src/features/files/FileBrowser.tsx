@@ -47,7 +47,7 @@ import {
   ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { currentPlatform, matchFileHistoryShortcut, matchFileMoveShortcut, shortcutLabel } from "@/features/workspace/shortcuts";
+import { currentPlatform, matchFileHistoryShortcut, matchFileClipboardShortcut, shortcutLabel } from "@/features/workspace/shortcuts";
 import type { CommandError } from "@/lib/ipc/connect";
 import type { FileEntry } from "@/lib/ipc/files";
 import { writeClipboardText } from "@/lib/ipc/system";
@@ -97,6 +97,19 @@ export interface FileExchange {
   copy?(paths: string[]): void;
 }
 
+interface RemoteClipboard {
+  paneId: string;
+  copy(paths: string[]): void;
+  paste?: () => void;
+  onCut(): void;
+}
+
+export interface FilePanelDropTarget {
+  paneId?: string;
+  directory?: string;
+  folder?: string;
+}
+
 /**
  * The path bar and the file table of one File panel. `onDownload` downloads the named
  * entries of the current folder (the row's context menu offers it for the selection).
@@ -107,12 +120,14 @@ export function FileBrowser({
   onDownload,
   exchange,
   enableMove = false,
+  remoteClipboard,
 }: {
   store: FileBrowserStore;
   hostName: string;
   onDownload?(names: string[]): void;
   exchange?: FileExchange;
   enableMove?: boolean;
+  remoteClipboard?: RemoteClipboard;
 }) {
   const { t } = useTranslation();
   const path = useStore(store, (s) => s.path);
@@ -129,12 +144,14 @@ export function FileBrowser({
     if (searchOpen) focusPanel();
     setSearchOpen(!searchOpen);
   };
-  const paste = enableMove && canPaste ? () => void store.getState().pasteCutEntries() : undefined;
+  const paste = remoteClipboard?.paste ?? (
+    enableMove && canPaste ? () => void store.getState().pasteCutEntries() : undefined
+  );
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const target = event.target;
     if (event.defaultPrevented || event.nativeEvent.isComposing || !(target instanceof Element) ||
       !event.currentTarget.contains(target) || target.closest("input, textarea, select, [contenteditable]")) return;
-    if (paste && matchFileMoveShortcut(event, currentPlatform()) === "filePaste") {
+    if (paste && matchFileClipboardShortcut(event, currentPlatform()) === "filePaste") {
       event.preventDefault();
       if (!event.repeat) paste();
       return;
@@ -169,7 +186,7 @@ export function FileBrowser({
       ) : (
         <FileTable key={`table:${path}`} store={store} path={path}
           onOperation={setOperation} onDownload={onDownload} exchange={exchange}
-          enableMove={enableMove} onPaste={paste} />
+          enableMove={enableMove} onPaste={paste} remoteClipboard={remoteClipboard} />
       ))}
       {operation && (
         <FileOperationDialog
@@ -184,7 +201,7 @@ export function FileBrowser({
       )}
     </div>
   );
-  if (!enableMove) return browser;
+  if (!enableMove || remoteClipboard) return browser;
   return (
     <DndContext sensors={sensors} collisionDetection={pointerWithin}
       onDragStart={({ active }) => {
@@ -383,6 +400,7 @@ function FileTable({
   exchange,
   enableMove,
   onPaste,
+  remoteClipboard,
 }: {
   store: FileBrowserStore;
   path: string;
@@ -391,6 +409,7 @@ function FileTable({
   exchange?: FileExchange;
   enableMove: boolean;
   onPaste?: () => void;
+  remoteClipboard?: RemoteClipboard;
 }) {
   const { t, i18n } = useTranslation();
   const entries = useStore(store, (s) => s.entries);
@@ -534,12 +553,29 @@ function FileTable({
     if (names.length > 0) onOperation({ kind: "delete", names });
   };
 
+  const cutEntries = (names: string[]) => {
+    remoteClipboard?.onCut();
+    store.getState().cutEntries(names);
+  };
+  const copyEntries = remoteClipboard && ((names: string[]) => {
+    store.getState().clearCut();
+    remoteClipboard.copy(names.map((name) => childPath(path, name)));
+  });
+
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.target !== event.currentTarget || event.nativeEvent.isComposing) return;
-    if (canStartMove && selected.length > 0 && matchFileMoveShortcut(event, currentPlatform()) === "fileCut") {
-      event.preventDefault();
-      store.getState().cutEntries(selected);
-      return;
+    const shortcut = matchFileClipboardShortcut(event, currentPlatform());
+    if (selected.length > 0) {
+      if (canStartMove && shortcut === "fileCut") {
+        event.preventDefault();
+        cutEntries(selected);
+        return;
+      }
+      if (copyEntries && shortcut === "fileCopy") {
+        event.preventDefault();
+        if (!event.repeat) copyEntries(selected);
+        return;
+      }
     }
     const move = (to: number) => {
       const index = Math.max(0, Math.min(rows.length - 1, to));
@@ -651,9 +687,11 @@ function FileTable({
                             path={path}
                             exchange={exchange}
                             dragPaths={paths}
+                            paneId={remoteClipboard?.paneId}
                             move={canStartMove ? { directory: path, names } : undefined}
                             cut={cutNames.has(entry.name)}
-                            onCut={canStartMove ? () => store.getState().cutEntries(names) : undefined}
+                            onCut={canStartMove ? () => cutEntries(names) : undefined}
+                            onClipboardCopy={copyEntries && (() => copyEntries(names))}
                             onPaste={onPaste}
                             onCopy={paths && (() => exchange?.copy?.(paths))}
                             selected={selection.has(entry.name)}
@@ -794,8 +832,10 @@ function FileRow({
   exchange,
   dragPaths,
   onCopy,
+  paneId,
   move,
   cut,
+  onClipboardCopy,
   onCut,
   onPaste,
   folderSize,
@@ -818,8 +858,10 @@ function FileRow({
   exchange?: FileExchange;
   dragPaths?: string[];
   onCopy?: () => void;
+  paneId?: string;
   move?: FileMove;
   cut: boolean;
+  onClipboardCopy?: () => void;
   onCut?: () => void;
   onPaste?: () => void;
   folderSize?: { current?: FolderSize; calculate(): void; cancel(): void };
@@ -828,10 +870,10 @@ function FileRow({
   const renameOnMenuClose = useRef(false);
   const dir = isDirLike(entry);
   const { setNodeRef: setDragRef, listeners, isDragging } = useDraggable({
-    id, disabled: (!dragPaths && !move) || !!nameEditor, data: { side: exchange?.side, paths: dragPaths, move },
+    id, disabled: (!dragPaths && !move) || !!nameEditor, data: { side: exchange?.side, paths: dragPaths, move, paneId },
   });
   const { setNodeRef: setDropRef, isOver } = useDroppable({
-    id, disabled: !move || !dir || !!nameEditor, data: { folder: entry.name },
+    id, disabled: !move || !dir || !!nameEditor, data: { folder: entry.name, directory: path, paneId } satisfies FilePanelDropTarget,
   });
   const setNodeRef = useCallback((node: HTMLElement | null) => {
     setDragRef(node);
@@ -950,6 +992,13 @@ function FileRow({
           <Copy />
           {t("files.copyPath")}
         </ContextMenuItem>
+        {onClipboardCopy && (
+          <ContextMenuItem onSelect={onClipboardCopy}>
+            <Copy />
+            {t("files.copy")}
+            <ContextMenuShortcut>{shortcutLabel("fileCopy", currentPlatform())}</ContextMenuShortcut>
+          </ContextMenuItem>
+        )}
         {onCut && (
           <ContextMenuItem onSelect={onCut}>
             <Scissors />

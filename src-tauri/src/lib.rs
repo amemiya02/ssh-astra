@@ -195,6 +195,7 @@ pub fn run() {
             commands::transfers::transfers_watch,
             commands::transfers::transfers_upload,
             commands::transfers::transfers_download,
+            commands::transfers::transfers_copy_remote,
             commands::transfers::transfer_cancel,
             commands::transfers::transfer_retry,
             commands::transfers::transfer_answer,

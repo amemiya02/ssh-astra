@@ -99,7 +99,7 @@ export function SftpWorkspace({ id, host, active, showPrompts = active, onStatus
       void remote.getState().connect();
     });
     const stopLocal = followUploads(local, transfersStore, "download", windows);
-    const stopRemote = followUploads(remote, transfersStore);
+    const stopRemote = followUploads(remote, transfersStore, "upload", false, host.id);
     return () => {
       cancelled = true;
       stopPrompts();
@@ -108,7 +108,7 @@ export function SftpWorkspace({ id, host, active, showPrompts = active, onStatus
       local.getState().dispose();
       remote.getState().dispose();
     };
-  }, [listenForPrompts, local, remote]);
+  }, [host.id, listenForPrompts, local, remote]);
 
   const remotePhase = useStore(remote, (s) => s.phase);
   const remotePath = useStore(remote, (s) => s.path);

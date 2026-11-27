@@ -13,6 +13,8 @@ use tokio::io::AsyncReadExt;
 use tokio::sync::Mutex as AsyncMutex;
 use uuid::Uuid;
 
+use crate::hosts::HostId;
+
 use super::{
     join, FileEntry, FileKind, FileReader, FileStat, FileWriter, FsError, FsResult, LocalFs,
     OpenRemote, RemoteFs,
@@ -22,7 +24,8 @@ use super::{
 #[derive(Clone)]
 pub(super) enum Side {
     Local(Arc<dyn LocalFs>, PathBuf),
-    Remote(Arc<dyn RemoteFs>, String),
+    // The Host ID supplies an identity when the filesystem has no namespace.
+    Remote(Arc<dyn RemoteFs>, String, Option<HostId>),
 }
 
 impl Side {
@@ -37,56 +40,60 @@ impl Side {
                     .fold(root.clone(), |path, part| path.join(part));
                 Self::Local(fs.clone(), path)
             }
-            Self::Remote(fs, root) => Self::Remote(fs.clone(), join(root, rel)),
+            Self::Remote(fs, root, host) => Self::Remote(fs.clone(), join(root, rel), host.clone()),
         }
     }
 
     pub(super) fn display(&self) -> String {
         match self {
             Self::Local(_, path) => path.display().to_string(),
-            Self::Remote(_, path) => path.clone(),
+            Self::Remote(_, path, ..) => path.clone(),
         }
     }
 
     pub(super) async fn stat(&self) -> FsResult<FileStat> {
         match self {
             Self::Local(fs, path) => fs.stat(path).await,
-            Self::Remote(fs, path) => fs.stat(path).await,
+            Self::Remote(fs, path, ..) => fs.stat(path).await,
         }
     }
 
     pub(super) async fn list_dir(&self) -> FsResult<Vec<FileEntry>> {
         match self {
             Self::Local(fs, path) => fs.list_dir(path).await,
-            Self::Remote(fs, path) => fs.list_dir(path).await,
+            Self::Remote(fs, path, ..) => fs.list_dir(path).await,
         }
     }
 
     async fn open_read_at(&self, offset: u64) -> FsResult<FileReader> {
         match self {
             Self::Local(fs, path) => fs.open_read_at(path, offset).await,
-            Self::Remote(fs, path) => fs.open_read_at(path, offset).await,
+            Self::Remote(fs, path, ..) => fs.open_read_at(path, offset).await,
         }
     }
 
     async fn open_write_at(&self, offset: u64) -> FsResult<FileWriter> {
         match self {
             Self::Local(fs, path) => fs.open_write_at(path, offset).await,
-            Self::Remote(fs, path) => fs.open_write_at(path, offset).await,
+            Self::Remote(fs, path, ..) => fs.open_write_at(path, offset).await,
         }
     }
 
     async fn lstat(&self) -> FsResult<FileStat> {
         match self {
             Self::Local(fs, path) => fs.lstat(path).await,
-            Self::Remote(fs, path) => fs.lstat(path).await,
+            Self::Remote(fs, path, ..) => fs.lstat(path).await,
         }
     }
 
     pub(super) async fn canonicalize(&self) -> FsResult<Self> {
         match self {
             Self::Local(fs, path) => Ok(Self::Local(fs.clone(), fs.canonicalize(path).await?)),
-            Self::Remote(fs, path) => Ok(Self::Remote(fs.clone(), fs.canonicalize(path).await?)),
+            Self::Remote(fs, path, host) => Ok(Self::Remote(
+                fs.clone(),
+                fs.canonicalize(path).await?,
+                host.clone(),
+            )),
         }
     }
 
@@ -103,12 +110,13 @@ impl Side {
                     fs.canonicalize(parent).await?.join(name),
                 ))
             }
-            Self::Remote(fs, path) => {
+            Self::Remote(fs, path, host) => {
                 let (parent, name) = path.rsplit_once('/').unwrap_or((".", path));
                 let parent = if parent.is_empty() { "/" } else { parent };
                 Ok(Self::Remote(
                     fs.clone(),
                     join(&fs.canonicalize(parent).await?, name),
+                    host.clone(),
                 ))
             }
         }
@@ -117,8 +125,12 @@ impl Side {
     fn key(&self) -> StageKey {
         match self {
             Self::Local(_, path) => StageKey::Local(path.clone()),
-            Self::Remote(fs, path) => {
-                StageKey::Remote(fs.transfer_namespace().map(String::from), path.clone())
+            Self::Remote(fs, path, host) => {
+                let namespace = fs
+                    .transfer_namespace()
+                    .map(|name| RemoteNamespace::Filesystem(name.to_owned()))
+                    .or_else(|| host.clone().map(RemoteNamespace::Host));
+                StageKey::Remote(namespace, path.clone())
             }
         }
     }
@@ -126,7 +138,7 @@ impl Side {
     pub(super) async fn create_dir(&self) -> FsResult<()> {
         match self {
             Self::Local(fs, path) => fs.create_dir(path).await,
-            Self::Remote(fs, path) => fs.create_dir(path).await,
+            Self::Remote(fs, path, ..) => fs.create_dir(path).await,
         }
     }
 
@@ -136,7 +148,7 @@ impl Side {
                 .file_name()
                 .ok_or_else(|| invalid_name(self))?
                 .as_encoded_bytes(),
-            Self::Remote(_, path) => path.rsplit('/').next().unwrap().as_bytes(),
+            Self::Remote(_, path, ..) => path.rsplit('/').next().unwrap().as_bytes(),
         };
         Ok(self.with_name(&staging_name(basename)))
     }
@@ -144,11 +156,11 @@ impl Side {
     fn with_name(&self, name: &str) -> Self {
         match self {
             Self::Local(fs, path) => Self::Local(fs.clone(), path.with_file_name(name)),
-            Self::Remote(fs, path) => {
+            Self::Remote(fs, path, host) => {
                 let sibling = path
                     .rsplit_once('/')
                     .map_or_else(|| name.to_owned(), |(parent, _)| join(parent, name));
-                Self::Remote(fs.clone(), sibling)
+                Self::Remote(fs.clone(), sibling, host.clone())
             }
         }
     }
@@ -156,7 +168,7 @@ impl Side {
     fn active_stage(&self) -> Self {
         let name = match self {
             Self::Local(_, path) => path.file_name().and_then(|name| name.to_str()),
-            Self::Remote(_, path) => path.rsplit('/').next(),
+            Self::Remote(_, path, ..) => path.rsplit('/').next(),
         }
         .expect("a retained staging name");
         let stem = name.strip_suffix(".part").expect("a retained staging name");
@@ -166,28 +178,28 @@ impl Side {
     async fn create_new(&self, private: bool) -> FsResult<FileWriter> {
         match self {
             Self::Local(fs, path) => fs.create_new(path, private).await,
-            Self::Remote(fs, path) => fs.create_new(path, private).await,
+            Self::Remote(fs, path, ..) => fs.create_new(path, private).await,
         }
     }
 
     async fn create_write(&self) -> FsResult<FileWriter> {
         match self {
             Self::Local(fs, path) => fs.create_write(path).await,
-            Self::Remote(fs, path) => fs.create_write(path).await,
+            Self::Remote(fs, path, ..) => fs.create_write(path).await,
         }
     }
 
     async fn set_permissions(&self, mode: u32) -> FsResult<()> {
         match self {
             Self::Local(fs, path) => fs.set_permissions(path, mode).await,
-            Self::Remote(fs, path) => fs.set_permissions(path, mode).await,
+            Self::Remote(fs, path, ..) => fs.set_permissions(path, mode).await,
         }
     }
 
     async fn remove(&self) -> FsResult<()> {
         match self {
             Self::Local(fs, path) => fs.remove_file(path).await,
-            Self::Remote(fs, path) => fs.remove_file(path).await,
+            Self::Remote(fs, path, ..) => fs.remove_file(path).await,
         }
     }
 
@@ -196,7 +208,7 @@ impl Side {
             (Self::Local(fs, from), Self::Local(_, to)) => {
                 fs.publish_transfer(from, to, overwrite).await
             }
-            (Self::Remote(fs, from), Self::Remote(_, to)) => {
+            (Self::Remote(fs, from, ..), Self::Remote(_, to, ..)) => {
                 fs.publish_transfer(from, to, overwrite).await
             }
             _ => unreachable!("a staging file and its destination share a filesystem"),
@@ -221,7 +233,13 @@ fn invalid_name(side: &Side) -> FsError {
 #[derive(Clone, PartialEq, Eq, Hash)]
 enum StageKey {
     Local(PathBuf),
-    Remote(Option<String>, String),
+    Remote(Option<RemoteNamespace>, String),
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+enum RemoteNamespace {
+    Filesystem(String),
+    Host(HostId),
 }
 
 pub(super) type StageSlot = AsyncMutex<Option<Arc<Partial>>>;
@@ -265,8 +283,8 @@ impl Partial {
             (PartialLocation::Local(_, path), Side::Local(fs, _)) => {
                 Side::Local(fs.clone(), path.clone())
             }
-            (PartialLocation::Remote(_, _, path), Side::Remote(fs, _)) => {
-                Side::Remote(fs.clone(), path.clone())
+            (PartialLocation::Remote(_, _, path), Side::Remote(fs, _, host)) => {
+                Side::Remote(fs.clone(), path.clone(), host.clone())
             }
             _ => unreachable!("a partial stays on its destination filesystem"),
         }
@@ -525,7 +543,7 @@ impl<'a> StagedWrite<'a> {
         &self,
         source: &Side,
         source_stat: &FileStat,
-        open: &OpenRemote,
+        open: Option<&OpenRemote>,
         previous: Option<&Partial>,
     ) -> Option<Partial> {
         if !self.claimed {
@@ -533,8 +551,8 @@ impl<'a> StagedWrite<'a> {
         }
         let location = match &self.temp {
             Side::Local(fs, path) => PartialLocation::Local(fs.clone(), path.clone()),
-            Side::Remote(fs, path) => PartialLocation::Remote(
-                open.clone(),
+            Side::Remote(fs, path, ..) => PartialLocation::Remote(
+                open.expect("a remote destination has an opener").clone(),
                 fs.transfer_namespace().map(String::from),
                 path.clone(),
             ),
