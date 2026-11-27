@@ -1394,7 +1394,8 @@ async fn another_transfer_can_publish_to_the_same_path_without_taking_the_paused
     h.local
         .break_reads("/file", Break::StallAfter(prefix as u64));
     h.local.file("/other/file", "other");
-    let first = h.upload("/file", "/");
+    h.remote.dir("/to");
+    let first = h.upload("/file", "/to");
     h.until("the staged prefix", |_| {
         h.remote.written_bytes.load(Ordering::SeqCst) == prefix
     })
@@ -1402,23 +1403,23 @@ async fn another_transfer_can_publish_to_the_same_path_without_taking_the_paused
     h.queue.pause(first);
     h.until_state(first, TransferState::Paused).await;
 
-    let other = h.upload("/other/file", "/");
+    let other = h.upload("/other/file", "/to");
     h.until_state(other, TransferState::Done).await;
-    assert_eq!(h.remote.read("/file").as_deref(), Some(&b"other"[..]));
+    assert_eq!(h.remote.read("/to/file").as_deref(), Some(&b"other"[..]));
 
     h.local.break_reads.lock().unwrap().remove("/file");
     let written_before = h.remote.written_bytes.load(Ordering::SeqCst);
     h.queue.resume(first);
-    assert_eq!(next_conflict(&h, first).await, "/file");
-    assert_eq!(h.remote.read("/file").as_deref(), Some(&b"other"[..]));
+    assert_eq!(next_conflict(&h, first).await, "/to/file");
+    assert_eq!(h.remote.read("/to/file").as_deref(), Some(&b"other"[..]));
     h.queue.answer(first, ConflictAnswer::Overwrite);
     h.until_state(first, TransferState::Done).await;
     assert_eq!(
         h.remote.written_bytes.load(Ordering::SeqCst) - written_before,
         expected.len() - prefix
     );
-    assert_eq!(h.remote.read("/file"), Some(expected));
-    assert_eq!(h.remote.tree("/").len(), 1);
+    assert_eq!(h.remote.read("/to/file"), Some(expected));
+    assert_eq!(h.remote.tree("/to").len(), 1);
 }
 
 #[tokio::test]
