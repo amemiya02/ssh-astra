@@ -1,505 +1,1023 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-17T00:00:00Z",
-  "title": "Design System: sshastra",
+  "generatedAt": "2026-11-27T06:51:07.868Z",
+  "title": "Design System: SSH Astra",
   "extensions": {
     "colorMeta": {
-      "background": {
+      "ground": {
         "role": "neutral",
-        "displayName": "Desk Grey",
-        "canonical": "oklch(0.972 0.003 255)",
+        "displayName": "Ground (Astra Light)",
+        "canonical": "oklch(97.3% 0.006 264.5)",
         "tonalRamp": [
-          "oklch(0.15 0.004 255)",
-          "oklch(0.27 0.004 255)",
-          "oklch(0.39 0.004 255)",
-          "oklch(0.51 0.004 255)",
-          "oklch(0.63 0.004 255)",
-          "oklch(0.75 0.004 255)",
-          "oklch(0.87 0.004 255)",
-          "oklch(0.95 0.004 255)"
+          "#0a0b0e",
+          "#232427",
+          "#3e4043",
+          "#5c5e61",
+          "#7b7d81",
+          "#9d9ea2",
+          "#c2c4c8",
+          "#eceef2"
         ]
       },
-      "background-dark": {
+      "sidebar": {
         "role": "neutral",
-        "displayName": "Desk Grey (dark)"
-      },
-      "foreground": {
-        "role": "neutral",
-        "displayName": "Ink",
-        "canonical": "oklch(0.22 0.012 255)",
+        "displayName": "Sidebar (Astra Light)",
+        "canonical": "oklch(95.2% 0.009 264.5)",
         "tonalRamp": [
-          "oklch(0.15 0.012 255)",
-          "oklch(0.27 0.012 255)",
-          "oklch(0.39 0.012 255)",
-          "oklch(0.51 0.012 255)",
-          "oklch(0.63 0.012 255)",
-          "oklch(0.75 0.012 255)",
-          "oklch(0.87 0.012 255)",
-          "oklch(0.95 0.012 255)"
+          "#090b0f",
+          "#222428",
+          "#3d4044",
+          "#5b5e63",
+          "#7b7d83",
+          "#9c9ea4",
+          "#c1c4ca",
+          "#ebeef4"
         ]
-      },
-      "foreground-dark": {
-        "role": "neutral",
-        "displayName": "Ink (dark)"
       },
       "surface": {
         "role": "neutral",
-        "displayName": "Sheet White",
-        "canonical": "oklch(0.995 0.001 255)",
+        "displayName": "Surface (Astra Light)",
+        "canonical": "oklch(100.0% 0.000 0)",
         "tonalRamp": [
-          "oklch(0.15 0.002 255)",
-          "oklch(0.27 0.002 255)",
-          "oklch(0.39 0.002 255)",
-          "oklch(0.51 0.002 255)",
-          "oklch(0.63 0.002 255)",
-          "oklch(0.75 0.002 255)",
-          "oklch(0.87 0.002 255)",
-          "oklch(0.95 0.002 255)"
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#7d7d7d",
+          "#9e9e9e",
+          "#c4c4c4",
+          "#eeeeee"
+        ]
+      },
+      "raised": {
+        "role": "neutral",
+        "displayName": "Raised (Astra Light)",
+        "canonical": "oklch(100.0% 0.000 0)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#7d7d7d",
+          "#9e9e9e",
+          "#c4c4c4",
+          "#eeeeee"
+        ]
+      },
+      "foreground": {
+        "role": "neutral",
+        "displayName": "Foreground (Astra Light)",
+        "canonical": "oklch(21.9% 0.025 266.9)",
+        "tonalRamp": [
+          "#070b16",
+          "#1f2430",
+          "#3a404d",
+          "#575e6c",
+          "#767d8d",
+          "#979eae",
+          "#bdc4d5",
+          "#e7eeff"
+        ]
+      },
+      "muted-foreground": {
+        "role": "neutral",
+        "displayName": "Muted foreground (Astra Light)",
+        "canonical": "oklch(49.1% 0.035 262.4)",
+        "tonalRamp": [
+          "#040b1a",
+          "#1b2435",
+          "#364053",
+          "#535e72",
+          "#727e93",
+          "#939fb5",
+          "#b8c5db",
+          "#e2efff"
+        ]
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Border (Astra Light)",
+        "canonical": "oklch(91.8% 0.013 262.4)",
+        "tonalRamp": [
+          "#080b11",
+          "#21242b",
+          "#3c4047",
+          "#5a5e65",
+          "#797d85",
+          "#9a9fa7",
+          "#bfc4cd",
+          "#eaeff8"
+        ]
+      },
+      "primary": {
+        "role": "primary",
+        "displayName": "Astra Blue (Astra Light)",
+        "canonical": "oklch(53.1% 0.190 263.2)",
+        "tonalRamp": [
+          "#0c005a",
+          "#00007d",
+          "#002ea2",
+          "#1f52c6",
+          "#3e75ec",
+          "#5d98ff",
+          "#82bfff",
+          "#aaebff"
+        ]
+      },
+      "primary-foreground": {
+        "role": "primary",
+        "displayName": "Primary foreground (Astra Light)",
+        "canonical": "oklch(100.0% 0.000 0)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#7d7d7d",
+          "#9e9e9e",
+          "#c4c4c4",
+          "#eeeeee"
+        ]
+      },
+      "success": {
+        "role": "secondary",
+        "displayName": "Connected Green (Astra Light)",
+        "canonical": "oklch(56.0% 0.134 152.5)",
+        "tonalRamp": [
+          "#001600",
+          "#003300",
+          "#005216",
+          "#007235",
+          "#2c9355",
+          "#53b675",
+          "#7bdd9a",
+          "#a6ffc3"
+        ]
+      },
+      "warning": {
+        "role": "secondary",
+        "displayName": "Connecting Amber (Astra Light)",
+        "canonical": "oklch(57.8% 0.125 69.8)",
+        "tonalRamp": [
+          "#270000",
+          "#470e00",
+          "#672e00",
+          "#894d00",
+          "#ac6e0a",
+          "#d08f3c",
+          "#f8b564",
+          "#ffe08e"
+        ]
+      },
+      "destructive": {
+        "role": "secondary",
+        "displayName": "Blocking Red (Astra Light)",
+        "canonical": "oklch(54.9% 0.179 27.9)",
+        "tonalRamp": [
+          "#3b0000",
+          "#600000",
+          "#860000",
+          "#ac1b19",
+          "#d3453b",
+          "#fa6a5c",
+          "#ff9181",
+          "#ffbcaa"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Muted (derived) (Astra Light)",
+        "canonical": "oklch(92.8% 0.007 268.5)",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#222428",
+          "#3e4044",
+          "#5c5d62",
+          "#7b7d82",
+          "#9c9ea3",
+          "#c2c4c9",
+          "#eceef3"
+        ]
+      },
+      "accent": {
+        "role": "neutral",
+        "displayName": "Accent (derived) (Astra Light)",
+        "canonical": "oklch(90.6% 0.008 260.7)",
+        "tonalRamp": [
+          "#090b0e",
+          "#222428",
+          "#3d4044",
+          "#5b5e62",
+          "#7b7d82",
+          "#9c9ea3",
+          "#c1c4c9",
+          "#eceff4"
+        ]
+      },
+      "input": {
+        "role": "neutral",
+        "displayName": "Input stroke (derived) (Astra Light)",
+        "canonical": "oklch(80.8% 0.010 267.3)",
+        "tonalRamp": [
+          "#090b10",
+          "#222429",
+          "#3d4045",
+          "#5b5e64",
+          "#7a7d84",
+          "#9b9ea5",
+          "#c1c4cb",
+          "#ebeef6"
+        ]
+      },
+      "selected": {
+        "role": "neutral",
+        "displayName": "Selection wash (derived) (Astra Light)",
+        "canonical": "oklch(53.1% 0.190 263.2 / 0.14)",
+        "tonalRamp": [
+          "#0c005a",
+          "#00007d",
+          "#002ea2",
+          "#1f52c6",
+          "#3e75ec",
+          "#5d98ff",
+          "#82bfff",
+          "#aaebff"
+        ]
+      },
+      "overlay": {
+        "role": "neutral",
+        "displayName": "Scrim (derived) (Astra Light)",
+        "canonical": "oklch(21.9% 0.025 266.9 / 0.30)",
+        "tonalRamp": [
+          "#070b16",
+          "#1f2430",
+          "#3a404d",
+          "#575e6c",
+          "#767d8d",
+          "#979eae",
+          "#bdc4d5",
+          "#e7eeff"
+        ]
+      },
+      "terminal-background": {
+        "role": "neutral",
+        "displayName": "Terminal background (Astra Light)",
+        "canonical": "oklch(100.0% 0.000 0)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#7d7d7d",
+          "#9e9e9e",
+          "#c4c4c4",
+          "#eeeeee"
+        ]
+      },
+      "terminal-foreground": {
+        "role": "neutral",
+        "displayName": "Terminal foreground (Astra Light)",
+        "canonical": "oklch(30.5% 0.016 264.3)",
+        "tonalRamp": [
+          "#080b12",
+          "#20242c",
+          "#3c4048",
+          "#595e67",
+          "#797d87",
+          "#9a9fa8",
+          "#bfc4ce",
+          "#e9eff9"
+        ]
+      },
+      "ansi-red": {
+        "role": "tertiary",
+        "displayName": "ANSI red (Astra Light)",
+        "canonical": "oklch(54.9% 0.179 27.9)",
+        "tonalRamp": [
+          "#3b0000",
+          "#600000",
+          "#860000",
+          "#ac1b19",
+          "#d3453b",
+          "#fa6a5c",
+          "#ff9181",
+          "#ffbcaa"
+        ]
+      },
+      "ansi-green": {
+        "role": "tertiary",
+        "displayName": "ANSI green (Astra Light)",
+        "canonical": "oklch(56.0% 0.134 152.5)",
+        "tonalRamp": [
+          "#001600",
+          "#003300",
+          "#005216",
+          "#007235",
+          "#2c9355",
+          "#53b675",
+          "#7bdd9a",
+          "#a6ffc3"
+        ]
+      },
+      "ansi-yellow": {
+        "role": "tertiary",
+        "displayName": "ANSI yellow (Astra Light)",
+        "canonical": "oklch(53.7% 0.114 74.3)",
+        "tonalRamp": [
+          "#230000",
+          "#421500",
+          "#623300",
+          "#835200",
+          "#a5721f",
+          "#c89346",
+          "#f0b96d",
+          "#ffe496"
+        ]
+      },
+      "ansi-blue": {
+        "role": "tertiary",
+        "displayName": "ANSI blue (Astra Light)",
+        "canonical": "oklch(52.0% 0.183 263.8)",
+        "tonalRamp": [
+          "#0b0057",
+          "#00007a",
+          "#072f9e",
+          "#2453c3",
+          "#4275e8",
+          "#6298ff",
+          "#86bfff",
+          "#afebff"
+        ]
+      },
+      "ansi-magenta": {
+        "role": "tertiary",
+        "displayName": "ANSI magenta (Astra Light)",
+        "canonical": "oklch(54.0% 0.178 328.5)",
+        "tonalRamp": [
+          "#2a002e",
+          "#4b004c",
+          "#6d006d",
+          "#902a8e",
+          "#b34eb1",
+          "#d870d5",
+          "#ff97fd",
+          "#ffc1ff"
+        ]
+      },
+      "ansi-cyan": {
+        "role": "tertiary",
+        "displayName": "ANSI cyan (Astra Light)",
+        "canonical": "oklch(55.1% 0.091 209.7)",
+        "tonalRamp": [
+          "#001220",
+          "#002e3c",
+          "#004c5a",
+          "#006b7a",
+          "#268c9b",
+          "#4faebe",
+          "#77d5e5",
+          "#a2ffff"
+        ]
+      },
+      "ground-dark": {
+        "role": "neutral",
+        "displayName": "Ground (Astra Dark)",
+        "canonical": "oklch(18.3% 0.020 265.9)",
+        "tonalRamp": [
+          "#070b14",
+          "#1f242e",
+          "#3b404a",
+          "#585e69",
+          "#787d89",
+          "#999eab",
+          "#bec4d1",
+          "#e8effc"
+        ]
+      },
+      "sidebar-dark": {
+        "role": "neutral",
+        "displayName": "Sidebar (Astra Dark)",
+        "canonical": "oklch(15.9% 0.016 266.6)",
+        "tonalRamp": [
+          "#080b12",
+          "#20242c",
+          "#3c4048",
+          "#595e67",
+          "#797d87",
+          "#9a9ea9",
+          "#bfc4cf",
+          "#eaeef9"
         ]
       },
       "surface-dark": {
         "role": "neutral",
-        "displayName": "Sheet White (dark)"
-      },
-      "popover": {
-        "role": "neutral",
-        "displayName": "Popover White",
-        "canonical": "oklch(1 0 0)",
+        "displayName": "Surface (Astra Dark)",
+        "canonical": "oklch(21.1% 0.027 267.9)",
         "tonalRamp": [
-          "oklch(0.15 0 255)",
-          "oklch(0.27 0 255)",
-          "oklch(0.39 0 255)",
-          "oklch(0.51 0 255)",
-          "oklch(0.63 0 255)",
-          "oklch(0.75 0 255)",
-          "oklch(0.87 0 255)",
-          "oklch(0.95 0 255)"
+          "#070b17",
+          "#1e2431",
+          "#393f4e",
+          "#575d6d",
+          "#767d8e",
+          "#979eb0",
+          "#bcc4d6",
+          "#e7eeff"
         ]
       },
-      "popover-dark": {
+      "raised-dark": {
         "role": "neutral",
-        "displayName": "Popover White (dark)"
-      },
-      "primary": {
-        "role": "primary",
-        "displayName": "Astra Blue",
-        "canonical": "oklch(0.55 0.17 258)",
+        "displayName": "Raised (Astra Dark)",
+        "canonical": "oklch(24.9% 0.034 266.8)",
         "tonalRamp": [
-          "oklch(0.15 0.15 258)",
-          "oklch(0.27 0.15 258)",
-          "oklch(0.39 0.15 258)",
-          "oklch(0.51 0.15 258)",
-          "oklch(0.63 0.15 258)",
-          "oklch(0.75 0.15 258)",
-          "oklch(0.87 0.15 258)",
-          "oklch(0.95 0.15 258)"
+          "#050a19",
+          "#1c2435",
+          "#373f52",
+          "#555d71",
+          "#747d92",
+          "#959eb4",
+          "#bac4db",
+          "#e4efff"
         ]
       },
-      "primary-dark": {
-        "role": "primary",
-        "displayName": "Astra Blue (dark)"
-      },
-      "primary-foreground": {
-        "role": "primary",
-        "displayName": "On Astra Blue",
-        "canonical": "oklch(0.99 0 0)"
-      },
-      "primary-foreground-dark": {
-        "role": "primary",
-        "displayName": "On Astra Blue (dark)"
-      },
-      "selected": {
-        "role": "primary",
-        "displayName": "Selection Wash",
-        "canonical": "oklch(0.55 0.17 258 / 0.1)"
-      },
-      "selected-dark": {
-        "role": "primary",
-        "displayName": "Selection Wash (dark)"
-      },
-      "muted": {
+      "foreground-dark": {
         "role": "neutral",
-        "displayName": "Muted Grey",
-        "canonical": "oklch(0.945 0.004 255)",
+        "displayName": "Foreground (Astra Dark)",
+        "canonical": "oklch(92.8% 0.013 266.7)",
         "tonalRamp": [
-          "oklch(0.15 0.005 255)",
-          "oklch(0.27 0.005 255)",
-          "oklch(0.39 0.005 255)",
-          "oklch(0.51 0.005 255)",
-          "oklch(0.63 0.005 255)",
-          "oklch(0.75 0.005 255)",
-          "oklch(0.87 0.005 255)",
-          "oklch(0.95 0.005 255)"
-        ]
-      },
-      "muted-dark": {
-        "role": "neutral",
-        "displayName": "Muted Grey (dark)"
-      },
-      "muted-foreground": {
-        "role": "neutral",
-        "displayName": "Pencil Grey",
-        "canonical": "oklch(0.5 0.012 255)",
-        "tonalRamp": [
-          "oklch(0.15 0.012 255)",
-          "oklch(0.27 0.012 255)",
-          "oklch(0.39 0.012 255)",
-          "oklch(0.51 0.012 255)",
-          "oklch(0.63 0.012 255)",
-          "oklch(0.75 0.012 255)",
-          "oklch(0.87 0.012 255)",
-          "oklch(0.95 0.012 255)"
+          "#090b11",
+          "#21242a",
+          "#3d4047",
+          "#5a5e65",
+          "#7a7d85",
+          "#9b9ea7",
+          "#c0c4cd",
+          "#eaeef7"
         ]
       },
       "muted-foreground-dark": {
         "role": "neutral",
-        "displayName": "Pencil Grey (dark)"
-      },
-      "accent": {
-        "role": "neutral",
-        "displayName": "Hover Grey",
-        "canonical": "oklch(0.93 0.006 255)",
+        "displayName": "Muted foreground (Astra Dark)",
+        "canonical": "oklch(71.2% 0.034 266.1)",
         "tonalRamp": [
-          "oklch(0.15 0.006 255)",
-          "oklch(0.27 0.006 255)",
-          "oklch(0.39 0.006 255)",
-          "oklch(0.51 0.006 255)",
-          "oklch(0.63 0.006 255)",
-          "oklch(0.75 0.006 255)",
-          "oklch(0.87 0.006 255)",
-          "oklch(0.95 0.006 255)"
-        ]
-      },
-      "accent-dark": {
-        "role": "neutral",
-        "displayName": "Hover Grey (dark)"
-      },
-      "border": {
-        "role": "neutral",
-        "displayName": "Hairline",
-        "canonical": "oklch(0.905 0.005 255)",
-        "tonalRamp": [
-          "oklch(0.15 0.005 255)",
-          "oklch(0.27 0.005 255)",
-          "oklch(0.39 0.005 255)",
-          "oklch(0.51 0.005 255)",
-          "oklch(0.63 0.005 255)",
-          "oklch(0.75 0.005 255)",
-          "oklch(0.87 0.005 255)",
-          "oklch(0.95 0.005 255)"
+          "#050a19",
+          "#1c2435",
+          "#374052",
+          "#555e71",
+          "#747d92",
+          "#949eb4",
+          "#bac4db",
+          "#e4efff"
         ]
       },
       "border-dark": {
         "role": "neutral",
-        "displayName": "Hairline (dark)"
-      },
-      "input": {
-        "role": "neutral",
-        "displayName": "Field Line",
-        "canonical": "oklch(0.875 0.006 255)",
+        "displayName": "Border (Astra Dark)",
+        "canonical": "oklch(28.5% 0.033 264.9)",
         "tonalRamp": [
-          "oklch(0.15 0.006 255)",
-          "oklch(0.27 0.006 255)",
-          "oklch(0.39 0.006 255)",
-          "oklch(0.51 0.006 255)",
-          "oklch(0.63 0.006 255)",
-          "oklch(0.75 0.006 255)",
-          "oklch(0.87 0.006 255)",
-          "oklch(0.95 0.006 255)"
+          "#050a19",
+          "#1c2434",
+          "#374052",
+          "#545e71",
+          "#737d92",
+          "#949fb4",
+          "#bac4db",
+          "#e4efff"
         ]
       },
-      "input-dark": {
-        "role": "neutral",
-        "displayName": "Field Line (dark)"
-      },
-      "success": {
-        "role": "secondary",
-        "displayName": "Connected Green",
-        "canonical": "oklch(0.6 0.14 155)",
+      "primary-dark": {
+        "role": "primary",
+        "displayName": "Astra Blue (Astra Dark)",
+        "canonical": "oklch(70.0% 0.142 263.1)",
         "tonalRamp": [
-          "oklch(0.15 0.13 155)",
-          "oklch(0.27 0.13 155)",
-          "oklch(0.39 0.13 155)",
-          "oklch(0.51 0.13 155)",
-          "oklch(0.63 0.13 155)",
-          "oklch(0.75 0.13 155)",
-          "oklch(0.87 0.13 155)",
-          "oklch(0.95 0.13 155)"
+          "#020045",
+          "#001667",
+          "#143889",
+          "#3159ac",
+          "#4f7ad1",
+          "#6f9cf6",
+          "#93c3ff",
+          "#bceeff"
+        ]
+      },
+      "primary-foreground-dark": {
+        "role": "primary",
+        "displayName": "Primary foreground (Astra Dark)",
+        "canonical": "oklch(17.6% 0.035 267.3)",
+        "tonalRamp": [
+          "#050a1a",
+          "#1d2335",
+          "#383f52",
+          "#555d72",
+          "#747d93",
+          "#959eb5",
+          "#bac4db",
+          "#e4eeff"
         ]
       },
       "success-dark": {
         "role": "secondary",
-        "displayName": "Connected Green (dark)"
-      },
-      "warning": {
-        "role": "secondary",
-        "displayName": "Connecting Amber",
-        "canonical": "oklch(0.7 0.15 70)",
+        "displayName": "Connected Green (Astra Dark)",
+        "canonical": "oklch(75.6% 0.135 155.2)",
         "tonalRamp": [
-          "oklch(0.15 0.14 70)",
-          "oklch(0.27 0.14 70)",
-          "oklch(0.39 0.14 70)",
-          "oklch(0.51 0.14 70)",
-          "oklch(0.63 0.14 70)",
-          "oklch(0.75 0.14 70)",
-          "oklch(0.87 0.14 70)",
-          "oklch(0.95 0.14 70)"
+          "#001700",
+          "#003400",
+          "#00521b",
+          "#00733a",
+          "#1f9459",
+          "#4bb779",
+          "#74de9e",
+          "#a0ffc7"
         ]
       },
       "warning-dark": {
         "role": "secondary",
-        "displayName": "Connecting Amber (dark)"
-      },
-      "destructive": {
-        "role": "secondary",
-        "displayName": "Blocking Red",
-        "canonical": "oklch(0.55 0.2 25)",
+        "displayName": "Connecting Amber (Astra Dark)",
+        "canonical": "oklch(79.2% 0.120 83.3)",
         "tonalRamp": [
-          "oklch(0.15 0.18 25)",
-          "oklch(0.27 0.18 25)",
-          "oklch(0.39 0.18 25)",
-          "oklch(0.51 0.18 25)",
-          "oklch(0.63 0.18 25)",
-          "oklch(0.75 0.18 25)",
-          "oklch(0.87 0.18 25)",
-          "oklch(0.95 0.18 25)"
+          "#210000",
+          "#3e1900",
+          "#5d3600",
+          "#7d5500",
+          "#9f7607",
+          "#c2973b",
+          "#e9bd63",
+          "#ffe88e"
         ]
       },
       "destructive-dark": {
         "role": "secondary",
-        "displayName": "Blocking Red (dark)"
+        "displayName": "Blocking Red (Astra Dark)",
+        "canonical": "oklch(70.0% 0.158 17.3)",
+        "tonalRamp": [
+          "#350000",
+          "#5a0003",
+          "#7e001f",
+          "#a4293c",
+          "#c94d5a",
+          "#f0707a",
+          "#ff969e",
+          "#ffc1c8"
+        ]
       },
-      "overlay": {
+      "muted-dark": {
         "role": "neutral",
-        "displayName": "Scrim",
-        "canonical": "oklch(0.2 0.01 255 / 0.28)"
+        "displayName": "Muted (derived) (Astra Dark)",
+        "canonical": "oklch(22.7% 0.019 266.2)",
+        "tonalRamp": [
+          "#080b13",
+          "#20242d",
+          "#3b404a",
+          "#595e68",
+          "#787d89",
+          "#999eaa",
+          "#bec4d1",
+          "#e9effb"
+        ]
+      },
+      "accent-dark": {
+        "role": "neutral",
+        "displayName": "Accent (derived) (Astra Dark)",
+        "canonical": "oklch(24.8% 0.020 267.9)",
+        "tonalRamp": [
+          "#080b14",
+          "#20242e",
+          "#3b404b",
+          "#595d69",
+          "#787d8a",
+          "#999eab",
+          "#bec4d2",
+          "#e9eefc"
+        ]
+      },
+      "input-dark": {
+        "role": "neutral",
+        "displayName": "Input stroke (derived) (Astra Dark)",
+        "canonical": "oklch(34.7% 0.017 262.3)",
+        "tonalRamp": [
+          "#070b12",
+          "#20242d",
+          "#3b4049",
+          "#585e68",
+          "#787d88",
+          "#999fa9",
+          "#bec4d0",
+          "#e8effa"
+        ]
+      },
+      "selected-dark": {
+        "role": "neutral",
+        "displayName": "Selection wash (derived) (Astra Dark)",
+        "canonical": "oklch(70.0% 0.142 263.1 / 0.14)",
+        "tonalRamp": [
+          "#020045",
+          "#001667",
+          "#143889",
+          "#3159ac",
+          "#4f7ad1",
+          "#6f9cf6",
+          "#93c3ff",
+          "#bceeff"
+        ]
       },
       "overlay-dark": {
         "role": "neutral",
-        "displayName": "Scrim (dark)"
-      },
-      "terminal-background": {
-        "role": "neutral",
-        "displayName": "Terminal Paper",
-        "canonical": "#ffffff"
+        "displayName": "Scrim (derived) (Astra Dark)",
+        "canonical": "oklch(15.9% 0.016 266.6 / 0.72)",
+        "tonalRamp": [
+          "#080b12",
+          "#20242c",
+          "#3c4048",
+          "#595e67",
+          "#797d87",
+          "#9a9ea9",
+          "#bfc4cf",
+          "#eaeef9"
+        ]
       },
       "terminal-background-dark": {
         "role": "neutral",
-        "displayName": "Terminal Paper (dark)"
-      },
-      "terminal-foreground": {
-        "role": "neutral",
-        "displayName": "Terminal Ink",
-        "canonical": "#2b2f37"
+        "displayName": "Terminal background (Astra Dark)",
+        "canonical": "oklch(16.8% 0.018 263.9)",
+        "tonalRamp": [
+          "#070b13",
+          "#20242d",
+          "#3b404a",
+          "#585e68",
+          "#787d88",
+          "#999faa",
+          "#bec4d0",
+          "#e8effb"
+        ]
       },
       "terminal-foreground-dark": {
         "role": "neutral",
-        "displayName": "Terminal Ink (dark)"
+        "displayName": "Terminal foreground (Astra Dark)",
+        "canonical": "oklch(89.4% 0.010 267.4)",
+        "tonalRamp": [
+          "#090b10",
+          "#222429",
+          "#3d4045",
+          "#5b5e63",
+          "#7a7d83",
+          "#9b9ea5",
+          "#c1c4cb",
+          "#ebeef5"
+        ]
+      },
+      "ansi-red-dark": {
+        "role": "tertiary",
+        "displayName": "ANSI red (Astra Dark)",
+        "canonical": "oklch(70.1% 0.157 18.6)",
+        "tonalRamp": [
+          "#350000",
+          "#590001",
+          "#7e001c",
+          "#a32a39",
+          "#c94e58",
+          "#f07178",
+          "#ff979c",
+          "#ffc1c5"
+        ]
+      },
+      "ansi-green-dark": {
+        "role": "tertiary",
+        "displayName": "ANSI green (Astra Dark)",
+        "canonical": "oklch(77.9% 0.130 153.1)",
+        "tonalRamp": [
+          "#001600",
+          "#003300",
+          "#005219",
+          "#007238",
+          "#2e9357",
+          "#55b677",
+          "#7cdd9c",
+          "#a7ffc5"
+        ]
+      },
+      "ansi-yellow-dark": {
+        "role": "tertiary",
+        "displayName": "ANSI yellow (Astra Dark)",
+        "canonical": "oklch(79.2% 0.120 83.3)",
+        "tonalRamp": [
+          "#210000",
+          "#3e1900",
+          "#5d3600",
+          "#7d5500",
+          "#9f7607",
+          "#c2973b",
+          "#e9bd63",
+          "#ffe88e"
+        ]
+      },
+      "ansi-blue-dark": {
+        "role": "tertiary",
+        "displayName": "ANSI blue (Astra Dark)",
+        "canonical": "oklch(71.9% 0.132 264.2)",
+        "tonalRamp": [
+          "#020041",
+          "#031862",
+          "#1a3984",
+          "#3659a7",
+          "#557acb",
+          "#749cf1",
+          "#99c2ff",
+          "#c2edff"
+        ]
+      },
+      "ansi-magenta-dark": {
+        "role": "tertiary",
+        "displayName": "ANSI magenta (Astra Dark)",
+        "canonical": "oklch(73.2% 0.131 323.1)",
+        "tonalRamp": [
+          "#210029",
+          "#3f0047",
+          "#5f2067",
+          "#804088",
+          "#a260aa",
+          "#c581cd",
+          "#eda6f5",
+          "#ffd0ff"
+        ]
+      },
+      "ansi-cyan-dark": {
+        "role": "tertiary",
+        "displayName": "ANSI cyan (Astra Dark)",
+        "canonical": "oklch(77.6% 0.093 206.9)",
+        "tonalRamp": [
+          "#00121e",
+          "#002e3a",
+          "#004c58",
+          "#006c78",
+          "#218d99",
+          "#4cafbc",
+          "#75d5e3",
+          "#a0ffff"
+        ]
       }
     },
     "typographyMeta": {
       "title-dialog": {
         "displayName": "Dialog title",
-        "purpose": "Dialog headings only (text-lg)."
+        "purpose": "Dialog headings only."
+      },
+      "title-empty": {
+        "displayName": "Empty-state title",
+        "purpose": "The one line of an empty state."
       },
       "title-panel": {
         "displayName": "Panel title",
-        "purpose": "Hosts, Files and section headings inside panels (text-sm, 600)."
+        "purpose": "Sidebar and panel headers, Home group headings."
       },
       "body": {
         "displayName": "Body",
-        "purpose": "Default for all UI text (text-sm)."
-      },
-      "body-large": {
-        "displayName": "Large body",
-        "purpose": "Rare emphasis inside dialogs (text-base)."
+        "purpose": "The default for everything; names at 500."
       },
       "label": {
         "displayName": "Label",
-        "purpose": "Status bar, tooltips, addresses, column headers, hints (text-xs)."
+        "purpose": "Status bar, tooltips, menus, hints, column headers."
+      },
+      "monogram": {
+        "displayName": "Monogram",
+        "purpose": "Host initials on the hue tile."
+      },
+      "mono-address": {
+        "displayName": "Address",
+        "purpose": "user@host[:port] beside Host names and in the status bar."
       },
       "mono-terminal": {
-        "displayName": "Terminal mono",
-        "purpose": "The Terminal, paths, fingerprints, addresses, quoted commands."
+        "displayName": "Terminal",
+        "purpose": "xterm default; user-adjustable."
       }
     },
     "shadows": [
       {
         "name": "shadow-panel",
-        "value": "0 1px 2px oklch(0.2 0.02 255 / 0.05), 0 2px 8px oklch(0.2 0.02 255 / 0.04)",
-        "valueDark": "0 1px 2px oklch(0 0 0 / 0.3)",
-        "purpose": "Terminal and File panels, cards."
+        "value": "light: 0 1px 2px color-mix(in oklab, var(--ui-foreground) 7%, transparent), 0 2px 8px color-mix(in oklab, var(--ui-foreground) 5%, transparent); dark: 0 0 0 1px var(--ui-border)",
+        "purpose": "Small lifted pieces on a fill: segmented thumb, drop hint. Never on work panels."
       },
       {
         "name": "shadow-overlay",
-        "value": "0 12px 32px oklch(0.2 0.02 255 / 0.16), 0 2px 6px oklch(0.2 0.02 255 / 0.06)",
-        "valueDark": "0 16px 40px oklch(0 0 0 / 0.5), 0 0 0 1px oklch(1 0 0 / 0.06)",
-        "purpose": "Dialogs, menus, popovers."
-      }
-    ],
-    "focus": [
-      {
-        "name": "focus-ring",
-        "value": "border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent)",
-        "purpose": "Every interactive element on :focus-visible."
+        "value": "light: 0 12px 32px color-mix(in oklab, var(--ui-foreground) 18%, transparent), 0 2px 6px color-mix(in oklab, var(--ui-foreground) 8%, transparent); dark: 0 16px 40px color-mix(in oklab, var(--ui-sidebar) 85%, transparent), 0 0 0 1px var(--ui-border)",
+        "purpose": "Menus, dialogs, command palette, drag previews."
       }
     ],
     "motion": [
       {
-        "name": "state-transition",
-        "value": "color, background-color, border-color, box-shadow ~150ms",
-        "purpose": "Hover and focus changes on buttons, tabs and gutter grips."
+        "name": "colors",
+        "value": "transition-colors (150ms, Tailwind default ease)",
+        "purpose": "Hover and pressed fills on rows, cards, tabs, gutter grip."
       },
       {
-        "name": "reduced-motion",
-        "value": "@media (prefers-reduced-motion: reduce) { animation-duration: 0.01ms; transition-duration: 0.01ms }",
-        "purpose": "Global base rule in src/index.css; menus and tooltips appear instantly."
+        "name": "pulse",
+        "value": "animate-pulse",
+        "purpose": "Amber Connection dot while connecting or reconnecting only."
+      },
+      {
+        "name": "overlay-enter",
+        "value": "fade-in-0 zoom-in-95, 200ms (dialogs)",
+        "purpose": "Menus, tooltips and dialogs; reduced to 0.01ms under prefers-reduced-motion."
       }
     ],
-    "breakpoints": []
+    "breakpoints": [],
+    "themes": {
+      "source": "src/theme/themes.ts",
+      "light": [
+        "Astra Light",
+        "GitHub Light",
+        "Catppuccin Latte",
+        "Solarized Light"
+      ],
+      "dark": [
+        "Astra Dark",
+        "Tokyo Night",
+        "One Dark",
+        "Nord",
+        "Catppuccin Mocha",
+        "Dracula",
+        "Gruvbox Dark",
+        "Solarized Dark",
+        "GitHub Dark"
+      ],
+      "uiRoles": [
+        "ground",
+        "sidebar",
+        "surface",
+        "raised",
+        "foreground",
+        "mutedForeground",
+        "border",
+        "primary",
+        "primaryForeground",
+        "success",
+        "warning",
+        "destructive"
+      ],
+      "cssVariables": [
+        "--ui-*",
+        "--terminal-background",
+        "--terminal-foreground",
+        "--ansi-{red,green,yellow,blue,magenta,cyan}",
+        "--ansi-*-ink"
+      ],
+      "contrastTest": "src/theme/themes.test.ts (WCAG AA 4.5:1)"
+    }
   },
   "components": [
     {
       "name": "Primary Button",
       "kind": "button",
       "refersTo": "button-primary",
-      "description": "The one forward action in a panel or dialog.",
-      "html": "<button class=\"ds-btn-primary\">Connect</button>",
-      "css": ".ds-btn-primary { height: 32px; padding: 0 12px; border-radius: 8px; border: 0; background: var(--primary); color: var(--primary-foreground); font: 500 13px/20px -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; transition: background-color .15s, box-shadow .15s; } .ds-btn-primary:hover { background: color-mix(in oklch, var(--primary) 90%, transparent); } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); }"
+      "description": "The one forward action per view (New Host on Home).",
+      "html": "<button class=\"ds-btn-primary\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><path d=\"M5 12h14M12 5v14\"/></svg>New Host</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: none; border-radius: 8px; background: var(--primary, #2d62d8); color: var(--primary-foreground, #ffffff); font: 500 13px/20px -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; cursor: pointer; transition: background-color 150ms, box-shadow 150ms; outline: none; } .ds-btn-primary:hover { background: color-mix(in oklab, var(--primary, #2d62d8) 90%, transparent); } .ds-btn-primary:focus-visible { box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring, #2d62d8) 50%, transparent); }"
     },
     {
       "name": "Outline Button",
       "kind": "button",
       "refersTo": "button-outline",
-      "description": "Secondary actions, e.g. the Local terminal button at the foot of the Host list.",
-      "html": "<button class=\"ds-btn-outline\"><svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\"/><path d=\"m7 11 2-2-2-2M11 13h4\"/></svg>Local terminal</button>",
-      "css": ".ds-btn-outline { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--background); color: var(--foreground); font: 500 13px/20px -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; transition: background-color .15s, box-shadow .15s; } .ds-btn-outline:hover { background: var(--accent); } .ds-btn-outline:focus-visible { outline: none; border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); }"
+      "description": "Secondary actions: Local terminal, Import on Home.",
+      "html": "<button class=\"ds-btn-outline\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\"/><path d=\"m7 11 2-2-2-2M11 13h4\"/></svg>Local terminal</button>",
+      "css": ".ds-btn-outline { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid var(--border, #dfe4ed); border-radius: 8px; background: var(--surface, #ffffff); color: var(--foreground, #151a26); font: 500 13px/20px -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; cursor: pointer; transition: background-color 150ms, box-shadow 150ms; outline: none; } .ds-btn-outline:hover { background: var(--accent, #dde0e5); } .ds-btn-outline:focus-visible { border-color: var(--ring, #2d62d8); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring, #2d62d8) 50%, transparent); }"
     },
     {
-      "name": "Icon Button",
-      "kind": "button",
-      "refersTo": "icon-button",
-      "description": "26px quiet chrome control; always labelled, always with a tooltip.",
-      "html": "<button class=\"ds-icon-btn\" aria-label=\"New Local terminal\"><svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><path d=\"M12 5v14M5 12h14\"/></svg></button>",
-      "css": ".ds-icon-btn { width: 26px; height: 26px; display: grid; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--muted-foreground); transition: background-color .15s, color .15s; } .ds-icon-btn:hover { background: var(--accent); color: var(--foreground); } .ds-icon-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); }"
+      "name": "Nav rail",
+      "kind": "nav",
+      "refersTo": "nav-rail",
+      "description": "48px activity rail: current destination gets the selected tile; a shown sidebar view gets a 2px primary edge bar.",
+      "html": "<nav class=\"ds-rail\"><button class=\"ds-rail-btn ds-current\" aria-label=\"Home\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 10 12 3l9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z\"/></svg></button><div class=\"ds-rail-slot\"><span class=\"ds-rail-bar\"></span><button class=\"ds-rail-btn ds-pressed\" aria-label=\"Hosts\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><path d=\"M4 5h16M4 12h16M4 19h16\"/></svg></button></div><button class=\"ds-rail-btn\" aria-label=\"Settings\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"12\" cy=\"12\" r=\"3\"/><circle cx=\"12\" cy=\"12\" r=\"8\"/></svg></button></nav>",
+      "css": ".ds-rail { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 48px; padding: 12px 0; background: var(--sidebar, #eceff5); } .ds-rail-slot { position: relative; display: flex; justify-content: center; width: 100%; } .ds-rail-bar { position: absolute; left: 0; top: 8px; bottom: 8px; width: 2px; border-radius: 0 9999px 9999px 0; background: var(--primary, #2d62d8); } .ds-rail-btn { display: grid; place-items: center; width: 36px; height: 36px; border: none; border-radius: 10px; background: transparent; color: var(--muted-foreground, #566175); cursor: pointer; transition: background-color 150ms, color 150ms; outline: none; } .ds-rail-btn:hover { background: var(--accent, #dde0e5); color: var(--foreground, #151a26); } .ds-rail-btn:focus-visible { box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring, #2d62d8) 50%, transparent); } .ds-rail-btn.ds-pressed { color: var(--foreground, #151a26); } .ds-rail-btn.ds-current, .ds-rail-btn.ds-current:hover { background: var(--selected, #2d62d824); color: var(--primary, #2d62d8); }"
     },
     {
-      "name": "Tab joined to Terminal",
+      "name": "Pill tabs",
       "kind": "nav",
       "refersTo": "tab-active",
-      "description": "Tabs on the ground; the active tab is cut from the Terminal sheet.",
-      "html": "<div class=\"ds-tabs\"><div class=\"ds-tabrow\"><span class=\"ds-tab ds-tab-on\"><i class=\"ds-dot\"></i>api-prod-1</span><span class=\"ds-tab\">Local terminal</span></div><div class=\"ds-term\">deploy@api-prod-1:~$ <span class=\"ds-cur\"> </span></div></div>",
-      "css": ".ds-tabs { background: var(--background); padding: 6px 6px 6px 0; font: 13px/20px -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; } .ds-tabrow { display: flex; gap: 2px; align-items: flex-end; } .ds-tab { display: flex; align-items: center; gap: 8px; height: 32px; min-width: 112px; padding: 0 12px; border-radius: 10px 10px 0 0; color: var(--muted-foreground); transition: background-color .15s; } .ds-tab:hover { background: color-mix(in oklch, var(--accent) 60%, transparent); color: var(--foreground); } .ds-tab-on, .ds-tab-on:hover { position: relative; z-index: 1; height: 33px; margin-bottom: -1px; background: var(--terminal-background); color: var(--foreground); border: 1px solid var(--border); border-bottom: 0; } .ds-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); } .ds-term { height: 120px; padding: 10px 12px; background: var(--terminal-background); color: var(--terminal-foreground); border: 1px solid var(--border); border-radius: 0 10px 10px 10px; box-shadow: var(--elevation-panel); font: 13px/1.2 ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; } .ds-cur { background: var(--terminal-foreground); }"
+      "description": "28px pill tabs on the ground; active is a surface pill; a Host tab shows its Connection dot and a hue underline.",
+      "html": "<div class=\"ds-tabs\"><div class=\"ds-tab\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" opacity=\".7\"><path d=\"M3 10 12 3l9 7v11H3z\"/></svg><span>Home</span></div><div class=\"ds-tab ds-active\"><span class=\"ds-dot\"></span><span>deploy@web-01: ~/app</span><span class=\"ds-x\">×</span><span class=\"ds-hue\"></span></div></div>",
+      "css": ".ds-tabs { display: flex; gap: 4px; align-items: center; height: 34px; padding: 0 6px; background: var(--background, #f4f6fa); } .ds-tab { position: relative; display: flex; align-items: center; gap: 8px; height: 28px; min-width: 112px; max-width: 208px; padding: 0 4px 0 10px; border: 1px solid transparent; border-radius: 10px; color: var(--muted-foreground, #566175); font: 400 13px/20px -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; cursor: default; transition: background-color 150ms, color 150ms; } .ds-tab:hover { background: color-mix(in oklab, var(--accent, #dde0e5) 60%, transparent); color: var(--foreground, #151a26); } .ds-tab.ds-active { background: var(--surface, #ffffff); border-color: var(--border, #dfe4ed); color: var(--foreground, #151a26); } .ds-dot { width: 8px; height: 8px; border-radius: 9999px; background: var(--success, #1f8a4c); flex-shrink: 0; } .ds-x { display: grid; place-items: center; width: 20px; height: 20px; margin-left: auto; border-radius: 8px; color: var(--muted-foreground, #566175); } .ds-x:hover { background: var(--accent, #dde0e5); color: var(--foreground, #151a26); } .ds-hue { position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; border-radius: 9999px; background: var(--ansi-blue, #2f5fd0); }"
     },
     {
-      "name": "File panel",
+      "name": "Host row",
+      "kind": "custom",
+      "refersTo": "host-row-selected",
+      "description": "30px Host list row: hue monogram, name with Connection dot, mono address.",
+      "html": "<div class=\"ds-host-row\"><span class=\"ds-mono-tile\">W1</span><span class=\"ds-host-name\">web-01</span><span class=\"ds-dot\"></span><span class=\"ds-host-addr\">deploy@web-01</span></div><div class=\"ds-host-row ds-selected\"><span class=\"ds-mono-tile ds-red\">D1</span><span class=\"ds-host-name\">db-01</span><span class=\"ds-host-addr\">deploy@db-01</span></div>",
+      "css": ".ds-host-row { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 32px 0 8px; margin-bottom: 2px; border-radius: 10px; background: var(--sidebar, #eceff5); color: var(--foreground, #151a26); font: 400 13px/20px -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; transition: background-color 150ms; } .ds-host-row:hover { background: var(--accent, #dde0e5); } .ds-host-row.ds-selected { background: color-mix(in oklab, var(--primary, #2d62d8) 14%, var(--sidebar, #eceff5)); } .ds-mono-tile { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 8px; font: 600 11px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; letter-spacing: -0.025em; background: color-mix(in oklab, var(--ansi-blue, #2f5fd0) 15%, transparent); color: var(--ansi-blue-ink, #274a9d); } .ds-mono-tile.ds-red { background: color-mix(in oklab, var(--ansi-red, #c4372f) 15%, transparent); color: var(--ansi-red-ink, #8f2e2c); } .ds-host-name { font-weight: 500; } .ds-dot { width: 6px; height: 6px; border-radius: 9999px; background: var(--success, #1f8a4c); } .ds-host-addr { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground, #566175); font: 400 11.5px/16px ui-monospace, 'SF Mono', Menlo, monospace; }"
+    },
+    {
+      "name": "Host card",
       "kind": "card",
-      "refersTo": "file-panel",
-      "description": "Floating work panel: 40px header, bordered, soft panel shadow.",
-      "html": "<section class=\"ds-panel\"><header class=\"ds-panel-head\">Files</header><div class=\"ds-panel-empty\">Open a Terminal on a Host to browse its files here.</div></section>",
-      "css": ".ds-panel { width: 300px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--elevation-panel); overflow: hidden; font: 13px/20px -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: var(--foreground); } .ds-panel-head { height: 40px; display: flex; align-items: center; padding: 0 8px 0 12px; border-bottom: 1px solid var(--border); font-weight: 600; } .ds-panel-empty { padding: 32px 24px; text-align: center; color: var(--muted-foreground); text-wrap: balance; }"
+      "refersTo": "host-card",
+      "description": "56px Home card on the surface panel: 32px monogram with corner Connection dot, name over mono address.",
+      "html": "<div class=\"ds-card-wrap\"><button class=\"ds-host-card\"><span class=\"ds-tile\">W1<span class=\"ds-cdot\"></span></span><span class=\"ds-card-text\"><span class=\"ds-card-name\">web-01</span><span class=\"ds-card-addr\">deploy@web-01</span></span></button></div>",
+      "css": ".ds-card-wrap { padding: 16px; background: var(--surface, #ffffff); } .ds-host-card { display: flex; align-items: center; gap: 12px; width: 240px; height: 56px; padding: 0 36px 0 12px; border: 1px solid var(--border, #dfe4ed); border-radius: 10px; background: var(--background, #f4f6fa); color: var(--foreground, #151a26); text-align: left; cursor: pointer; transition: background-color 150ms, box-shadow 150ms; outline: none; } .ds-host-card:hover { background: var(--accent, #dde0e5); } .ds-host-card:focus-visible { box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring, #2d62d8) 50%, transparent); } .ds-tile { position: relative; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: color-mix(in oklab, var(--ansi-blue, #2f5fd0) 15%, transparent); color: var(--ansi-blue-ink, #274a9d); font: 600 11.5px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; } .ds-cdot { position: absolute; right: -2px; bottom: -2px; width: 8px; height: 8px; border-radius: 9999px; background: var(--success, #1f8a4c); box-shadow: 0 0 0 2px var(--background, #f4f6fa); } .ds-card-text { display: flex; flex-direction: column; min-width: 0; } .ds-card-name { font: 500 13px/20px -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; } .ds-card-addr { color: var(--muted-foreground, #566175); font: 400 11.5px/16px ui-monospace, 'SF Mono', Menlo, monospace; }"
     },
     {
       "name": "Status bar",
-      "kind": "nav",
+      "kind": "custom",
       "refersTo": "status-bar",
-      "description": "26px app-wide state on the ground.",
-      "html": "<footer class=\"ds-status\"><span><i class=\"ds-sdot\"></i>2 Connections</span><span class=\"ds-grow\"></span><span>Follow system</span></footer>",
-      "css": ".ds-status { height: 26px; display: flex; align-items: center; gap: 14px; padding: 0 12px; border-top: 1px solid var(--border); background: var(--background); color: var(--muted-foreground); font: 11.5px/16px -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; } .ds-status span { display: inline-flex; align-items: center; gap: 6px; } .ds-grow { flex: 1; } .ds-sdot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }"
+      "description": "24px dense bar: per-Host Connection segments closed by rules, address in mono, theme name at the right.",
+      "html": "<footer class=\"ds-status\"><div class=\"ds-seg\"><span class=\"ds-sdot\"></span>web-01</div><div class=\"ds-seg\"><span class=\"ds-sdot ds-warn\"></span>api-01 reconnecting 2/3</div><button class=\"ds-seg ds-seg-btn\">2 Port forwards</button><span class=\"ds-spacer\"></span><span class=\"ds-addr\">deploy@web-01</span><span class=\"ds-theme\">Astra Light</span></footer>",
+      "css": ".ds-status { display: flex; align-items: stretch; height: 24px; border-top: 1px solid var(--border, #dfe4ed); background: var(--background, #f4f6fa); color: var(--muted-foreground, #566175); font: 400 11.5px/16px -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; } .ds-seg { display: flex; align-items: center; gap: 6px; padding: 0 10px; border: none; border-right: 1px solid var(--border, #dfe4ed); background: transparent; color: inherit; font: inherit; } .ds-seg-btn { cursor: pointer; outline: none; } .ds-seg-btn:hover { background: var(--accent, #dde0e5); color: var(--foreground, #151a26); } .ds-seg-btn:focus-visible { box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--ring, #2d62d8) 50%, transparent); } .ds-sdot { width: 6px; height: 6px; border-radius: 9999px; background: var(--success, #1f8a4c); } .ds-sdot.ds-warn { background: var(--warning, #a86a00); animation: ds-pulse 2s cubic-bezier(0.4,0,0.6,1) infinite; } @keyframes ds-pulse { 50% { opacity: .5; } } .ds-spacer { flex: 1; } .ds-addr { align-self: center; margin-right: 8px; font-family: ui-monospace, 'SF Mono', Menlo, monospace; } .ds-theme { align-self: center; padding-right: 8px; }"
     },
     {
-      "name": "Host row (specified in mockups, not built yet)",
-      "kind": "custom",
-      "refersTo": "host-row",
-      "description": "Avatar with Connection state dot, name and address; selected uses the selection wash.",
-      "html": "<div class=\"ds-host ds-host-sel\"><span class=\"ds-av\">AP<i style=\"background:var(--success)\"></i></span><span><b>api-prod-1</b><small>deploy@10.0.4.21</small></span></div><div class=\"ds-host\"><span class=\"ds-av\">DB<i style=\"background:var(--warning)\"></i></span><span><b>postgres-primary</b><small>ops@db1.internal · via bastion</small></span></div>",
-      "css": ".ds-host { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 8px; width: 228px; font: 13px/20px -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: var(--foreground); } .ds-host:hover { background: var(--accent); } .ds-host-sel, .ds-host-sel:hover { background: var(--selected); } .ds-av { position: relative; width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; background: var(--muted); color: var(--muted-foreground); font-size: 11.5px; font-weight: 600; } .ds-host-sel .ds-av { background: var(--primary); color: var(--primary-foreground); } .ds-av i { position: absolute; right: -2px; bottom: -2px; width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--background); } .ds-host b { display: block; font-weight: 500; } .ds-host small { display: block; font-size: 11.5px; line-height: 16px; color: var(--muted-foreground); }"
+      "name": "Theme gallery card",
+      "kind": "card",
+      "refersTo": "theme-card-checked",
+      "description": "A theme drawn as a miniature window from its own values; hover previews it across the window, click commits.",
+      "html": "<div class=\"ds-gallery\"><button class=\"ds-theme-card ds-checked\" role=\"radio\" aria-checked=\"true\"><span class=\"ds-mini\"><span class=\"ds-mini-side\"></span><span class=\"ds-mini-term\">$ ssh web-01</span></span><span class=\"ds-theme-name\">Astra Dark</span></button><button class=\"ds-theme-card\" role=\"radio\" aria-checked=\"false\"><span class=\"ds-mini ds-tokyo\"><span class=\"ds-mini-side\"></span><span class=\"ds-mini-term\">$ ls</span></span><span class=\"ds-theme-name\">Tokyo Night</span></button></div>",
+      "css": ".ds-gallery { display: grid; grid-template-columns: repeat(2, 10rem); gap: 12px; } .ds-theme-card { display: flex; flex-direction: column; gap: 6px; padding: 6px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--foreground, #151a26); text-align: left; cursor: pointer; transition: background-color 150ms; outline: none; } .ds-theme-card:hover { background: var(--accent, #dde0e5); } .ds-theme-card:focus-visible { border-color: var(--ring, #2d62d8); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring, #2d62d8) 50%, transparent); } .ds-theme-card.ds-checked { border-color: var(--primary, #2d62d8); background: var(--selected, #2d62d824); } .ds-mini { display: flex; aspect-ratio: 16 / 10; overflow: hidden; border: 1px solid var(--border, #dfe4ed); border-radius: 8px; background: #0e121b; } .ds-mini-side { width: 24%; background: #0a0d14; } .ds-mini-term { padding: 6px 8px; color: #d9dce3; font: 400 9px/1.45 ui-monospace, 'SF Mono', Menlo, monospace; } .ds-tokyo { background: #1a1b26; } .ds-tokyo .ds-mini-side { background: #16161e; } .ds-tokyo .ds-mini-term { color: #c0caf5; } .ds-theme-name { padding: 0 2px; font: 500 11.5px/16px -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; }"
     },
     {
-      "name": "Fingerprint block and destructive alert (specified in mockups, not built yet)",
-      "kind": "custom",
-      "refersTo": "fingerprint-block",
-      "description": "Host key mismatch: plain red alert above the expected and received fingerprints.",
-      "html": "<div class=\"ds-sec\"><div class=\"ds-alert\"><b>Someone may be intercepting this connection.</b><p>Confirm with the server's administrator before removing the old key.</p></div><div class=\"ds-fp\"><span>Expected (known_hosts, line 14)</span><code>SHA256:Jd2kq0Pz9Lm4Xb7cYt1Wf8Hs5Nr3Ae6Vg0Ui2Ko4BQ</code><span>Received</span><code class=\"ds-bad\">SHA256:Z81mW4q0aT6sYc3Lp9Ex2Rv7Hk5Nb1Dg8Uf0Jo3Ci6M</code></div></div>",
-      "css": ".ds-sec { display: grid; gap: 14px; width: 460px; font: 13px/20px -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: var(--foreground); } .ds-alert { padding: 12px 14px; border-radius: 10px; background: color-mix(in oklch, var(--destructive) 8%, transparent); border: 1px solid color-mix(in oklch, var(--destructive) 30%, transparent); color: var(--destructive); } .ds-alert p { margin: 2px 0 0; color: var(--foreground); } .ds-fp { display: grid; gap: 6px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--muted); } .ds-fp span { font-size: 11.5px; line-height: 16px; color: var(--muted-foreground); } .ds-fp code { font: 12.5px/1.45 ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; word-break: break-all; } .ds-fp .ds-bad { color: var(--destructive); }"
-    },
-    {
-      "name": "Segmented control (specified in mockups, not built yet)",
-      "kind": "chip",
-      "refersTo": "segmented-control",
-      "description": "Exclusive choice in a small space: Transfers filter, authentication method.",
-      "html": "<span class=\"ds-seg\"><button class=\"ds-seg-on\">Password</button><button>Private key</button><button>ssh-agent</button></span>",
-      "css": ".ds-seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--muted); } .ds-seg button { border: 0; padding: 3px 10px; border-radius: 6px; background: transparent; color: var(--muted-foreground); font: 12px/18px -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; } .ds-seg button:hover { color: var(--foreground); } .ds-seg .ds-seg-on { background: var(--surface); color: var(--foreground); box-shadow: 0 1px 2px oklch(0 0 0 / 0.08); } .ds-seg button:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); }"
+      "name": "Search input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Home's 36px Host search on the ground; ring border and 3px halo on focus.",
+      "html": "<label class=\"ds-search\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><circle cx=\"11\" cy=\"11\" r=\"7\"/><path d=\"m20 20-3.5-3.5\"/></svg><input placeholder=\"Search Hosts by name, address or user\"></label>",
+      "css": ".ds-search { position: relative; display: block; width: 360px; color: var(--muted-foreground, #566175); } .ds-search svg { position: absolute; left: 12px; top: 10px; pointer-events: none; } .ds-search input { width: 100%; height: 36px; padding: 4px 12px 4px 36px; border: 1px solid var(--input, #bdc0c7); border-radius: 8px; background: var(--background, #f4f6fa); color: var(--foreground, #151a26); font: 400 13px/20px -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; outline: none; transition: border-color 150ms, box-shadow 150ms; } .ds-search input::placeholder { color: var(--muted-foreground, #566175); } .ds-search input:focus-visible { border-color: var(--ring, #2d62d8); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring, #2d62d8) 50%, transparent); }"
     }
   ],
   "narrative": {
-    "northStar": "The Terminal is a lit sheet laid on a quiet desk",
-    "overview": "The window is a desk and a few sheets of paper on it. The chrome (Host list, tab strip, status bar) is one tinted ground with no rules dividing it; the work surfaces (the Terminal and the File panel) are rounded panels that float on that ground, separated by thin gutters instead of heavy dividers. The Terminal is the brightest sheet in light mode and the deepest in dark mode, and the active tab is cut from that same sheet so the tab and its Terminal read as one object.\n\nThe restraint is pinned by the owner: Termius and Linear, meaning large radii, 1px borders, soft shadow in light, border-led depth in dark, and desktop density with a 13px body. Colour is almost entirely cool neutral (hue 255). One Astra blue does the work of primary actions, selection and focus; green, amber and red belong to Connection state and nothing else. The look refuses edge-to-edge grey panes divided by heavy rules.\n\nDensity is moderate desktop density, not web-page spacing: 26px icon buttons, 32px tabs and controls, a 26px status bar. Everything a later screen needs (dialogs, Host rows, file tables, transfers) is drawn from the same tokens; the mockups in `docs/design/mockups.html` show those screens before they are built.",
+    "northStar": "One theme, the whole workstation",
+    "overview": "SSH Astra plays the category standard straight: the Termius / Warp / WindTerm workstation. A 48px nav rail on the far left, a Host vault (a 248px Host list column, and Home's grid of Host cards), compact pill tabs, Terminals that fill the stage with the File panel docked beside them, and a dense 24px status bar. Nothing about the layout tries to be novel; the craft is in density, alignment and state.\n\nThe identity is the theme model. Thirteen whole-window themes ship, and a theme is never just a Terminal scheme: it names the ground, sidebar, surface, raised layer, text, muted text, border, accent and state colours of the chrome *and* the Terminal's 16-colour palette, and every other token derives from those. Switching theme recolours the window and every open Terminal in one frame; hovering a theme in the gallery previews it live across the whole window before a click commits. Host monograms and tab marks take their colour from the active theme's ANSI hues, so each Host keeps a stable identity that still belongs to whatever theme is painted.\n\nDensity is desktop density: 13px body, 26px icon buttons, 28px tabs, 30px Host rows, 24px status bar. Light and dark are equal citizens; the default follows the OS appearance, with a separately chosen light theme and dark theme. The world replaces the earlier \"lit sheet on a tinted desk\" system: there is no grey desk with floating white sheets any more, and no single fixed palette.",
     "keyCharacteristics": [
-      "Two materials only: the chrome ground and floating rounded panels.",
-      "6px gutters between panels that double as resize handles.",
-      "The active tab is joined to the Terminal surface (same colour, shared edge).",
-      "One blue accent; green, amber and red are reserved for Connection state.",
-      "System UI sans at 13px; mono only where characters must be exact.",
-      "Light and dark are equal citizens, switched by the `.dark` class on `<html>`."
+      "Thirteen whole-window themes; one theme paints chrome and Terminal together.",
+      "Twelve named roles per theme plus a full Terminal palette; everything else is derived in `src/index.css`.",
+      "Rail and Host list share the sidebar colour; tabs, gutters and status bar sit on the ground.",
+      "Work panels are flush, bordered and 10px rounded; they do not float on shadows.",
+      "Host identity is an ANSI hue (monogram tile, tab underline); Connection state is green, amber, red.",
+      "System UI sans at 13px; mono only where characters must be exact."
     ],
     "rules": [
       {
-        "name": "The Semantic Token Rule",
-        "body": "Components use only semantic tokens (`bg-background`, `bg-surface`, `bg-popover`, `bg-muted`, `text-muted-foreground`, `bg-accent`, `bg-selected`, `bg-terminal-background`, `text-terminal-foreground`, `border`, `ring`, `shadow-panel`, `shadow-overlay`, `text-success`, `text-warning`, `text-destructive`, `bg-overlay`), never raw colours, Tailwind palette colours (`bg-zinc-800`, `text-white`, `bg-black/50`) or arbitrary values. A new colour need is a new token in `src/index.css`, in both `:root` and `.dark`. `src/theme/terminal-themes.ts` is the one sanctioned place for literal hex: the 16 ANSI colours, cursor and selection for xterm.",
+        "name": "The Twelve Roles Rule",
+        "body": "A theme is exactly the twelve `ThemeUi` roles plus a complete Terminal palette, all `#rrggbb`. A new colour need is a role derived in `src/index.css` from those variables, never a literal in a component and never a thirteenth role added to one theme only. Literal hex lives only in `src/theme/themes.ts` and `src/theme/terminal-themes.ts`.",
         "section": "colors"
       },
       {
-        "name": "The One Blue Rule",
-        "body": "Astra Blue marks what is primary, selected or focused. It is not decoration, not a heading colour and not a second state colour.",
+        "name": "The AA Rule",
+        "body": "Every theme passes WCAG AA (4.5:1), enforced per theme by `src/theme/themes.test.ts`: foreground on ground, surface and raised; muted foreground on surface and ground; primary foreground on primary; Terminal foreground on Terminal background. A theme port that fails is adjusted until it passes, not exempted. Monogram ink is held to 4.6:1 on every tile backing.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Accent Rule",
+        "body": "Primary marks what is primary, current, checked or focused. It is not decoration, not a heading colour and not a state colour.",
         "section": "colors"
       },
       {
         "name": "The State Colour Rule",
-        "body": "Green means connected, amber means connecting or degraded, red means disconnected, failed, or host key mismatch. These colours appear wherever a Host appears (Host row dot, tab dot, status bar) and are never used for anything else. State is never colour alone: a label or tooltip names it.",
+        "body": "Green means connected, amber means connecting or reconnecting (and pulses), red means disconnected, failed, or host key mismatch. They appear wherever a Host appears (Host row, Host card, tab, status bar) and are used for nothing else. State is never colour alone: an `sr-only` label, tooltip or text names it.",
+        "section": "colors"
+      },
+      {
+        "name": "The Hue Is Identity Rule",
+        "body": "A Host's colour is one of six ANSI hues (red, green, yellow, blue, magenta, cyan), a stable FNV-1a hash of its id (`hostHue`), painted only through `--ansi-*` tokens so every theme recolours it. Hue says *which* Host; it never says Connection state.",
         "section": "colors"
       },
       {
         "name": "The Mono-Means-Exact Rule",
-        "body": "Mono is used only where every character matters: the Terminal, file paths, host key fingerprints, addresses and commands quoted in copy. Never for labels, numbers in general, or decoration.",
+        "body": "Mono is used only where every character matters: the Terminal, addresses, paths, host key fingerprints and key paths, commands quoted in copy. Never for labels, counts or decoration.",
         "section": "typography"
       },
       {
         "name": "The Sentence Case Rule",
-        "body": "All UI copy is sentence case. No uppercase labels, no letter-spaced small caps.",
+        "body": "All UI copy is sentence case. No uppercase labels, no letter-spaced small caps. Theme names are proper nouns, shown untranslated.",
         "section": "typography"
       },
       {
-        "name": "The Ground-and-Sheets Rule",
-        "body": "Chrome never gets its own panel, fill or dividing rule; it lives on the ground. Work surfaces are always rounded, bordered panels with ground on every side.",
+        "name": "The Shared Row Rule",
+        "body": "Chrome rows across columns share one height (34px), so the window reads as one grid; a new header in the sidebar or main column takes the same row.",
         "section": "layout"
       },
       {
+        "name": "The Flush Panel Rule",
+        "body": "Terminal, File, Home and Settings panels never float: 1px border, ground around them, no shadow. Depth comes from the theme's tonal steps.",
+        "section": "elevation"
+      },
+      {
         "name": "The Two Shadows Rule",
-        "body": "There are exactly two shadows, `shadow-panel` and `shadow-overlay`. Tailwind's `shadow-sm/md/lg` are not part of the system.",
+        "body": "There are exactly two shadows, `shadow-panel` and `shadow-overlay`, both derived from the theme. Tailwind's `shadow-xs/sm/md/lg` are not part of the system.",
         "section": "elevation"
       }
     ],
     "dos": [
-      "Do style components with semantic tokens only; add a token to both `:root` and `.dark` in `src/index.css` when a new role is needed, and keep `terminal-themes.ts` in sync with `--terminal-*`.",
-      "Do use the overridden Tailwind sizes (`text-xs` 11.5px, `text-sm` 13px body, `text-base` 14px, `text-lg` 15px) and the radius scale (`rounded-sm` 6px, `rounded-md` 8px, `rounded-lg` 10px panels, `rounded-xl` 14px dialogs).",
-      "Do keep chrome on the ground and work on rounded panels, with 6px gutters that are the resize handles.",
-      "Do show Connection state wherever a Host appears: green connected, amber connecting or degraded, red disconnected or host key mismatch, always paired with a text label or tooltip.",
-      "Do capitalise GLOSSARY.md terms in English copy (Host, Group, Jump host, Connection, Known host, Terminal, Local terminal, File panel, Port forward) and write everything else in sentence case. In Chinese copy keep \"Host\" as is and translate the rest (终端, 本地终端, 文件面板).",
-      "Do put all copy behind i18n keys present in both `src/i18n/locales/en.json` and `zh.json`.",
+      "Do style components with semantic tokens only (`bg-background`, `bg-sidebar`, `bg-surface`, `bg-popover`, `bg-muted`, `bg-accent`, `bg-selected`, `text-muted-foreground`, `border`, `ring`, `bg-terminal-background`, `bg-ansi-*`, `text-ansi-*-ink`, `text-success`, `text-warning`, `text-destructive`); derive a new role in `src/index.css` from `--ui-*`.",
+      "Do add a theme as a complete `AppTheme` (twelve ui roles plus the full Terminal palette, all `#rrggbb`) and run `src/theme/themes.test.ts`; adjust colours until every AA pair passes.",
+      "Do paint a Host's identity only through `hostHue` and `hueClasses` (tile, dot, line), so every theme recolours it.",
+      "Do show Connection state wherever a Host appears: green connected, amber connecting (pulsing), red disconnected or host key mismatch, always named in text, `sr-only` or tooltip.",
+      "Do keep chrome rows at 34px, panels flush with 6px gutters that are the resize handles, and the status bar at 24px.",
+      "Do use the overridden Tailwind sizes (`text-xs` 11.5px, `text-sm` 13px, `text-base` 14px, `text-lg` 15px) and the radius scale (6 / 8 / 10 / 14px).",
       "Do build icon-only controls with `IconButton` and a `label`; give every interactive element a visible `:focus-visible` ring (`ring`, 3px halo).",
-      "Do respect `prefers-reduced-motion`: the base layer reduces every animation and transition to near zero; new motion must not bypass it.",
-      "Do state security problems plainly: an unknown host key gets a dialog with its fingerprint; a mismatch is red and blocks."
+      "Do respect `prefers-reduced-motion`: the base layer reduces every animation and transition to near zero.",
+      "Do capitalise GLOSSARY.md terms in English copy (Host, Group, Jump host, Connection, Known host, Terminal, Local terminal, File panel, Port forward), write everything else in sentence case, and put all copy behind i18n keys in both locales."
     ],
     "donts": [
-      "Don't use raw colours, Tailwind palette colours or arbitrary values (`#fff`, `text-white`, `bg-black/50`, `bg-zinc-900`) in components; literal hex belongs only in `terminal-themes.ts`.",
-      "Don't reach for a modal first. Inline editing, panels and menus come first; dialogs are for security confirmations (unknown or changed host keys), destructive confirmations and the Host editor.",
-      "Don't use mono outside the Terminal, paths, fingerprints, addresses and quoted commands.",
-      "Don't use Astra Blue for decoration, or the state colours for anything except state.",
-      "Don't divide chrome with heavy rules or give chrome its own grey pane; don't run panels edge to edge.",
-      "Don't use shadows other than `shadow-panel` and `shadow-overlay`, or borders thicker than 1px.",
+      "Don't put literal colours, Tailwind palette colours or arbitrary colour values in components; literal hex belongs only in `themes.ts` and `terminal-themes.ts`.",
+      "Don't give a theme a colour the Terminal and chrome don't share, or recolour the Terminal without the chrome: one theme paints the whole window.",
+      "Don't use primary for decoration, a Host hue for state, or a state colour for identity.",
+      "Don't float work panels on shadows, or use shadows other than `shadow-panel` and `shadow-overlay`.",
+      "Don't use mono outside the Terminal, addresses, paths, fingerprints and quoted commands.",
       "Don't use uppercase or letter-spaced labels, or set font sizes outside the overridden scale.",
-      "Don't hard-code UI strings, or translate glossary terms into their \"Avoid\" synonyms (session, server, bookmark, SFTP browser)."
+      "Don't reach for a modal first: dialogs are for security confirmations, destructive confirmations and the Host editor."
     ]
   }
 }
