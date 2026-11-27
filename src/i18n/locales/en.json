@@ -30,6 +30,7 @@
       "auth": "Authentication",
       "identityFile": "Private key file",
       "identitiesOnly": "Identities only",
+      "forwardAgent": "Agent forwarding",
       "terminalScheme": "Terminal colours",
       "defaultDirectory": "File panel folder"
     },
@@ -38,6 +39,7 @@
     "terminalSchemeHint": "Give production Hosts their own colours so they are hard to mistake.",
     "defaultDirectoryHint": "Where the File panel opens the first time. Leave blank for the home folder.",
     "identitiesOnlyHint": "When a key file is selected, offer only its matching key from ssh-agent and skip default key files.",
+    "forwardAgentHint": "While connected, the remote host can use your SSH keys through your local agent. Reconnect to apply changes.",
     "errors": {
       "required": "Required",
       "port": "Enter a port from 1 to 65535"
@@ -359,6 +361,7 @@
       "autoStart": "Start when connected"
     },
     "labelPlaceholder": "Optional",
+    "forwardAgentHint": "While connected, the remote host can use your SSH keys through your local agent. Reconnect to apply changes.",
     "errors": {
       "required": "Required",
       "port": "Enter a port from 1 to 65535"

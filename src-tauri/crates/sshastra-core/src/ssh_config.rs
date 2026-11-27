@@ -9,7 +9,7 @@
 //! Understood: `Host` blocks with patterns (`*`, `?`, `!`), settings before
 //! the first `Host`, OpenSSH's "first value obtained wins" across every
 //! matching block (so a trailing `Host *` supplies defaults), `HostName`,
-//! `Port`, `User`, `IdentityFile` (the first one), `IdentitiesOnly`,
+//! `Port`, `User`, `IdentityFile` (the first one), `IdentitiesOnly`, `ForwardAgent`,
 //! `ProxyJump` (as Jump hosts), `Include`, `LocalForward`, `RemoteForward`
 //! and `DynamicForward` (as auto-start Port forward rules, since `ssh` sets
 //! them up on every connect). `ProxyCommand` Hosts are reported and skipped;
@@ -48,6 +48,7 @@ pub struct ConfigHost {
     /// `~/` is kept as written; `HostAuth::Key` understands it.
     pub identity_file: Option<PathBuf>,
     pub identities_only: bool,
+    pub forward_agent: bool,
     pub jump_host: Option<String>,
     pub forwards: Vec<ForwardDraft>,
 }
@@ -370,23 +371,22 @@ struct Settings {
     user: Option<String>,
     identity_file: Option<String>,
     identities_only: Option<String>,
+    forward_agent: Option<String>,
     /// `None` inside: `ProxyJump none` / `ProxyCommand none`.
     proxy: Option<Option<Proxy>>,
     /// In order, with their keyword.
     forwards: Vec<(&'static str, String)>,
 }
 
-impl Settings {
-    fn identities_only(&self) -> Result<bool, ImportProblem> {
-        match self.identities_only.as_deref() {
-            None => Ok(false),
-            Some(value) if value.eq_ignore_ascii_case("yes") => Ok(true),
-            Some(value) if value.eq_ignore_ascii_case("no") => Ok(false),
-            Some(value) => Err(ImportProblem::InvalidValue {
-                directive: "IdentitiesOnly".into(),
-                value: value.into(),
-            }),
-        }
+fn yes_or_no(directive: &str, value: Option<&str>) -> Result<bool, ImportProblem> {
+    match value {
+        None => Ok(false),
+        Some(value) if value.eq_ignore_ascii_case("yes") => Ok(true),
+        Some(value) if value.eq_ignore_ascii_case("no") => Ok(false),
+        Some(value) => Err(ImportProblem::InvalidValue {
+            directive: directive.into(),
+            value: value.into(),
+        }),
     }
 }
 
@@ -418,6 +418,7 @@ impl Config<'_> {
                     "user" => set(&mut s.user, d),
                     "identityfile" => set(&mut s.identity_file, d),
                     "identitiesonly" => set(&mut s.identities_only, d),
+                    "forwardagent" => set(&mut s.forward_agent, d),
                     "proxyjump" | "proxycommand" if s.proxy.is_none() => {
                         let value = d.value();
                         s.proxy = Some(if value.eq_ignore_ascii_case("none") {
@@ -475,7 +476,8 @@ impl Config<'_> {
             port,
             user,
             identity_file,
-            identities_only: s.identities_only()?,
+            identities_only: yes_or_no("IdentitiesOnly", s.identities_only.as_deref())?,
+            forward_agent: yes_or_no("ForwardAgent", s.forward_agent.as_deref())?,
             jump_host: None,
             forwards: Vec::new(),
         })
@@ -754,7 +756,8 @@ impl Hosts {
                         port: 22,
                         user: config.ctx.local_user.clone(),
                         identity_file: None,
-                        identities_only: s.identities_only()?,
+                        identities_only: yes_or_no("IdentitiesOnly", s.identities_only.as_deref())?,
+                        forward_agent: yes_or_no("ForwardAgent", s.forward_agent.as_deref())?,
                         jump_host: None,
                         forwards: Vec::new(),
                     }

@@ -20,6 +20,7 @@ fn host(name: &str) -> ConfigHost {
         user: LOCAL_USER.into(),
         identity_file: None,
         identities_only: false,
+        forward_agent: false,
         jump_host: None,
         forwards: Vec::new(),
     }
@@ -585,7 +586,6 @@ Host web
             "
 Host x
     ServerAliveInterval 30
-    ForwardAgent yes
     SomethingNew 1
 ",
         )

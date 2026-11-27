@@ -577,6 +577,7 @@ async fn saving_the_temp_file_changes_the_file_on_the_server() {
         group_id: None,
         terminal_scheme: None,
         identities_only: false,
+        forward_agent: false,
         default_directory: None,
         forwards: Vec::new(),
     };

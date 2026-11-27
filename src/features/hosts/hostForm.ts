@@ -13,6 +13,7 @@ export interface HostFormValues {
   /** Private key path; used when `authType` is `"key"`. */
   identityFile: string;
   identitiesOnly: boolean;
+  forwardAgent: boolean;
   /** The Host's own Terminal colour scheme; absent follows the global one. */
   terminalScheme?: TerminalColorScheme;
   /** Where the File panel opens first; blank is the home directory. */
@@ -22,7 +23,7 @@ export interface HostFormValues {
 /** The free-text fields, validated here. */
 export type HostFormField = Exclude<
   keyof HostFormValues,
-  "jumpHost" | "authType" | "identitiesOnly" | "terminalScheme" | "defaultDirectory"
+  "jumpHost" | "authType" | "identitiesOnly" | "forwardAgent" | "terminalScheme" | "defaultDirectory"
 >;
 /** Error codes; the UI maps them to copy under `hosts.errors.*`. */
 export type HostFormError = "required" | "port";
@@ -40,6 +41,7 @@ export const emptyHostForm: HostFormValues = {
   authType: "auto",
   identityFile: "",
   identitiesOnly: false,
+  forwardAgent: false,
 };
 
 export function hostFormFrom(host: Host): HostFormValues {
@@ -52,6 +54,7 @@ export function hostFormFrom(host: Host): HostFormValues {
     authType: host.auth.type,
     identityFile: host.auth.type === "key" ? host.auth.identityFile : "",
     identitiesOnly: host.identitiesOnly ?? false,
+    forwardAgent: host.forwardAgent ?? false,
   };
   if (isTerminalColorScheme(host.terminalScheme)) form.terminalScheme = host.terminalScheme;
   if (host.defaultDirectory) form.defaultDirectory = host.defaultDirectory;
@@ -77,7 +80,11 @@ export function parseHostForm(values: HostFormValues): HostFormResult {
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   const jumpHost = values.jumpHost || null;
   const auth: HostAuth = values.authType === "key" ? { type: "key", identityFile } : { type: values.authType };
-  const draft: HostDraft = { name, address, port, user, auth, jumpHost, identitiesOnly: values.identitiesOnly };
+  const draft: HostDraft = {
+    name, address, port, user, auth, jumpHost,
+    identitiesOnly: values.identitiesOnly,
+    forwardAgent: values.forwardAgent,
+  };
   if (values.terminalScheme) draft.terminalScheme = values.terminalScheme;
   const defaultDirectory = values.defaultDirectory?.trim();
   if (defaultDirectory) draft.defaultDirectory = defaultDirectory;

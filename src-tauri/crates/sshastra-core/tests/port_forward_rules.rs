@@ -22,6 +22,7 @@ fn draft(name: &str) -> HostDraft {
         jump_host: None,
         terminal_scheme: None,
         identities_only: false,
+        forward_agent: false,
         default_directory: None,
     }
 }
@@ -204,7 +205,7 @@ fn hosts_saved_before_port_forwards_existed_have_none() {
     store.upsert(None, draft("new")).unwrap();
     let json: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(json["version"], 7);
+    assert_eq!(json["version"], 8);
     assert_eq!(json["hosts"][0]["forwards"], serde_json::json!([]));
 }
 
@@ -365,6 +366,6 @@ fn rules_saved_before_auto_start_existed_do_not_auto_start() {
     store.upsert(None, draft("new")).unwrap();
     let json: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(json["version"], 7);
+    assert_eq!(json["version"], 8);
     assert_eq!(json["hosts"][0]["forwards"][0]["autoStart"], false);
 }
