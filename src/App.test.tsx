@@ -1,5 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { check, Update } from "@tauri-apps/plugin-updater";
 import { Terminal } from "@xterm/xterm";
 import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -7,12 +10,14 @@ import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { quickConnectLabel } from "@/features/connect/quick-connect";
 import { hostsStore } from "@/features/hosts/hostsStore";
+import { updatesStore } from "@/features/updates/updatesStore";
 import { currentPlatform } from "@/features/workspace/shortcuts";
 import { emptyTabs, newPane, tabsReducer, type TabsAction, type TabsState } from "@/features/workspace/tabs";
 import { restoreWorkspaceLayout, workspaceLayoutSetting } from "@/features/workspace/workspace-layout";
 import i18n, { startI18n } from "@/i18n";
 import type { ConnectPrompt } from "@/lib/ipc/connect";
 import type { Listing } from "@/lib/ipc/files";
+import type { ForwardEvent, PortForward } from "@/lib/ipc/forwards";
 import type { Host, HostDraft, QuickConnectTarget } from "@/lib/ipc/hosts";
 import type { TerminalMessage } from "@/lib/ipc/terminal";
 import type { Transfer } from "@/lib/ipc/transfers";
@@ -49,7 +54,9 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
       if (command === "files_open" || command === "files_connect" || command === "files_local_open") return command;
       if (command === "files_list") return panelListings.get(args?.id ?? "") ?? { path: "/", entries: [] };
       if (command === "transfers_copy_remote") return [1];
-      if (command === "transfers_watch" || command === "forwards_watch" || command === "connections_watch") return [];
+      if (command === "transfers_watch") return initialTransfers;
+      if (command === "forwards_watch") return initialForwards;
+      if (command === "connections_watch") return initialHeld;
       if (command === "hosts_import_ssh_config") return {
         tree: { hosts: savedHosts, groups: [] },
         report: {
@@ -68,6 +75,13 @@ vi.mock("@tauri-apps/plugin-clipboard-manager", async (importOriginal) => ({
   ...await importOriginal<typeof import("@tauri-apps/plugin-clipboard-manager")>(),
   writeText: vi.fn(async () => {}),
 }));
+
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(async () => {}) }));
+vi.mock("@tauri-apps/plugin-updater", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@tauri-apps/plugin-updater")>(),
+  check: vi.fn(),
+}));
+vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: vi.fn() }));
 
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }),
@@ -96,6 +110,9 @@ const host: Host = {
   auth: { type: "password" }, jumpHost: null, groupId: null, forwards: [],
 };
 let savedHosts: Host[] = [];
+let initialTransfers: Transfer[] = [];
+let initialForwards: ForwardEvent[] = [];
+let initialHeld: string[] = [];
 let saveTemporaryError: { kind: string; message: string } | undefined;
 const panelListings = new Map<string, Listing>();
 const remote = (id: string) => newPane({ kind: "remote-terminal", host }, id);
@@ -150,7 +167,14 @@ afterEach(async () => {
     savedHosts = [];
     await hostsStore.getState().load();
   }
+  initialTransfers = [];
+  initialForwards = [];
+  initialHeld = [];
   vi.mocked(invoke).mockClear();
+  vi.mocked(check).mockReset();
+  vi.mocked(openUrl).mockClear();
+  vi.mocked(relaunch).mockReset();
+  updatesStore.setState({ status: { type: "idle" } });
   panelListings.clear();
   vi.unstubAllGlobals();
 });
@@ -261,6 +285,127 @@ async function clickButton(label: string, scope: ParentNode = document) {
   expect(button, label).toBeDefined();
   await act(async () => button!.click());
 }
+
+function offerUpdate(body?: string) {
+  const update = new Update({ rid: 1, currentVersion: "1.2.2", version: "1.2.3", body, rawJson: {} });
+  const downloadAndInstall = vi.spyOn(update, "downloadAndInstall").mockResolvedValue(undefined);
+  vi.mocked(check).mockResolvedValue(update);
+  return downloadAndInstall;
+}
+
+async function showUpdateNotice(...actions: TabsAction[]) {
+  await render(workspace(...actions));
+  await act(async () => updatesStore.getState().check("manual"));
+}
+
+it("opens the update dialog from the status bar and keeps the offer after Later", async () => {
+  const downloadAndInstall = offerUpdate();
+  await showUpdateNotice();
+  const notice = "SSH Astra 1.2.3 is available";
+
+  expect(dialog()).toBeNull();
+  await clickButton(notice);
+  expect(dialog()?.querySelector("h2")?.textContent).toBe(notice);
+  expect(dialog()?.textContent).toContain("No release notes are available for this version.");
+  expect(document.activeElement?.textContent).toBe("Later");
+  expect(downloadAndInstall).not.toHaveBeenCalled();
+
+  await clickButton("Later", dialog()!);
+  expect(dialog()).toBeNull();
+  expect(downloadAndInstall).not.toHaveBeenCalled();
+
+  await clickButton(notice);
+  await act(async () => i18n.changeLanguage("zh"));
+  expect(dialog()?.querySelector("h2")?.textContent).toBe("SSH Astra 1.2.3 已发布");
+  expect(dialog()?.textContent).toContain("0 个连接");
+  await clickButton("更新并重启", dialog()!);
+  expect(dialog()).toBeNull();
+  expect(downloadAndInstall).toHaveBeenCalledTimes(1);
+  expect(relaunch).toHaveBeenCalledTimes(1);
+});
+
+it("counts live Connections, unfinished transfers, and running Port forwards before restarting", async () => {
+  offerUpdate();
+  const rule = (id: string, bindPort: number): PortForward => ({
+    id, bindPort, type: "dynamic", bindAddress: "localhost", label: id, autoStart: false,
+  });
+  const withForward = { ...host, forwards: [rule("one", 2201)] };
+  const forwardOnly = { ...host, id: "forward-only", name: "Forward only", forwards: [rule("two", 2202), rule("failed", 2203)] };
+  const heldOnly = { ...host, id: "held-only", name: "Held only" };
+  savedHosts = [withForward, forwardOnly, heldOnly];
+  await hostsStore.getState().load();
+  initialHeld = [host.id, heldOnly.id];
+  initialForwards = [
+    { hostId: host.id, forwardId: "one", status: { state: "running" } },
+    { hostId: forwardOnly.id, forwardId: "two", status: { state: "running" } },
+    { hostId: forwardOnly.id, forwardId: "failed", status: { state: "failed", reason: "Unavailable" } },
+  ];
+
+  const states: Transfer["state"][] = [
+    { type: "running" }, { type: "queued" }, { type: "paused" },
+    { type: "done" }, { type: "failed", message: "Unavailable" }, { type: "cancelled" },
+  ];
+  initialTransfers = states.map((state, index) => ({
+    id: index + 1, state, direction: "download", name: `file-${index}`, source: "/srv/file", target: "/tmp/file",
+    bytesDone: 0, bytesTotal: 2, filesDone: 0, filesTotal: 1, unprotected: false,
+  }));
+
+  await showUpdateNotice(
+    { type: "open", tabId: "remote-one", pane: remote("remote-one") },
+    { type: "open", tabId: "remote-two", pane: remote("remote-two") },
+    { type: "open", tabId: "local", pane: local("local") },
+  );
+  await sendTerminalMessage({ connection: { state: "connected" } });
+  await sendTerminalMessage({ connection: { state: "connected" } }, "remote_terminal_open", 1);
+  await clickButton("SSH Astra 1.2.3 is available");
+  const activity = () => [...dialog()!.querySelectorAll("li")].map((item) => item.textContent);
+  expect(activity()).toEqual(["3 Connections", "3 transfers", "2 Port forwards"]);
+
+  const watch = vi.mocked(invoke).mock.calls.find(([command]) => command === "forwards_watch")?.[1] as {
+    onEvent: { onmessage(event: ForwardEvent): void };
+  };
+  await act(async () => watch.onEvent.onmessage({ hostId: forwardOnly.id, forwardId: "two", status: { state: "stopped" } }));
+  expect(activity()).toEqual(["2 Connections", "3 transfers", "1 Port forward"]);
+});
+
+it("renders release notes as Markdown with HTML, scripts, images, and unsafe links removed", async () => {
+  offerUpdate([
+    "## Improvements",
+    "",
+    "- **Faster** reconnects and `ssh-astra` fixes",
+    "- [Read more](https://example.invalid/release)",
+    "",
+    "A <span data-release-html=\"fixture\">plain detail</span> remains readable.",
+    "",
+    "<script type=\"application/x-release-notes-fixture\">script fixture</script>",
+    "",
+    "<div data-release-html=\"fixture\">raw HTML block</div>",
+    "",
+    "<img src=\"https://example.invalid/html-image.png\" alt=\"HTML preview\">",
+    "",
+    "![Remote preview](https://example.invalid/markdown-image.png)",
+    "",
+    "[Script URL](javascript:fixture) [Inline data](data:text/plain,fixture) [Local path](file:///tmp/fixture)",
+    "[Relative](./readme) [No scheme](//example.invalid/path)",
+  ].join("\n"));
+  await showUpdateNotice();
+  await clickButton("SSH Astra 1.2.3 is available");
+
+  const update = dialog()!;
+  expect([...update.querySelectorAll("h2")].map((heading) => heading.textContent)).toContain("Improvements");
+  expect(update.querySelector("li strong")?.textContent).toBe("Faster");
+  expect(update.querySelector("li code")?.textContent).toBe("ssh-astra");
+  expect(update.textContent).toContain("A plain detail remains readable.");
+  expect(update.querySelector("script, img, [data-release-html]")).toBeNull();
+  for (const stripped of ["script fixture", "raw HTML block", "HTML preview", "Remote preview", "<span"]) {
+    expect(update.textContent).not.toContain(stripped);
+  }
+  const links = update.querySelectorAll<HTMLAnchorElement>("a");
+  expect(Array.from(links, (link) => link.href)).toEqual(["https://example.invalid/release"]);
+  expect(openUrl).not.toHaveBeenCalled();
+  await act(async () => links[0]!.click());
+  expect(openUrl).toHaveBeenCalledExactlyOnceWith("https://example.invalid/release");
+});
 
 it("records a replacement in Settings and uses it in the window and command palette after reopening", async () => {
   const initial = workspace({ type: "open", tabId: "settings", pane: newPane({ kind: "settings" }, "settings") });

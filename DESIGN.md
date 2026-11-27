@@ -479,6 +479,12 @@ Clear completed removes successful rows across Hosts. Completed downloads have a
 - **Tooltips:** inverted (foreground fill, ground text), `text-xs`, 8px radius.
 - **Dialogs:** `raised`, 1px border, 14px radius, 24px padding, max 512px, `shadow-overlay` over the overlay scrim; footer buttons right-aligned, primary last.
 
+### Update dialog
+
+Select the available version in the status bar to see its version number and scroll through the release notes. Render Markdown as formatted text, omit embedded HTML and images, and open HTTP and HTTPS links in the system browser. The updater manifest carries the draft release’s notes at build time.
+
+Show live counts for Connections, unfinished transfers (including paused transfers) and running Port forwards. Focus Later when the dialog opens. Later closes it and keeps the offer in the status bar. Update and restart is the primary action. The status bar shows download and restart progress.
+
 ### Host editor
 - **Basic information** is always visible and includes the name, address, port, user, authentication, Group, and Jump host. New Hosts start with Automatic authentication. The private key field appears when Private key is selected. Group shows the current location or the selected destination for a new Host. Use the Host list's move action to change a saved Host's Group.
 - **Advanced** is a full-width disclosure below Basic information. It starts collapsed and contains Identities only, Terminal colours, the File panel folder, and the action to clear a saved Host's credentials. A save error attached to an advanced field opens the section, displays the message by the field, and moves focus to it.

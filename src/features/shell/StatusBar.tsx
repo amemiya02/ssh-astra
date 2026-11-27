@@ -4,7 +4,6 @@ import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
 import { quickConnectLabel } from "@/features/connect/quick-connect";
 import { formatSize } from "@/features/files/fileList";
-import { UpdateNotice } from "@/features/updates/UpdateNotice";
 import type { BroadcastScope } from "@/features/workspace/broadcast";
 import { privacyModeSetting, togglePrivacyMode, workspaceHostName } from "@/features/workspace/privacy-mode";
 import type { ReconnectProgress } from "@/features/workspace/tabs";
@@ -24,6 +23,7 @@ export interface StatusInfo {
   /** Running Port forwards, worded (`localhost:15432 → db:5432`). */
   forwards: string[];
   transfers: { count: number; bytesPerSecond: number };
+  updateNotice?: ReactNode;
   /** The Host of the focused remote Terminal. */
   activeRemote: Host | null;
   saveTemporaryHost?(): void;
@@ -54,7 +54,7 @@ export function StatusBar({
   const { t } = useTranslation();
   const settingsShortcut = shortcutLabel("settings", useResolvedShortcuts());
   const [privacyMode] = useSetting(privacyModeSetting);
-  const { connected, reconnecting, forwards, transfers, activeRemote, saveTemporaryHost, broadcast } = info;
+  const { connected, reconnecting, forwards, transfers, activeRemote, saveTemporaryHost, broadcast, updateNotice } = info;
   const transferStatus = transfers.bytesPerSecond > 0
     ? t("status.transfersSpeed", { count: transfers.count, speed: formatSize(Math.round(transfers.bytesPerSecond)) })
     : transfers.count > 0 ? t("status.transfers", { count: transfers.count }) : undefined;
@@ -105,8 +105,8 @@ export function StatusBar({
             <span className="tabular-nums">{t("status.forwardsCount", { count: forwards.length })}</span>
           </Segment>
         )}
-        <UpdateNotice />
       </div>
+      {updateNotice}
       <Segment
         as="button"
         title={t("transfers.open")}

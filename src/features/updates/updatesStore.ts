@@ -16,10 +16,12 @@ export type UpdateStatus =
   | { type: "checking" }
   | { type: "upToDate" }
   | { type: "checkFailed"; reason: string }
-  | { type: "available"; version: string }
+  | ({ type: "available" } & UpdateRelease)
   | { type: "downloading"; version: string; downloaded: number; total?: number }
-  | { type: "installFailed"; version: string; reason: string }
+  | ({ type: "installFailed"; reason: string } & UpdateRelease)
   | { type: "restarting"; version: string };
+
+type UpdateRelease = Pick<AvailableUpdate, "version" | "notes">;
 
 /** Who asked: startup (silent unless there is an update) or the user (always answered). */
 export type CheckTrigger = "automatic" | "manual";
@@ -72,7 +74,7 @@ export function createUpdatesStore(api: UpdatesApi): StoreApi<UpdatesState> {
         let status: UpdateStatus;
         try {
           found = await response;
-          if (found) status = { type: "available", version: found.version };
+          if (found) status = { type: "available", version: found.version, notes: found.notes };
           else status = request.manual ? { type: "upToDate" } : { type: "idle" };
         } catch (error) {
           const reason = errorMessage(error);
@@ -88,14 +90,14 @@ export function createUpdatesStore(api: UpdatesApi): StoreApi<UpdatesState> {
     async install() {
       const update = found;
       if (!update || installing(get().status)) return;
-      const { version } = update;
+      const { version, notes } = update;
       set({ status: { type: "downloading", version, downloaded: 0 } });
       try {
         await update.install(({ downloaded, total }) =>
           set({ status: { type: "downloading", version, downloaded, total } }),
         );
       } catch (error) {
-        set({ status: { type: "installFailed", version, reason: errorMessage(error) } });
+        set({ status: { type: "installFailed", version, notes, reason: errorMessage(error) } });
         return;
       }
       set({ status: { type: "restarting", version } });
@@ -103,7 +105,7 @@ export function createUpdatesStore(api: UpdatesApi): StoreApi<UpdatesState> {
         await api.relaunchApp();
       } catch (error) {
         // Installed but not restarted: the new version starts next time.
-        set({ status: { type: "installFailed", version, reason: errorMessage(error) } });
+        set({ status: { type: "installFailed", version, notes, reason: errorMessage(error) } });
       }
     },
 
