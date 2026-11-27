@@ -1094,6 +1094,10 @@
           "sound": "声音"
         }
       },
+      "inlineImages": {
+        "label": "行内图片",
+        "description": "显示终端程序输出的 SIXEL 和 iTerm2 图片。关闭后会清除已显示的图片。"
+      },
       "highlighting": {
         "label": "关键词高亮",
         "builtIn": {
