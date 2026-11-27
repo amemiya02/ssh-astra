@@ -54,6 +54,10 @@ export const settingRows = {
     { en: "workspace exit disconnect warning shutdown prompt", zh: "工作区 退出 断开 警告 提示", "zh-Hant": "工作區 離開 結束 中斷 警告 提示" }, "settings.confirmQuit.description",
   ),
 
+  closeToTray: row("appearance", "settings.closeToTray.label",
+    { en: "window background notification area system tray", zh: "窗口 后台 系统 托盘", "zh-Hant": "視窗 背景 系統 通知區域 選單列" }, "settings.closeToTray.description",
+  ),
+
   localShell: row("terminal", "settings.terminal.localShell.label",
     { en: "local terminal bash zsh powershell cmd WSL", zh: "本地 终端 命令行 bash zsh powershell cmd WSL", "zh-Hant": "本機 終端機 命令列 bash zsh powershell cmd WSL" },
     "settings.terminal.localShell.description",
@@ -125,6 +129,9 @@ export const settingRows = {
   ),
   commandHistory: row("terminal", "settings.terminal.commandHistory.label",
     { en: "command history privacy shell integration paste", zh: "命令历史 隐私 Shell 集成 粘贴", "zh-Hant": "命令歷史 隱私 Shell 整合 貼上" }, "settings.terminal.commandHistory.description",
+  ),
+  inlineSuggestions: row("terminal", "settings.terminal.inlineSuggestions.label",
+    { en: "command history suggestion autocomplete right arrow End", zh: "命令历史 行内建议 自动补全 右方向键 End", "zh-Hant": "命令歷史 行內建議 自動補全 向右鍵 End" }, "settings.terminal.inlineSuggestions.description",
   ),
   inlineImages: row("terminal", "settings.terminal.inlineImages.label",
     { en: "inline image graphics SIXEL iTerm2", zh: "行内图片 图像 图形 SIXEL iTerm2", "zh-Hant": "行內圖片 影像 圖形 SIXEL iTerm2" }, "settings.terminal.inlineImages.description",

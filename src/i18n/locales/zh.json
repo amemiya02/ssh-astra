@@ -1292,6 +1292,10 @@
       "label": "关闭终端前确认",
       "description": "关闭已连接的远程终端前询问。"
     },
+    "closeToTray": {
+      "label": "关闭到托盘",
+      "description": "系统托盘可用时，关闭最后一个窗口后 SSH Astra 继续运行。"
+    },
     "confirmQuit": {
       "label": "退出应用前确认",
       "description": "有活动的连接、传输或端口转发时，退出应用前询问。"
@@ -1494,6 +1498,10 @@
         "label": "命令历史",
         "description": "已保存主机的命令行会以明文保存在本机。需要远程 zsh 或启用提示符展开的 bash 4.4+ 提供 Shell 集成。",
         "shellIntegrationDisabled": "Shell 集成已关闭。请开启后打开新的远程终端。记录生效时，命令行会以明文保存在本机。"
+      },
+      "inlineSuggestions": {
+        "label": "行内命令建议",
+        "description": "在 shell 提示符处显示命令历史中的匹配项。按右方向键或 End 插入建议。需要开启命令历史和 Shell 集成。"
       },
       "pasteImages": {
         "label": "将剪贴板图片粘贴为路径",
@@ -1700,6 +1708,11 @@
   "window": {
     "new": "新建窗口",
     "openFailed": "无法打开新窗口。"
+  },
+  "tray": {
+    "showWindow": "显示窗口",
+    "recentHosts": "最近使用的主机",
+    "runningForwards": "正在运行的端口转发：{{running}}"
   },
   "quit": {
     "title": "退出 SSH Astra？",

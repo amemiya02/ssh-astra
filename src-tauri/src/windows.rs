@@ -331,17 +331,68 @@ pub(crate) fn active(app: &AppHandle) -> Option<WebviewWindow> {
         .cloned()
 }
 
-/// Closes a single Window or asks its caller to run the app quit flow if it is the last one.
+/// Brings an existing Window to the foreground, keeping its webview intact.
+pub(crate) fn show_active(app: &AppHandle) -> Option<WebviewWindow> {
+    let window = active(app)?;
+    if let Err(error) = present(&window) {
+        log::debug!("Could not activate the existing Window: {error}");
+        return None;
+    }
+    Some(window)
+}
+
+pub(crate) fn present(window: &WebviewWindow) -> tauri::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        use gtk::prelude::GtkWindowExt;
+        // Present the hidden or minimized Window in one native request.
+        window.gtk_window().map(|window| window.present())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        #[cfg(target_os = "macos")]
+        window.app_handle().show()?;
+        window.unminimize()?;
+        window.show()?;
+        window.set_focus()
+    }
+}
+
+/// Returns true if closing this Window should start the app's quit flow.
 #[tauri::command]
-pub(crate) fn window_try_close(window: WebviewWindow) -> Result<bool, String> {
+pub(crate) async fn window_try_close(window: WebviewWindow) -> Result<bool, String> {
+    let app = window.app_handle().clone();
+    #[cfg(desktop)]
+    let use_tray = crate::tray::close_enabled(&app) && crate::tray::can_restore(&app).await;
+    #[cfg(not(desktop))]
+    let use_tray = false;
+
+    let (send, receive) = oneshot::channel();
+    app.run_on_main_thread(move || {
+        let _ = send.send(close_window(&window, use_tray));
+    })
+    .map_err(|error| error.to_string())?;
+    receive.await.map_err(|error| error.to_string())?
+}
+
+fn close_window(window: &WebviewWindow, use_tray: bool) -> Result<bool, String> {
+    #[cfg(not(desktop))]
+    let _ = use_tray;
     let app = window.app_handle();
     let windows = app.state::<Windows>();
     let mut closing = windows.closing.lock().unwrap();
-    if app
-        .webview_windows()
-        .keys()
-        .all(|label| label == window.label() || closing.contains(label))
-    {
+    if app.webview_windows().iter().all(|(label, other)| {
+        label == window.label() || closing.contains(label) || !other.is_visible().unwrap_or(true)
+    }) {
+        drop(closing);
+        #[cfg(desktop)]
+        if use_tray && crate::tray::close_enabled(app) {
+            // Destroying the webview would release its Terminals, prompts and File panels.
+            match crate::tray::hide(window) {
+                Ok(()) => return Ok(false),
+                Err(error) => log::warn!("Could not hide the last Window in the tray: {error}"),
+            }
+        }
         return Ok(true);
     }
     let newly_closing = closing.insert(window.label().into());
