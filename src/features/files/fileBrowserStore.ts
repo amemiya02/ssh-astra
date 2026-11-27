@@ -3,7 +3,7 @@ import type { ConnectionStatus } from "@/features/workspace/tabs";
 import { readCommandError, type CommandError } from "@/lib/ipc/connect";
 import { maxEditSize } from "@/lib/ipc/edit";
 import * as ipc from "@/lib/ipc/files";
-import type { FileEntry, FsId } from "@/lib/ipc/files";
+import type { FileEntry, FsId, PermissionChange } from "@/lib/ipc/files";
 import type { HostId } from "@/lib/ipc/hosts";
 import { createSharedRemoteEdits, type EditCommands, type RemoteEditItem } from "./sharedRemoteEdits";
 import { childPath, isDirLike, isFileLike, parentPath } from "./fileList";
@@ -100,8 +100,8 @@ export interface FileBrowserState {
   countForDelete(names: readonly string[]): Promise<{ count: number } | { error: CommandError }>;
   /** Deletes `names`, folders with everything in them. */
   remove(names: readonly string[]): Promise<CommandError | null>;
-  /** Sets the permission bits of `name`. */
-  setPermissions(name: string, mode: number): Promise<CommandError | null>;
+  /** Edits permissions in the directory where the dialog opened. */
+  setPermissions(directory: string, name: string, change: PermissionChange): Promise<CommandError | null>;
   /** Closes the SFTP session (the Connection dropped, or the pane closed); keeps the path for `connect`. Edits stay open. */
   disconnect(): void;
   /** The pane closed: disconnects and closes every edit. */
@@ -207,9 +207,9 @@ export function createFileBrowserStore(
     /** Runs an operation on the open session, then refreshes (also after a partial failure). */
     const operate = async (
       run: (id: FsId, dir: string) => Promise<void>,
-      select?: string,
+      { select, directory }: { select?: string; directory?: string } = {},
     ): Promise<CommandError | null> => {
-      const dir = get().path;
+      const dir = directory ?? get().path;
       if (fsId === null || dir === null) return notOpen;
       const generation = openGeneration;
       let failure: CommandError | null = null;
@@ -373,11 +373,11 @@ export function createFileBrowserStore(
         set({ selection: new Set([name]) });
       },
 
-      createFolder: async (name) => invalidName(name) ?? operate((id, dir) => api.createDir(id, childPath(dir, name)), name),
+      createFolder: async (name) => invalidName(name) ?? operate((id, dir) => api.createDir(id, childPath(dir, name)), { select: name }),
       createFile: async (name) =>
-        invalidName(name) ?? operate((id, dir) => api.createEmptyFile(id, childPath(dir, name)), name),
+        invalidName(name) ?? operate((id, dir) => api.createEmptyFile(id, childPath(dir, name)), { select: name }),
       rename: async (name, newName) =>
-        invalidName(newName) ?? operate((id, dir) => api.renameFile(id, childPath(dir, name), childPath(dir, newName)), newName),
+        invalidName(newName) ?? operate((id, dir) => api.renameFile(id, childPath(dir, name), childPath(dir, newName)), { select: newName }),
       cutEntries(names) {
         const { path, moving } = get();
         if (fsId !== null && path !== null && !moving && names.length > 0) {
@@ -415,7 +415,8 @@ export function createFileBrowserStore(
         }
       },
       remove: (names) => operate((id, dir) => api.deleteFiles(id, names.map((n) => childPath(dir, n)))),
-      setPermissions: (name, mode) => operate((id, dir) => api.chmodFile(id, childPath(dir, name), mode)),
+      setPermissions: (directory, name, change) =>
+        operate((id, dir) => api.chmodFile(id, childPath(dir, name), change), { directory }),
 
       disconnect() {
         openGeneration += 1;

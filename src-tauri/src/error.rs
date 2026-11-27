@@ -129,6 +129,9 @@ impl From<FsError> for CommandError {
             NotConnected => Self::new("notConnected", &err),
             NotFound(p) => Self::new("notFound", &err).with_details(path(p)),
             PermissionDenied(p) => Self::new("permissionDenied", &err).with_details(path(p)),
+            OwnershipUnavailable(p) => {
+                Self::new("ownershipUnavailable", &err).with_details(path(p))
+            }
             NotADirectory(p) => Self::new("notADirectory", &err).with_details(path(p)),
             AlreadyExists(p) => Self::new("alreadyExists", &err).with_details(path(p)),
             TooLarge { path, limit } => {

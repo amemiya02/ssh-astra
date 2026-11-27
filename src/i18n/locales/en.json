@@ -321,11 +321,18 @@
       "write": "Write",
       "execute": "Execute",
       "octal": "Octal",
+      "uid": "Owner ID (UID)",
+      "gid": "Group ID (GID)",
+      "ownershipHelp": "Ownership applies to the selected item. Leave an ID blank to keep it.",
+      "invalidId": "Enter an ID from 0 to 4294967294.",
+      "recursive": "Apply to folder contents",
+      "directoriesOnly": "Only add execute permissions to folders",
       "apply": "Apply"
     },
     "operationErrors": {
       "notFound": "No such file or folder: {{path}}",
       "permissionDenied": "Permission denied: {{path}}",
+      "ownershipUnavailable": "The current owner or group ID is unavailable for {{path}}. Enter both IDs to change ownership.",
       "alreadyExists": "Already exists: {{path}}",
       "moveIntoSelf": "A folder cannot be moved into itself.",
       "notOpen": "The File panel is not connected.",

@@ -123,6 +123,8 @@ impl LocalFs for DiskFs {
                     size,
                     modified,
                     permissions,
+                    uid: None,
+                    gid: None,
                     link_target,
                 });
             }

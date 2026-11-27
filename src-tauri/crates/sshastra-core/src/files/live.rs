@@ -42,6 +42,10 @@ impl RemoteFs for LiveHostFs {
         Box::pin(async move { self.fs().await?.list_dir(path).await })
     }
 
+    fn list_dir_no_follow<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<Vec<FileEntry>>> {
+        Box::pin(async move { self.fs().await?.list_dir_no_follow(path).await })
+    }
+
     fn stat<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileStat>> {
         Box::pin(async move { self.fs().await?.stat(path).await })
     }
@@ -68,6 +72,15 @@ impl RemoteFs for LiveHostFs {
 
     fn set_permissions<'a>(&'a self, path: &'a str, mode: u32) -> BoxFuture<'a, FsResult<()>> {
         Box::pin(async move { self.fs().await?.set_permissions(path, mode).await })
+    }
+
+    fn set_ownership<'a>(
+        &'a self,
+        path: &'a str,
+        uid: Option<u32>,
+        gid: Option<u32>,
+    ) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move { self.fs().await?.set_ownership(path, uid, gid).await })
     }
 
     fn open_read_at<'a>(

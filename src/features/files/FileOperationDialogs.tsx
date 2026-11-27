@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import type { CommandError } from "@/lib/ipc/connect";
-import type { FileEntry } from "@/lib/ipc/files";
+import type { FileEntry, PermissionChange } from "@/lib/ipc/files";
 import type { FileBrowserStore } from "./fileBrowsers";
 import type { MoveFailure } from "./fileBrowserStore";
 import { operationErrorText } from "./fileErrors";
@@ -24,16 +24,18 @@ export type FileOperation =
   | { kind: "newFile" }
   | { kind: "newFolder" }
   | { kind: "delete"; names: string[] }
-  | { kind: "permissions"; entry: FileEntry };
+  | { kind: "permissions"; entry: FileEntry; directory: string };
 
 /** The dialog for `operation`, run on `store`; closes itself once the operation succeeds. */
 export function FileOperationDialog({
   store,
   operation,
+  remote,
   onClose,
 }: {
   store: FileBrowserStore;
   operation: FileOperation;
+  remote: boolean;
   onClose(): void;
 }) {
   const { t } = useTranslation();
@@ -58,7 +60,8 @@ export function FileOperationDialog({
       return (
         <PermissionsDialog
           entry={operation.entry}
-          onApply={(mode) => store.getState().setPermissions(operation.entry.name, mode)}
+          remote={remote}
+          onApply={(change) => store.getState().setPermissions(operation.directory, operation.entry.name, change)}
           onClose={onClose}
         />
       );
@@ -249,21 +252,44 @@ const rights = [
   { key: "execute", bit: 1 },
 ] as const;
 
-/** Edits an entry's permission bits as checkboxes or as an octal number; the two stay in step. */
+/** A blank value leaves the ID alone. All-ones is reserved as a no-change ID on POSIX. */
+function parseOwnershipId(input: string, current: number | null | undefined): number | undefined | null {
+  const text = input.trim();
+  if (!text) return undefined;
+  const id = Number(text);
+  if (!/^\d+$/.test(text) || id >= 0xffffffff) return null;
+  return id === current ? undefined : id;
+}
+
+/** Edits ownership and permission bits. Checkboxes and octal input stay in step. */
 export function PermissionsDialog({
   entry,
+  remote = true,
   onApply,
   onClose,
 }: {
   entry: FileEntry;
-  onApply(mode: number): Promise<CommandError | null>;
+  remote?: boolean;
+  onApply(change: PermissionChange): Promise<CommandError | null>;
   onClose(): void;
 }) {
   const { t } = useTranslation();
-  const [mode, setMode] = useState(entry.permissions ?? 0o644);
-  const [octal, setOctal] = useState(octalMode(entry.permissions ?? 0o644));
+  const initialMode = entry.permissions ?? 0o644;
+  const [mode, setMode] = useState(initialMode);
+  const [octal, setOctal] = useState(octalMode(initialMode));
+  const [owner, setOwner] = useState(entry.uid?.toString() ?? "");
+  const [group, setGroup] = useState(entry.gid?.toString() ?? "");
+  const [recursive, setRecursive] = useState(false);
+  const [directoriesOnly, setDirectoriesOnly] = useState(false);
   const { busy, failure, run } = useOperation(onClose);
-  const valid = parseOctalMode(octal) !== null;
+  const validMode = parseOctalMode(octal) !== null;
+  const uid = remote ? parseOwnershipId(owner, entry.uid) : undefined;
+  const gid = remote ? parseOwnershipId(group, entry.gid) : undefined;
+  const canRecurse = remote && entry.kind === "dir";
+  const scope = !recursive ? "entry" : directoriesOnly ? "directoriesOnly" : "recursive";
+  const applyMode = scope === "directoriesOnly" ? (mode & 0o111) !== 0 : recursive || mode !== initialMode;
+  const valid = validMode && uid !== null && gid !== null;
+  const hasChange = applyMode || uid !== undefined || gid !== undefined;
 
   const toggle = (bit: number, on: boolean) => {
     const next = on ? mode | bit : mode & ~bit;
@@ -272,14 +298,32 @@ export function PermissionsDialog({
   };
 
   return (
-    <OperationDialog title={t("files.permissions.title", { name: entry.name })} onClose={onClose}>
+    <OperationDialog
+      title={t("files.permissions.title", { name: entry.name })}
+      description={remote ? t("files.permissions.ownershipHelp") : undefined}
+      onClose={onClose}
+    >
       <form
         className="flex flex-col gap-3"
         onSubmit={(event) => {
           event.preventDefault();
-          if (valid) void run(() => onApply(mode));
+          if (valid && hasChange) void run(() => onApply({
+            scope,
+            ...(applyMode ? { mode } : {}),
+            ...(uid !== undefined ? { uid } : {}),
+            ...(gid !== undefined ? { gid } : {}),
+          }));
         }}
       >
+        {remote && (
+          <div className="grid grid-cols-2 gap-2">
+            <OwnershipField label={t("files.permissions.uid")} value={owner} invalid={uid === null} onChange={setOwner} />
+            <OwnershipField label={t("files.permissions.gid")} value={group} invalid={gid === null} onChange={setGroup} />
+            {(uid === null || gid === null) && (
+              <p className="text-destructive col-span-2 text-xs">{t("files.permissions.invalidId")}</p>
+            )}
+          </div>
+        )}
         <div role="group" className="grid grid-cols-[1fr_repeat(3,4rem)] items-center gap-y-2 text-sm">
           <span />
           {rights.map((right) => (
@@ -298,7 +342,7 @@ export function PermissionsDialog({
             value={octal}
             className="h-8 w-20 font-mono"
             inputMode="numeric"
-            aria-invalid={!valid}
+            aria-invalid={!validMode}
             onChange={(event) => {
               setOctal(event.target.value);
               const parsed = parseOctalMode(event.target.value);
@@ -306,17 +350,52 @@ export function PermissionsDialog({
             }}
           />
         </label>
+        {canRecurse && (
+          <div className="space-y-2 text-sm">
+            <label className="flex items-center gap-2">
+              <Checkbox aria-label={t("files.permissions.recursive")} checked={recursive} onCheckedChange={(checked) => setRecursive(checked === true)} />
+              {t("files.permissions.recursive")}
+            </label>
+            {recursive && (
+              <label className="flex items-center gap-2 pl-5">
+                <Checkbox aria-label={t("files.permissions.directoriesOnly")} checked={directoriesOnly} onCheckedChange={(checked) => setDirectoriesOnly(checked === true)} />
+                {t("files.permissions.directoriesOnly")}
+              </label>
+            )}
+          </div>
+        )}
         <Failure error={failure} />
         <DialogFooter>
           <Button type="button" variant="outline" size="sm" onClick={onClose}>
             {t("files.cancel")}
           </Button>
-          <Button type="submit" size="sm" disabled={!valid || busy}>
+          <Button type="submit" size="sm" disabled={!valid || !hasChange || busy}>
             {t("files.permissions.apply")}
           </Button>
         </DialogFooter>
       </form>
     </OperationDialog>
+  );
+}
+
+function OwnershipField({ label, value, invalid, onChange }: {
+  label: string;
+  value: string;
+  invalid: boolean;
+  onChange(value: string): void;
+}) {
+  return (
+    <label className="flex flex-col gap-1 text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <Input
+        aria-label={label}
+        aria-invalid={invalid}
+        value={value}
+        className="h-8 font-mono"
+        inputMode="numeric"
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
   );
 }
 

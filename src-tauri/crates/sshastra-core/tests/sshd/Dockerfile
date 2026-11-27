@@ -10,7 +10,8 @@ RUN apt-get update \
  && rm -f /etc/ssh/ssh_host_*
 
 # Password login: tester / testpass.
-RUN useradd -m -s /bin/bash tester && echo 'tester:testpass' | chpasswd
+RUN useradd -m -s /bin/bash tester && echo 'tester:testpass' | chpasswd \
+ && groupadd sftp-test && usermod -aG sftp-test tester
 
 # A dedicated login for the application log's secret exclusion test.
 RUN useradd -m -s /bin/bash logtester && echo 'logtester:test-password-log-marker' | chpasswd

@@ -152,7 +152,14 @@ export function FileBrowser({
           onOperation={setOperation} onDownload={onDownload} exchange={exchange}
           enableMove={enableMove} onPaste={paste} />
       )}
-      {operation && <FileOperationDialog store={store} operation={operation} onClose={() => setOperation(null)} />}
+      {operation && (
+        <FileOperationDialog
+          store={store}
+          operation={operation}
+          remote={exchange?.side !== "local"}
+          onClose={() => setOperation(null)}
+        />
+      )}
       {enableMove && moveFailures.length > 0 && (
         <MoveFailureDialog failures={moveFailures} onClose={store.getState().clearMoveFailures} />
       )}
@@ -641,7 +648,7 @@ function FileTable({
                             }}
                             onOperation={(kind) => {
                               if (kind === "rename") beginRename(entry.name, index);
-                              else if (kind === "permissions") onOperation({ kind, entry });
+                              else if (kind === "permissions") onOperation({ kind, entry, directory: path });
                               else if (kind === "newFolder" || kind === "newFile") onOperation({ kind });
                               else onOperation({ kind, names });
                             }}
@@ -864,7 +871,7 @@ function FileRow({
           <Pencil />
           {t("files.renameAction")}
         </ContextMenuItem>
-        {!(exchange?.side === "local" && entry.permissions === null) && (
+        {entry.kind !== "symlink" && !(exchange?.side === "local" && entry.permissions === null) && (
           <ContextMenuItem onSelect={() => onOperation("permissions")}>
             <KeyRound />
             {t("files.permissionsAction")}
