@@ -78,13 +78,13 @@ async function restartApp(): Promise<void> {
       return false; // The old process exited; the new one is still starting.
     }
   }, { timeoutMsg: "The restarted SSH Astra process never became ready." });
+  process.env.SSHASTRA_E2E_RESTARTED_DRIVER = new URL(previousWindow).origin;
   await browser.reloadSession();
   await prepareWindow();
 }
 
 describe("sshastra", () => {
   let localDir: string;
-  let restarted = false;
 
   before(async () => {
     await prepareWindow();
@@ -92,9 +92,7 @@ describe("sshastra", () => {
     writeFileSync(join(localDir, uploadName), uploadContent);
   });
 
-  after(async () => {
-    // The replacement process was launched by Tauri, so the service no longer owns it.
-    if (restarted) await browser.closeWindow().catch(() => undefined);
+  after(() => {
     rmSync(localDir, { recursive: true, force: true });
     sshd.runAsTester(`rm -rf '${scratch}'`);
   });
@@ -220,7 +218,6 @@ describe("sshastra", () => {
     }, { timeoutMsg: "The active tab and split focus were never saved." });
 
     await restartApp();
-    restarted = true;
     await expect(activeTab()).toHaveAttribute("id", tab);
     expect(await $$('[role="tab"]').map((tab) => tab.getAttribute("id"))).toEqual(tabs);
     await expect(focusedPane()).toHaveAttribute("id", focus);
