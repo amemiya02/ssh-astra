@@ -5,4 +5,3 @@ src-tauri/crates/sshastra-core/tests/sshd/** text eol=lf
 src-tauri/crates/sshastra-core/tests/fixtures/host-import.csv text eol=lf
 
 src-tauri/vendor/russh/** linguist-vendored
-src-tauri/vendor/russh/README.md whitespace=-blank-at-eol
