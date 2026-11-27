@@ -54,6 +54,10 @@ export const settingRows = {
     { en: "workspace exit disconnect warning shutdown prompt", zh: "工作区 退出 断开 警告 提示", "zh-Hant": "工作區 離開 結束 中斷 警告 提示" }, "settings.confirmQuit.description",
   ),
 
+  closeToTray: row("appearance", "settings.closeToTray.label",
+    { en: "window background notification area system tray", zh: "窗口 后台 系统 托盘", "zh-Hant": "視窗 背景 系統 通知區域 選單列" }, "settings.closeToTray.description",
+  ),
+
   localShell: row("terminal", "settings.terminal.localShell.label",
     { en: "local terminal bash zsh powershell cmd WSL", zh: "本地 终端 命令行 bash zsh powershell cmd WSL", "zh-Hant": "本機 終端機 命令列 bash zsh powershell cmd WSL" },
     "settings.terminal.localShell.description",

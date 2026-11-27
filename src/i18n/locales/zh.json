@@ -1292,6 +1292,10 @@
       "label": "关闭终端前确认",
       "description": "关闭已连接的远程终端前询问。"
     },
+    "closeToTray": {
+      "label": "关闭到托盘",
+      "description": "系统托盘可用时，关闭最后一个窗口后 SSH Astra 继续运行。"
+    },
     "confirmQuit": {
       "label": "退出应用前确认",
       "description": "有活动的连接、传输或端口转发时，退出应用前询问。"
@@ -1696,6 +1700,11 @@
   "window": {
     "new": "新建窗口",
     "openFailed": "无法打开新窗口。"
+  },
+  "tray": {
+    "showWindow": "显示窗口",
+    "recentHosts": "最近使用的主机",
+    "runningForwards": "正在运行的端口转发：{{running}}"
   },
   "quit": {
     "title": "退出 SSH Astra？",
