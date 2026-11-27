@@ -1314,6 +1314,18 @@
       "label": "Confirm Terminal close",
       "description": "Ask before closing a connected remote Terminal."
     },
+    "launchAtLogin": {
+      "label": "Launch at login",
+      "description": "Open SSH Astra when you sign in to your computer.",
+      "unavailable": "Could not read the system login registration.",
+      "error": "Could not change whether SSH Astra launches at login."
+    },
+    "startInTray": {
+      "label": "Start in tray",
+      "description": "When SSH Astra starts at login, keep its Windows hidden while the system tray is available.",
+      "requiresLoginLaunch": "Turn on Launch at login to set this preference.",
+      "error": "Could not save the tray startup preference."
+    },
     "closeToTray": {
       "label": "Close to tray",
       "description": "Keep SSH Astra running when you close the last window if a system tray is available."

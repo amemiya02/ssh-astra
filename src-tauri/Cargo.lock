@@ -5582,6 +5582,7 @@ dependencies = [
  "objc2-app-kit",
  "objc2-foundation",
  "percent-encoding",
+ "plist",
  "png",
  "regex",
  "rustix",
@@ -5604,6 +5605,7 @@ dependencies = [
  "tokio",
  "whoami",
  "windows-sys 0.61.2",
+ "winreg 0.56.0",
  "zbus",
 ]
 

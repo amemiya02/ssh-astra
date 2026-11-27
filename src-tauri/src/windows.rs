@@ -188,7 +188,14 @@ pub(crate) fn prompts(window: &WebviewWindow) -> CommandResult<Arc<PendingPrompt
     with_resources(window, |resources| Arc::clone(&resources.prompts))
 }
 
-pub(crate) fn restore(app: &App) -> tauri::Result<()> {
+#[derive(PartialEq)]
+enum Presentation {
+    Focused,
+    Visible,
+    Hidden,
+}
+
+pub(crate) fn restore(app: &App, visible: bool) -> tauri::Result<()> {
     let settings = app.state::<SettingsState>();
     let session = settings
         .with(|store| Ok(WindowSession::read(store)))
@@ -196,15 +203,20 @@ pub(crate) fn restore(app: &App) -> tauri::Result<()> {
     let windows = app.state::<Windows>();
     *windows.next_id.lock().unwrap() = session.next_id;
     let mut opened = Vec::new();
+    let presentation = |focused| match (visible, focused) {
+        (false, _) => Presentation::Hidden,
+        (true, true) => Presentation::Focused,
+        (true, false) => Presentation::Visible,
+    };
     // Subsequent restored Windows open without taking focus from the first one.
     for label in &session.labels {
-        match build(app.handle(), label, opened.is_empty()) {
+        match build(app.handle(), label, presentation(opened.is_empty())) {
             Ok(_) => opened.push(label.clone()),
             Err(error) => log::warn!("Could not restore window {label}: {error}"),
         }
     }
     if opened.is_empty() {
-        build(app.handle(), MAIN, true)?;
+        build(app.handle(), MAIN, presentation(true))?;
         opened.push(MAIN.into());
     }
     *windows.focused.lock().unwrap() = opened.first().cloned();
@@ -212,10 +224,11 @@ pub(crate) fn restore(app: &App) -> tauri::Result<()> {
     Ok(())
 }
 
-fn build(app: &AppHandle, label: &str, focus: bool) -> tauri::Result<WebviewWindow> {
+fn build(app: &AppHandle, label: &str, presentation: Presentation) -> tauri::Result<WebviewWindow> {
     let mut config = app.config().app.windows[0].clone();
     config.label = label.into();
-    config.focus = focus;
+    config.visible = presentation != Presentation::Hidden;
+    config.focus = presentation == Presentation::Focused;
     let builder = WebviewWindowBuilder::from_config(app, &config)?;
     let windows = app.state::<Windows>();
     windows
@@ -224,11 +237,18 @@ fn build(app: &AppHandle, label: &str, focus: bool) -> tauri::Result<WebviewWind
         .unwrap()
         .insert(label.into(), WindowResources::default());
     let result = builder.build();
-    if let Ok(window) = &result {
-        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-        app.state::<TransfersState>().activity.window_opened(window);
-    } else {
-        windows.resources.lock().unwrap().remove(label);
+    match &result {
+        Ok(window) => {
+            #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+            app.state::<TransfersState>().activity.window_opened(window);
+            #[cfg(target_os = "linux")]
+            if presentation == Presentation::Hidden {
+                crate::tray::watch_hidden(window);
+            }
+        }
+        Err(_) => {
+            windows.resources.lock().unwrap().remove(label);
+        }
     }
     result
 }
@@ -264,7 +284,7 @@ pub(crate) async fn window_new(app: AppHandle) -> Result<(), String> {
     let windows = app.state::<Windows>();
     let (label, next_id) = reserve_label(&windows)?;
     remember(&app, &label, next_id);
-    match build(&app, &label, true) {
+    match build(&app, &label, Presentation::Focused) {
         Ok(window) => {
             *windows.focused.lock().unwrap() = Some(label);
             let _ = window.set_focus();

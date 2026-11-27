@@ -57,6 +57,12 @@ export const settingRows = {
   closeToTray: row("appearance", "settings.closeToTray.label",
     { en: "window background notification area system tray", zh: "窗口 后台 系统 托盘", "zh-Hant": "視窗 背景 系統 通知區域 選單列" }, "settings.closeToTray.description",
   ),
+  launchAtLogin: row("appearance", "settings.launchAtLogin.label",
+    { en: "autostart boot startup", zh: "开机启动 自启动 登录", "zh-Hant": "開機啟動 自動啟動 登入" }, "settings.launchAtLogin.description",
+  ),
+  startInTray: row("appearance", "settings.startInTray.label",
+    { en: "autostart startup background login system tray", zh: "开机启动 登录 后台 托盘", "zh-Hant": "開機啟動 登入 背景 系統匣 選單列" }, "settings.startInTray.description",
+  ),
 
   localShell: row("terminal", "settings.terminal.localShell.label",
     { en: "local terminal bash zsh powershell cmd WSL", zh: "本地 终端 命令行 bash zsh powershell cmd WSL", "zh-Hant": "本機 終端機 命令列 bash zsh powershell cmd WSL" },

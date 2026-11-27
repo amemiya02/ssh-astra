@@ -1314,6 +1314,18 @@
       "label": "關閉終端機前確認",
       "description": "關閉已連線的遠端終端機前詢問。"
     },
+    "launchAtLogin": {
+      "label": "開機啟動",
+      "description": "登入系統時開啟 SSH Astra。",
+      "unavailable": "無法讀取系統的登入啟動設定。",
+      "error": "無法變更 SSH Astra 的登入啟動設定。"
+    },
+    "startInTray": {
+      "label": "啟動時僅留在系統匣",
+      "description": "登入系統時啟動 SSH Astra。若系統匣可用，則隱藏視窗。",
+      "requiresLoginLaunch": "開啟開機啟動後即可調整此設定。",
+      "error": "無法儲存系統匣啟動設定。"
+    },
     "closeToTray": {
       "label": "關閉至系統匣",
       "description": "系統匣可用時，關閉最後一個視窗後，SSH Astra 會繼續執行。"
