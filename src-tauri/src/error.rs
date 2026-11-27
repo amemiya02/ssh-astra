@@ -232,6 +232,7 @@ impl From<EditError> for CommandError {
             EditError::Io(_) => Self::new("io", err),
             EditError::Open(_) => Self::new("openFailed", err),
             EditError::NotOpen => Self::new("notOpen", err),
+            EditError::ConflictExpired => Self::new("editConflictExpired", err),
             EditError::NotAFile => Self::new("notAFile", err),
             EditError::Binary => Self::new("binary", err),
         }
