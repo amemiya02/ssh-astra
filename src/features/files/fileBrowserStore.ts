@@ -12,6 +12,7 @@ import { childPath, isDirLike, isFileLike, parentPath } from "./fileList";
 export type FilesApi = Pick<
   typeof ipc,
   "openFiles" | "listFiles" | "closeFiles" | "createDir" | "createEmptyFile" | "renameFile" | "countFiles" | "deleteFiles" | "chmodFile"
+  | "folderSize"
 > & EditCommands;
 
 /**
@@ -37,6 +38,11 @@ export interface MoveFailure {
   name: string;
   error: CommandError;
 }
+
+export type FolderSize =
+  | { state: "calculating" }
+  | { state: "complete"; bytes: number }
+  | { state: "failed"; error: CommandError };
 
 export interface FileBrowserState {
   /** `closed` until `connect`, and again after `disconnect` or a failed open. */
@@ -102,6 +108,10 @@ export interface FileBrowserState {
   remove(names: readonly string[]): Promise<CommandError | null>;
   /** Edits permissions in the directory where the dialog opened. */
   setPermissions(directory: string, name: string, change: PermissionChange): Promise<CommandError | null>;
+  /** On-demand folder sizes in the directory shown, keyed by entry name. */
+  folderSizes: ReadonlyMap<string, FolderSize>;
+  calculateFolderSize(name: string): Promise<void>;
+  cancelFolderSize(name: string): void;
   /** Closes the SFTP session (the Connection dropped, or the pane closed); keeps the path for `connect`. Edits stay open. */
   disconnect(): void;
   /** The pane closed: disconnects and closes every edit. */
@@ -131,12 +141,36 @@ export function createFileBrowserStore(
   let request = 0;
   let listingNavigation = false;
   const pendingMoveRefresh = new Set<string>();
+  const folderSizeScans = new Map<string, AbortController>();
   let anchor: string | null = null;
   /** Only successful listings enter history, using the canonical paths returned by the filesystem. */
   const history: string[] = [];
   let historyIndex = -1;
 
   return createStore<FileBrowserState>()((set, get) => {
+    const stopFolderSize = (name: string) => {
+      folderSizeScans.get(name)?.abort();
+      folderSizeScans.delete(name);
+    };
+
+    const retainFolderSizes = (entries: FileEntry[]) => {
+      const current = get().folderSizes;
+      if (current.size === 0) return current;
+      const folders = new Set(entries.filter(({ kind }) => kind === "dir").map(({ name }) => name));
+      return new Map([...current].filter(([name]) => {
+        if (folders.has(name)) return true;
+        stopFolderSize(name);
+        return false;
+      }));
+    };
+
+    const showFolderSize = (name: string, size: FolderSize | null) => {
+      const folderSizes = new Map(get().folderSizes);
+      if (size === null) folderSizes.delete(name);
+      else folderSizes.set(name, size);
+      set({ folderSizes });
+    };
+
     const list = async (
       path: string,
       keepSelection: boolean,
@@ -164,6 +198,7 @@ export function createFileBrowserStore(
         set({
           path: listing.path,
           entries: listing.entries,
+          folderSizes: retainFolderSizes(samePath ? listing.entries : []),
           selection,
           loading: false,
           ...(preserveError ? {} : { error: null }),
@@ -286,6 +321,7 @@ export function createFileBrowserStore(
       cut: null,
       moving: false,
       moveFailures: [],
+      folderSizes: new Map(),
 
       connect() {
         if (get().phase === "open") return Promise.resolve();
@@ -417,15 +453,41 @@ export function createFileBrowserStore(
       remove: (names) => operate((id, dir) => api.deleteFiles(id, names.map((n) => childPath(dir, n)))),
       setPermissions: (directory, name, change) =>
         operate((id, dir) => api.chmodFile(id, childPath(dir, name), change), { directory }),
+      async calculateFolderSize(name) {
+        const { path, entries } = get();
+        const id = fsId;
+        if (local || id === null || path === null || folderSizeScans.has(name) ||
+          !entries.some((entry) => entry.name === name && entry.kind === "dir")) return;
+
+        const scan = new AbortController();
+        folderSizeScans.set(name, scan);
+        showFolderSize(name, { state: "calculating" });
+        let size: FolderSize | null;
+        try {
+          const bytes = await api.folderSize(id, childPath(path, name), scan.signal);
+          size = bytes === null ? null : { state: "complete", bytes };
+        } catch (error) {
+          size = { state: "failed", error: readCommandError(error) };
+        }
+        if (scan.signal.aborted) return;
+        folderSizeScans.delete(name);
+        showFolderSize(name, size);
+      },
+      cancelFolderSize(name) {
+        if (!folderSizeScans.has(name)) return;
+        stopFolderSize(name);
+        showFolderSize(name, null);
+      },
 
       disconnect() {
         openGeneration += 1;
         request += 1;
         opening = null;
         pendingMoveRefresh.clear();
+        const folderSizes = retainFolderSizes([]);
         if (fsId !== null) void api.closeFiles(fsId).catch(() => {});
         fsId = null;
-        set({ phase: "closed", loading: false });
+        set({ phase: "closed", loading: false, folderSizes });
       },
 
       dispose() {

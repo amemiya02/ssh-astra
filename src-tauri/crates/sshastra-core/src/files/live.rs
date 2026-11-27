@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::sync::oneshot;
 
 use super::{FileEntry, FileReader, FileStat, FileWriter, FsResult, OpenRemote, RemoteFs};
 use crate::ssh::BoxFuture;
@@ -52,6 +53,14 @@ impl RemoteFs for LiveHostFs {
 
     fn lstat<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileStat>> {
         Box::pin(async move { self.fs().await?.lstat(path).await })
+    }
+
+    fn folder_size<'a>(
+        &'a self,
+        path: &'a str,
+        cancelled: oneshot::Receiver<()>,
+    ) -> BoxFuture<'a, FsResult<Option<u64>>> {
+        Box::pin(async move { self.fs().await?.folder_size(path, cancelled).await })
     }
 
     fn create_dir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>> {

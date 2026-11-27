@@ -248,6 +248,11 @@
       "permissions": "权限"
     },
     "emptyFolder": "这个文件夹是空的。",
+    "folderSize": {
+      "calculate": "计算文件夹大小",
+      "calculating": "正在计算 {{name}} 的大小…",
+      "cancel": "取消计算 {{name}} 的大小"
+    },
     "entryCount_one": "{{count, number}} 项",
     "entryCount_other": "{{count, number}} 项",
     "selectedCount": "已选 {{count, number}} 项",

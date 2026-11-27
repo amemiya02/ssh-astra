@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { connectPromptChannel, type ConnectPrompt, type PromptAnswer } from "./connect";
 import type { HostId } from "./hosts";
 
@@ -95,6 +95,24 @@ export function renameFile(id: FsId, from: string, to: string): Promise<void> {
  */
 export function countFiles(id: FsId, paths: string[]): Promise<number> {
   return invoke<number>("files_count", { id, paths });
+}
+
+/** Totals the bytes in a real folder. An aborted scan returns `null`. */
+export async function folderSize(id: FsId, path: string, signal: AbortSignal): Promise<number | null> {
+  if (signal.aborted) return null;
+  const finished = new AbortController();
+  const onStart = new Channel<number>();
+  onStart.onmessage = (requestId) => {
+    if (finished.signal.aborted) return;
+    const cancel = () => { void invoke("files_cancel_folder_size", { id, requestId }).catch(() => {}); };
+    if (signal.aborted) cancel();
+    else signal.addEventListener("abort", cancel, { once: true, signal: finished.signal });
+  };
+  try {
+    return await invoke<number | null>("files_folder_size", { id, path, onStart });
+  } finally {
+    finished.abort();
+  }
 }
 
 /** Deletes `paths`, directories recursively; symlinks are deleted, not followed. Stops at the first failure. */
