@@ -206,7 +206,7 @@
     "connectFailed": "Could not connect to {{name}}: {{message}}",
     "import": {
       "action": "Import Hosts…",
-      "keywords": "ssh config openssh csv import putty mobaxterm mxtsessions",
+      "keywords": "ssh config openssh csv import putty mobaxterm mxtsessions xshell xsh",
       "pickerTitle": "Import Hosts",
       "chooseSource": "Choose where to import Hosts from.",
       "sshConfig": {
@@ -223,6 +223,14 @@
         "title": "CSV import results",
         "nothing": "The CSV file has no Hosts to import.",
         "error": "Could not import the CSV file: {{message}}"
+      },
+      "xshell": {
+        "action": "Xshell session folder…",
+        "help": "Choose a folder containing .xsh files. Subfolders become Groups.",
+        "chooseFolder": "Choose an Xshell session folder",
+        "title": "Xshell import results",
+        "nothing": "The Xshell folder has no Hosts to import.",
+        "error": "Could not import the Xshell folder: {{message}}"
       },
       "mobaxterm": {
         "action": "MobaXterm sessions…",
@@ -278,7 +286,17 @@
         "mobaxtermInvalidGateway": "The MobaXterm SSH gateway settings are invalid.",
         "mobaxtermDefaultUser": "MobaXterm had no saved username for this Host or one of its gateways. The local username was used.",
         "mobaxtermKeyPath": "A MobaXterm private key path could not be imported.",
-        "mobaxtermUnsupportedSettings": "Some MobaXterm settings could not be imported."
+        "mobaxtermUnsupportedSettings": "Some MobaXterm settings could not be imported.",
+        "xshellCredentials": "Saved credentials were omitted.",
+        "xshellFile": "This Xshell session could not be read or has invalid connection details.",
+        "xshellFolderLimit": "The Xshell folder exceeds the import size or nesting limit.",
+        "xshellInvalidPort": "Port must be a whole number from 1 to 65535.",
+        "xshellUnsupportedSession": "This Xshell session uses a protocol other than SSH or SFTP.",
+        "xshellDefaultUser": "Xshell had no saved username. The local username was used.",
+        "xshellKeyPath": "Select an accessible private key in the Host editor.",
+        "xshellUnsupportedSettings": "Some Xshell settings could not be imported.",
+        "xshellUnsupportedProxy": "The proxy for this Xshell session could not be imported.",
+        "xshellInvalidJumpHost": "The Xshell Jump host is incomplete or invalid."
       }
     },
     "transfer": {

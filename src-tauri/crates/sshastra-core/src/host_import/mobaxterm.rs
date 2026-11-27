@@ -1,11 +1,10 @@
-use std::borrow::Cow;
 use std::collections::HashSet;
-use std::net::Ipv6Addr;
 use std::path::PathBuf;
 
-use encoding_rs::{Encoding, WINDOWS_1252};
-
-use super::{ConfigHost, ImportIssue, ImportProblem, ParsedConfig};
+use super::{
+    decode_windows_text, ssh_address, valid_label, ConfigHost, ImportIssue, ImportProblem,
+    ParsedConfig,
+};
 
 const GATEWAY_SEPARATOR: &str = "__PIPE__";
 
@@ -13,7 +12,7 @@ const GATEWAY_SEPARATOR: &str = "__PIPE__";
 /// only the selected folders, or one bare session line for a .moba export.
 /// A session without a saved username uses the supplied local username.
 pub fn parse_mobaxterm(bytes: &[u8], local_user: &str) -> ParsedConfig {
-    let Some(text) = decode(bytes) else {
+    let Some(text) = decode_windows_text(bytes) else {
         return invalid_file(1);
     };
     let mut lines = text
@@ -63,17 +62,6 @@ pub fn parse_mobaxterm(bytes: &[u8], local_user: &str) -> ParsedConfig {
     }
     parsed.hosts = link_gateways(sessions);
     parsed
-}
-
-fn decode(bytes: &[u8]) -> Option<Cow<'_, str>> {
-    if let Some((encoding, bom_length)) = Encoding::for_bom(bytes) {
-        let (text, malformed) = encoding.decode_without_bom_handling(&bytes[bom_length..]);
-        return (!malformed).then_some(text);
-    }
-    Some(match std::str::from_utf8(bytes) {
-        Ok(text) => text.into(),
-        Err(_) => WINDOWS_1252.decode_without_bom_handling(bytes).0,
-    })
 }
 
 fn section_name(text: &str) -> Option<&str> {
@@ -325,26 +313,6 @@ impl Endpoint {
             group_path,
         }
     }
-}
-
-fn valid_label(value: &str) -> bool {
-    !value.is_empty() && !value.chars().any(char::is_control)
-}
-
-fn ssh_address(value: &str) -> Option<&str> {
-    let host = value
-        .strip_prefix('[')
-        .and_then(|value| value.strip_suffix(']'))
-        .unwrap_or(value);
-    if host.contains(':') {
-        return host.parse::<Ipv6Addr>().is_ok().then_some(host);
-    }
-    let valid = value == host
-        && !host.is_empty()
-        && host
-            .chars()
-            .all(|ch| ch.is_alphanumeric() || matches!(ch, '.' | '-' | '_'));
-    valid.then_some(host)
 }
 
 fn identity_file(value: &str) -> Option<PathBuf> {

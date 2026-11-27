@@ -233,7 +233,10 @@ export type ImportProblem =
   | { kind: "puttyUnsupportedOptions"; options: string }
   | { kind: "mobaxtermFile" | "mobaxtermSession" | "mobaxtermUnsupportedSession" | "mobaxtermInvalidPort"
     | "mobaxtermInvalidGroup" | "mobaxtermInvalidGateway" | "mobaxtermDefaultUser" | "mobaxtermKeyPath"
-    | "mobaxtermUnsupportedSettings" };
+    | "mobaxtermUnsupportedSettings" }
+  | { kind: "xshellCredentials" | "xshellFile" | "xshellFolderLimit" | "xshellInvalidPort"
+    | "xshellUnsupportedSession" | "xshellDefaultUser" | "xshellKeyPath" | "xshellUnsupportedSettings"
+    | "xshellUnsupportedProxy" | "xshellInvalidJumpHost" };
 
 /** One thing an import left out (`sshastra_core::host_import::ImportIssue`). */
 export interface ImportIssue {
@@ -258,7 +261,8 @@ export type HostImportSource =
   | { kind: "sshConfig" }
   | { kind: "csv"; path: string }
   | { kind: "putty"; path: string }
-  | { kind: "mobaxterm"; path: string };
+  | { kind: "mobaxterm"; path: string }
+  | { kind: "xshell"; path: string };
 
 /** Imports Hosts from the chosen source, skipping names already taken. */
 export function importHostSource(source: HostImportSource): Promise<{ tree: HostTree; report: ImportReport }> {
