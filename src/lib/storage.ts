@@ -171,14 +171,11 @@ function importLegacy(saved: Record<string, unknown>, legacy: KeyValueStore): Re
 export async function openSettings(backend: SettingsBackend, legacy?: KeyValueStore): Promise<Settings> {
   let saved: Record<string, unknown> = {};
   const changes: SettingsChange[] = [];
-  let settings: Settings | undefined;
+  let receive = (event: SettingsChange) => { changes.push(event); };
   let readable = true;
   try {
     saved = backend.watch
-      ? await backend.watch((event) => {
-        if (settings) settings.receive(event);
-        else changes.push(event);
-      })
+      ? await backend.watch((event) => receive(event))
       : await backend.load();
   } catch (error) {
     readable = false;
@@ -190,7 +187,8 @@ export async function openSettings(backend: SettingsBackend, legacy?: KeyValueSt
       console.warn(`Could not save the ${section} settings`, error);
     });
   }
-  settings = createSettings(backend, { ...saved, ...imported });
+  const settings = createSettings(backend, { ...saved, ...imported });
+  receive = settings.receive;
   for (const event of changes) settings.receive(event);
   return settings;
 }

@@ -216,6 +216,9 @@ pub(crate) async fn window_new(app: AppHandle) -> Result<(), String> {
 
 fn open(app: &AppHandle) -> Result<(), String> {
     let windows = app.state::<Windows>();
+    if windows.quitting.load(Ordering::Acquire) {
+        return Err("SSH Astra is quitting".into());
+    }
     let (label, next_id) = {
         let mut next = windows.next_id.lock().unwrap();
         if *next == u64::MAX {
@@ -295,9 +298,11 @@ pub(crate) fn window_try_close(window: WebviewWindow) -> Result<bool, String> {
     {
         return Ok(true);
     }
-    if closing.insert(window.label().into()) {
+    let newly_closing = closing.insert(window.label().into());
+    drop(closing);
+    if newly_closing {
         if let Err(error) = window.destroy() {
-            closing.remove(window.label());
+            windows.closing.lock().unwrap().remove(window.label());
             return Err(error.to_string());
         }
     }

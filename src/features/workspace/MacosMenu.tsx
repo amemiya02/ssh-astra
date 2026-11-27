@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { useEffect, useEffectEvent, useRef } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { paletteActions, useRegisteredActions } from "@/features/palette/palette-actions";
 import { selectAll } from "@/features/terminal/terminal-selection";
@@ -27,6 +27,7 @@ interface MacosMenuProps {
 export function MacosMenu({ shortcuts, canClosePane, runWorkspaceCommand }: MacosMenuProps) {
   const { t } = useTranslation();
   const actions = useRegisteredActions();
+  const [focused, setFocused] = useState(false);
   const lastSpec = useRef<string | undefined>(undefined);
   const run = useEffectEvent((id: string) => {
     switch (id) {
@@ -39,17 +40,29 @@ export function MacosMenu({ shortcuts, canClosePane, runWorkspaceCommand }: Maco
 
   useEffect(() => {
     let active = true;
-    const subscription = getCurrentWebviewWindow().listen<string>("macos-menu-action", ({ payload }) => {
+    const window = getCurrentWebviewWindow();
+    const subscription = window.listen<string>("macos-menu-action", ({ payload }) => {
       if (active) run(payload);
     });
+    const focus = window.onFocusChanged(({ payload }) => {
+      if (active) setFocused(payload);
+    });
+    void focus.then(() => window.isFocused()).then((value) => {
+      if (active) setFocused(value);
+    }).catch((error: unknown) => console.warn("Could not read Window focus", error));
     void subscription.catch((error: unknown) => console.warn("Could not listen for macOS menu actions", error));
     return () => {
       active = false;
       void subscription.then((unlisten) => unlisten(), () => undefined);
+      void focus.then((unlisten) => unlisten(), () => undefined);
     };
   }, []);
 
   useEffect(() => {
+    if (!focused) {
+      lastSpec.current = undefined;
+      return;
+    }
     const item = (id: string, title: string, enabled: boolean, name?: ShortcutName) => {
       const binding = name && shortcuts.bindings.find((binding) => binding.name === name);
       if (!binding || !name) return { id, title, enabled };
@@ -103,7 +116,7 @@ export function MacosMenu({ shortcuts, canClosePane, runWorkspaceCommand }: Maco
       if (lastSpec.current === next) lastSpec.current = undefined;
       console.warn("Could not update the macOS menu", error);
     });
-  }, [actions, canClosePane, shortcuts, t]);
+  }, [actions, canClosePane, focused, shortcuts, t]);
 
   return null;
 }

@@ -257,6 +257,7 @@ pub fn run() {
             commands::forwards::forward_start,
             commands::forwards::forward_stop,
             commands::settings::settings_load,
+            commands::settings::settings_watch,
             commands::settings::settings_set,
             commands::command_history::command_history_list,
             commands::command_history::command_history_clear,

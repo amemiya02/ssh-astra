@@ -4,7 +4,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use serde::Serialize;
-
 use serde_json::{json, Map, Value};
 use sshastra_core::agent::AgentSettings;
 use sshastra_core::files::TransferSettings;
@@ -52,34 +51,47 @@ impl SettingsState {
             Err(e) => Err(e.clone()),
         }
     }
+
     pub(crate) fn unwatch(&self, label: &str) {
         self.changes.unsubscribe(label);
     }
 }
 
-/// The shared settings and this Window's layout, followed by live changes.
+fn snapshot(
+    store: &SettingsStore,
+    window: &WebviewWindow,
+    agent: &AgentService,
+) -> Map<String, Value> {
+    let mut sections = window_settings(store, window.label());
+    sections.insert(
+        AgentSettings::SECTION.into(),
+        json!({"enabled": agent.enabled()}),
+    );
+    sections
+}
+
+/// The shared settings and this Window's layout.
 #[tauri::command]
 pub fn settings_load(
     window: WebviewWindow,
     settings: State<'_, SettingsState>,
     agent: State<'_, AgentService>,
-    on_change: Option<Channel<SettingsChange>>,
+) -> CommandResult<Map<String, Value>> {
+    settings.with(|store| Ok(snapshot(store, &window, &agent)))
+}
+
+/// Loads this Window's settings and streams all later changes.
+#[tauri::command]
+pub fn settings_watch(
+    window: WebviewWindow,
+    settings: State<'_, SettingsState>,
+    agent: State<'_, AgentService>,
+    on_change: Channel<SettingsChange>,
 ) -> CommandResult<Map<String, Value>> {
     settings.with(|store| {
-        let snapshot = || {
-            let mut sections = window_settings(store, window.label());
-            sections.insert(
-                AgentSettings::SECTION.into(),
-                json!({"enabled": agent.enabled()}),
-            );
-            sections
-        };
-        Ok(match on_change {
-            Some(channel) => settings
-                .changes
-                .subscribe(window.label(), channel, snapshot),
-            None => snapshot(),
-        })
+        Ok(settings.changes.subscribe(window.label(), on_change, || {
+            snapshot(store, &window, &agent)
+        }))
     })
 }
 

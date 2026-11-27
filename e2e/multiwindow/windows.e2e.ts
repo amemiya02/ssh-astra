@@ -172,6 +172,10 @@ describe("SSH Astra Windows", function () {
     await expect(activeTab()).toHaveAttribute("id", secondFocused);
     expect(await browser.getWindowRect()).toEqual(secondRect);
     await expect($('button[aria-label="Port forwards"]')).toHaveAttribute("aria-pressed", "true");
-    await expect($('[role="tabpanel"]:not([hidden])').$('button=Connect')).toBeDisplayed();
+    await expect($('[role="tabpanel"]:not([hidden])').$("button=Connect")).toBeDisplayed();
+    await browser.closeWindow();
+    await browser.waitUntil(async () => (await browser.getWindowHandles()).length === 1);
+    await selectWindow(main);
+    expect(await tabIds()).toEqual(mainTabs);
   });
 });
