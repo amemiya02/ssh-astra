@@ -6,6 +6,8 @@ mod commands;
 mod diagnostics;
 mod error;
 mod prompts;
+#[cfg(desktop)]
+mod quit;
 
 #[cfg(test)]
 mod diagnostics_tests;
@@ -55,6 +57,8 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
     let builder = builder.plugin(tauri_plugin_notification::init());
+    #[cfg(desktop)]
+    let builder = builder.menu(quit::menu).on_menu_event(quit::on_menu_event);
     builder
         // Restores the main window's size, position and maximized state, and
         // saves them on exit (`.window-state.json` in the app config dir).
@@ -146,6 +150,8 @@ pub fn run() {
         .manage(TransfersState::default())
         .manage(Arc::new(PendingPrompts::default()))
         .invoke_handler(tauri::generate_handler![
+            #[cfg(desktop)]
+            quit::quit_menu_localize,
             commands::home::home_first_paint,
             commands::hosts::hosts_list,
             commands::hosts::host_save,

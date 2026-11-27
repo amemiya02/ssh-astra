@@ -30,17 +30,19 @@ export async function stopReplacement(): Promise<void> {
   process.off("exit", killReplacement);
 }
 
-export async function restartSmokeApp(browser: WebdriverIO.Browser): Promise<void> {
+export async function restartSmokeApp(browser: WebdriverIO.Browser, confirmQuit: () => Promise<void>): Promise<void> {
   const home = process.env.SSHASTRA_E2E_HOME;
   if (!home) throw new Error("The SSH Astra smoke test sandbox is missing.");
   const { hostname, port } = browser.options;
   const driver = new URL(`http://${hostname}:${port}`);
   const status = new URL("/status", driver);
   // Closing the last window can shut down WebDriver before it sends a reply.
-  const close = await fetch(new URL(`/session/${browser.sessionId}/window`, driver), {
+  const closeRequest = fetch(new URL(`/session/${browser.sessionId}/window`, driver), {
     method: "DELETE",
     signal: AbortSignal.timeout(5000),
   }).catch(() => undefined);
+  await confirmQuit();
+  const close = await closeRequest;
   if (close && !close.ok) throw new Error(`Could not close SSH Astra: ${await close.text()}`);
   await close?.body?.cancel();
 

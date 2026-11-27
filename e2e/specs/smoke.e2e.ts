@@ -197,7 +197,13 @@ describe("sshastra", () => {
       }, tab.replace(/^tab-/, ""), focus);
     }, { timeoutMsg: "The active tab and split focus were never saved." });
 
-    await restartSmokeApp(browser);
+    await restartSmokeApp(browser, async () => {
+      const quitDialog = $('[role="dialog"]');
+      await expect(quitDialog.$("h2")).toHaveText("Quit SSH Astra?");
+      await expect(quitDialog.$("li=1 Connection")).toBeDisplayed();
+      // The quit can stop WebDriver before the click response arrives.
+      await quitDialog.$("button=Quit").click().catch(() => undefined);
+    });
     await prepareWindow();
     await expect(activeTab()).toHaveAttribute("id", tab);
     expect(await $$('[role="tab"]').map((tab) => tab.getAttribute("id"))).toEqual(tabs);

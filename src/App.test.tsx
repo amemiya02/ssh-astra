@@ -1,4 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
+import { emit, TauriEvent } from "@tauri-apps/api/event";
+import { clearMocks, mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -84,7 +86,7 @@ vi.mock("@tauri-apps/plugin-updater", async (importOriginal) => ({
 vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: vi.fn() }));
 
 vi.mock("@tauri-apps/api/webview", () => ({
-  getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }),
+  getCurrentWebview: () => ({ onDragDropEvent: async () => () => {}, setZoom: async () => {} }),
 }));
 
 // Exercise the real app and Terminal lifecycle without a renderer or native backend.
@@ -176,6 +178,7 @@ afterEach(async () => {
   vi.mocked(relaunch).mockReset();
   updatesStore.setState({ status: { type: "idle" } });
   panelListings.clear();
+  clearMocks();
   vi.unstubAllGlobals();
 });
 
@@ -192,6 +195,20 @@ async function render(initialTabs: TabsState) {
   ));
 }
 
+const desktopIPC = vi.fn();
+
+function enableDesktopWindow() {
+  vi.stubGlobal("isTauri", true);
+  mockWindows("main");
+  desktopIPC.mockClear();
+  mockIPC(desktopIPC, { shouldMockEvents: true });
+}
+
+async function requestWindowClose() {
+  await act(async () => emit(TauriEvent.WINDOW_CLOSE_REQUESTED));
+}
+
+const windowDestroys = () => desktopIPC.mock.calls.filter(([command]) => command === "plugin:window|destroy");
 const dialog = () => document.querySelector('[role="dialog"]');
 const terminalCloses = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === "terminal_close");
 const tabIds = () => [...document.querySelectorAll('[role="tab"]')].map((tab) => tab.id);
@@ -325,6 +342,7 @@ it("opens the update dialog from the status bar and keeps the offer after Later"
 });
 
 it("counts live Connections, unfinished transfers, and running Port forwards before restarting", async () => {
+  enableDesktopWindow();
   offerUpdate();
   const rule = (id: string, bindPort: number): PortForward => ({
     id, bindPort, type: "dynamic", bindAddress: "localhost", label: id, autoStart: false,
@@ -366,6 +384,15 @@ it("counts live Connections, unfinished transfers, and running Port forwards bef
   };
   await act(async () => watch.onEvent.onmessage({ hostId: forwardOnly.id, forwardId: "two", status: { state: "stopped" } }));
   expect(activity()).toEqual(["2 Connections", "3 transfers", "1 Port forward"]);
+
+  await clickButton("Later", dialog()!);
+  await requestWindowClose();
+  expect(dialog()?.querySelector("h2")?.textContent).toBe("Quit SSH Astra?");
+  expect(activity()).toEqual(["2 Connections", "3 transfers", "1 Port forward"]);
+
+  await act(async () => i18n.changeLanguage("zh"));
+  expect(dialog()?.querySelector("h2")?.textContent).toBe("退出 SSH Astra？");
+  expect(activity()).toEqual(["2 个连接", "3 项传输", "1 个端口转发"]);
 });
 
 it("renders release notes as Markdown with HTML, scripts, images, and unsafe links removed", async () => {
@@ -693,6 +720,57 @@ it("shows the count and confirmation controls in Chinese", async () => {
   expect(document.activeElement?.textContent).toBe("取消");
   await clickButton("关闭", confirmation);
   expect(tabIds()).toEqual([]);
+});
+
+it("confirms app quit for a shared Connection even after opting out of Terminal close confirmation", async () => {
+  enableDesktopWindow();
+  settingsFile.workspacePreferences = { restoreTabs: "none", confirmClose: false };
+  await startSettings(settingsBackend);
+  await render(workspace(
+    { type: "open", tabId: "work", pane: remote("first") },
+    { type: "split", pane: remote("second"), orientation: "horizontal" },
+  ));
+
+  await requestWindowClose();
+  expect(dialog()?.querySelector("h2")?.textContent).toBe("Quit SSH Astra?");
+  expect([...dialog()!.querySelectorAll("li")].map((item) => item.textContent)).toEqual([
+    "1 Connection", "0 transfers", "0 Port forwards",
+  ]);
+  expect(document.activeElement?.textContent).toBe("Cancel");
+  expect(windowDestroys()).toHaveLength(0);
+
+  await requestWindowClose();
+  expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+  await clickButton("Cancel", dialog()!);
+  expect(windowDestroys()).toHaveLength(0);
+
+  await requestWindowClose();
+  await clickButton("Quit", dialog()!);
+  expect(windowDestroys()).toHaveLength(1);
+});
+
+it("quits without asking when the workspace is idle", async () => {
+  enableDesktopWindow();
+  await render(workspace({ type: "open", tabId: "local", pane: local("local") }));
+
+  await requestWindowClose();
+  expect(dialog()).toBeNull();
+  expect(windowDestroys()).toHaveLength(1);
+});
+
+it("saves a separate quit preference and applies it while a Connection is open", async () => {
+  enableDesktopWindow();
+  await render(workspace({ type: "open", tabId: "work", pane: remote("remote") }));
+  await clickButton("Settings");
+
+  const setting = document.querySelector('[role="radiogroup"][aria-label="Confirm app quit"]');
+  expect(setting?.querySelector('[aria-checked="true"]')?.textContent).toBe("On");
+  await clickButton("Off", setting!);
+  expect(settingsFile.workspacePreferences).toMatchObject({ confirmClose: true, confirmQuit: false });
+
+  await requestWindowClose();
+  expect(dialog()).toBeNull();
+  expect(windowDestroys()).toHaveLength(1);
 });
 
 async function broadcastShortcut(inWindow = false) {

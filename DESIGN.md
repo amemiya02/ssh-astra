@@ -485,6 +485,12 @@ Clear completed removes successful rows across Hosts. Completed downloads have a
 - **Tooltips:** inverted (foreground fill, ground text), `text-xs`, 8px radius.
 - **Dialogs:** `raised`, 1px border, 14px radius, 24px padding, max 512px, `shadow-overlay` over the overlay scrim; footer buttons right-aligned, primary last.
 
+### Quit confirmation
+
+Show the quit dialog when the app menu, its accelerator, or the last window's close control would interrupt Connections, unfinished transfers, or running Port forwards. Use ⌘Q on macOS and Ctrl+Shift+Q on Windows and Linux. List each count, including zero, and count each Connection once across its Terminals, File panels, and Port forwards. Focus Cancel on open and place the destructive Quit button last. An idle workspace quits immediately.
+
+Settings → Appearance has an independent Confirm app quit control that defaults to On. Turning it off allows immediate quit. The Terminal close confirmation has its own preference, and Update and restart confirms the restart in the update dialog.
+
 ### Update dialog
 
 Select the available version in the status bar to see its version number and scroll through the release notes. Render Markdown as formatted text, omit embedded HTML and images, and open HTTP and HTTPS links in the system browser. The updater manifest carries the draft release’s notes at build time.

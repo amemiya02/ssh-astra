@@ -50,6 +50,9 @@ export const settingRows = {
   confirmClose: row("appearance", "settings.confirmClose.label",
     { en: "workspace disconnect warning unsaved prompt", zh: "工作区 断开 警告 提示" }, "settings.confirmClose.description",
   ),
+  confirmQuit: row("appearance", "settings.confirmQuit.label",
+    { en: "workspace exit disconnect warning shutdown prompt", zh: "工作区 退出 断开 警告 提示" }, "settings.confirmQuit.description",
+  ),
 
   font: row("terminal", "settings.terminal.font.label",
     { en: "typeface monospace family typography", zh: "字形 等宽 字体族 排版" }, "settings.terminal.font.description",
