@@ -48,9 +48,9 @@ console.log(JSON.stringify({
   macOS: getOutput("/usr/bin/sw_vers", ["-productVersion"]),
   macOSBuild: getOutput("/usr/bin/sw_vers", ["-buildVersion"]),
   architecture: process.arch,
+  dockerServerVersion: getOutput("docker", ["info", "--format", "{{.ServerVersion}}"]),
 }));
 
-getOutput("docker", ["info", "--format", "{{.ServerVersion}}"]);
 printOutput("pnpm", ["install", "--frozen-lockfile"]);
 printOutput("pnpm", ["e2e:build"], { env: { ...env, CARGO_TARGET_DIR: target } });
 printOutput("pnpm", ["tauri", "build", "--no-bundle"], { env: releaseEnv });

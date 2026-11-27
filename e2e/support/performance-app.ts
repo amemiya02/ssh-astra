@@ -89,14 +89,16 @@ async function availablePort() {
 async function withApp<T>(
   binary: string,
   env: Record<string, string>,
-  measure: (pid: number, stderr: () => string, home: string) => Promise<T>,
+  measure: (pid: number, stderr: () => string) => Promise<T>,
   prepare?: (home: string) => void,
 ): Promise<T> {
   const home = createSandboxHome();
   try {
     prepare?.(home);
+    const launchEnv = { ...process.env, ...appEnv(home) };
+    delete launchEnv.SSHASTRA_MEASURE_STARTUP;
     const child = spawn(binary, [], {
-      env: { ...process.env, ...appEnv(home), ...env },
+      env: { ...launchEnv, ...env },
       stdio: ["ignore", "ignore", "pipe"],
     });
     let stderr = "";
@@ -107,7 +109,7 @@ async function withApp<T>(
     });
     try {
       if (!child.pid) await exited;
-      return await measure(child.pid!, () => stderr, home);
+      return await measure(child.pid!, () => stderr);
     } catch (error) {
       if (stderr) console.error(stderr);
       throw error;
