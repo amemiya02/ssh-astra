@@ -63,7 +63,7 @@ pnpm tauri build    # package
 
 ## Logs and diagnostics
 
-Open **Settings → Diagnostics** or use **Open log folder** in the command palette. The default locations are:
+Open **Settings → Diagnostics** or use **Open log folder** in the command palette. The default location depends on the platform.
 
 - macOS — `~/Library/Logs/dev.sshastra.app/`
 - Linux — `$XDG_DATA_HOME/dev.sshastra.app/logs/` (typically `~/.local/share/dev.sshastra.app/logs/`)

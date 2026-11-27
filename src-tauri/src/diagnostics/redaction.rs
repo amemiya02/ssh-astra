@@ -1,5 +1,6 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, HashMap};
+use std::fmt::Write as _;
 use std::net::IpAddr;
 use std::sync::LazyLock;
 
@@ -55,7 +56,11 @@ pub(super) fn redact<'a>(
             found.start() + (found.as_str().len() - found.as_str().trim_start_matches('.').len());
         let end = start + text.len();
         let address = text.split_once('%').map_or(text, |(address, _)| address);
-        if address.parse::<IpAddr>().is_ok() && complete_token(log, start, end) {
+        // An IP cannot be part of a word, even when it starts or ends with `::`.
+        if address.parse::<IpAddr>().is_ok()
+            && !log[..start].chars().next_back().is_some_and(word_char)
+            && !log[end..].chars().next().is_some_and(word_char)
+        {
             matches.push(Match {
                 start,
                 end,
@@ -76,7 +81,6 @@ pub(super) fn redact<'a>(
         result.push_str(&log[offset..found.start]);
         let next = codes.len() + 1;
         let code = codes.entry(found.original).or_insert(next);
-        use std::fmt::Write;
         let _ = write!(result, "⟦{code}⟧");
         offset = found.end;
     }
@@ -85,11 +89,14 @@ pub(super) fn redact<'a>(
 }
 
 fn complete_token(log: &str, start: usize, end: usize) -> bool {
-    let word = |c: char| c.is_alphanumeric() || c == '_';
-    let first = log[start..end].chars().next().is_some_and(word);
-    let last = log[start..end].chars().next_back().is_some_and(word);
-    !(first && log[..start].chars().next_back().is_some_and(word)
-        || last && log[end..].chars().next().is_some_and(word))
+    let first = log[start..end].chars().next().is_some_and(word_char);
+    let last = log[start..end].chars().next_back().is_some_and(word_char);
+    !(first && log[..start].chars().next_back().is_some_and(word_char)
+        || last && log[end..].chars().next().is_some_and(word_char))
+}
+
+fn word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
 }
 
 #[cfg(test)]
@@ -113,7 +120,7 @@ mod tests {
                    key=/Users/sam/.ssh/id prod home=/Users/sam forward=api.internal:5432\n\
                    repeat=sam, edge.example.net 192.0.2.42:22 then 192.0.2.42.\n\
                    ip=[2001:db8::1]:22 then 2001:db8::1 and ::ffff:192.0.2.9\n\
-                   unrelated: sample time=12:30:00 and version=1.2.3";
+                   unrelated: sample time=12:30:00 version=1.2.3 src=sshastra_core::files::transfer";
 
         let output = redact(log, identities).unwrap();
         assert_eq!(
@@ -122,7 +129,7 @@ mod tests {
                             key=⟦6⟧ home=⟦7⟧ forward=⟦8⟧:5432\n\
                             repeat=⟦2⟧, ⟦3⟧ ⟦9⟧:22 then ⟦9⟧.\n\
                             ip=[⟦10⟧]:22 then ⟦10⟧ and ⟦11⟧\n\
-                            unrelated: sample time=12:30:00 and version=1.2.3"
+                            unrelated: sample time=12:30:00 version=1.2.3 src=sshastra_core::files::transfer"
         );
     }
 }
