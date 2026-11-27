@@ -1,4 +1,4 @@
-import { ArrowDownUp, Eye, EyeOff, Radio, Settings, Waypoints } from "lucide-react";
+import { ArrowDownUp, BookmarkPlus, Eye, EyeOff, Radio, Settings, Waypoints } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
@@ -27,6 +27,7 @@ export interface StatusInfo {
   transfers: { count: number; bytesPerSecond: number };
   /** The Host of the focused remote Terminal. */
   activeRemote: Host | null;
+  saveTemporaryHost?(): void;
   broadcast?: { scope: BroadcastScope; tabTitle?: string; stop(): void } | null;
 }
 
@@ -51,7 +52,7 @@ export function StatusBar({
 }) {
   const { t } = useTranslation();
   const [privacyMode] = useSetting(privacyModeSetting);
-  const { connected, reconnecting, forwards, transfers, activeRemote, broadcast } = info;
+  const { connected, reconnecting, forwards, transfers, activeRemote, saveTemporaryHost, broadcast } = info;
   const activeRemoteLabel = activeRemote && (privacyMode ? workspaceHostName(activeRemote, t, true) : quickConnectLabel(activeRemote));
   const broadcastStatus = broadcast?.tabTitle
     ? t("broadcast.namedTabStatus", { title: broadcast.tabTitle })
@@ -119,6 +120,16 @@ export function StatusBar({
           <span className={cn("mr-1 truncate", !privacyMode && "font-mono")} title={activeRemoteLabel}>
             {activeRemoteLabel}
           </span>
+        )}
+        {saveTemporaryHost && (
+          <IconButton
+            label={t("quickConnect.saveAsHost")}
+            className="size-5"
+            tooltipSide="top"
+            onClick={saveTemporaryHost}
+          >
+            <BookmarkPlus className="size-3.5" aria-hidden />
+          </IconButton>
         )}
         <IconButton
           label={t("privacyMode.label")}

@@ -254,6 +254,8 @@ pub enum HostStoreError {
     Invalid(&'static str),
     #[error("no such host: {0}")]
     NotFound(HostId),
+    #[error("a host with this id is already saved: {0}")]
+    DuplicateId(HostId),
     #[error("no such group: {0}")]
     GroupNotFound(GroupId),
     #[error("no such Port forward: {0}")]
@@ -464,31 +466,32 @@ impl HostStore {
         chain_from(&self.library.hosts, host)
     }
 
+    /// Adds a Host with a fresh or previously allocated identity, then saves.
+    pub fn insert(&mut self, id: HostId, draft: HostDraft) -> Result<Host, HostStoreError> {
+        if self.get(&id).is_some() {
+            return Err(HostStoreError::DuplicateId(id));
+        }
+        let host = draft.into_host(id)?;
+        let mut library = self.library.clone();
+        library.hosts.push(host.clone());
+        chain(&library.hosts, &host.id)?;
+        self.save(library)?;
+        Ok(host)
+    }
+
     /// Adds a Host (`id: None`) or replaces the one with `id`, then saves.
     pub fn upsert(&mut self, id: Option<HostId>, draft: HostDraft) -> Result<Host, HostStoreError> {
-        let mut library = self.library.clone();
-        let host = match id {
-            None => {
-                let host = draft.into_host(HostId::generate())?;
-                library.hosts.push(host.clone());
-                host
-            }
-            Some(id) => {
-                let slot = library
-                    .hosts
-                    .iter_mut()
-                    .find(|h| h.id == id)
-                    .ok_or_else(|| HostStoreError::NotFound(id.clone()))?;
-                let group_id = slot.group_id.clone();
-                let forwards = std::mem::take(&mut slot.forwards);
-                *slot = Host {
-                    group_id,
-                    forwards,
-                    ..draft.into_host(id)?
-                };
-                slot.clone()
-            }
+        let Some(id) = id else {
+            return self.insert(HostId::generate(), draft);
         };
+        let mut library = self.library.clone();
+        let slot = library.host_mut(&id)?;
+        let host = Host {
+            group_id: slot.group_id.clone(),
+            forwards: std::mem::take(&mut slot.forwards),
+            ..draft.into_host(id)?
+        };
+        *slot = host.clone();
         chain(&library.hosts, &host.id)?;
         self.save(library)?;
         Ok(host)

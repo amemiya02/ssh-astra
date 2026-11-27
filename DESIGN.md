@@ -325,6 +325,8 @@ Within a tab, the focused pane splits to the right or down. Nested panes share a
 
 **Quick connect.** A valid SSH address adds an outline action above Home's Host cards and the first result in the command palette. Both read “Connect to …” and switch to “Quick connect” in privacy mode. An exact saved Host name takes priority in either search.
 
+**Save as Host.** A Temporary Host offers this action in its tab menu and, when focused, at the right of the status bar. The Host editor fills in the connection details and asks for a name. Saving keeps the same Connection, Terminals and File panels.
+
 **Status bar.** Left: one segment per connected Host (green dot and name), per reconnecting Host (pulsing amber dot, try count), a Port forwards count (a button that opens the forwards view), transfers with speed, and the update notice. Each segment is 10px padded and closed by a 1px right rule. Right: the focused Host's address in mono, the theme menu and Settings.
 
 **Rhythm.** Tailwind's 4px scale with 2px steps in chrome: 2px between Host rows, 4px between tabs and rail buttons, 6px gutters, 8 to 12px inside panels, 24px dialog padding.

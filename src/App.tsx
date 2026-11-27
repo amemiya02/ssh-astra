@@ -330,7 +330,6 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
   });
 
   const hosts = useHosts((s) => s.tree.hosts);
-  const hostsController = useHostsController({ open: openRemoteTerminal, openSftp, openForwards });
   const forwardStates = useForwards((s) => s.states);
   const held = useConnections((s) => s.held);
   const connectingHeld = useConnections((s) => s.connecting);
@@ -362,13 +361,21 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
     }
     return ids;
   }, [tabs]);
-  const previousTemporaryHosts = useRef(temporaryHosts);
+  const previousTemporaryHosts = useRef(new Set<HostId>());
   useEffect(() => {
     for (const id of previousTemporaryHosts.current) {
       if (!temporaryHosts.has(id)) void forgetTemporaryHost(id);
     }
-    previousTemporaryHosts.current = temporaryHosts;
+    previousTemporaryHosts.current = new Set(temporaryHosts);
   }, [temporaryHosts]);
+  const hostsController = useHostsController({ open: openRemoteTerminal, openSftp, openForwards }, (host) => {
+    // Saving already moved the backend entry out of the temporary registry.
+    previousTemporaryHosts.current.delete(host.id);
+    dispatch({ type: "saveTemporaryHost", host });
+  });
+  const focusedTemporaryHost = focusedPane && "host" in focusedPane && isTemporaryHost(focusedPane.host)
+    ? focusedPane.host
+    : undefined;
   const savedConnections = useMemo(() => new Map([...connections].filter(([id]) => !temporaryHosts.has(id))), [connections, temporaryHosts]);
   useRecordHostConnections(savedConnections);
   const filePanelPane: FilePanelPane | undefined =
@@ -414,6 +421,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
             onMove={(id, to) => dispatch({ type: "move", id, to })}
             onNewLocalTerminal={openLocalTerminal}
             onSplit={split}
+            onSaveTemporaryHost={hostsController.openTemporaryHostEditor}
           />
         }
         workspace={
@@ -449,6 +457,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
           forwards,
           transfers,
           activeRemote: focusedPane?.kind === "remote-terminal" ? focusedPane.host : null,
+          saveTemporaryHost: focusedTemporaryHost && (() => hostsController.openTemporaryHostEditor(focusedTemporaryHost)),
           broadcast: broadcastMode && {
             scope: broadcastMode.scope,
             tabTitle: broadcastMode.scope === "tab" && broadcastMode.tabId !== activeId

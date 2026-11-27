@@ -393,6 +393,51 @@ async fn a_temporary_host_shares_its_connection_with_sftp_and_leaves_no_saved_cr
     assert!(!fx.path().join("known_hosts").exists());
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn saving_a_temporary_host_keeps_its_live_connection_and_trust_for_this_run() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let fx = Fixture::new();
+    let vault = memory_vault();
+    let manager = fx.manager(&vault);
+    let temporary = manager
+        .temporary_host(
+            QuickConnectTarget {
+                address: sshd.host.clone(),
+                port: sshd.port,
+                user: None,
+            },
+            sshd.user,
+        )
+        .unwrap();
+    let first = Arc::new(ScriptedPrompter {
+        answers: Mutex::new(VecDeque::from([Secret::new(sshd.password)])),
+        trust_for_run: true,
+        ..ScriptedPrompter::default()
+    });
+    let connection = manager.connect_temporary(&temporary, first).await.unwrap();
+    let panel = manager.open_sftp(&temporary.host().id).await.unwrap();
+    let mut saved = temporary.host().clone();
+    saved.name = "Saved Host".into();
+
+    manager.preserve_temporary_host_trust(&temporary);
+    drop(temporary);
+
+    let reused = manager
+        .connect(&saved, ScriptedPrompter::silent())
+        .await
+        .unwrap();
+    assert!(Arc::ptr_eq(&connection, &reused));
+    assert!(browse(&panel, "/srv/files").await.is_ok());
+    drop((panel, connection, reused));
+
+    let reconnect = ScriptedPrompter::answering([Secret::new(sshd.password)]);
+    manager.connect(&saved, reconnect.clone()).await.unwrap();
+    assert_eq!(reconnect.asked(), ["password retry=false can_save=true"]);
+    assert!(!fx.path().join("known_hosts").exists());
+}
+
 /// A keychain that fails every call, like a Secret Service that went away.
 struct BrokenVault;
 
