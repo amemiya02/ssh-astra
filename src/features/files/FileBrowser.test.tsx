@@ -475,6 +475,33 @@ describe("PermissionsDialog", () => {
     expect(box("Owner write").getAttribute("aria-checked")).toBe("true");
 
     await act(async () => button("Apply").click());
-    expect(onApply).toHaveBeenCalledWith(0o600);
+    expect(onApply).toHaveBeenCalledWith({ mode: 0o600, scope: "entry" });
   });
+
+  it("validates numeric IDs and applies directory execute permissions with the requested ownership", async () => {
+    const onApply = vi.fn(() => Promise.resolve(null));
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    const folder = { ...entry("public", "dir"), uid: 1000, gid: 1000, permissions: 0o750 };
+    act(() => root!.render(<PermissionsDialog entry={folder} onApply={onApply} onClose={() => {}} />));
+    const owner = () => dialog()!.querySelector<HTMLInputElement>('input[aria-label="Owner ID (UID)"]')!;
+    const group = () => dialog()!.querySelector<HTMLInputElement>('input[aria-label="Group ID (GID)"]')!;
+    const box = (label: string) => dialog()!.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+
+    expect(owner().value).toBe("1000");
+    expect(group().value).toBe("1000");
+    act(() => type(owner(), "-1"));
+    expect(button("Apply").disabled).toBe(true);
+    act(() => type(owner(), "4294967295"));
+    expect(button("Apply").disabled).toBe(true);
+    act(() => type(owner(), ""));
+    act(() => type(group(), "42"));
+    act(() => box("Apply to folder contents").click());
+    act(() => box("Only add execute permissions to folders").click());
+
+    await act(async () => button("Apply").click());
+    expect(onApply).toHaveBeenCalledWith({ mode: 0o750, gid: 42, scope: "directoriesOnly" });
+  });
+
 });

@@ -18,6 +18,9 @@ export interface FileEntry {
   modified: number | null;
   /** Permission bits only, e.g. `0o755`. */
   permissions: number | null;
+  /** Numeric ownership when reported by SFTP. */
+  uid?: number | null;
+  gid?: number | null;
   /** For a symlink, what it points to (`null` if it dangles). */
   linkTarget: FileKind | null;
 }
@@ -26,6 +29,14 @@ export interface FileEntry {
 export interface Listing {
   path: string;
   entries: FileEntry[];
+}
+
+/** Mirrors `sshastra_core::files::PermissionChange`. */
+export interface PermissionChange {
+  mode?: number;
+  uid?: number;
+  gid?: number;
+  scope: "entry" | "recursive" | "directoriesOnly";
 }
 
 /**
@@ -91,9 +102,9 @@ export function deleteFiles(id: FsId, paths: string[]): Promise<void> {
   return invoke("files_delete", { id, paths });
 }
 
-/** Sets the permission bits of `path` (e.g. `0o755`). */
-export function chmodFile(id: FsId, path: string, mode: number): Promise<void> {
-  return invoke("files_chmod", { id, path, mode });
+/** Edits ownership of `path` and applies the mode to the requested scope. */
+export function chmodFile(id: FsId, path: string, change: PermissionChange): Promise<void> {
+  return invoke("files_chmod", { id, path, change });
 }
 
 export function closeFiles(id: FsId): Promise<void> {

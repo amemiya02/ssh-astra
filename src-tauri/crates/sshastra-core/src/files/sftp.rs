@@ -122,29 +122,15 @@ impl RemoteFs for SftpFs {
 
     fn list_dir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<Vec<FileEntry>>> {
         Box::pin(async move {
-            let dir = self
-                .session
-                .read_dir(path)
-                .await
-                .map_err(|e| error(path, e))?;
-            let mut entries = Vec::new();
+            let mut entries = self.list_dir_no_follow(path).await?;
             let mut links = JoinSet::new();
-            for item in dir {
-                let name = item.file_name();
-                if name.is_empty() || name.contains(['/', '\0']) {
-                    return Err(FsError::Protocol(
-                        "SFTP returned an invalid directory entry name".into(),
-                    ));
-                }
-                let entry = entry(name, &item.metadata());
+            for (index, entry) in entries.iter().enumerate() {
                 if entry.kind == FileKind::Symlink {
                     // Followed concurrently: a directory may hold many links.
                     let session = Arc::clone(&self.session);
                     let target = join(path, &entry.name);
-                    let index = entries.len();
                     links.spawn(async move { (index, session.metadata(target).await) });
                 }
-                entries.push(entry);
             }
             while let Some(done) = links.join_next().await {
                 let Ok((index, target)) = done else { continue };
@@ -152,6 +138,25 @@ impl RemoteFs for SftpFs {
                 entries[index].link_target = target.ok().map(|m| kind(&m));
             }
             Ok(entries)
+        })
+    }
+
+    fn list_dir_no_follow<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<Vec<FileEntry>>> {
+        Box::pin(async move {
+            self.session
+                .read_dir(path)
+                .await
+                .map_err(|e| error(path, e))?
+                .map(|item| {
+                    let name = item.file_name();
+                    if name.is_empty() || name.contains(['/', '\0']) {
+                        return Err(FsError::Protocol(
+                            "SFTP returned an invalid directory entry name".into(),
+                        ));
+                    }
+                    Ok(entry(name, &item.metadata()))
+                })
+                .collect()
         })
     }
 
@@ -326,6 +331,42 @@ impl RemoteFs for SftpFs {
                 .map_err(|e| error(path, e))
         })
     }
+
+    fn set_ownership<'a>(
+        &'a self,
+        path: &'a str,
+        uid: Option<u32>,
+        gid: Option<u32>,
+    ) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move {
+            let current = self
+                .session
+                .symlink_metadata(path)
+                .await
+                .map_err(|e| error(path, e))?;
+            if kind(&current) == FileKind::Symlink {
+                return Ok(());
+            }
+            // SFTP v3 encodes UID and GID together, even if only one changes.
+            let (Some(uid), Some(gid)) = (uid.or(current.uid), gid.or(current.gid)) else {
+                return Err(FsError::OwnershipUnavailable(path.to_owned()));
+            };
+            if current.uid == Some(uid) && current.gid == Some(gid) {
+                return Ok(());
+            }
+            self.session
+                .set_metadata(
+                    path,
+                    Metadata {
+                        uid: Some(uid),
+                        gid: Some(gid),
+                        ..Metadata::empty()
+                    },
+                )
+                .await
+                .map_err(|e| error(path, e))
+        })
+    }
 }
 
 fn kind(meta: &Metadata) -> FileKind {
@@ -361,6 +402,8 @@ fn entry(name: String, meta: &Metadata) -> FileEntry {
         size,
         modified,
         permissions,
+        uid: meta.uid,
+        gid: meta.gid,
         link_target: None,
     }
 }

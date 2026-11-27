@@ -581,11 +581,25 @@ describe("file operations", () => {
   it("changes an entry's permissions and refreshes", async () => {
     const { api, store } = await connected();
 
-    expect(await store.getState().setPermissions("notes.txt", 0o600)).toBeNull();
+    expect(await store.getState().setPermissions("/home/me", "notes.txt", { mode: 0o600, scope: "entry" })).toBeNull();
 
-    expect(api.chmodFile).toHaveBeenCalledWith(7, "/home/me/notes.txt", 0o600);
+    expect(api.chmodFile).toHaveBeenCalledWith(7, "/home/me/notes.txt", { mode: 0o600, scope: "entry" });
     expect(api.listFiles).toHaveBeenCalledTimes(2);
   });
+
+  it("keeps permission failures with the dialog and applies edits to the directory it opened in", async () => {
+    const error = { kind: "permissionDenied", message: "denied", details: { path: "/home/me/notes.txt" } };
+    const { api, store } = await connected({ chmodFile: vi.fn().mockRejectedValue(error) });
+    await store.getState().navigate("/home/me/src");
+    const change = { gid: 42, scope: "entry" } as const;
+
+    expect(await store.getState().setPermissions("/home/me", "notes.txt", change)).toEqual(error);
+    expect(api.chmodFile).toHaveBeenCalledWith(7, "/home/me/notes.txt", change);
+    expect(store.getState().path).toBe("/home/me/src");
+    expect(store.getState().error).toBeNull();
+    expect(api.listFiles).toHaveBeenCalledTimes(2);
+  });
+
 });
 
 describe("followConnection", () => {
