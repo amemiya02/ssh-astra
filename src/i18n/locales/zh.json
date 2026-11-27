@@ -484,6 +484,9 @@
     "paste": {
       "title": "粘贴 {{count}} 行？",
       "body": "shell 可能会在每一行到达时立即执行。粘贴前请检查内容。",
+      "invisibleTitle": "粘贴含不可见字符的内容？",
+      "invisibleBody": "不可见字符可能改变文本的显示方式或 shell 的处理方式。粘贴前请查看预览中标出的 Unicode 码位。",
+      "invisiblePosition": "第 {{line}} 行，第 {{column}} 列",
       "confirm": "粘贴",
       "cancel": "取消"
     },
