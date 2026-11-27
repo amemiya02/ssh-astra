@@ -1,0 +1,1272 @@
+{
+  "app": {
+    "name": "SSH Astra"
+  },
+  "shell": {
+    "workspace": "終端機",
+    "navigation": "導航",
+    "sidebar": "側邊欄",
+    "showHosts": "顯示 Host 清單",
+    "showForwards": "顯示連接埠轉送"
+  },
+  "hosts": {
+    "title": "Hosts",
+    "basicInfo": "基本資訊",
+    "advanced": "進階",
+    "emptyTitle": "還沒有 Host",
+    "emptyBody": "新增的 Host 會顯示在此，按兩下即可開啟終端機。",
+    "new": "新增 Host",
+    "newDescription": "依序嘗試 ssh-agent 金鑰、私鑰檔案、密碼或伺服器提出的驗證問題（例如一次性驗證碼）。輸入密碼或私鑰密碼片語時，可選擇儲存到系統鑰匙圈。",
+    "openHint": "按兩下連線",
+    "clearCredentials": "清除已儲存的憑證",
+    "credentialsCleared": "已清除儲存的憑證，下次連線會重新詢問。",
+    "fields": {
+      "name": "名稱",
+      "address": "位址",
+      "port": "連接埠",
+      "user": "使用者名稱",
+      "group": "群組",
+      "icon": "Host 圖示",
+      "jumpHost": "跳板主機",
+      "auth": "驗證方式",
+      "identityFile": "私鑰檔案",
+      "identitiesOnly": "僅使用指定金鑰",
+      "forwardAgent": "SSH agent 轉送",
+      "keepaliveSeconds": "保活間隔（秒）",
+      "postLoginCommand": "登入後指令",
+      "terminalCharset": "終端機字元集",
+      "terminalBackspace": "Backspace 鍵傳送",
+      "terminalScheme": "終端機配色",
+      "defaultDirectory": "檔案面板目錄"
+    },
+    "noJumpHost": "無（直接連線）",
+    "icons": {
+      "automatic": "自動",
+      "linux": "Linux",
+      "ubuntu": "Ubuntu",
+      "archLinux": "Arch Linux",
+      "alpineLinux": "Alpine Linux",
+      "linuxMint": "Linux Mint",
+      "nixos": "NixOS",
+      "freebsd": "FreeBSD",
+      "macos": "macOS",
+      "server": "伺服器",
+      "database": "資料庫",
+      "cloud": "雲端",
+      "router": "路由器"
+    },
+    "terminalSchemeInherit": "與其他終端機相同",
+    "terminalSchemeHint": "為正式環境的 Host 設定專用配色，避免混淆。",
+    "defaultDirectoryHint": "檔案面板首次開啟時使用的目錄。留空則開啟家目錄。",
+    "identitiesOnlyHint": "指定金鑰檔案後，ssh-agent 只提供與該檔案相符的金鑰，並略過預設金鑰檔案。",
+    "forwardAgentHint": "連線期間，遠端主機可透過本機的 SSH agent 使用您的 SSH 金鑰。變更後請重新連線。",
+    "keepaliveHint": "留空可沿用全域設定，輸入 0 可停用保活。變更後請重新連線。",
+    "postLoginCommandHint": "每次開啟新的 shell 並就緒後執行一次，重新連線時也會執行。",
+    "errors": {
+      "required": "必填",
+      "port": "請輸入 1 到 65535 之間的連接埠",
+      "keepaliveSeconds": "請輸入 0 到 4,294,967,295 之間的整數"
+    },
+    "save": "儲存",
+    "connectionTest": {
+      "action": "測試連線",
+      "testing": "正在測試連線…",
+      "succeeded": "連線測試成功。"
+    },
+    "cancel": "取消",
+    "edit": "編輯 Host",
+    "editDescription": "變更 SSH Astra 連線到此 Host 的方式。",
+    "open": "開啟終端機",
+    "duplicate": "複製",
+    "copyName": "{{name}} 副本",
+    "delete": "刪除",
+    "deleteHostTitle": "刪除 {{name}}？",
+    "deleteHostBody": "這個 Host 會從清單中移除。已經開啟的終端機不受影響。",
+    "newGroup": "新增群組",
+    "newGroupName": "新群組",
+    "groupName": "群組名稱",
+    "rename": "重新命名",
+    "deleteGroupTitle": "刪除群組 {{name}}？",
+    "deleteGroupBody": "其中的 Host 和群組會上移一級，不會被刪除。",
+    "moveTo": "移至",
+    "topLevel": "頂層",
+    "moreActions": "更多操作",
+    "search": "搜尋 Host",
+    "clearSearch": "清除搜尋",
+    "noResultsTitle": "沒有符合的 Host",
+    "noResultsBody": "請試試其他搜尋字詞或標籤篩選條件。",
+    "tags": {
+      "filter": "按標籤篩選 Host",
+      "all": "所有標籤",
+      "label": "標籤",
+      "add": "新增標籤",
+      "remove": "移除標籤 {{tag}}",
+      "limits": "最多 {{maxTags}} 個標籤，每個最多 {{maxLength}} 個字元。"
+    },
+    "emptyGroup": "把 Host 拖曳到這裡",
+    "emptyGroupSorted": "此群組中沒有 Host",
+    "sort": {
+      "label": "Host 排序（{{order}}）",
+      "manual": "手動排序",
+      "name": "名稱",
+      "address": "位址",
+      "recent": "最近連線"
+    },
+    "actionFailed": "無法儲存變更：{{message}}",
+    "auth": {
+      "auto": "自動",
+      "password": "密碼",
+      "key": "私鑰"
+    },
+    "portForwards": "連接埠轉送",
+    "connectOnly": "僅連線",
+    "disconnect": "中斷連線",
+    "connectFailed": "無法連線到 {{name}}：{{message}}",
+    "import": {
+      "action": "匯入 ~/.ssh/config",
+      "keywords": "ssh config openssh 匯入",
+      "title": "已匯入 ~/.ssh/config",
+      "summary": "匯入 {{imported}} 個，略過 {{skipped}} 個，無法匯入 {{failed}} 個。",
+      "nothing": "~/.ssh/config 中沒有可匯入的 Host。",
+      "imported": "已匯入",
+      "skipped": "已略過：已有同名 Host",
+      "failed": "未匯入",
+      "partial": "已匯入，但缺少部分設定",
+      "error": "無法匯入 ~/.ssh/config：{{message}}",
+      "close": "關閉",
+      "proxyCommands": "已匯入的 ProxyCommand",
+      "proxyCommandHint": "連線至以下 Host 時，這些指令會在本機執行。",
+      "problems": {
+        "invalidValue": "無法辨識 {{directive}} {{value}}",
+        "unsupported": "不支援 {{directive}}",
+        "includeFailed": "無法讀取：{{reason}}",
+        "jumpChainConflict": "此 Host 的 ProxyJump 鏈連到 {{hop}} 的方式，與 {{hop}} 自身的設定不同",
+        "jumpHostLoop": "跳板主機的路徑指回此 Host",
+        "jumpHostUnavailable": "跳板主機 {{hop}} 未匯入"
+      }
+    },
+    "transfer": {
+      "import": "匯入 Host 清單…",
+      "export": "匯出 Host 清單…",
+      "fileType": "SSH Astra Host 清單",
+      "exported": "已匯出 Host 清單。匯出的檔案不含密碼或金鑰密碼片語。",
+      "imported": "匯入完成。新增 {{hosts}} 個 Host 和 {{groups}} 個群組。",
+      "skipped": "已存在同名 Host，已略過：{{names}}。",
+      "exportFailed": "無法匯出 Host 清單：{{message}}",
+      "importFailed": "無法匯入該檔案：{{message}}"
+    }
+  },
+  "sftp": {
+    "open": "開啟 SFTP 工作區",
+    "chooseHost": "選擇要連線的 Host",
+    "noHosts": "新增 Host 後即可開啟 SFTP 工作區。",
+    "local": "本機檔案",
+    "loadingLocal": "正在開啟本機檔案…",
+    "home": "家目錄",
+    "filter": "篩選目前目錄",
+    "noMatches": "沒有符合的檔案",
+    "uploadSelection": "上傳到 Host",
+    "downloadSelection": "下載到本機目錄",
+    "localUnavailable": "請先開啟一個本機目錄，再下載檔案。",
+    "invalidName": "這是 Windows 保留的名稱，或名稱中含有 Windows 不允許的字元。"
+  },
+  "tabs": {
+    "resizeTabStrip": "調整分頁欄寬度",
+    "showIconsOnly": "僅顯示分頁圖示",
+    "showTitles": "顯示分頁標題",
+    "hostGroup": "{{name}} 的分頁",
+    "closeBelow": "關閉下方分頁",
+    "sftp": "SFTP",
+    "listLabel": "已開啟的分頁",
+    "localTerminal": "本機終端機",
+    "newLocalTerminal": "新增本機終端機",
+    "close": "關閉 {{title}}",
+    "confirmClose": {
+      "title_one": "關閉 {{count}} 個已連線的終端機？",
+      "title_other": "關閉 {{count}} 個已連線的終端機？",
+      "description": "這些遠端終端機中執行的程式可能會停止。",
+      "skip": "不再詢問",
+      "confirm": "關閉"
+    },
+    "closeTab": "關閉分頁",
+    "closeOthers": "關閉其他分頁",
+    "closeRight": "關閉右側分頁",
+    "duplicate": "複製分頁",
+    "rename": "重新命名分頁",
+    "renameHint": "清除標題即可還原自動命名。",
+    "title": "分頁標題",
+    "save": "儲存",
+    "cancel": "取消",
+    "lock": "鎖定分頁",
+    "locked": "已鎖定",
+    "unreadOutput": "終端機有未讀輸出",
+    "terminalBell": "終端機提示音",
+    "color": {
+      "label": "分頁顏色",
+      "automatic": "自動",
+      "red": "紅色",
+      "green": "綠色",
+      "yellow": "黃色",
+      "blue": "藍色",
+      "magenta": "洋紅色",
+      "cyan": "青綠色"
+    },
+    "splitRight": "向右分割",
+    "splitDown": "向下分割",
+    "maximizePane": "最大化窗格",
+    "restorePaneLayout": "還原窗格配置",
+    "swapPaneLeft": "與左側窗格交換",
+    "swapPaneRight": "與右側窗格交換",
+    "swapPaneUp": "與上方窗格交換",
+    "swapPaneDown": "與下方窗格交換",
+    "resizePanes": "調整窗格大小",
+    "pane": "第 {{index}} 個窗格，共 {{count}} 個",
+    "status": {
+      "connecting": "連線中",
+      "connected": "已連線",
+      "disconnected": "已中斷"
+    },
+    "settings": "設定",
+    "portForwards": "連接埠轉送",
+    "home": "首頁"
+  },
+  "palette": {
+    "title": "指令面板",
+    "description": "開啟 Host、切換分頁或執行操作。",
+    "placeholder": "搜尋 Host、分頁和操作",
+    "empty": "沒有符合的結果",
+    "groups": {
+      "recent": "最近使用的 Host",
+      "hosts": "Host",
+      "tabs": "分頁",
+      "actions": "操作"
+    },
+    "actions": {
+      "openSettings": "開啟設定",
+      "disconnectHost": "中斷 {{name}}",
+      "goHome": "前往首頁"
+    },
+    "keywords": {
+      "preferences": "偏好設定 preferences",
+      "theme": "主題",
+      "hosts": "首頁 Host hosts"
+    }
+  },
+  "files": {
+    "title": "檔案",
+    "empty": "在某個 Host 上開啟終端機後，可以在此瀏覽它的檔案。",
+    "show": "顯示檔案面板",
+    "hide": "隱藏檔案面板",
+    "dockRight": "將檔案面板停靠在右側",
+    "dockBottom": "將檔案面板停靠在下方",
+    "dockGroup": "檔案面板位置",
+    "copy": "複製",
+    "peer": {
+      "choose": "顯示另一台主機的檔案面板",
+      "currentOnly": "僅顯示目前主機"
+    },
+    "back": "後退",
+    "forward": "前進",
+    "up": "上一級資料夾",
+    "refresh": "重新整理",
+    "syncToTerminal": "同步至終端機目錄",
+    "goToPath": "前往此路徑",
+    "editPath": "編輯路徑",
+    "path": "路徑",
+    "copyPath": "複製路徑",
+    "showHidden": "顯示隱藏檔案",
+    "open": "開啟",
+    "listLabel": "{{path}} 中的檔案",
+    "columns": {
+      "name": "名稱",
+      "size": "大小",
+      "modified": "修改時間",
+      "permissions": "權限"
+    },
+    "emptyFolder": "這個資料夾是空的。",
+    "folderSize": {
+      "calculate": "計算資料夾大小",
+      "calculating": "正在計算 {{name}} 的大小…",
+      "cancel": "取消計算 {{name}} 的大小"
+    },
+    "search": {
+      "open": "按名稱尋找",
+      "scope": "在 {{path}} 及其子資料夾中尋找",
+      "query": "檔案或資料夾名稱",
+      "mode": "名稱符合方式",
+      "substring": "包含",
+      "wildcard": "萬用字元",
+      "wildcardHint": "可用 * 或 ?",
+      "submit": "尋找名稱",
+      "cancel": "取消尋找",
+      "searching": "正在尋找…",
+      "cancelled": "尋找已取消。",
+      "results": "尋找結果",
+      "noMatches": "未找到符合的名稱。",
+      "matches_one": "{{count, number}} 項結果",
+      "matches_other": "{{count, number}} 項結果",
+      "limit": "搜尋已在檢查 {{count, number}} 個項目後停止，結果可能不完整。",
+      "skipped": "部分資料夾無法尋找。"
+    },
+    "entryCount_one": "{{count, number}} 項",
+    "entryCount_other": "{{count, number}} 項",
+    "selectedCount": "已選 {{count, number}} 項",
+    "hiddenSelectedCount_one": "{{count, number}} 項選取內容已隱藏",
+    "hiddenSelectedCount_other": "{{count, number}} 項選取內容已隱藏",
+    "connecting": "正在連線…",
+    "disconnected": "與 {{host}} 的連線已中斷。",
+    "retry": "重試",
+    "openInEditor": "在編輯器中開啟",
+    "edit": {
+      "title": "在編輯器中開啟",
+      "opening": "正在下載…",
+      "editing": "已在編輯器中開啟，儲存後自動上傳。",
+      "uploading": "正在上傳…",
+      "uploaded": "已儲存到 {{host}}",
+      "uploadFailed": "上傳失敗：{{message}}",
+      "openFailed": "無法開啟檔案：{{message}}",
+      "noApplication": "這部電腦上沒有能開啟此檔案的應用程式。",
+      "notFound": "檔案已不存在。",
+      "notAFile": "只有普通檔案可以在編輯器中開啟。",
+      "question": {
+        "tooLarge": {
+          "title": "檔案太大，無法編輯",
+          "body": "{{name}} 超過 10 MB，超出編輯器可開啟的上限。改為下載嗎？"
+        },
+        "binary": {
+          "title": "不是文字檔案",
+          "body": "編輯 {{name}} 可能會損毀檔案，因為它似乎是二進位檔。要下載檔案，還是繼續開啟？"
+        },
+        "download": "下載",
+        "openAnyway": "仍要開啟",
+        "cancel": "取消"
+      },
+      "retry": "重試",
+      "close": "停止編輯 {{name}}"
+    },
+    "errors": {
+      "notConnected": "{{host}} 未連線。",
+      "notFound": "資料夾不存在：{{path}}",
+      "permissionDenied": "沒有權限：{{path}}",
+      "notADirectory": "不是資料夾：{{path}}",
+      "timedOut": "伺服器沒有及時回應。",
+      "other": "無法列出資料夾：{{message}}"
+    },
+    "newFile": "新增檔案",
+    "newFolder": "新增資料夾",
+    "create": "建立",
+    "cancel": "取消",
+    "name": "名稱",
+    "renameAction": "重新命名",
+    "permissionsAction": "權限…",
+    "deleteAction": "刪除…",
+    "newFileAction": "新增檔案…",
+    "newFolderAction": "新增資料夾…",
+    "rename": {
+      "title": "重新命名「{{name}}」"
+    },
+    "move": {
+      "cut": "剪下",
+      "paste": "貼上",
+      "moving": "正在移動項目…",
+      "failures": "無法移動的項目",
+      "close": "關閉"
+    },
+    "archive": {
+      "compressAction": "壓縮…",
+      "extractAction": "解壓縮…",
+      "compressTitle": "壓縮所選項目",
+      "compressDescription": "將在目前資料夾內建立擴展名為 .tar.gz 的壓縮檔。",
+      "name": "壓縮檔名稱",
+      "compress": "壓縮",
+      "extractTitle": "解壓縮「{{name}}」",
+      "extractDescription": "內容將解壓縮到名為「{{folder}}」的新資料夾。",
+      "extract": "解壓縮"
+    },
+    "nameProblem": {
+      "slash": "名稱不能包含「/」。",
+      "dots": "不能使用「{{name}}」作為名稱。",
+      "taken": "此資料夾中已有「{{name}}」。"
+    },
+    "delete": {
+      "titleOne": "刪除「{{name}}」？",
+      "titleMany": "刪除 {{count}} 項？",
+      "counting": "正在統計將被刪除的項目…",
+      "count_one": "將刪除 {{count}} 個項目。此操作無法復原。",
+      "count_other": "將刪除 {{count}} 個項目（包括資料夾中的全部內容）。此操作無法復原。",
+      "confirm": "刪除"
+    },
+    "permissions": {
+      "title": "「{{name}}」的權限",
+      "owner": "擁有者",
+      "group": "組",
+      "others": "其他人",
+      "read": "讀取",
+      "write": "寫入",
+      "execute": "執行",
+      "octal": "八進位",
+      "uid": "擁有者 ID（UID）",
+      "gid": "群組 ID（GID）",
+      "ownershipHelp": "擁有者和群組的變更只會套用到所選項目。留空則保留原 ID。",
+      "invalidId": "請輸入 0 到 4294967294 之間的整數。",
+      "recursive": "套用到目錄內容",
+      "directoriesOnly": "僅為目錄設定執行權限",
+      "apply": "套用"
+    },
+    "operationErrors": {
+      "notFound": "檔案或資料夾不存在：{{path}}",
+      "permissionDenied": "權限不足：{{path}}",
+      "ownershipUnavailable": "無法取得 {{path}} 目前的擁有者或群組 ID。請輸入兩個 ID。",
+      "alreadyExists": "已存在：{{path}}",
+      "archiveToolMissing": "此主機缺少所需工具 {{tool}}。",
+      "archiveUnsupported": "不支援「{{path}}」的壓縮檔格式。",
+      "archiveNotAFile": "壓縮檔不存在或不是檔案。",
+      "archiveUnavailable": "壓縮和解壓縮需要 SSH 連線。",
+      "archiveIncomplete": "解壓縮已中止。「{{path}}」中可能留有部分內容。{{message}}",
+      "archiveFailed": "壓縮檔操作失敗。{{message}}",
+      "moveIntoSelf": "不能將資料夾移入自身。",
+      "notOpen": "檔案面板未連線。",
+      "other": "伺服器拒絕操作：{{message}}"
+    },
+    "upload": "上傳檔案",
+    "uploadTitle": "上傳到 {{path}}",
+    "download": "下載…",
+    "downloadTitle": "下載到…",
+    "dropHere": "放開以上傳至 {{path}}"
+  },
+  "transfers": {
+    "title": "傳輸",
+    "open": "開啟傳輸",
+    "filter": "篩選傳輸",
+    "filters": {
+      "all": "全部",
+      "inProgress": "進行中",
+      "failed": "失敗",
+      "completed": "已完成"
+    },
+    "empty": {
+      "all": "沒有傳輸。",
+      "inProgress": "沒有進行中的傳輸。",
+      "failed": "沒有失敗的傳輸。",
+      "completed": "沒有已完成的傳輸。"
+    },
+    "unknownHost": "未知主機",
+    "reveal": "在檔案管理員中顯示",
+    "revealFailed": "無法在檔案管理員中顯示 {{name}}。",
+    "clearFailed": "無法清除已完成的傳輸。",
+    "expand": "顯示傳輸",
+    "collapse": "隱藏傳輸",
+    "active": "進行中 {{count}}",
+    "done": "已完成 {{count}}",
+    "noneActive": "沒有進行中的傳輸。",
+    "noneDone": "沒有已完成的傳輸。",
+    "clearDone": "清除已完成",
+    "retry": "重試",
+    "pause": "暫停",
+    "resume": "繼續",
+    "cancel": "取消",
+    "dismiss": "移除",
+    "progress": "{{done}} / {{total}}",
+    "files": "{{done}} / {{total}} 個檔案",
+    "timeLeft": "剩餘 {{time}}",
+    "direction": {
+      "upload": "上傳",
+      "download": "下載",
+      "copy": "在主機之間複製"
+    },
+    "unprotected": {
+      "label": "未受保護",
+      "detail": "無法在目的地目錄建立暫存檔。若傳輸中斷，可能會損毀原始檔案。"
+    },
+    "state": {
+      "queued": "等待中",
+      "paused": "已暫停",
+      "conflict": "等待你的選擇",
+      "cancelled": "已取消",
+      "done": "已完成"
+    },
+    "failed": "無法開始傳輸：{{message}}",
+    "conflict": {
+      "title": "檔案已存在",
+      "body": "目的地已有同名檔案。要取代這個檔案嗎？",
+      "overwrite": "取代",
+      "skip": "略過",
+      "overwriteAll": "全部取代",
+      "skipAll": "全部略過"
+    }
+  },
+  "forwards": {
+    "title": "連接埠轉送",
+    "lead": "透過 {{host}} 的連線轉送流量，以存取其網路、開放本機連接埠供遠端使用，或使用 SOCKS 代理。即使沒有開啟終端機，連接埠轉送執行期間也會保持連線。",
+    "emptyTitle": "還沒有連接埠轉送",
+    "emptyBody": "新增連接埠轉送，即可存取 Host 網路中的服務（例如資料庫）、開放本機連接埠供遠端使用，或使用 SOCKS 代理。",
+    "add": "新增連接埠轉送",
+    "newTitle": "新增連接埠轉送",
+    "editTitle": "編輯連接埠轉送",
+    "fields": {
+      "label": "名稱",
+      "type": "類型",
+      "autoStart": "連線時自動啟動"
+    },
+    "labelPlaceholder": "可選",
+    "forwardAgentHint": "連線期間，遠端主機可透過本機的 SSH agent 使用您的 SSH 金鑰。變更後請重新連線。",
+    "errors": {
+      "required": "必填",
+      "port": "請輸入 1 到 65535 之間的連接埠"
+    },
+    "save": "儲存",
+    "cancel": "取消",
+    "edit": "編輯",
+    "delete": "刪除",
+    "start": "啟動",
+    "stop": "停止",
+    "dismiss": "清除錯誤",
+    "moreActions": "{{name}} 的更多操作",
+    "listLabel": "{{host}} 上的連接埠轉送",
+    "status": {
+      "stopped": "已停止",
+      "starting": "啟動中",
+      "running": "執行中",
+      "failed": "出錯"
+    },
+    "restartHint": "修改將在下次啟動時生效。",
+    "actionFailed": "無法儲存連接埠轉送：{{message}}",
+    "startErrors": {
+      "portInUse": "{{address}} 上的連接埠 {{port}} 已被佔用。請換一個本機連接埠，或關閉佔用它的程式。",
+      "permissionDenied": "沒有權限監聽連接埠 {{port}}。小於 1024 的連接埠通常需要管理員權限，請改用較大的連接埠號碼。",
+      "remoteRefused": "伺服器拒絕監聽連接埠 {{port}}（{{address}}）。連接埠可能已被佔用，或伺服器的 AllowTcpForwarding / GatewayPorts 設定不允許。"
+    },
+    "fieldsByType": {
+      "local": {
+        "bindPort": "本機連接埠",
+        "targetHost": "遠端主機",
+        "targetPort": "遠端連接埠",
+        "bindAddress": "監聽位址"
+      },
+      "remote": {
+        "bindPort": "Host 上的連接埠",
+        "targetHost": "本機主機",
+        "targetPort": "本機連接埠",
+        "bindAddress": "Host 上的監聽位址"
+      },
+      "dynamic": {
+        "bindPort": "本機連接埠",
+        "bindAddress": "監聽位址"
+      }
+    },
+    "hints": {
+      "local": {
+        "targetHost": "按 Host 看到的位址填寫，例如 localhost 或 db.internal。",
+        "bindAddress": "留空則只接受本機的連線（127.0.0.1）。"
+      },
+      "remote": {
+        "targetHost": "按本機看到的位址填寫，例如 127.0.0.1。",
+        "bindAddress": "留空則只接受 Host 本機的連線（localhost）。"
+      },
+      "dynamic": {
+        "bindAddress": "留空則只接受本機的連線（127.0.0.1）。"
+      }
+    },
+    "kinds": {
+      "local": "本機",
+      "remote": "遠端",
+      "dynamic": "SOCKS"
+    },
+    "kindHints": {
+      "local": "從本機的連接埠連線至 Host 端可存取的位址（ssh -L）。",
+      "remote": "從 Host 上的連接埠連線至本機可存取的位址（ssh -R）。",
+      "dynamic": "在本機提供 SOCKS5 代理，並由 Host 建立每個連線（ssh -D）。"
+    },
+    "ends": {
+      "local": "本機",
+      "remote": "Host",
+      "dynamic": "SOCKS5"
+    },
+    "autoStartHint": "開啟終端機、啟動其他連接埠轉送，或選取「僅連線」時，會自動啟動此規則。",
+    "autoStartBadge": "自動",
+    "sidebar": {
+      "emptyTitle": "還沒有 Host 設定連接埠轉送",
+      "emptyBody": "在 Host 清單中開啟某個 Host 的選單，選擇「連接埠轉送」並新增規則。有規則的 Host 會列在此，並顯示執行中的數量。",
+      "runningOf": "{{running}} 條執行中，共 {{total}} 條"
+    }
+  },
+  "broadcast": {
+    "toTab": "廣播至此分頁",
+    "toWindow": "廣播至此視窗",
+    "tabStatus": "廣播 · 本分頁",
+    "namedTabStatus": "廣播 · {{title}}",
+    "windowStatus": "廣播 · 本視窗",
+    "turnOff": "關閉廣播",
+    "recipient": "接收廣播輸入"
+  },
+  "privacyMode": {
+    "label": "隱私模式",
+    "turnOn": "開啟隱私模式",
+    "turnOff": "關閉隱私模式"
+  },
+  "toast": {
+    "filesCopied": "已複製檔案。",
+    "copied": "已複製到剪貼簿。",
+    "editUploadFailed": "遠端編輯上傳失敗：{{name}}。{{reason}}",
+    "forwardFailed": "連接埠轉送失敗。{{reason}}",
+    "dismiss": "關閉通知：{{message}}",
+    "transferDone": "傳輸完成：{{name}}",
+    "transferFailed": "傳輸失敗：{{name}}。{{reason}}"
+  },
+  "notifications": {
+    "transfers": {
+      "title": "一批傳輸已結束",
+      "body": "完成 {{completed}} 項，失敗 {{failed}} 項，取消 {{cancelled}} 項。"
+    },
+    "reconnect": {
+      "title": "連線已中斷",
+      "body": "無法重新連線到 {{host}}。"
+    },
+    "longCommand": {
+      "title": "{{host}} 上的指令已結束",
+      "body": "{{command}} · 結束代碼 {{exitCode}}",
+      "exitCode": "結束代碼 {{exitCode}}"
+    },
+    "terminal": {
+      "title": "終端機通知"
+    }
+  },
+  "status": {
+    "noConnections": "沒有連線",
+    "connectedTo": "已連線：{{hosts}}",
+    "reconnecting": "正在重新連線 {{host}}（{{attempt}}/{{attempts}}）",
+    "forwards": "連接埠轉送：{{list}}",
+    "forwardsCount_one": "{{count}} 個連接埠轉送",
+    "forwardsCount_other": "{{count}} 個連接埠轉送",
+    "forwardsLocal": "{{from}} → {{to}}",
+    "forwardsRemote": "Host 上 {{from}} → {{to}}",
+    "forwardsDynamic": "SOCKS {{from}}",
+    "transfers": "傳輸：{{count}}",
+    "transfersSpeed": "傳輸：{{count}} · {{speed}}/s"
+  },
+  "theme": {
+    "menuLabel": "外觀：{{current}}",
+    "followSystem": "依照系統",
+    "light": "淺色",
+    "dark": "深色",
+    "paletteAction": "主題：{{name}}",
+    "followSystemAction": "主題：依照系統"
+  },
+  "terminal": {
+    "shellIntegration": {
+      "disabled": "設定中已關閉 Shell 整合。",
+      "unsupported": "目前的 shell 不支援整合。請使用已啟用提示字元展開的 bash 4.4 以上版本，或使用 zsh。",
+      "timedOut": "Shell 未回應，無法使用整合功能。"
+    },
+    "starting": "正在啟動 shell…",
+    "exited": "程序已結束，結束代碼 {{code}}",
+    "exitedUnknown": "程序已結束",
+    "failedToStart": "shell 無法啟動。",
+    "failureDetail": "詳情：{{message}}",
+    "log": {
+      "start": "開始記錄終端機輸出",
+      "stop": "停止記錄終端機輸出",
+      "active": "正在記錄終端機輸出",
+      "failed": "無法寫入終端機記錄。{{message}}"
+    },
+    "recording": {
+      "start": "開始終端機錄製",
+      "stop": "停止終端機錄製",
+      "active": "正在錄製終端機",
+      "failed": "無法寫入終端機錄製檔案。{{message}}"
+    },
+    "pressEnterToRestart": "按 Enter 啟動新的 shell。",
+    "search": {
+      "label": "在終端機中尋找",
+      "placeholder": "尋找",
+      "results": "第 {{current}} 個，共 {{count}} 個",
+      "noResults": "無結果",
+      "previous": "上一個符合",
+      "next": "下一個符合",
+      "close": "關閉尋找"
+    },
+    "paste": {
+      "title": "貼上 {{count}} 行？",
+      "body": "Shell 可能會立即執行貼上的每一行。貼上前請檢查內容。",
+      "invisibleTitle": "貼上含不可見字元的內容？",
+      "invisibleBody": "不可見字元可能會改變文字的顯示方式或 shell 的處理方式。貼上前，請先確認預覽中標示的 Unicode 字碼。",
+      "invisiblePosition": "第 {{line}} 行，第 {{column}} 列",
+      "confirm": "貼上",
+      "cancel": "取消"
+    },
+    "schemes": {
+      "app": "依照應用程式主題",
+      "light": "Astra Light",
+      "dark": "Astra Dark",
+      "githubLight": "GitHub Light",
+      "catppuccinLatte": "Catppuccin Latte",
+      "solarizedLight": "Solarized Light",
+      "tokyoNight": "Tokyo Night",
+      "oneDark": "One Dark",
+      "nord": "Nord",
+      "catppuccinMocha": "Catppuccin Mocha",
+      "dracula": "Dracula",
+      "gruvboxDark": "Gruvbox Dark",
+      "solarizedDark": "Solarized Dark",
+      "githubDark": "GitHub Dark",
+      "ember": "Ember（用於正式環境）",
+      "carbonfox": "Carbonfox",
+      "catppuccinFrappe": "Catppuccin Frappé",
+      "catppuccinMacchiato": "Catppuccin Macchiato",
+      "dawnfox": "Dawnfox",
+      "dayfox": "Dayfox",
+      "duskfox": "Duskfox",
+      "everforestDarkHard": "Everforest 深色（高對比度）",
+      "everforestLightMed": "Everforest 淺色（中對比度）",
+      "flexokiDark": "Flexoki 深色",
+      "flexokiLight": "Flexoki 淺色",
+      "kanagawaDragon": "Kanagawa Dragon",
+      "kanagawaWave": "Kanagawa Wave",
+      "melangeDark": "Melange 深色",
+      "melangeLight": "Melange 淺色",
+      "nightfox": "Nightfox",
+      "nordfox": "Nordfox",
+      "rosePine": "Rosé Pine",
+      "rosePineDawn": "Rosé Pine Dawn",
+      "rosePineMoon": "Rosé Pine Moon",
+      "terafox": "Terafox"
+    }
+  },
+  "proxy": {
+    "mode": "代理類型",
+    "none": "不使用代理",
+    "direct": "直接連線",
+    "inherit": "沿用全域代理設定",
+    "jumpHint": "此連線使用第一個跳板主機的代理設定。",
+    "commandHint": "連線時由本機的 Shell 執行。%h 表示 Host 位址，%p 表示連接埠，%r 表示使用者名稱。",
+    "passwordHint": "可選。填寫使用者名稱後，連線時會詢問代理密碼。",
+    "save": "儲存代理設定",
+    "clearPassword": "清除儲存的密碼",
+    "passwordCleared": "已清除儲存的代理密碼。",
+    "clearFailed": "無法清除儲存的代理密碼。",
+    "fields": {
+      "address": "代理位址",
+      "port": "代理連接埠",
+      "username": "代理使用者名稱",
+      "command": "Shell 指令"
+    },
+    "errors": {
+      "proxyAddress": "請輸入主機名或 IP 位址。",
+      "proxyPort": "請輸入 1 到 65535 之間的連接埠。",
+      "proxyUsername": "請輸入此代理類型支援的使用者名稱。",
+      "proxyCommand": "請輸入有效的 Shell 指令。"
+    },
+    "prompt": {
+      "title": "{{host}} 上 {{user}} 的代理密碼",
+      "description": "請輸入對外代理的密碼。",
+      "label": "代理密碼",
+      "retry": "代理拒絕了儲存的密碼。"
+    }
+  },
+  "connect": {
+    "progress": {
+      "connecting": "正在連線",
+      "failed": "連線失敗",
+      "jumpHost": "跳板主機：{{name}}",
+      "announcement": "{{host}}：{{stage}}",
+      "seconds": "{{duration}} 秒",
+      "retry": "重試",
+      "close": "關閉",
+      "stage": {
+        "waiting": "等待現有連線",
+        "reused": "使用現有連線",
+        "reach": "連線至伺服器",
+        "hostKey": "核對主機金鑰",
+        "authenticate": "登入",
+        "shell": "開啟 shell"
+      },
+      "status": {
+        "pending": "未開始",
+        "running": "進行中",
+        "succeeded": "已完成",
+        "failed": "失敗"
+      },
+      "method": {
+        "none": "檢查伺服器端驗證方法",
+        "agent": "SSH agent",
+        "keyFile": "私鑰",
+        "password": "密碼",
+        "keyboardInteractive": "鍵盤互動式驗證"
+      }
+    },
+    "cancel": "取消",
+    "hostKey": {
+      "title": "未知的主機金鑰",
+      "body": "信任之前，請確認這個指紋確實屬於 {{host}}。",
+      "fingerprintLabel": "{{algorithm}} 金鑰指紋",
+      "hint": "儲存時會將金鑰寫入與 ssh 指令共用的 ~/.ssh/known_hosts。暫時信任會在結束 SSH Astra 後失效。",
+      "reject": "拒絕",
+      "trustForRun": "僅本次執行信任",
+      "saveAndTrust": "儲存並信任"
+    },
+    "password": {
+      "title": "{{user}}@{{host}} 的密碼",
+      "description": "用於登入此 Host。",
+      "label": "密碼",
+      "retry": "密碼錯誤，請重試。",
+      "submit": "連線"
+    },
+    "mismatch": {
+      "title": "主機金鑰已變更，連線已封鎖",
+      "body": "{{host}} 提供的金鑰與記錄不符。可能有人攔截連線，也可能是伺服器重新安裝過。",
+      "presented": "收到的金鑰",
+      "recorded": "記錄的金鑰（known_hosts 第 {{line}} 行）",
+      "recordedForRun": "記錄的金鑰（僅本次執行信任）",
+      "fix": "如果確認金鑰變更符合預期，請手動刪除 {{path}} 的第 {{line}} 行，再重新連線。",
+      "fixForRun": "如果確認金鑰變更符合預期，請重新啟動 SSH Astra，並在信任前確認新的指紋。"
+    },
+    "errors": {
+      "unreachable": "無法連線到 Host。",
+      "timedOut": "Host 回應逾時。",
+      "hostKeyDeclined": "未信任主機金鑰，已取消連線。",
+      "hostKeyRevoked": "主機金鑰已撤銷，連線已封鎖。",
+      "authenticationFailed": "身分驗證失敗。",
+      "proxyInvalidConfiguration": "請檢查對外代理設定",
+      "proxyInvalidTarget": "此代理不支援該主機位址",
+      "proxyUnreachable": "無法連線到對外代理",
+      "proxyTimedOut": "對外代理回應逾時",
+      "proxyInvalidResponse": "對外代理傳回無效回應",
+      "proxyAuthenticationFailed": "對外代理拒絕身分驗證",
+      "proxyConnectFailed": "對外代理無法連線到主機",
+      "proxyCommandInvalid": "請檢查 ProxyCommand 設定",
+      "proxyCommandTarget": "Host 設定中含有 ProxyCommand 無法替換的字元",
+      "proxyCommandStart": "無法啟動 ProxyCommand",
+      "proxyCommandFailed": "ProxyCommand 關閉了 SSH 連線",
+      "cancelled": "已取消連線。",
+      "generic": "連線失敗。",
+      "keyUnreadable": "無法使用私鑰 {{keyPath}}：{{reason}}",
+      "keyPassphraseIncorrect": "私鑰密碼片語錯誤（{{keyPath}}）。",
+      "keyRejected": "伺服器拒絕該私鑰（{{keyPath}}）。",
+      "agentKeysRejected": "伺服器拒絕 ssh-agent 中的所有金鑰。",
+      "noSupportedMethod": "沒有可用的驗證方式。伺服器只接受：{{methods}}。"
+    },
+    "atJumpHost": "跳板主機 {{name}}：",
+    "save": {
+      "label": "儲存到系統鑰匙圈",
+      "unavailable": "沒有可用的系統鑰匙圈，每次都需要輸入。"
+    },
+    "passphrase": {
+      "title": "私鑰密碼片語",
+      "label": "密碼片語",
+      "retry": "私鑰密碼片語錯誤，請重試。"
+    },
+    "keyboardInteractive": {
+      "title": "{{user}}@{{host}} 需要驗證",
+      "description": "伺服器需要更多資訊才能登入。"
+    },
+    "restored": {
+      "disconnected": "未連線到 {{host}}。",
+      "waiting": "正在等待連線到 {{host}}…",
+      "connect": "連線"
+    },
+    "lost": {
+      "title": "已中斷",
+      "reconnecting": "正在重新連線…第 {{attempt}} 次，共 {{attempts}} 次",
+      "failed": "無法重新連線。",
+      "reconnect": "重新連線",
+      "newShell": "重新連線會啟動新的 shell，先前執行的程式無法復原。"
+    }
+  },
+  "settings": {
+    "title": "設定",
+    "lead": "變更會立即生效，並在重新啟動後保留。",
+    "open": "設定",
+    "search": {
+      "categories": "設定類別",
+      "placeholder": "搜尋設定",
+      "clear": "清除設定搜尋",
+      "noResults": "未找到符合的設定。"
+    },
+    "sections": {
+      "appearance": "外觀",
+      "terminal": "終端機",
+      "files": "檔案",
+      "connection": "連線",
+      "transfers": "傳輸",
+      "shortcuts": "快速鍵",
+      "notifications": "通知",
+      "updates": "更新",
+      "diagnostics": "診斷"
+    },
+    "shortcuts": {
+      "keyboard": "按鍵配置",
+      "description": "選取快速鍵即可錄製新的組合鍵。自訂快速鍵會取代該操作的所有預設組合鍵。",
+      "edit": "修改「{{action}}」的快速鍵",
+      "reset": "還原預設",
+      "resetAll": "還原所有預設快速鍵",
+      "resetAction": "還原「{{action}}」的預設快速鍵",
+      "recording": "請按下快速鍵，按 Esc 取消。",
+      "unassigned": "未分配",
+      "shellCtrlLetter": "Ctrl 加單一字母的組合鍵由終端機中的 shell 保留。請加上另一個修飾鍵。",
+      "missingModifier": "請使用功能鍵，或加上 Ctrl、Alt 或系統修飾鍵。",
+      "unsupportedKey": "無法錄入此按鍵，請換一個鍵。",
+      "conflict": "「{{action}}」已使用此快速鍵。替換後，衝突的操作將沒有快速鍵。",
+      "resetConflict": "「{{action}}」已使用預設快速鍵。替換後，衝突的操作將沒有快速鍵。",
+      "replace": "替換快速鍵",
+      "cancel": "取消",
+      "actions": {
+        "newTab": "新增本機終端機",
+        "closePane": "關閉窗格",
+        "splitRight": "向右拆分",
+        "splitDown": "向下拆分",
+        "toggleMaximizePane": "切換窗格最大化",
+        "swapPaneLeft": "與左側窗格互換",
+        "swapPaneRight": "與右側窗格互換",
+        "swapPaneUp": "與上方窗格互換",
+        "swapPaneDown": "與下方窗格互換",
+        "nextTab": "下一個分頁",
+        "previousTab": "上一個分頁",
+        "nextPane": "下一個窗格",
+        "previousPane": "上一個窗格",
+        "moveTabRight": "將分頁後移",
+        "moveTabLeft": "將分頁前移",
+        "tab1": "轉到第 1 個分頁",
+        "tab2": "轉到第 2 個分頁",
+        "tab3": "轉到第 3 個分頁",
+        "tab4": "轉到第 4 個分頁",
+        "tab5": "轉到第 5 個分頁",
+        "tab6": "轉到第 6 個分頁",
+        "tab7": "轉到第 7 個分頁",
+        "tab8": "轉到第 8 個分頁",
+        "lastTab": "轉到最後一個分頁",
+        "broadcastTab": "廣播到目前分頁",
+        "broadcastWindow": "廣播到整個視窗",
+        "commandPalette": "切換指令面板",
+        "settings": "開啟設定",
+        "terminalZoomIn": "放大終端機字型",
+        "terminalZoomOut": "縮小終端機字型",
+        "find": "在終端機中尋找",
+        "fileBack": "在檔案面板中後退",
+        "fileForward": "在檔案面板中前進",
+        "fileCopy": "在檔案面板中複製",
+        "fileCut": "在檔案面板中剪下",
+        "filePaste": "在檔案面板中貼上"
+      }
+    },
+    "confirmClose": {
+      "label": "關閉終端機前確認",
+      "description": "關閉已連線的遠端終端機前詢問。"
+    },
+    "confirmQuit": {
+      "label": "結束應用程式前確認",
+      "description": "如果仍有連線、傳輸或連接埠轉送進行中，結束時會要求確認。"
+    },
+    "tabOrientation": {
+      "label": "分頁方向",
+      "description": "將分頁排列在工作區頂部或左側。",
+      "options": {
+        "horizontal": "水平",
+        "vertical": "垂直"
+      }
+    },
+    "groupTabsByHost": {
+      "label": "按 Host 群組",
+      "description": "將同一個 Host 的分頁放在可收合的群組內。"
+    },
+    "groupTabsRequiresVertical": "將分頁改為垂直排列即可使用此設定。",
+    "restoreTabs": {
+      "label": "還原分頁",
+      "description": "選擇下次啟動 SSH Astra 時如何還原分頁和分割。",
+      "options": {
+        "none": "從首頁開始",
+        "layout": "還原版面配置",
+        "connect": "還原並連線"
+      }
+    },
+    "theme": {
+      "follow": {
+        "label": "依照系統外觀",
+        "description": "依電腦的淺色或深色設定在淺色與深色主題之間切換。"
+      },
+      "gallery": "主題庫",
+      "lightGroup": "淺色主題",
+      "darkGroup": "深色主題",
+      "usedWhenLight": "電腦為淺色時使用",
+      "usedWhenDark": "電腦為深色時使用"
+    },
+    "interfaceZoom": {
+      "label": "介面縮放",
+      "description": "將應用程式介面縮放至 90% 到 125%。"
+    },
+    "interfaceFont": {
+      "label": "介面字型",
+      "description": "輸入字型名稱。留空或字型不可用時將使用系統字型。",
+      "system": "系統字型"
+    },
+    "language": {
+      "label": "介面語言",
+      "description": "選擇「依照系統」會使用電腦偏好的受支援語言。若沒有支援的語言，則使用英文。",
+      "options": {
+        "system": "依照系統",
+        "en": "English",
+        "zh": "簡體中文",
+        "zh-Hant": "繁體中文"
+      }
+    },
+    "on": "開",
+    "off": "關",
+    "terminal": {
+      "font": {
+        "label": "字型",
+        "description": "依照 CSS 字型清單的順序，使用這部電腦上已安裝的第一個字型。"
+      },
+      "fontSize": {
+        "label": "字型大小",
+        "description": "單位為像素，範圍 {{min}} 到 {{max}}。"
+      },
+      "fontWeight": {
+        "label": "字重",
+        "description": "一般文字的字重，範圍 {{min}} 到 {{max}}，預設為 400。"
+      },
+      "lineHeight": {
+        "label": "行高",
+        "description": "以字型高度為基準的行高倍數，範圍 {{min}} 到 {{max}}。"
+      },
+      "letterSpacing": {
+        "label": "字間距",
+        "description": "字元格之間額外增加的間距，範圍為 {{min}} 到 {{max}} 像素。"
+      },
+      "ligatures": {
+        "label": "連字",
+        "description": "字型支援時，將 -> 和 != 等字元組合顯示為連字。"
+      },
+      "colorScheme": {
+        "label": "配色",
+        "description": "所有終端機都使用此配色，除非其 Host 單獨設定了配色。"
+      },
+      "importedSchemes": {
+        "label": "已匯入的配色",
+        "description": "新增 iTerm2 配色，供終端機或 Host 使用。",
+        "import": "匯入 .itermcolors",
+        "remove": "刪除 {{name}}",
+        "unnamed": "匯入的配色",
+        "imported": "已匯入配色。",
+        "invalid": "此檔案中沒有有效的 iTerm2 配色。",
+        "tooLarge": "請選擇不超過 {{max}} KiB 的 .itermcolors 檔案。",
+        "unreadable": "無法讀取此配色檔案。"
+      },
+      "cursorStyle": {
+        "label": "游標樣式",
+        "description": "終端機游標的預設形狀。",
+        "options": {
+          "block": "方塊",
+          "bar": "竪線",
+          "underline": "下划線"
+        }
+      },
+      "cursorBlink": {
+        "label": "游標閃爍",
+        "description": "預設讓終端機游標閃爍。"
+      },
+      "wordSeparator": {
+        "label": "分詞字元",
+        "description": "按兩下選取單字時，用來分隔單字的字元。清除輸入內容即可還原預設值。"
+      },
+      "titleSource": {
+        "label": "分頁標題來源",
+        "description": "使用 Shell 標題或 Host 名稱。選擇 Host 名稱時，本機終端機使用預設名稱。自訂分頁名優先。",
+        "options": {
+          "shell": "Shell 標題",
+          "host": "Host 名稱"
+        }
+      },
+      "bell": {
+        "label": "終端機提示音",
+        "description": "選擇終端機收到響鈴信號時的提示方式。",
+        "options": {
+          "none": "無",
+          "flash": "分頁閃爍",
+          "sound": "聲音"
+        }
+      },
+      "highlighting": {
+        "label": "關鍵字醒目提示",
+        "builtIn": {
+          "label": "內置規則",
+          "description": "為錯誤、警告、失敗、成功和 IPv4 位址上色。"
+        },
+        "description": "最多可新增 {{max}} 條自訂規則。比對時不區分大小寫，清單中較後面的規則優先。",
+        "custom": "自訂醒目提示規則",
+        "pattern": "模式",
+        "kind": "模式類型",
+        "text": "純文字",
+        "regex": "規則運算式",
+        "color": "提示顏色",
+        "colors": {
+          "red": "紅色",
+          "green": "綠色",
+          "yellow": "黃色",
+          "blue": "藍色",
+          "magenta": "洋紅色",
+          "cyan": "青綠色"
+        },
+        "enabled": "啟用規則",
+        "remove": "刪除規則",
+        "add": "新增規則",
+        "invalidRegex": "請輸入有效的規則運算式。"
+      },
+      "copyOnSelect": {
+        "label": "選取時複製",
+        "description": "在終端機中選取文字時自動複製到剪貼簿。"
+      },
+      "autoLog": {
+        "label": "自動記錄終端機輸出",
+        "description": "將每個新開啟的本機或遠端終端機輸出儲存為純文字。"
+      },
+      "logDirectory": {
+        "label": "終端機輸出資料夾",
+        "description": "儲存新的終端機記錄和錄製檔案的位置。",
+        "default": "SSH Astra 資料資料夾",
+        "choose": "選擇資料夾",
+        "reset": "使用預設位置",
+        "failed": "無法選擇終端機輸出資料夾。{{message}}"
+      },
+      "rightClickPaste": {
+        "label": "右鍵貼上",
+        "description": "啟用時，在終端機按一下滑鼠右鍵會貼上剪貼簿內容。停用時，會開啟終端機選單。"
+      },
+      "confirmMultilinePaste": {
+        "label": "多行貼上前確認",
+        "description": "貼上多於一行的內容前先詢問，因為 shell 會逐行立即執行。"
+      },
+      "shellIntegration": {
+        "label": "Shell 整合",
+        "description": "在新開啟的遠端 bash 或 zsh 終端機中執行 cd 時，檔案面板會跟著切換目錄。停用時，所有檔案面板會立即停止跟隨，也不會向新的 shell 輸入內容。「同步至終端機目錄」仍可使用。"
+      }
+    },
+    "files": {
+      "showModified": "顯示修改時間欄",
+      "showPermissions": "顯示權限欄"
+    },
+    "connection": {
+      "keepalive": {
+        "label": "Keepalive 間隔",
+        "description": "設定閒置連線多久確認一次伺服器仍在線上。連續三次未收到回應即視為連線中斷。這項設定適用於新連線。",
+        "off": "關",
+        "seconds": "{{count}} 秒"
+      },
+      "outboundProxy": {
+        "label": "對外代理",
+        "description": "用於新連線的第一個 TCP 跳點。可個別設定各個 Host。"
+      },
+      "agentPath": {
+        "label": "自訂 SSH agent路徑",
+        "description": "輸入本機 Unix 通訊端或 Windows 具名管道的路徑，供 SSH 身分驗證和 agent 轉送使用。留空則使用系統的 SSH agent。這項設定適用於新連線。"
+      }
+    },
+    "transfers": {
+      "concurrency": {
+        "label": "同時傳輸數",
+        "description": "同時進行的上傳和下載數量，其餘的排隊等待。資料夾內的檔案逐個複製。"
+      }
+    },
+    "notifications": {
+      "transfers": {
+        "label": "批次傳輸",
+        "description": "一批上傳、下載或複製在背景結束時通知。"
+      },
+      "reconnect": {
+        "label": "重新連線失敗",
+        "description": "連線中斷且在背景重新連線失敗時發出通知。"
+      },
+      "longCommand": {
+        "label": "長時間執行的指令",
+        "description": "SSH Astra 在背景執行時，較耗時的指令結束後會發出通知。請在遠端終端機啟用 Shell 整合，並使用已啟用提示字元展開的 bash 4.4 以上版本，或使用 zsh。",
+        "shellIntegrationOff": "Shell 整合已停用。請在終端機設定中啟用，再開啟新的遠端終端機，即可接收這類通知。"
+      },
+      "longCommandThreshold": {
+        "label": "長時間指令通知門檻（秒）",
+        "description": "指令執行時間超過此門檻才會發出通知。預設為 {{seconds}} 秒。"
+      },
+      "terminal": {
+        "label": "終端機程式",
+        "description": "允許 終端機中的程式在視窗處於背景時傳送通知。"
+      }
+    },
+    "diagnostics": {
+      "logs": "記錄檔案",
+      "logsDescription": "檢視儲存在本機的應用程式記錄和當機檔案。",
+      "report": "診斷資訊",
+      "reportDescription": "複製一份以代號取代主機與帳號資訊的報告。",
+      "open": "開啟記錄資料夾",
+      "copy": "複製診斷資訊",
+      "copied": "已複製診斷資訊。",
+      "openFailed": "無法開啟記錄資料夾。",
+      "copyFailed": "無法複製診斷資訊。"
+    },
+    "updates": {
+      "version": {
+        "label": "版本",
+        "description": "SSH Astra {{version}}。更新來自本項目的 GitHub Releases。"
+      },
+      "checkOnStartup": {
+        "label": "啟動時檢查更新",
+        "description": "有新版本時，狀態列會提示安裝。選擇更新後才會開始下載。"
+      }
+    }
+  },
+  "updates": {
+    "check": "檢查更新",
+    "keywords": "更新 升級 版本 新版本 update upgrade",
+    "checking": "正在檢查更新…",
+    "upToDate": "SSH Astra 已是最新版本",
+    "checkFailed": "無法檢查更新：{{reason}}",
+    "available": "SSH Astra {{version}} 已發佈",
+    "install": "更新並重新啟動",
+    "downloading": "正在下載更新…",
+    "downloadingPercent": "正在下載更新… {{percent}}%",
+    "restarting": "正在重新啟動以使用新版本…",
+    "installFailed": "更新失敗：{{reason}}",
+    "releaseNotes": "發佈說明",
+    "noReleaseNotes": "此版本暫無發佈說明。",
+    "interruptions": "重新啟動將中斷以下活動。",
+    "later": "稍後",
+    "dismiss": "關閉"
+  },
+  "interruptions": {
+    "connections_one": "{{count}} 個連線",
+    "connections_other": "{{count}} 個連線",
+    "transfers_one": "{{count}} 項傳輸",
+    "transfers_other": "{{count}} 項傳輸"
+  },
+  "quit": {
+    "title": "結束 SSH Astra？",
+    "interruptions": "結束將中斷以下活動。",
+    "confirm": "結束",
+    "menuFile": "檔案",
+    "menuQuit": "結束 SSH Astra"
+  },
+  "rail": {
+    "home": "首頁",
+    "hosts": "Host 清單",
+    "forwards": "連接埠轉送"
+  },
+  "quickConnect": {
+    "action": "快速連線",
+    "connectTo": "連線到 {{target}}",
+    "temporaryHost": "臨時主機",
+    "saveAsHost": "儲存為 Host",
+    "saveAsHostDescription": "為這台主機命名並加入 Host 清單。已開啟的終端機和檔案面板會保持連線。",
+    "noLongerAvailable": "此臨時主機已無法使用。",
+    "alreadySaved": "這台主機已儲存。",
+    "failed": "無法開啟臨時主機。"
+  },
+  "home": {
+    "search": "依名稱、位址、使用者名稱或標籤搜尋 Host",
+    "layout": {
+      "label": "首頁版面配置",
+      "cards": "卡片",
+      "list": "清單"
+    },
+    "recent": "最近使用",
+    "hosts": "Host",
+    "ungrouped": "未群組",
+    "emptyTitle": "還沒有 Host",
+    "emptyBody": "在上方輸入 SSH 位址即可連線。也可以新增或匯入 Host，以便下次開啟。"
+  }
+}

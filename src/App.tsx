@@ -32,6 +32,7 @@ import { createBroadcast, type BroadcastScope } from "@/features/workspace/broad
 import { interruptionCounts } from "@/features/workspace/interruption-counts";
 import { paneNeighbors } from "@/features/workspace/pane-layout";
 import { privacyModeSetting, togglePrivacyMode } from "@/features/workspace/privacy-mode";
+import { QuitConfirmation } from "@/features/workspace/QuitConfirmation";
 import { useResolvedShortcuts } from "@/features/workspace/shortcut-settings";
 import { currentPlatform, paneSwapShortcuts, shortcutLabel, type WorkspaceCommand } from "@/features/workspace/shortcuts";
 import { TabPanels } from "@/features/workspace/TabPanels";
@@ -364,6 +365,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
     ),
   );
   const transferList = useTransfers((s) => s.transfers);
+  const interruptions = useMemo(() => interruptionCounts(connected, transferList, running), [connected, transferList, running]);
   const transferSpeeds = useTransfers((s) => s.speeds);
   const transfers = transferSummary(transferList, transferSpeeds);
   const connections = useMemo(() => hostConnections(connected, state, connectingHeld), [connected, state, connectingHeld]);
@@ -475,7 +477,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
           reconnecting,
           forwards,
           transfers,
-          updateNotice: <UpdateNotice interruptions={interruptionCounts(connected, transferList, running)} />,
+          updateNotice: <UpdateNotice interruptions={interruptions} />,
           activeRemote: focusedPane?.kind === "remote-terminal" ? focusedPane.host : null,
           saveTemporaryHost: focusedTemporaryHost && (() => hostsController.openTemporaryHostEditor(focusedTemporaryHost)),
           broadcast: broadcastMode && {
@@ -546,6 +548,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
         onQuickConnect={openQuickConnect}
         onActivateTab={activateTab}
       />
+      <QuitConfirmation interruptions={interruptions} />
     </ShortcutCaptureContext.Provider>
   );
 }

@@ -374,9 +374,27 @@ pub struct ConnectionManager {
 /// A Host's shared SFTP session and the Connection it runs on.
 type SharedSftp = (Weak<Connection>, Weak<SftpFs>);
 
-/// A Host's Connection, if any. Its lock is held while connecting, so a
-/// second connect to the Host waits for the first instead of racing it.
-type Slot = tokio::sync::Mutex<Weak<Connection>>;
+/// A Host's Connection, if any. The connect gate coalesces concurrent opens;
+/// the current transport can be read without waiting for authentication.
+#[derive(Default)]
+struct Slot {
+    connecting: tokio::sync::Mutex<()>,
+    current: Mutex<Weak<Connection>>,
+}
+
+impl Slot {
+    fn live(&self) -> Option<Arc<Connection>> {
+        self.current
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .upgrade()
+            .filter(|connection| !connection.is_closed())
+    }
+
+    fn publish(&self, connection: &Arc<Connection>) {
+        *self.current.lock().unwrap_or_else(|p| p.into_inner()) = Arc::downgrade(connection);
+    }
+}
 
 /// An SSH destination supplied by Quick connect. An omitted user means the local user.
 #[derive(serde::Deserialize)]
@@ -762,8 +780,18 @@ impl ConnectionManager {
     /// a connect to it is in flight, waits for that one.
     pub async fn live(&self, id: &HostId) -> Option<Arc<Connection>> {
         let slot = self.slot(id);
-        let current = slot.lock().await;
-        current.upgrade().filter(|c| !c.is_closed())
+        let _connecting = slot.connecting.lock().await;
+        slot.live()
+    }
+
+    /// The number of live, shared SSH transports, including those held only by SFTP or a Jump host.
+    pub fn live_count(&self) -> usize {
+        self.slots
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .values()
+            .filter(|slot| slot.live().is_some())
+            .count()
     }
 
     /// A new SFTP session of its own on the Host's live Connection (a File
@@ -810,23 +838,23 @@ impl ConnectionManager {
     {
         let id = &progress.host.id;
         let slot = self.slot(id);
-        let mut current = match slot.try_lock() {
-            Ok(current) => current,
+        let connecting = match slot.connecting.try_lock() {
+            Ok(connecting) => connecting,
             Err(_) => {
                 let waiting = progress.start(ConnectStage::Waiting);
-                let current = slot.lock().await;
+                let connecting = slot.connecting.lock().await;
                 waiting.end(ProgressStatus::Succeeded);
-                current
+                connecting
             }
         };
-        if let Some(live) = current.upgrade().filter(|c| !c.is_closed()) {
+        if let Some(live) = slot.live() {
             log::info!("connection hop={id} step=connect result=reused");
             progress.reused();
             return Ok(live);
         }
         let connection = Arc::new(establish().await?);
-        *current = Arc::downgrade(&connection);
-        drop(current);
+        slot.publish(&connection);
+        drop(connecting);
         if let Some(listener) = &self.connection_listener {
             let weak = Arc::downgrade(&connection);
             listener(
@@ -844,10 +872,7 @@ impl ConnectionManager {
     /// and no connect in flight are dropped on the way.
     fn slot(&self, id: &HostId) -> Arc<Slot> {
         let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
-        slots.retain(|_, slot| {
-            Arc::strong_count(slot) > 1
-                || slot.try_lock().map_or(true, |weak| weak.strong_count() > 0)
-        });
+        slots.retain(|_, slot| Arc::strong_count(slot) > 1 || slot.live().is_some());
         Arc::clone(slots.entry(id.clone()).or_default())
     }
 

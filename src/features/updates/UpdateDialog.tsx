@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { InterruptionList } from "@/features/workspace/InterruptionList";
 import type { InterruptionCounts } from "@/features/workspace/interruption-counts";
 import { ReleaseNotes } from "./ReleaseNotes";
 
@@ -32,11 +33,7 @@ export function UpdateDialog({ version, notes, failure, interruptions, onInstall
       <DialogDescription asChild>
         <div>
           <p>{t("updates.interruptions")}</p>
-          <ul className="mt-1 list-disc pl-4 tabular-nums">
-            <li>{t("updates.connections", { count: interruptions.connections })}</li>
-            <li>{t("updates.transfers", { count: interruptions.transfers })}</li>
-            <li>{t("status.forwardsCount", { count: interruptions.forwards })}</li>
-          </ul>
+          <InterruptionList {...interruptions} />
         </div>
       </DialogDescription>
       <DialogFooter>

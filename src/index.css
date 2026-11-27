@@ -18,8 +18,9 @@
 :root {
   --radius: 0.625rem;
   --interface-scale: 1;
-  --system-ui-font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Noto Sans", "PingFang SC",
-    "Microsoft YaHei", sans-serif;
+  --system-ui-font-cjk: "PingFang SC", "Microsoft YaHei";
+  --system-ui-font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Noto Sans",
+    var(--system-ui-font-cjk), sans-serif;
 
   /* Chrome: the ground behind the Host list, tab strip and status bar. */
   --background: var(--ui-ground);
@@ -61,6 +62,10 @@
     0 12px 32px color-mix(in oklab, var(--ui-foreground) 18%, transparent),
     0 2px 6px color-mix(in oklab, var(--ui-foreground) 8%, transparent);
   --overlay: color-mix(in oklab, var(--ui-foreground) 30%, transparent);
+}
+
+:root:lang(zh-Hant) {
+  --system-ui-font-cjk: "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC";
 }
 
 :root[data-browser-zoom] {

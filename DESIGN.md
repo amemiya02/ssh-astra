@@ -289,7 +289,7 @@ Pickers list light themes first, then dark, Astra's own at the head of each (`ap
 
 ## Typography
 
-**Body Font:** the system UI stack (`-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Noto Sans", "PingFang SC", "Microsoft YaHei", sans-serif`)
+**Body Font:** the system UI stack (`-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Noto Sans", "PingFang SC", "Microsoft YaHei", sans-serif`). Traditional Chinese uses PingFang TC, Microsoft JhengHei, and Noto Sans CJK TC for its CJK fallbacks.
 **Mono Font:** `ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace`
 
 **Character:** native and unbranded, reading as part of the OS in English and Chinese alike. Hierarchy comes from weight (400 / 500 / 600) and from foreground against muted foreground, not size jumps. Tailwind's text scale is overridden in `src/index.css` (`text-xs` 11.5px, `text-sm` 13px, `text-base` 14px, `text-lg` 15px) so shadcn components inherit desktop density.
@@ -433,9 +433,9 @@ Settings → Notifications has independent controls for transfer batches, failed
 
 ### Settings navigation
 
-The top search field filters settings across all categories. Results keep their category headings and the original controls. Search matches titles, descriptions, and keywords in both English and Simplified Chinese. Clearing the field returns to the selected category. Choosing a category clears the search and scrolls its rows to the top.
+The top search field filters settings across all categories. Results keep their category headings and the original controls. Search matches titles, descriptions, and keywords in English, Simplified Chinese, and Traditional Chinese. Clearing the field returns to the selected category. Choosing a category clears the search and scrolls its rows to the top.
 
-The left navigation lists Appearance, Terminal, Files, Connection, Transfers, Shortcuts, Notifications, Updates, and Diagnostics in that order when available. Appearance includes workspace layout and interface language. Notifications, Updates, and Diagnostics use the installed app's native features. The current category uses the `selected` surface, and narrow workspaces place the categories in a horizontally scrolling row above the controls. Agent access can appear when it has settings available.
+The left navigation lists Appearance, Terminal, Files, Connection, Transfers, Shortcuts, Notifications, Updates, and Diagnostics in that order when available. Appearance includes workspace layout and interface language. Language can follow the system or be set to English, Simplified Chinese, or Traditional Chinese. Notifications, Updates, and Diagnostics use the installed app's native features. The current category uses the `selected` surface, and narrow workspaces place the categories in a horizontally scrolling row above the controls. Agent access can appear when it has settings available.
 
 Settings → Connection accepts a custom Unix agent socket or Windows named pipe in a text field. The field saves on Enter or blur. Clearing it returns new Connections to the system agent. A Connection uses the same source for authentication and agent forwarding when its Host enables forwarding.
 
@@ -489,6 +489,12 @@ Clear completed removes successful rows across Hosts. Completed downloads have a
 - **Tooltips:** inverted (foreground fill, ground text), `text-xs`, 8px radius.
 - **Dialogs:** `raised`, 1px border, 14px radius, 24px padding, max 512px, `shadow-overlay` over the overlay scrim; footer buttons right-aligned, primary last.
 
+### Quit confirmation
+
+Show the quit dialog when the app menu, its accelerator, or the last window's close control would interrupt Connections, unfinished transfers, or running Port forwards. Use ⌘Q on macOS and Ctrl+Shift+Q on Windows and Linux. List each count, including zero, and count each Connection once across its Terminals, File panels, and Port forwards. Focus Cancel on open and place the destructive Quit button last. An idle workspace quits immediately.
+
+Settings → Appearance has an independent Confirm app quit control that defaults to On. Turning it off allows immediate quit. The Terminal close confirmation has its own preference, and Update and restart confirms the restart in the update dialog.
+
 ### Update dialog
 
 Select the available version in the status bar to see its version number and scroll through the release notes. Render Markdown as formatted text, omit embedded HTML and images, and open HTTP and HTTPS links in the system browser. The updater manifest carries the draft release’s notes at build time.
@@ -524,7 +530,7 @@ If the Connection drops, a scrollable overlay covers the Terminal and shows the 
 - **Do** use the overridden Tailwind sizes (`text-xs` 11.5px, `text-sm` 13px, `text-base` 14px, `text-lg` 15px) and the radius scale (6 / 8 / 10 / 14px).
 - **Do** build icon-only controls with `IconButton` and a `label`; give every interactive element a visible `:focus-visible` ring (`ring`, 3px halo).
 - **Do** respect `prefers-reduced-motion`: the base layer reduces every animation and transition to near zero.
-- **Do** capitalise GLOSSARY.md terms in English copy (Host, Group, Tag, Jump host, Connection, Known host, Terminal, Local terminal, File panel, Port forward), write everything else in sentence case, and put all copy behind i18n keys in both locales.
+- **Do** capitalise GLOSSARY.md terms in English copy (Host, Group, Tag, Jump host, Connection, Known host, Terminal, Local terminal, File panel, Port forward), write everything else in sentence case, and put all copy behind i18n keys in all three locales.
 
 ### Don't:
 - **Don't** put literal colours, Tailwind palette colours or arbitrary colour values in components; literal hex belongs in the theme and Terminal palette definitions under `src/theme`.

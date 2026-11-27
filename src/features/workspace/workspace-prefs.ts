@@ -18,6 +18,7 @@ export function clampTabStripWidth(width: number, max = maxTabStripWidth): numbe
 interface WorkspacePrefs {
   restoreTabs: RestoreTabs;
   confirmClose: boolean;
+  confirmQuit: boolean;
   tabOrientation: TabOrientation;
   verticalTabWidth: number;
   verticalTabsCompact: boolean;
@@ -29,6 +30,7 @@ export const workspaceSetting = defineSection<WorkspacePrefs>(
   {
     restoreTabs: "layout",
     confirmClose: true,
+    confirmQuit: true,
     tabOrientation: "horizontal",
     verticalTabWidth: defaultTabStripWidth,
     verticalTabsCompact: false,
@@ -39,6 +41,7 @@ export const workspaceSetting = defineSection<WorkspacePrefs>(
     return {
       restoreTabs: restoreTabsOptions.find((option) => option === prefs.restoreTabs) ?? "layout",
       confirmClose: prefs.confirmClose !== false,
+      confirmQuit: prefs.confirmQuit !== false,
       tabOrientation: prefs.tabOrientation === "vertical" ? "vertical" : "horizontal",
       verticalTabWidth: typeof prefs.verticalTabWidth === "number" && Number.isFinite(prefs.verticalTabWidth)
         ? clampTabStripWidth(prefs.verticalTabWidth)
