@@ -4,7 +4,7 @@ import { readCommandError } from "@/lib/ipc/connect";
 import * as forwardsIpc from "@/lib/ipc/forwards";
 import type { ForwardDraft, ForwardId, PortForward } from "@/lib/ipc/forwards";
 import * as hostsIpc from "@/lib/ipc/hosts";
-import type { Bookmark, Group, GroupId, Host, HostDraft, HostId, HostOsChange, HostTree, ImportReport, ImportSummary } from "@/lib/ipc/hosts";
+import type { Bookmark, Group, GroupId, Host, HostDraft, HostId, HostImportSource, HostOsChange, HostTree, ImportReport, ImportSummary } from "@/lib/ipc/hosts";
 import { createSnapshotWatch } from "@/lib/ipc/watchSnapshot";
 import type { MoveOp } from "./hostTree";
 
@@ -28,7 +28,7 @@ export type HostsApi = Pick<
   | "deleteGroup"
   | "saveForward"
   | "deleteForward"
-  | "importSshConfig"
+  | "importHostSource"
   | "exportHosts"
   | "importHosts"
 >;
@@ -58,8 +58,8 @@ export interface HostsState {
   saveForward(hostId: HostId, draft: ForwardDraft, id?: ForwardId): Promise<PortForward>;
   /** Stops and deletes a Host's Port forward rule. */
   deleteForward(hostId: HostId, id: ForwardId): Promise<void>;
-  /** Imports `~/.ssh/config` once (names already taken are skipped) and says what happened. */
-  importSshConfig(): Promise<ImportReport>;
+  /** Imports the chosen source and reports imported and skipped entries. */
+  importHostSource(source: HostImportSource): Promise<ImportReport>;
   /** Writes the Host list to an export file (never credentials). */
   exportHosts(path: string): Promise<void>;
   /** Adds the Groups and Hosts of an export file; Hosts whose name is taken are skipped. */
@@ -224,8 +224,8 @@ export function createHostsStore(api: HostsApi): StoreApi<HostsState> {
         updateForwards(hostId, (forwards) => forwards.filter((f) => f.id !== id));
       },
 
-      async importSshConfig() {
-        const { tree, report } = await api.importSshConfig();
+      async importHostSource(source) {
+        const { tree, report } = await api.importHostSource(source);
         replaceTree(tree);
         return report;
       },

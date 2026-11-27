@@ -3,7 +3,8 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use sshastra_core::host_import::{parse_csv, ParsedConfig};
 use sshastra_core::hosts::{
     Bookmark, DetectedOs, Group, GroupId, Host, HostDraft, HostId, HostStore, HostTree,
     ImportReport, ImportSummary,
@@ -199,15 +200,43 @@ pub fn group_move(
 
 /// The Host list after an import, and what the import did.
 #[derive(Serialize)]
-pub struct SshConfigImport {
+pub struct SourceImportResult {
     tree: HostTree,
     report: ImportReport,
 }
 
-/// Imports the Hosts in the user's `~/.ssh/config` (with its `Include`s),
-/// skipping names already taken. A missing file imports nothing.
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum HostImportSource {
+    SshConfig,
+    Csv { path: PathBuf },
+}
+
+/// Reads the selected source, then saves its parsed Hosts in one import.
 #[tauri::command]
-pub fn hosts_import_ssh_config(hosts: State<'_, HostsState>) -> CommandResult<SshConfigImport> {
+pub async fn hosts_import_source(
+    hosts: State<'_, HostsState>,
+    source: HostImportSource,
+) -> CommandResult<SourceImportResult> {
+    let parsed = tauri::async_runtime::spawn_blocking(move || match source {
+        HostImportSource::SshConfig => read_ssh_config(),
+        HostImportSource::Csv { path } => {
+            std::fs::read_to_string(path).map(|text| parse_csv(&text))
+        }
+    })
+    .await
+    .map_err(std::io::Error::other)??;
+    hosts.with(|store| {
+        let report = store.import_config(parsed)?;
+        Ok(SourceImportResult {
+            tree: store.tree(),
+            report,
+        })
+    })
+}
+
+/// A missing `~/.ssh/config` imports nothing.
+fn read_ssh_config() -> std::io::Result<ParsedConfig> {
     let var = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty());
     let home = var(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
         .map(PathBuf::from)
@@ -215,14 +244,7 @@ pub fn hosts_import_ssh_config(hosts: State<'_, HostsState>) -> CommandResult<Ss
     let local_user = var(if cfg!(windows) { "USERNAME" } else { "USER" })
         .map(|u| u.to_string_lossy().into_owned())
         .unwrap_or_else(|| "root".to_owned());
-    let parsed = parse_user_config(&home, &ParseContext { local_user })?;
-    hosts.with(|store| {
-        let report = store.import_ssh_config(parsed)?;
-        Ok(SshConfigImport {
-            tree: store.tree(),
-            report,
-        })
-    })
+    parse_user_config(&home, &ParseContext { local_user })
 }
 
 /// Writes the whole Host list (no credentials) as an export file at `path`.

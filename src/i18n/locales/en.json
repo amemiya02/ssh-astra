@@ -190,16 +190,31 @@
     "disconnect": "Disconnect",
     "connectFailed": "Could not connect to {{name}}: {{message}}",
     "import": {
-      "action": "Import ~/.ssh/config",
-      "keywords": "ssh config openssh import",
-      "title": "Imported ~/.ssh/config",
+      "action": "Import Hosts…",
+      "keywords": "ssh config openssh csv import",
+      "pickerTitle": "Import Hosts",
+      "chooseSource": "Choose where to import Hosts from.",
+      "sshConfig": {
+        "action": "Import ~/.ssh/config",
+        "title": "Imported ~/.ssh/config",
+        "nothing": "~/.ssh/config has no Hosts to import.",
+        "error": "Could not import ~/.ssh/config: {{message}}"
+      },
+      "csv": {
+        "action": "CSV file…",
+        "help": "Use the headers Name, Address, and Username. Port and Group are optional. Port defaults to 22. Use / for nested Groups, such as Work/Production.",
+        "chooseFile": "Choose a CSV file to import",
+        "fileType": "CSV file",
+        "title": "CSV import results",
+        "nothing": "The CSV file has no Hosts to import.",
+        "error": "Could not import the CSV file: {{message}}"
+      },
       "summary": "Imported {{imported}}, skipped {{skipped}}, could not import {{failed}}.",
-      "nothing": "~/.ssh/config has no Hosts to import.",
       "imported": "Imported",
       "skipped": "Skipped: a Host with this name already exists",
       "failed": "Not imported",
       "partial": "Imported without some settings",
-      "error": "Could not import ~/.ssh/config: {{message}}",
+      "line": "Line {{line}}",
       "close": "Close",
       "proxyCommands": "Imported ProxyCommands",
       "proxyCommandHint": "These commands run locally when you connect to the listed Hosts.",
@@ -209,7 +224,12 @@
         "includeFailed": "Could not read it: {{reason}}",
         "jumpChainConflict": "Its ProxyJump chain reaches {{hop}} differently from {{hop}}'s own settings",
         "jumpHostLoop": "Its Jump hosts lead back to itself",
-        "jumpHostUnavailable": "Its Jump host {{hop}} was not imported"
+        "jumpHostUnavailable": "Its Jump host {{hop}} was not imported",
+        "csvHeaders": "Use Name, Address, and Username headers. Each recognized header can appear only once.",
+        "csvMissingField": "{{field}} is required.",
+        "csvInvalidPort": "Port must be a whole number from 1 to 65535.",
+        "csvInvalidGroup": "Each part of a Group path must have a name.",
+        "csvMalformedRecord": "This CSV record has invalid quoting."
       }
     },
     "transfer": {

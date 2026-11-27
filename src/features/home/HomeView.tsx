@@ -158,7 +158,7 @@ export function HomeView({ active, controller, connections, onOpenLocalTerminal,
               <SquareTerminal aria-hidden />
               {t("tabs.localTerminal")}
             </Button>
-            <Button variant="outline" size="sm" onClick={controller.importSshConfig}>
+            <Button variant="outline" size="sm" onClick={controller.openImport}>
               <FileInput aria-hidden />
               {t("hosts.import.action")}
             </Button>
