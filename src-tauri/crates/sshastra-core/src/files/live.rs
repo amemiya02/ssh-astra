@@ -70,11 +70,27 @@ impl RemoteFs for LiveHostFs {
         Box::pin(async move { self.fs().await?.set_permissions(path, mode).await })
     }
 
-    fn open_read<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileReader>> {
+    fn open_read_at<'a>(
+        &'a self,
+        path: &'a str,
+        offset: u64,
+    ) -> BoxFuture<'a, FsResult<FileReader>> {
         Box::pin(async move {
             let fs = self.fs().await?;
-            let file = fs.open_read(path).await?;
+            let file = fs.open_read_at(path, offset).await?;
             Ok(Box::new(WithSession { file, _fs: fs }) as FileReader)
+        })
+    }
+
+    fn open_write_at<'a>(
+        &'a self,
+        path: &'a str,
+        offset: u64,
+    ) -> BoxFuture<'a, FsResult<FileWriter>> {
+        Box::pin(async move {
+            let fs = self.fs().await?;
+            let file = fs.open_write_at(path, offset).await?;
+            Ok(Box::new(WithSession { file, _fs: fs }) as FileWriter)
         })
     }
 

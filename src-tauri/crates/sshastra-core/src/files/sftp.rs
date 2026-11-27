@@ -1,11 +1,13 @@
 //! [`RemoteFs`] over SFTP subsystem channels on a Host's shared Connection.
 
+use std::io::SeekFrom;
 use std::sync::Arc;
 
 use russh_sftp::client::error::Error as SftpError;
 use russh_sftp::client::fs::Metadata;
 use russh_sftp::client::{RawSftpSession, SftpSession};
 use russh_sftp::protocol::{OpenFlags, Packet, StatusCode};
+use tokio::io::AsyncSeekExt;
 use tokio::sync::OnceCell;
 use tokio::task::JoinSet;
 
@@ -99,6 +101,10 @@ impl Drop for SftpFs {
 }
 
 impl RemoteFs for SftpFs {
+    fn transfer_namespace(&self) -> Option<&str> {
+        Some(self.connection.file_namespace())
+    }
+
     fn home(&self) -> BoxFuture<'_, FsResult<String>> {
         Box::pin(self.canonicalize("."))
     }
@@ -158,10 +164,37 @@ impl RemoteFs for SftpFs {
         })
     }
 
-    fn open_read<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileReader>> {
+    fn open_read_at<'a>(
+        &'a self,
+        path: &'a str,
+        offset: u64,
+    ) -> BoxFuture<'a, FsResult<FileReader>> {
         Box::pin(async move {
-            let file = self.session.open(path).await.map_err(|e| error(path, e))?;
+            let mut file = self.session.open(path).await.map_err(|e| error(path, e))?;
+            if offset != 0 {
+                file.seek(SeekFrom::Start(offset))
+                    .await
+                    .map_err(|e| seek_error(path, e))?;
+            }
             Ok(Box::new(file) as FileReader)
+        })
+    }
+
+    fn open_write_at<'a>(
+        &'a self,
+        path: &'a str,
+        offset: u64,
+    ) -> BoxFuture<'a, FsResult<FileWriter>> {
+        Box::pin(async move {
+            let mut file = self
+                .session
+                .open_with_flags(path, OpenFlags::WRITE)
+                .await
+                .map_err(|e| error(path, e))?;
+            file.seek(SeekFrom::Start(offset))
+                .await
+                .map_err(|e| seek_error(path, e))?;
+            Ok(Box::new(file) as FileWriter)
         })
     }
 
@@ -340,4 +373,8 @@ fn error(path: &str, e: SftpError) -> FsError {
         SftpError::Timeout => FsError::TimedOut,
         other => FsError::Protocol(other.to_string()),
     }
+}
+
+fn seek_error(path: &str, e: std::io::Error) -> FsError {
+    FsError::Io(format!("{path}: {e}"))
 }
