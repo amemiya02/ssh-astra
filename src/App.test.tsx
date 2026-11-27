@@ -106,6 +106,15 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
           proxyCommands: [],
         },
       };
+      if (command === "hosts_import_source" && args?.source?.kind === "mobaxterm") return {
+        tree: { hosts: savedHosts, groups: [] },
+        report: {
+          imported: ["Build server"],
+          skipped: [],
+          issues: [{ entry: "", line: 6, dropped: false, problem: { kind: "mobaxtermUnsupportedSettings" } }],
+          proxyCommands: [],
+        },
+      };
       if (command === "hosts_import_source" && args?.source?.kind === "putty") return {
         tree: { hosts: savedHosts, groups: [] },
         report: {
@@ -1862,6 +1871,32 @@ it("imports a selected PuTTY registry export through the shared report", async (
   expect(dialog()?.textContent).toContain("Staging server");
   expect(dialog()?.textContent).toContain("Saved credentials were omitted.");
   expect(dialog()?.querySelector("code")).toBeNull();
+  await act(async () => dialog()!.querySelector("button")!.click());
+  const dismiss = document.querySelector<HTMLButtonElement>('button[aria-label^="Dismiss notification: Imported"]');
+  await act(async () => dismiss!.click());
+});
+
+it("selects a MobaXterm session export and shows line-based import results", async () => {
+  await render(workspace({ type: "open", tabId: "home", pane: newPane({ kind: "home" }) }));
+  const importButton = [...document.querySelectorAll<HTMLButtonElement>("#tabpanel-home button")]
+    .find((button) => button.textContent === "Import Hosts…")!;
+  await act(async () => importButton.click());
+  const chooseMoba = [...dialog()!.querySelectorAll("button")]
+    .find((button) => button.textContent === "MobaXterm sessions…")!;
+  await act(async () => chooseMoba.click());
+  expect(dialog()?.textContent).toContain("Choose where to import Hosts from.");
+  expect(invoke).not.toHaveBeenCalledWith("hosts_import_source", expect.anything());
+
+  importPath = "/fixtures/lab.mxtsessions";
+  await act(async () => chooseMoba.click());
+  expect(openFileDialog).toHaveBeenCalledWith(expect.objectContaining({
+    multiple: false, directory: false,
+    filters: [{ name: "MobaXterm session export", extensions: ["mxtsessions", "moba"] }],
+  }));
+  expect(invoke).toHaveBeenCalledWith("hosts_import_source", { source: { kind: "mobaxterm", path: importPath } });
+  expect(dialog()?.textContent).toContain("MobaXterm import results");
+  expect(dialog()?.textContent).toContain("Build server");
+  expect(dialog()?.textContent).toContain("Line 6: Some MobaXterm settings could not be imported.");
   await act(async () => dialog()!.querySelector("button")!.click());
   const dismiss = document.querySelector<HTMLButtonElement>('button[aria-label^="Dismiss notification: Imported"]');
   await act(async () => dismiss!.click());

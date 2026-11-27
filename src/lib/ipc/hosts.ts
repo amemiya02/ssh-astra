@@ -233,7 +233,10 @@ export type ImportProblem =
   | { kind: "csvMissingField"; field: string }
   | { kind: "puttyFile" | "puttySessionName" | "puttyCredentials" | "puttyUnsupportedProtocol" | "puttyDefaultUser" }
   | { kind: "puttyInvalidOption"; option: string }
-  | { kind: "puttyUnsupportedOptions"; options: string };
+  | { kind: "puttyUnsupportedOptions"; options: string }
+  | { kind: "mobaxtermFile" | "mobaxtermSession" | "mobaxtermUnsupportedSession" | "mobaxtermInvalidPort"
+    | "mobaxtermInvalidGroup" | "mobaxtermInvalidGateway" | "mobaxtermDefaultUser" | "mobaxtermKeyPath"
+    | "mobaxtermUnsupportedSettings" };
 
 /** One thing an import left out (`sshastra_core::host_import::ImportIssue`). */
 export interface ImportIssue {
@@ -257,7 +260,8 @@ export interface ImportReport {
 export type HostImportSource =
   | { kind: "sshConfig" }
   | { kind: "csv"; path: string }
-  | { kind: "putty"; path: string };
+  | { kind: "putty"; path: string }
+  | { kind: "mobaxterm"; path: string };
 
 /** Imports Hosts from the chosen source, skipping names already taken. */
 export function importHostSource(source: HostImportSource): Promise<{ tree: HostTree; report: ImportReport }> {

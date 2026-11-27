@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use sshastra_core::agent::{OpenTerminal, TerminalOrigin};
-use sshastra_core::host_import::{parse_csv, parse_putty, ParsedConfig};
+use sshastra_core::host_import::{parse_csv, parse_mobaxterm, parse_putty, ParsedConfig};
 use sshastra_core::hosts::{
     Bookmark, Group, GroupId, Host, HostDraft, HostId, HostStore, HostTree, ImportReport,
     ImportSummary,
@@ -273,6 +273,7 @@ pub enum HostImportSource {
     SshConfig,
     Csv { path: PathBuf },
     Putty { path: PathBuf },
+    Mobaxterm { path: PathBuf },
 }
 
 /// Reads the selected source, then saves its parsed Hosts in one import.
@@ -288,6 +289,9 @@ pub async fn hosts_import_source(
         }
         HostImportSource::Putty { path } => {
             std::fs::read(path).map(|bytes| parse_putty(&bytes, &local_username()))
+        }
+        HostImportSource::Mobaxterm { path } => {
+            std::fs::read(path).map(|bytes| parse_mobaxterm(&bytes, &local_username()))
         }
     })
     .await

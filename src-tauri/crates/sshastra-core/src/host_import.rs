@@ -9,6 +9,9 @@ use crate::forward::ForwardDraft;
 mod csv;
 pub use csv::parse_csv;
 
+mod mobaxterm;
+pub use mobaxterm::parse_mobaxterm;
+
 mod putty;
 pub use putty::parse_putty;
 
@@ -95,6 +98,15 @@ pub enum ImportProblem {
     PuttyUnsupportedOptions {
         options: String,
     },
+    MobaxtermFile,
+    MobaxtermSession,
+    MobaxtermUnsupportedSession,
+    MobaxtermInvalidPort,
+    MobaxtermInvalidGroup,
+    MobaxtermInvalidGateway,
+    MobaxtermDefaultUser,
+    MobaxtermKeyPath,
+    MobaxtermUnsupportedSettings,
 }
 
 /// The outcome of parsing an import source.
