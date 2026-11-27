@@ -27,7 +27,9 @@ export type ShellIntegrationEvent =
   | { type: "commandStart"; commandLine: string | null }
   | { type: "commandEnd"; exitCode: number };
 
-export type TerminalLogStatus =
+export type TerminalOutputKind = "log" | "recording";
+
+export type TerminalOutputStatus =
   | { state: "active" }
   | { state: "stopped" }
   | { state: "failed"; message: string };
@@ -39,7 +41,7 @@ export type TerminalEvent =
   /** The shell's current directory, from the local process or remote Shell integration. */
   | { type: "cwd"; path: string }
   | { type: "shellIntegration"; event: ShellIntegrationEvent }
-  | { type: "terminalLog"; status: TerminalLogStatus }
+  | { type: "terminalLog" | "recording"; status: TerminalOutputStatus }
   | { type: "exit"; code: number | null };
 
 /** Raw message shape on a Terminal's channel (see `src-tauri/src/commands/terminal.rs`). */
@@ -49,7 +51,8 @@ export type TerminalMessage =
   | { connection: ConnectionState }
   | { cwd: string }
   | { shellIntegration: ShellIntegrationEvent }
-  | { terminalLog: TerminalLogStatus }
+  | { terminalLog: TerminalOutputStatus }
+  | { recording: TerminalOutputStatus }
   | { exitCode: number | null };
 
 export function decodeTerminalMessage(message: TerminalMessage): TerminalEvent {
@@ -59,6 +62,7 @@ export function decodeTerminalMessage(message: TerminalMessage): TerminalEvent {
   if ("cwd" in message) return { type: "cwd", path: message.cwd };
   if ("shellIntegration" in message) return { type: "shellIntegration", event: message.shellIntegration };
   if ("terminalLog" in message) return { type: "terminalLog", status: message.terminalLog };
+  if ("recording" in message) return { type: "recording", status: message.recording };
   return { type: "exit", code: message.exitCode };
 }
 
@@ -100,14 +104,10 @@ export function closeTerminal(id: TerminalId): Promise<void> {
   return invoke("terminal_close", { id });
 }
 
-export function startTerminalLog(id: TerminalId): Promise<void> {
-  return invoke("terminal_log_start", { id });
+export function setTerminalOutput(id: TerminalId, kind: TerminalOutputKind, action: "start" | "stop"): Promise<void> {
+  return invoke(`terminal_${kind}_${action}`, { id });
 }
 
-export function stopTerminalLog(id: TerminalId): Promise<void> {
-  return invoke("terminal_log_stop", { id });
-}
-
-export function pickTerminalLogDirectory(title: string): Promise<string | null> {
+export function pickTerminalOutputDirectory(title: string): Promise<string | null> {
   return open({ directory: true, multiple: false, title });
 }

@@ -11,7 +11,7 @@ import {
   type TerminalId,
 } from "@/lib/ipc/terminal";
 import { XtermView } from "./XtermView";
-import { terminalLogs } from "./terminal-logs";
+import { terminalOutputs } from "./terminal-outputs";
 
 const dim = (text: string) => `\x1b[2m${text}\x1b[0m`;
 
@@ -49,7 +49,7 @@ export function LocalTerminalView({ active = true, initialCwd, onCwd, onTitleCha
     let id: TerminalId | undefined;
     let disposed = false;
     let unregisterWriter: (() => void) | undefined;
-    let releaseLog: (() => void) | undefined;
+    let releaseOutput: (() => void) | undefined;
     // ConPTY can ask xterm for its cursor position before the open call returns an id.
     let pendingInput = "";
     /** No shell attached: the next Enter starts one. */
@@ -59,8 +59,8 @@ export function LocalTerminalView({ active = true, initialCwd, onCwd, onTitleCha
     const offerRestart = () => {
       unregisterWriter?.();
       unregisterWriter = undefined;
-      releaseLog?.();
-      releaseLog = undefined;
+      releaseOutput?.();
+      releaseOutput = undefined;
       id = undefined;
       pendingInput = "";
       waitingForRestart = true;
@@ -74,8 +74,8 @@ export function LocalTerminalView({ active = true, initialCwd, onCwd, onTitleCha
       xterm.options.cursorBlink = true;
       // The exit message can arrive before the open call resolves; this shell must not be adopted then.
       let exited = false;
-      const log = paneId === undefined ? undefined : terminalLogs.track(paneId);
-      releaseLog = log?.close;
+      const output = paneId === undefined ? undefined : terminalOutputs.track(paneId);
+      releaseOutput = output?.close;
       openLocalTerminal(size(), (event) => {
         if (disposed || exited) return;
         if (event.type === "output") {
@@ -87,8 +87,8 @@ export function LocalTerminalView({ active = true, initialCwd, onCwd, onTitleCha
           onCwdRef.current?.(event.path);
           return;
         }
-        if (event.type === "terminalLog") {
-          log?.status(event.status);
+        if (event.type === "terminalLog" || event.type === "recording") {
+          output?.status(event.type === "terminalLog" ? "log" : "recording", event.status);
           return;
         }
         // Local terminals have no Connection and no ShellIntegration.
@@ -108,7 +108,7 @@ export function LocalTerminalView({ active = true, initialCwd, onCwd, onTitleCha
             return;
           }
           id = opened;
-          log?.attach(opened);
+          output?.attach(opened);
           if (pendingInput) {
             void writeTerminal(opened, pendingInput);
             pendingInput = "";
@@ -150,7 +150,7 @@ export function LocalTerminalView({ active = true, initialCwd, onCwd, onTitleCha
 
     return () => {
       disposed = true;
-      releaseLog?.();
+      releaseOutput?.();
       unregisterWriter?.();
       pendingInput = "";
       onData.dispose();

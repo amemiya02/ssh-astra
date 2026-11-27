@@ -1049,3 +1049,25 @@ it("shows the Terminal log marker for an unfocused split even while its Host rec
   await sendTerminalMessage({ exitCode: 0 });
   expect(tab.getAttribute("aria-label")).not.toContain("Terminal log active");
 });
+
+it("starts a Recording from the Terminal menu and stops it from the command palette independently of its log", async () => {
+  await render(workspace({ type: "open", tabId: "recording", pane: local("recording-pane") }));
+  const tab = document.getElementById("tab-recording")!;
+  const terminal = document.querySelector('[aria-label="Local terminal"]')!;
+  await act(async () => terminal.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, button: 2 })));
+  const start = [...document.querySelectorAll('[role="menuitem"]')]
+    .find((item) => item.textContent === "Start Recording");
+  expect(start).toBeDefined();
+  await act(async () => (start as HTMLElement).click());
+  expect(invoke).toHaveBeenCalledWith("terminal_recording_start", { id: expect.any(Number) });
+
+  await sendTerminalMessage({ terminalLog: { state: "active" } }, "local_terminal_open");
+  await sendTerminalMessage({ recording: { state: "active" } }, "local_terminal_open");
+  expect(tab.getAttribute("aria-label")).toContain("Recording active");
+  await paletteAction("Stop Recording");
+  expect(invoke).toHaveBeenCalledWith("terminal_recording_stop", { id: expect.any(Number) });
+  await sendTerminalMessage({ recording: { state: "stopped" } }, "local_terminal_open");
+
+  expect(tab.getAttribute("aria-label")).not.toContain("Recording active");
+  expect(tab.getAttribute("aria-label")).toContain("Terminal log active");
+});

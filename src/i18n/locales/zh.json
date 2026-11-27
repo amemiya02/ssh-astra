@@ -645,6 +645,12 @@
       "active": "正在记录终端日志",
       "failed": "无法写入终端日志。{{message}}"
     },
+    "recording": {
+      "start": "开始终端录制",
+      "stop": "停止终端录制",
+      "active": "正在录制终端",
+      "failed": "无法写入终端录制文件。{{message}}"
+    },
     "pressEnterToRestart": "按 Enter 启动新的 shell。",
     "search": {
       "label": "在终端中查找",
@@ -1084,12 +1090,12 @@
         "description": "将每个新开的本地或远程终端的输出保存为纯文本。"
       },
       "logDirectory": {
-        "label": "终端日志文件夹",
-        "description": "保存新终端日志的位置。",
+        "label": "终端输出文件夹",
+        "description": "保存新的终端日志和录制文件的位置。",
         "default": "SSH Astra 数据文件夹",
         "choose": "选择文件夹",
         "reset": "使用默认位置",
-        "failed": "无法选择终端日志文件夹。{{message}}"
+        "failed": "无法选择终端输出文件夹。{{message}}"
       },
       "rightClickPaste": {
         "label": "右键粘贴",

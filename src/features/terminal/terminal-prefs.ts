@@ -42,7 +42,7 @@ export interface TerminalPrefs {
   shellIntegration: boolean;
   /** Log output from newly opened Terminals. Read by the core. */
   autoLog: boolean;
-  /** A user-selected directory for Terminal logs. Null uses the app directory. */
+  /** A user-selected directory for Terminal logs and Recordings. Null uses the app directory. */
   logDirectory: string | null;
   /** Ask before pasting more than one line (`PasteConfirmDialog`), since a shell runs each as it arrives. */
   confirmMultilinePaste: boolean;

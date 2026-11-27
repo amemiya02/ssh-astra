@@ -15,7 +15,7 @@ import {
 } from "@/lib/ipc/terminal";
 import { XtermView } from "./XtermView";
 import { shellIntegration, useShellIntegration } from "./shellIntegration";
-import { terminalLogs } from "./terminal-logs";
+import { terminalOutputs } from "./terminal-outputs";
 import { notifyCommandFinished, watchTerminalNotifications } from "./terminal-notifications";
 
 export type OpenTerminal = (
@@ -110,7 +110,7 @@ export function TerminalSurface({
       unregisterWriter = undefined;
     };
     shellIntegration.open(paneId);
-    const log = terminalLogs.track(paneId);
+    const output = terminalOutputs.track(paneId);
     const size = () => ({ cols: xterm.cols, rows: xterm.rows });
 
     openRef
@@ -138,14 +138,14 @@ export function TerminalSurface({
           }
           return;
         }
-        if (event.type === "terminalLog") {
-          log.status(event.status);
+        if (event.type === "terminalLog" || event.type === "recording") {
+          output.status(event.type === "terminalLog" ? "log" : "recording", event.status);
           return;
         }
         if (event.type !== "exit") return;
         exited = true;
         removeWriter();
-        log.close();
+        output.close();
         if (id !== undefined) void closeTerminal(id).catch(() => undefined);
         id = undefined;
         shellIntegration.close(paneId);
@@ -165,7 +165,7 @@ export function TerminalSurface({
             return;
           }
           id = opened;
-          log.attach(opened);
+          output.attach(opened);
           if (connected) registerWriter(opened);
           onOpenedRef.current?.(opened);
           // Catch up on any resize that happened while connecting.
@@ -193,7 +193,7 @@ export function TerminalSurface({
 
     return () => {
       lifetime.abort();
-      log.close();
+      output.close();
       stopNotifications();
       removeWriter();
       onData.dispose();

@@ -6,7 +6,7 @@ import { cursorStyles, terminalBellModes, terminalNumberFields, type TerminalPre
 import { TerminalSchemeSelect } from "@/features/terminal/TerminalSchemeSelect";
 import { showToast } from "@/features/toasts/toastStore";
 import { readCommandError } from "@/lib/ipc/connect";
-import { pickTerminalLogDirectory } from "@/lib/ipc/terminal";
+import { pickTerminalOutputDirectory } from "@/lib/ipc/terminal";
 import { CommitField } from "./CommitField";
 import { SettingRow } from "./SettingRow";
 import { settingRows } from "./setting-rows";
@@ -62,9 +62,9 @@ export function TerminalSection() {
     );
   };
 
-  const chooseLogDirectory = async () => {
+  const chooseOutputDirectory = async () => {
     try {
-      const logDirectory = await pickTerminalLogDirectory(t(settingRows.logDirectory.title));
+      const logDirectory = await pickTerminalOutputDirectory(t(settingRows.logDirectory.title));
       if (logDirectory !== null) updatePrefs({ logDirectory });
     } catch (error) {
       const { message } = readCommandError(error);
@@ -154,7 +154,7 @@ export function TerminalSection() {
           <span className="text-muted-foreground w-full truncate text-right text-xs" title={prefs.logDirectory ?? undefined}>
             {prefs.logDirectory ?? t("settings.terminal.logDirectory.default")}
           </span>
-          <Button variant="outline" size="sm" onClick={() => void chooseLogDirectory()}>
+          <Button variant="outline" size="sm" onClick={() => void chooseOutputDirectory()}>
             {t("settings.terminal.logDirectory.choose")}
           </Button>
           {prefs.logDirectory && (
