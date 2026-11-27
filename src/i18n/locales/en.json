@@ -151,7 +151,8 @@
       "disconnectHost": "Disconnect {{name}}"
     },
     "keywords": {
-      "preferences": "preferences"
+      "preferences": "preferences",
+      "theme": "theme"
     }
   },
   "files": {
@@ -402,11 +403,12 @@
     "transfersSpeed": "Transfers: {{count}} · {{speed}}/s"
   },
   "theme": {
-    "title": "Appearance",
     "menuLabel": "Appearance: {{current}}",
-    "system": "System",
+    "followSystem": "Follow system",
     "light": "Light",
-    "dark": "Dark"
+    "dark": "Dark",
+    "paletteAction": "Theme: {{name}}",
+    "followSystemAction": "Theme: Follow system"
   },
   "terminal": {
     "starting": "Starting shell…",
@@ -432,11 +434,19 @@
     },
     "schemes": {
       "app": "Match app theme",
-      "light": "Light",
-      "dark": "Dark",
+      "light": "Astra Light",
+      "dark": "Astra Dark",
+      "githubLight": "GitHub Light",
+      "catppuccinLatte": "Catppuccin Latte",
       "solarizedLight": "Solarized Light",
-      "solarizedDark": "Solarized Dark",
+      "tokyoNight": "Tokyo Night",
+      "oneDark": "One Dark",
       "nord": "Nord",
+      "catppuccinMocha": "Catppuccin Mocha",
+      "dracula": "Dracula",
+      "gruvboxDark": "Gruvbox Dark",
+      "solarizedDark": "Solarized Dark",
+      "githubDark": "GitHub Dark",
       "ember": "Ember (for production)"
     }
   },
@@ -512,8 +522,14 @@
       "updates": "Updates"
     },
     "theme": {
-      "label": "Theme",
-      "description": "System follows your computer's light or dark setting."
+      "follow": {
+        "label": "Follow system appearance",
+        "description": "Switch between a light and a dark theme with your computer's setting."
+      },
+      "lightGroup": "Light themes",
+      "darkGroup": "Dark themes",
+      "usedWhenLight": "Used when your computer is light",
+      "usedWhenDark": "Used when your computer is dark"
     },
     "language": {
       "label": "Interface language",

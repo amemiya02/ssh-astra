@@ -1,11 +1,19 @@
 import { createContext, useContext } from "react";
-import type { Theme, ThemePreference } from "./theme";
+import type { AppearanceSettings, ThemeChoice } from "./theme";
+import type { AppTheme, AppThemeId, DarkThemeId, LightThemeId } from "./themes";
 
 export interface ThemeContextValue {
-  preference: ThemePreference;
-  /** The theme actually painted, after resolving `system`. */
-  theme: Theme;
-  setPreference(preference: ThemePreference): void;
+  settings: AppearanceSettings;
+  /** The theme actually painted: the preview while one is shown, else the saved choice resolved against the OS. */
+  theme: AppTheme;
+  /** Follow the system, or pin one theme. */
+  setTheme(theme: ThemeChoice): void;
+  /** The theme painted while following a light system. */
+  setLightTheme(id: LightThemeId): void;
+  /** The theme painted while following a dark system. */
+  setDarkTheme(id: DarkThemeId): void;
+  /** Paints `id` across the window without saving it; `null` restores the saved theme. */
+  preview(id: AppThemeId | null): void;
 }
 
 export const ThemeContext = createContext<ThemeContextValue | null>(null);

@@ -1,18 +1,8 @@
-import { Monitor, Moon, Settings, Sun } from "lucide-react";
+import { Settings } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import type { ThemePreference } from "@/theme/theme";
-import { useTheme } from "@/theme/theme-context";
+import { ThemeMenu } from "@/theme/ThemeMenu";
 import { currentPlatform, shortcutLabel } from "@/features/workspace/shortcuts";
 
 const settingsShortcut = shortcutLabel("settings", currentPlatform());
@@ -30,40 +20,5 @@ export function StatusBar({ children, onOpenSettings }: { children?: ReactNode; 
         </IconButton>
       </div>
     </footer>
-  );
-}
-
-const themeIcons = { system: Monitor, light: Sun, dark: Moon } as const;
-
-function ThemeMenu() {
-  const { t } = useTranslation();
-  const { preference, setPreference } = useTheme();
-  const Icon = themeIcons[preference];
-  const label = t(`theme.${preference}`);
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="xs"
-          className="text-muted-foreground hover:text-foreground h-5 font-normal"
-          aria-label={t("theme.menuLabel", { current: label })}
-        >
-          <Icon aria-hidden />
-          {label}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" side="top" className="min-w-40">
-        <DropdownMenuLabel className="text-muted-foreground text-xs font-medium">{t("theme.title")}</DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={preference} onValueChange={(v) => setPreference(v as ThemePreference)}>
-          {(["system", "light", "dark"] as const).map((option) => (
-            <DropdownMenuRadioItem key={option} value={option}>
-              {t(`theme.${option}`)}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
