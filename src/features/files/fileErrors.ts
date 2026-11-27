@@ -24,7 +24,7 @@ export function errorText(
   }
 }
 
-/** Why a file operation (new folder, rename, delete, permissions) failed, for its dialog. */
+/** Why a file operation failed, for the control that submitted it. */
 export function operationErrorText(t: TFunction, error: CommandError): string {
   const path = String(error.details?.path ?? "");
   switch (error.kind) {

@@ -1,4 +1,4 @@
-//! File operations (new folder, rename, delete, chmod) through SftpFs against
+//! File operations (create, rename, delete, chmod) through SftpFs against
 //! a real OpenSSH server in Docker. Each test works in its own scratch
 //! directory under tester's home; the shared `/srv/files` tree is only used
 //! for operations that must fail (it is root-owned). Skipped when Docker is
@@ -66,6 +66,36 @@ fn names(entries: &[files::FileEntry]) -> Vec<String> {
     let mut names: Vec<_> = entries.iter().map(|e| e.name.clone()).collect();
     names.sort();
     names
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn creating_an_empty_file_refuses_to_replace_an_existing_path() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let (fs, root, _dir) = scratch(&sshd).await;
+    let path = files::join(&root, "new file");
+
+    fs.create_empty_file(&path).await.unwrap();
+    let entries = fs.list_dir(&root).await.unwrap();
+    assert_eq!(names(&entries), ["new file"]);
+    assert_eq!(entries[0].kind, FileKind::File);
+    assert_eq!(entries[0].size, 0);
+
+    fs.write_file(&path, b"keep me").await.unwrap();
+    assert_eq!(
+        fs.create_empty_file(&path).await,
+        Err(FsError::AlreadyExists(path.clone()))
+    );
+    assert_eq!(fs.read_file(&path).await.unwrap(), b"keep me");
+
+    let link = files::join(&root, "dangling");
+    sshd.run_as_tester(&format!("ln -s absent '{link}'"));
+    assert_eq!(
+        fs.create_empty_file(&link).await,
+        Err(FsError::AlreadyExists(link.clone()))
+    );
+    assert_eq!(fs.lstat(&link).await.unwrap().kind, FileKind::Symlink);
 }
 
 #[tokio::test(flavor = "multi_thread")]

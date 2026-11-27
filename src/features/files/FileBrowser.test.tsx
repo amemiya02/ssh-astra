@@ -41,6 +41,7 @@ const api: FilesApi = {
   retryRemoteEdit: vi.fn(() => Promise.resolve()),
   closeRemoteEdit: vi.fn(() => Promise.resolve()),
   createDir: vi.fn(() => Promise.resolve()),
+  createEmptyFile: vi.fn(() => Promise.resolve()),
   renameFile: vi.fn(() => Promise.resolve()),
   countFiles: vi.fn(() => Promise.resolve(2)),
   deleteFiles: vi.fn(() => Promise.resolve()),
@@ -216,21 +217,87 @@ describe("FileBrowser", () => {
     expect(dialog()).toBeNull();
   });
 
-  it("renames with F2, refusing a name already in the folder", async () => {
+  it("edits the focused name in its row with F2 and discards changes with Escape", async () => {
     const { rows } = await render();
-    act(() => rows()[1]!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const row = rows()[1]!;
+    act(() => row.dispatchEvent(new MouseEvent("click", { bubbles: true })));
 
     act(() => press("F2"));
-    const input = dialog()!.querySelector("input")!;
-    expect(input.value).toBe("f00000");
-    act(() => type(input, "sub"));
-    expect(dialog()!.textContent).toContain("“sub” already exists");
-    expect(button("Rename").disabled).toBe(true);
 
-    act(() => type(input, "renamed"));
-    await act(async () => input.form!.requestSubmit());
-    expect(api.renameFile).toHaveBeenCalledWith(1, "/big/f00000", "/big/renamed");
     expect(dialog()).toBeNull();
+    const input = row.querySelector("input")!;
+    expect(input.value).toBe("f00000");
+    expect(document.activeElement).toBe(input);
+
+    act(() => type(input, "changed"));
+    act(() => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+
+    expect(row.querySelector("input")).toBeNull();
+    expect(row.textContent).toContain("f00000");
+    expect(api.renameFile).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(container.querySelector('[role="grid"]'));
+  });
+
+  it("focuses the same inline editor from the row menu", async () => {
+    const { rows } = await render({ startPath: "/counts" });
+    const row = rows()[0]!;
+    await act(async () => row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+    const rename = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+      .find((item) => item.textContent === "Rename")!;
+
+    await act(async () => rename.click());
+
+    // Radix releases the menu's focus scope after unmounting it.
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(row.querySelector("input") === document.activeElement).toBe(true);
+  });
+
+  it("submits an inline rename with Enter and keeps a refused name editable", async () => {
+    vi.mocked(api.renameFile).mockRejectedValueOnce({
+      kind: "alreadyExists", message: "exists", details: { path: "/counts/taken.txt" },
+    });
+    const { rows } = await render({ startPath: "/counts" });
+    act(() => rows()[0]!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    act(() => press("F2"));
+    const input = rows()[0]!.querySelector("input")!;
+    const enter = () => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+
+    act(() => type(input, "b.txt"));
+    await act(async () => enter());
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("“b.txt” already exists");
+    expect(api.renameFile).not.toHaveBeenCalled();
+
+    act(() => type(input, "taken.txt"));
+    await act(async () => enter());
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("/counts/taken.txt");
+    expect(document.activeElement).toBe(input);
+
+    act(() => type(input, "renamed.txt"));
+    vi.mocked(api.listFiles).mockResolvedValueOnce({
+      path: "/counts", entries: [entry(".env"), entry("b.txt"), entry("renamed.txt")],
+    });
+    await act(async () => enter());
+    expect(container.querySelector('[role="grid"] input')).toBeNull();
+    const renamed = rows().find((row) => row.textContent?.includes("renamed.txt"));
+    expect(renamed?.getAttribute("aria-selected")).toBe("true");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("creates an empty file from the path bar in the directory shown", async () => {
+    const { rows } = await render({ startPath: "/counts" });
+    act(() => pathButton("New file").click());
+    const input = dialog()!.querySelector("input")!;
+    expect(input.value).toBe("");
+
+    act(() => type(input, "empty.txt"));
+    vi.mocked(api.listFiles).mockResolvedValueOnce({
+      path: "/counts", entries: [...listings["/counts"]!.entries, { ...entry("empty.txt"), size: 0 }],
+    });
+    await act(async () => input.form!.requestSubmit());
+
+    expect(api.createEmptyFile).toHaveBeenCalledWith(1, "/counts/empty.txt");
+    expect(dialog()).toBeNull();
+    expect(rows().some((row) => row.textContent?.includes("empty.txt"))).toBe(true);
   });
 
   it("keeps the dialog open with a readable reason when the server refuses", async () => {

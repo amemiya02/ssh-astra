@@ -19,6 +19,7 @@ const api: FilesApi = {
   retryRemoteEdit: () => Promise.resolve(),
   closeRemoteEdit: () => Promise.resolve(),
   createDir: () => Promise.resolve(),
+  createEmptyFile: () => Promise.resolve(),
   renameFile: () => Promise.resolve(),
   countFiles: () => Promise.resolve(0),
   deleteFiles: () => Promise.resolve(),

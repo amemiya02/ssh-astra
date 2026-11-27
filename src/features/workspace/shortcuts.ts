@@ -1,3 +1,4 @@
+import type { BroadcastScope } from "./broadcast";
 import type { PaneDirection } from "./pane-layout";
 import type { SplitOrientation } from "./tabs";
 
@@ -18,6 +19,7 @@ export type WorkspaceCommand =
   | { type: "moveTab"; step: 1 | -1 }
   /** 0-based; -1 is the last tab. */
   | { type: "goToTab"; index: number }
+  | { type: "toggleBroadcast"; scope: BroadcastScope }
   | { type: "openPalette" }
   | { type: "openSettings" }
   | { type: "zoomTerminalFont"; step: 1 | -1 };
@@ -56,6 +58,8 @@ export type ShortcutName =
   | (typeof paneSwapShortcuts)[number]["name"]
   | "nextTab"
   | "previousTab"
+  | "broadcastTab"
+  | "broadcastWindow"
   | "commandPalette"
   | "settings"
   | "terminalZoomIn"
@@ -115,6 +119,8 @@ const bindings: Record<Platform, Binding[]> = {
     { name: "previousTab", code: "BracketLeft", mods: ["meta", "shift"], command: { type: "cycleTab", step: -1 } },
     { code: "BracketRight", mods: ["meta"], command: { type: "cyclePane", step: 1 } },
     { code: "BracketLeft", mods: ["meta"], command: { type: "cyclePane", step: -1 } },
+    { name: "broadcastTab", code: "KeyB", mods: ["meta", "shift"], command: { type: "toggleBroadcast", scope: "tab" } },
+    { name: "broadcastWindow", code: "KeyB", mods: ["meta", "shift", "alt"], command: { type: "toggleBroadcast", scope: "window" } },
     { name: "commandPalette", code: "KeyK", mods: ["meta"], command: { type: "openPalette" } },
     { name: "settings", code: "Comma", mods: ["meta"], command: { type: "openSettings" } },
     ...zoomBindings("meta"),
@@ -132,6 +138,8 @@ const bindings: Record<Platform, Binding[]> = {
     { name: "previousTab", code: "PageUp", mods: ["ctrl"], command: { type: "cycleTab", step: -1 } },
     { code: "KeyN", mods: ["ctrl", "shift"], command: { type: "cyclePane", step: 1 } },
     { code: "KeyP", mods: ["ctrl", "shift"], command: { type: "cyclePane", step: -1 } },
+    { name: "broadcastTab", code: "KeyB", mods: ["ctrl", "shift"], command: { type: "toggleBroadcast", scope: "tab" } },
+    { name: "broadcastWindow", code: "KeyB", mods: ["ctrl", "shift", "alt"], command: { type: "toggleBroadcast", scope: "window" } },
     { name: "commandPalette", code: "KeyK", mods: ["ctrl", "shift"], command: { type: "openPalette" } },
     { name: "settings", code: "Comma", mods: ["ctrl", "shift"], command: { type: "openSettings" } },
     ...zoomBindings("ctrl"),

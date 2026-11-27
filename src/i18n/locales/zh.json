@@ -277,17 +277,18 @@
       "timedOut": "服务器没有及时响应。",
       "other": "无法列出文件夹：{{message}}"
     },
+    "newFile": "新建文件",
     "newFolder": "新建文件夹",
     "create": "创建",
     "cancel": "取消",
     "name": "名称",
-    "renameAction": "重命名…",
+    "renameAction": "重命名",
     "permissionsAction": "权限…",
     "deleteAction": "删除…",
+    "newFileAction": "新建文件…",
     "newFolderAction": "新建文件夹…",
     "rename": {
-      "title": "重命名“{{name}}”",
-      "confirm": "重命名"
+      "title": "重命名“{{name}}”"
     },
     "nameProblem": {
       "slash": "名称不能包含“/”。",
@@ -459,6 +460,15 @@
       "emptyBody": "在 Host 列表中打开某个 Host 的菜单，选择“端口转发”并添加规则。有规则的 Host 会列在这里，并显示运行中的数量。",
       "runningOf": "{{total}} 条中 {{running}} 条运行中"
     }
+  },
+  "broadcast": {
+    "toTab": "广播到本标签页",
+    "toWindow": "广播到本窗口",
+    "tabStatus": "广播 · 本标签页",
+    "namedTabStatus": "广播 · {{title}}",
+    "windowStatus": "广播 · 本窗口",
+    "turnOff": "关闭广播",
+    "recipient": "接收广播输入"
   },
   "status": {
     "noConnections": "没有连接",

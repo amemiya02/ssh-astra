@@ -74,6 +74,7 @@ beforeAll(() => {
     addEventListener() {},
     removeEventListener() {},
   })) as unknown as typeof window.matchMedia;
+  HTMLElement.prototype.scrollIntoView ??= () => {};
   startI18n();
 });
 
@@ -288,4 +289,83 @@ it("shows the count and confirmation controls in Chinese", async () => {
   expect(document.activeElement?.textContent).toBe("取消");
   await clickButton("关闭", confirmation);
   expect(tabIds()).toEqual([]);
+});
+
+async function broadcastShortcut(inWindow = false) {
+  const modifiers = currentPlatform() === "mac" ? { metaKey: true } : { ctrlKey: true };
+  await act(async () => document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", {
+    key: "B", code: "KeyB", bubbles: true, cancelable: true, shiftKey: true, altKey: inWindow, ...modifiers,
+  })));
+}
+
+const broadcastMarks = () => [...document.querySelectorAll("[data-broadcast-recipient]")].map((mark) => mark.parentElement?.id);
+
+it("marks connected Terminals in the chosen Broadcast scope and lets the status bar turn it off", async () => {
+  await render(workspace(
+    { type: "open", tabId: "other", pane: remote("other") },
+    { type: "open", tabId: "restored", pane: { ...remote("restored"), restoreConnection: "manual" } },
+    { type: "open", tabId: "work", pane: remote("remote") },
+    { type: "split", pane: local("local"), orientation: "horizontal" },
+  ));
+
+  await broadcastShortcut();
+  expect(broadcastMarks()).toEqual(["pane-remote", "pane-local"]);
+  expect(document.querySelector('[aria-label="Turn off Broadcast"]')?.textContent).toBe("Broadcast · This tab");
+
+  await broadcastShortcut(true);
+  expect(broadcastMarks()).toEqual(["pane-other", "pane-remote", "pane-local"]);
+  expect(document.querySelector('[aria-label="Turn off Broadcast"]')?.textContent).toBe("Broadcast · This window");
+
+  await sendTerminalMessage({ connection: { state: "reconnecting", attempt: 1, attempts: 3 } });
+  expect(broadcastMarks()).toEqual(["pane-remote", "pane-local"]);
+  await sendTerminalMessage({ connection: { state: "connected" } });
+  expect(broadcastMarks()).toEqual(["pane-other", "pane-remote", "pane-local"]);
+
+  await clickButton("Turn off Broadcast");
+  expect(broadcastMarks()).toEqual([]);
+  expect(document.querySelector('[aria-label="Turn off Broadcast"]')).toBeNull();
+
+  await broadcastShortcut();
+  expect(broadcastMarks()).toEqual(["pane-remote", "pane-local"]);
+  await broadcastShortcut();
+  expect(broadcastMarks()).toEqual([]);
+});
+
+async function paletteAction(title: string) {
+  const modifiers = currentPlatform() === "mac" ? { metaKey: true } : { ctrlKey: true, shiftKey: true };
+  await act(async () => document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", {
+    key: "k", code: "KeyK", bubbles: true, cancelable: true, ...modifiers,
+  })));
+  const item = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((option) => option.textContent?.startsWith(title));
+  expect(item, title).toBeDefined();
+  await act(async () => item!.click());
+}
+
+it("starts and stops Broadcast from the palette and ends it when its tab or window closes", async () => {
+  const initialTabs = workspace(
+    { type: "open", tabId: "other", pane: local("other") },
+    { type: "renameTab", id: "other", title: "Other" },
+    { type: "open", tabId: "work", pane: local("work") },
+    { type: "renameTab", id: "work", title: "Work" },
+  );
+  await render(initialTabs);
+  await paletteAction("Broadcast to this tab");
+  expect(broadcastMarks()).toEqual(["pane-work"]);
+
+  await paletteAction("Turn off Broadcast");
+  expect(broadcastMarks()).toEqual([]);
+
+  await paletteAction("Broadcast to this tab");
+  await act(async () => document.getElementById("tab-other")!.click());
+  expect(document.querySelector('[aria-label="Turn off Broadcast"]')?.textContent).toBe("Broadcast · Work");
+  await clickButton("Close Work");
+  expect(broadcastMarks()).toEqual([]);
+  expect(document.querySelector('[aria-label="Turn off Broadcast"]')).toBeNull();
+
+  await paletteAction("Broadcast to this window");
+  expect(broadcastMarks()).toEqual(["pane-other"]);
+  await unmount();
+  await render(initialTabs);
+  expect(broadcastMarks()).toEqual([]);
+  expect(document.querySelector('[aria-label="Turn off Broadcast"]')).toBeNull();
 });

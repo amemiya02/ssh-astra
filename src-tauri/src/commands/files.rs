@@ -118,6 +118,17 @@ pub async fn files_create_dir(
     Ok(fs.create_dir(&path).await?)
 }
 
+/// Creates an empty file at `path`, rejecting with `alreadyExists` if taken.
+#[tauri::command]
+pub async fn files_create_empty(
+    registry: State<'_, FsRegistry>,
+    id: FsId,
+    path: String,
+) -> CommandResult<()> {
+    let fs = registry.get(id).ok_or_else(CommandError::not_open)?;
+    Ok(fs.create_empty_file(&path).await?)
+}
+
 /// Renames `from` to `to`, never replacing an existing `to`
 /// (`alreadyExists`).
 #[tauri::command]

@@ -36,6 +36,10 @@ _Avoid_: Session, console, shell tab
 A Terminal running a shell on the user's own machine, with no Connection.
 _Avoid_: Local session
 
+**Broadcast**:
+Sending the focused Terminal's keyboard input or paste to every running Terminal in the selected tab or window.
+_Avoid_: Sync input, multi-exec
+
 **File panel**:
 The SFTP file browser beside a Terminal, browsing the same Host over the same Connection.
 _Avoid_: SFTP browser, file manager, explorer

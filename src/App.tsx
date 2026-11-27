@@ -1,7 +1,8 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { Server } from "lucide-react";
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useStore } from "zustand";
 import { connectionsStore, useConnections } from "@/features/connect/connectionsStore";
 import { hostConnections } from "@/features/connect/hostConnection";
 import { CommandDialog, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -24,6 +25,7 @@ import { DiagnosticsPaletteActions } from "@/features/settings/diagnostics-secti
 import { AppShell } from "@/features/shell/AppShell";
 import { zoomTerminalFont } from "@/features/terminal/terminal-prefs";
 import { useTerminalPrefs } from "@/features/terminal/terminal-prefs-context";
+import { createBroadcast, type BroadcastScope } from "@/features/workspace/broadcast";
 import { paneNeighbors } from "@/features/workspace/pane-layout";
 import { currentPlatform, paneSwapShortcuts, shortcutLabel, type WorkspaceCommand } from "@/features/workspace/shortcuts";
 import { TabPanels } from "@/features/workspace/TabPanels";
@@ -40,6 +42,7 @@ import {
   newPane,
   reconnectingHosts,
   remoteTerminalPaneIds,
+  tabPanes,
   tabTitle,
   tabsReducer,
   type CloseAction,
@@ -83,6 +86,42 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
   const focusedLayout = focused?.layout;
   const focusedPaneId = focused?.activePaneId;
   const paneMaximized = focused?.paneMaximized;
+  const focusedPane = focused && activePane(focused);
+  const hasFocusedTerminal = focusedPane?.kind === "local-terminal" || focusedPane?.kind === "remote-terminal";
+  const [broadcast] = useState(createBroadcast);
+  const broadcastMode = useStore(broadcast.store, (snapshot) => snapshot.mode);
+  useLayoutEffect(() => {
+    broadcast.updateWorkspace(
+      focusedPaneId,
+      tabs.map((tab) => tab.id),
+      tabs.flatMap((tab) => tabPanes(tab).map((pane) => pane.id)),
+    );
+  }, [broadcast, focusedPaneId, tabs]);
+
+  const toggleBroadcast = useCallback((scope: BroadcastScope) => {
+    if (activeId !== null && hasFocusedTerminal) broadcast.toggle(scope, activeId);
+    else if (broadcastMode?.scope === scope) broadcast.stop();
+  }, [activeId, broadcast, broadcastMode, hasFocusedTerminal]);
+
+  usePaletteActions(useMemo((): PaletteAction[] => [
+    ...(hasFocusedTerminal && !(broadcastMode?.scope === "tab" && broadcastMode.tabId === activeId) ? [{
+      id: "broadcast.tab",
+      title: t("broadcast.toTab"),
+      shortcut: shortcutLabel("broadcastTab", platform),
+      run: () => toggleBroadcast("tab"),
+    }] : []),
+    ...(hasFocusedTerminal && broadcastMode?.scope !== "window" ? [{
+      id: "broadcast.window",
+      title: t("broadcast.toWindow"),
+      shortcut: shortcutLabel("broadcastWindow", platform),
+      run: () => toggleBroadcast("window"),
+    }] : []),
+    ...(broadcastMode ? [{
+      id: "broadcast.off",
+      title: t("broadcast.turnOff"),
+      run: broadcast.stop,
+    }] : []),
+  ], [activeId, broadcast, broadcastMode, hasFocusedTerminal, t, toggleBroadcast]));
   const lastLayout = useRef<string | undefined>(undefined);
   useEffect(() => {
     const layout = serializeWorkspaceLayout(state);
@@ -248,6 +287,8 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
       case "moveTab":
         if (tab) dispatch({ type: "move", id: tab.id, to: tabs.indexOf(tab) + command.step });
         return;
+      case "toggleBroadcast":
+        return toggleBroadcast(command.scope);
       case "openPalette":
         return setPaletteOpen((open) => !open);
       case "openSettings":
@@ -288,7 +329,6 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
   const transferSpeeds = useTransfers((s) => s.speeds);
   const transfers = transferSummary(transferList, transferSpeeds);
   const connections = useMemo(() => hostConnections(connected, state, connectingHeld), [connected, state, connectingHeld]);
-  const focusedPane = focused && activePane(focused);
   const filePanelPane: FilePanelPane | undefined =
     focusedPane?.kind === "remote-terminal"
       ? { id: focusedPane.id, host: focusedPane.host, status: focusedPane.status ?? "connecting" }
@@ -335,6 +375,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
         }
         workspace={
           <TabPanels
+            broadcast={broadcast}
             tabs={tabs}
             activeId={activeId}
             renderHome={(active) => (
@@ -362,6 +403,13 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
           forwards,
           transfers,
           activeRemote: focusedPane?.kind === "remote-terminal" ? focusedPane.host : null,
+          broadcast: broadcastMode && {
+            scope: broadcastMode.scope,
+            tabTitle: broadcastMode.scope === "tab" && broadcastMode.tabId !== activeId
+              ? paletteTabs.find((tab) => tab.id === broadcastMode.tabId)?.title
+              : undefined,
+            stop: broadcast.stop,
+          },
         }}
       />
       {hostsController.dialogs}

@@ -1,6 +1,7 @@
 import type { Terminal as XTerm } from "@xterm/xterm";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useContext, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { BroadcastPaneContext } from "@/features/workspace/broadcast";
 import { e2eHooks } from "@/lib/e2e";
 import {
   closeTerminal,
@@ -55,6 +56,7 @@ export function TerminalSurface({
   onTitleChange,
 }: Props) {
   const { t } = useTranslation();
+  const { broadcast, tabId } = useContext(BroadcastPaneContext) ?? {};
   const { status } = useShellIntegration(paneId);
   const unavailable = status === "disabled" || status === "unsupported" || status === "timedOut";
   // Read through refs: the Terminal is opened once per mount; later prop changes don't reopen it.
@@ -77,6 +79,24 @@ export function TerminalSurface({
     let id: TerminalId | undefined;
     const lifetime = new AbortController();
     let exited = false;
+    let connected = true;
+    let unregisterWriter: (() => void) | undefined;
+    const sendInput = (id: TerminalId, data: string) => {
+      shellIntegration.input(paneId, data);
+      const write = writeTerminal(id, data);
+      return e2eHooks ? write.then(() => e2eHooks?.trackInput(xterm, data.length)) : write;
+    };
+    const registerWriter = (opened: TerminalId) => {
+      if (broadcast && tabId !== undefined && !unregisterWriter) {
+        unregisterWriter = broadcast.register(tabId, paneId, (data) => {
+          void sendInput(opened, data).catch(() => undefined);
+        });
+      }
+    };
+    const removeWriter = () => {
+      unregisterWriter?.();
+      unregisterWriter = undefined;
+    };
     shellIntegration.open(paneId);
     const size = () => ({ cols: xterm.cols, rows: xterm.rows });
 
@@ -93,12 +113,19 @@ export function TerminalSurface({
           return;
         }
         if (event.type === "connection") {
-          if (event.state.state === "connected") shellIntegration.open(paneId);
-          else shellIntegration.close(paneId);
+          connected = event.state.state === "connected";
+          if (connected) {
+            shellIntegration.open(paneId);
+            if (id !== undefined) registerWriter(id);
+          } else {
+            removeWriter();
+            shellIntegration.close(paneId);
+          }
           return;
         }
         if (event.type !== "exit") return;
         exited = true;
+        removeWriter();
         id = undefined;
         shellIntegration.close(paneId);
         const message =
@@ -117,6 +144,7 @@ export function TerminalSurface({
             return;
           }
           id = opened;
+          if (connected) registerWriter(opened);
           onOpenedRef.current?.(opened);
           // Catch up on any resize that happened while connecting.
           void resizeTerminal(opened, size());
@@ -129,10 +157,7 @@ export function TerminalSurface({
       );
 
     const onData = xterm.onData((data) => {
-      if (id === undefined) return;
-      shellIntegration.input(paneId, data);
-      const write = writeTerminal(id, data);
-      if (e2eHooks) void write.then(() => e2eHooks?.trackInput(xterm, data.length));
+      if (id !== undefined) void sendInput(id, data);
     });
     const onBufferChange = xterm.buffer.onBufferChange((buffer) => {
       if (buffer.type === "alternate") shellIntegration.invalidatePrompt(paneId);
@@ -143,13 +168,14 @@ export function TerminalSurface({
 
     return () => {
       lifetime.abort();
+      removeWriter();
       onData.dispose();
       onResize.dispose();
       onBufferChange.dispose();
       shellIntegration.close(paneId);
       if (id !== undefined) void closeTerminal(id);
     };
-  }, [paneId]);
+  }, [broadcast, paneId, tabId]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">

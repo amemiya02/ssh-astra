@@ -277,17 +277,18 @@
       "timedOut": "The server did not answer in time.",
       "other": "Could not list the folder: {{message}}"
     },
+    "newFile": "New file",
     "newFolder": "New folder",
     "create": "Create",
     "cancel": "Cancel",
     "name": "Name",
-    "renameAction": "Rename…",
+    "renameAction": "Rename",
     "permissionsAction": "Permissions…",
     "deleteAction": "Delete…",
+    "newFileAction": "New file…",
     "newFolderAction": "New folder…",
     "rename": {
-      "title": "Rename “{{name}}”",
-      "confirm": "Rename"
+      "title": "Rename “{{name}}”"
     },
     "nameProblem": {
       "slash": "A name cannot contain “/”.",
@@ -459,6 +460,15 @@
       "emptyBody": "Open a Host's menu in the Host list, choose Port forwards, and add a rule. Hosts with rules are listed here with how many are running.",
       "runningOf": "{{running}} of {{total}} running"
     }
+  },
+  "broadcast": {
+    "toTab": "Broadcast to this tab",
+    "toWindow": "Broadcast to this window",
+    "tabStatus": "Broadcast · This tab",
+    "namedTabStatus": "Broadcast · {{title}}",
+    "windowStatus": "Broadcast · This window",
+    "turnOff": "Turn off Broadcast",
+    "recipient": "Receives Broadcast input"
   },
   "status": {
     "noConnections": "No Connections",

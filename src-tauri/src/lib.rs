@@ -173,6 +173,7 @@ pub fn run() {
             commands::files::files_local_open_path,
             commands::files::files_list,
             commands::files::files_create_dir,
+            commands::files::files_create_empty,
             commands::files::files_rename,
             commands::files::files_count,
             commands::files::files_delete,

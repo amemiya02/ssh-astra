@@ -14,6 +14,7 @@ import {
   FileImage,
   FilePen,
   FilePlay,
+  FilePlus,
   FileSymlink,
   FileText,
   Folder,
@@ -25,7 +26,7 @@ import {
   Upload,
   Search,
 } from "lucide-react";
-import { useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { Input } from "@/components/ui/input";
@@ -39,13 +40,14 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { currentPlatform, matchFileHistoryShortcut, shortcutLabel } from "@/features/workspace/shortcuts";
+import type { CommandError } from "@/lib/ipc/connect";
 import type { FileEntry } from "@/lib/ipc/files";
 import { writeClipboardText } from "@/lib/ipc/system";
 import { useSetting } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import type { FileBrowserStore } from "./fileBrowsers";
 import type { SelectMode } from "./fileBrowserStore";
-import { errorText } from "./fileErrors";
+import { errorText, operationErrorText } from "./fileErrors";
 import { FileOperationDialog, type FileOperation } from "./FileOperationDialogs";
 import { filesSetting } from "./file-prefs";
 import {
@@ -55,6 +57,7 @@ import {
   formatSize,
   isDirLike,
   isFileLike,
+  nameProblem,
   shownEntries,
   visibleRows,
   type SortKey,
@@ -275,6 +278,14 @@ function PathBar({ store, focusPanel, onOperation }: {
       </div>
       <IconButton
         type="button"
+        label={t("files.newFile")}
+        disabled={path === null}
+        onClick={() => onOperation({ kind: "newFile" })}
+      >
+        <FilePlus />
+      </IconButton>
+      <IconButton
+        type="button"
         label={t("files.newFolder")}
         disabled={path === null}
         onClick={() => onOperation({ kind: "newFolder" })}
@@ -331,6 +342,7 @@ function FileTable({
     [i18n.language],
   );
 
+  const grid = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const header = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -345,10 +357,29 @@ function FileTable({
     return () => observer.disconnect();
   }, []);
   const [focused, setFocused] = useState<string | null>(null);
+  const [rename, setRename] = useState<{
+    name: string;
+    value: string;
+    busy: boolean;
+    failure: CommandError | null;
+  } | null>(null);
   const focusIndex = focused === null ? -1 : order.indexOf(focused);
   const { start, end } = visibleRows({ scrollTop, viewport, rowHeight, count: rows.length, overscan });
   const baseId = useId();
   const rowId = (index: number) => `${baseId}-row-${index}`;
+  const renameErrorId = `${baseId}-rename-error`;
+  const renameProblem = rename && nameProblem(rename.value, entries.map((entry) => entry.name), rename.name);
+  const renameError = rename?.failure
+    ? operationErrorText(t, rename.failure)
+    : rename && renameProblem && renameProblem !== "empty"
+      ? t(`files.nameProblem.${renameProblem}`, { name: rename.value })
+      : null;
+
+  // Keep the focused input mounted when scrolling moves its row outside the virtual window.
+  const renameIndex = rename ? order.indexOf(rename.name) : -1;
+  const visibleIndexes = Array.from({ length: end - start }, (_, offset) => start + offset);
+  if (renameIndex >= 0 && renameIndex < start) visibleIndexes.unshift(renameIndex);
+  if (renameIndex >= end) visibleIndexes.push(renameIndex);
 
   const select = (name: string, mode: SelectMode) => {
     setFocused(name);
@@ -362,6 +393,40 @@ function FileTable({
     else if (top + rowHeight > element.scrollTop + viewport)
       element.scrollTop = top + rowHeight - viewport;
   };
+  const beginRename = (name: string, index: number) => {
+    if (rename?.busy) return;
+    setFocused(name);
+    setRename({ name, value: name, busy: false, failure: null });
+    reveal(index);
+  };
+  const onRenameKeyDown = async (event: KeyboardEvent<HTMLInputElement>) => {
+    if (!rename || event.nativeEvent.isComposing || (event.key !== "Enter" && event.key !== "Escape")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (rename.busy) return;
+    const input = event.currentTarget;
+    const close = (name: string) => {
+      if (document.activeElement === input || (!input.isConnected && document.activeElement === document.body)) {
+        grid.current?.focus({ preventScroll: true });
+      }
+      setFocused(name);
+      setRename(null);
+    };
+    if (event.key === "Escape") {
+      close(rename.name);
+      return;
+    }
+    if (renameProblem) return;
+    if (rename.name === rename.value) {
+      close(rename.name);
+      return;
+    }
+    setRename({ ...rename, busy: true, failure: null });
+    const failure = await store.getState().rename(rename.name, rename.value);
+    if (failure) setRename({ ...rename, busy: false, failure });
+    else close(rename.value);
+  };
+
   const sortBy = (key: SortKey) => {
     const direction = sort.key === key && sort.direction === "asc" ? "desc" : "asc";
     setPrefs({ ...prefs, sort: { key, direction } });
@@ -376,7 +441,7 @@ function FileTable({
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
-    if (event.target !== event.currentTarget) return;
+    if (event.target !== event.currentTarget || event.nativeEvent.isComposing) return;
     const move = (to: number) => {
       const index = Math.max(0, Math.min(rows.length - 1, to));
       const row = rows[index];
@@ -411,7 +476,7 @@ function FileTable({
         const row = rows[focusIndex];
         if (row) {
           event.preventDefault();
-          onOperation({ kind: "rename", name: row.name });
+          beginRename(row.name, focusIndex);
         }
         return;
       }
@@ -442,6 +507,7 @@ function FileTable({
         </div>
       )}
       <div
+        ref={grid}
         role="grid"
         aria-label={t("files.listLabel", { path })}
         aria-rowcount={rows.length + 1}
@@ -471,8 +537,8 @@ function FileTable({
                 <p className="text-muted-foreground p-6 text-center">{filter.trim() ? t("sftp.noMatches") : t("files.emptyFolder")}</p>
               ) : (
                 <div role="rowgroup" className="relative" style={{ height: rows.length * rowHeight }}>
-                  {rows.slice(start, end).map((entry, offset) => {
-                    const index = start + offset;
+                  {visibleIndexes.map((index) => {
+                    const entry = rows[index]!;
                     const names = selection.has(entry.name) ? selected : [entry.name];
                     const paths = exchange?.copy ? names.map((name) => childPath(path, name)) : undefined;
                     return (
@@ -487,6 +553,29 @@ function FileTable({
                         onCopy={paths && (() => exchange?.copy?.(paths))}
                         selected={selection.has(entry.name)}
                         focused={index === focusIndex}
+                        nameEditor={rename?.name === entry.name ? (
+                          <Input
+                            aria-label={t("files.rename.title", { name: entry.name })}
+                            aria-describedby={renameError ? renameErrorId : undefined}
+                            aria-invalid={!!renameError || undefined}
+                            className="bg-surface h-5 rounded-sm px-1 py-0 text-[12.5px] md:text-[12.5px]"
+                            autoFocus
+                            autoCapitalize="off"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            readOnly={rename.busy}
+                            value={rename.value}
+                            onFocus={(event) => {
+                              const dot = entry.name.lastIndexOf(".");
+                              event.target.setSelectionRange(0, dot > 0 ? dot : entry.name.length);
+                            }}
+                            onChange={(event) => setRename({ ...rename, value: event.target.value, failure: null })}
+                            onKeyDown={onRenameKeyDown}
+                            onClick={(event) => event.stopPropagation()}
+                            onDoubleClick={(event) => event.stopPropagation()}
+                            onContextMenu={(event) => event.stopPropagation()}
+                          />
+                        ) : undefined}
                         modified={prefs.showModified ? (entry.modified === null ? "" : dateFormat.format(entry.modified * 1000)) : undefined}
                         showPermissions={prefs.showPermissions}
                         onClick={(event) => select(entry.name, clickMode(event))}
@@ -495,9 +584,9 @@ function FileTable({
                           if (!selection.has(entry.name)) select(entry.name, "only");
                         }}
                         onOperation={(kind) => {
-                          if (kind === "rename") onOperation({ kind, name: entry.name });
+                          if (kind === "rename") beginRename(entry.name, index);
                           else if (kind === "permissions") onOperation({ kind, entry });
-                          else if (kind === "newFolder") onOperation({ kind });
+                          else if (kind === "newFolder" || kind === "newFile") onOperation({ kind });
                           else onOperation({ kind, names });
                         }}
                         onDownload={onDownload && (() => onDownload(names))}
@@ -510,6 +599,11 @@ function FileTable({
           </div>
         </div>
       </div>
+      {renameError && (
+        <p id={renameErrorId} role="alert" className="text-destructive shrink-0 px-3 pb-1 text-xs">
+          {renameError}
+        </p>
+      )}
       <div role="status" className="text-muted-foreground flex shrink-0 flex-wrap gap-x-3 gap-y-0.5 border-t px-3 py-1 text-xs tabular-nums">
         <span>{t("files.entryCount", { count: rows.length })}</span>
         <span>{t("files.selectedCount", { count: selected.length })}</span>
@@ -568,6 +662,7 @@ function FileRow({
   path,
   selected,
   focused,
+  nameEditor,
   modified,
   showPermissions,
   onClick,
@@ -585,19 +680,21 @@ function FileRow({
   path: string;
   selected: boolean;
   focused: boolean;
+  nameEditor?: ReactNode;
   modified?: string;
   showPermissions: boolean;
   onClick(event: MouseEvent): void;
   onOpen(): void;
   onContextMenu(): void;
-  onOperation(kind: FileOperation["kind"]): void;
+  onOperation(kind: FileOperation["kind"] | "rename"): void;
   onDownload?: () => void;
   exchange?: FileExchange;
   dragPaths?: string[];
   onCopy?: () => void;
 }) {
   const { t } = useTranslation();
-  const { setNodeRef, listeners, isDragging } = useDraggable({ id, disabled: !dragPaths, data: { side: exchange?.side, paths: dragPaths } });
+  const renameOnMenuClose = useRef(false);
+  const { setNodeRef, listeners, isDragging } = useDraggable({ id, disabled: !dragPaths || !!nameEditor, data: { side: exchange?.side, paths: dragPaths } });
   const dir = isDirLike(entry);
   const { Icon, color } = entryIcons[fileIconKind(entry)];
   return (
@@ -627,7 +724,7 @@ function FileRow({
               className={cn("size-3.5 shrink-0", color)}
               aria-hidden
             />
-            <span className="truncate">{entry.name}</span>
+            {nameEditor ?? <span className="truncate">{entry.name}</span>}
           </div>
           <div role="gridcell" className="text-muted-foreground truncate px-1 text-right tabular-nums">
             {entry.kind === "file" ? formatSize(entry.size) : ""}
@@ -644,7 +741,15 @@ function FileRow({
           )}
         </div>
       </ContextMenuTrigger>
-      <ContextMenuContent className="min-w-40">
+      <ContextMenuContent
+        className="min-w-40"
+        onCloseAutoFocus={(event) => {
+          if (!renameOnMenuClose.current) return;
+          renameOnMenuClose.current = false;
+          event.preventDefault();
+          onOperation("rename");
+        }}
+      >
         {dir && <ContextMenuItem onSelect={onOpen}>{t("files.open")}</ContextMenuItem>}
         {isFileLike(entry) && (
           <ContextMenuItem onSelect={onOpen}>
@@ -669,7 +774,7 @@ function FileRow({
           {t("files.copyPath")}
         </ContextMenuItem>
         <ContextMenuSeparator />
-        <ContextMenuItem onSelect={() => onOperation("rename")}>
+        <ContextMenuItem onSelect={() => { renameOnMenuClose.current = true; }}>
           <Pencil />
           {t("files.renameAction")}
         </ContextMenuItem>
@@ -679,6 +784,10 @@ function FileRow({
             {t("files.permissionsAction")}
           </ContextMenuItem>
         )}
+        <ContextMenuItem onSelect={() => onOperation("newFile")}>
+          <FilePlus />
+          {t("files.newFileAction")}
+        </ContextMenuItem>
         <ContextMenuItem onSelect={() => onOperation("newFolder")}>
           <FolderPlus />
           {t("files.newFolderAction")}
