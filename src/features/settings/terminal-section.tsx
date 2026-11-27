@@ -1,15 +1,19 @@
 import { useTranslation } from "react-i18next";
+import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { useTerminalPrefs } from "@/features/terminal/terminal-prefs-context";
 import { cursorStyles, terminalBellModes, terminalNumberFields, type TerminalPrefs, type TerminalTitleSource } from "@/features/terminal/terminal-prefs";
 import { TerminalSchemeSelect } from "@/features/terminal/TerminalSchemeSelect";
+import { showToast } from "@/features/toasts/toastStore";
+import { readCommandError } from "@/lib/ipc/connect";
+import { pickTerminalLogDirectory } from "@/lib/ipc/terminal";
 import { CommitField } from "./CommitField";
 import { SettingRow } from "./SettingRow";
 import { settingRows } from "./setting-rows";
 import { TerminalHighlightingSettings } from "./terminal-highlighting-settings";
 import { TerminalSchemeSettings } from "./terminal-scheme-settings";
 
-type BooleanPref = "ligatures" | "cursorBlink" | "copyOnSelect" | "rightClickPaste" | "confirmMultilinePaste" | "shellIntegration";
+type BooleanPref = "ligatures" | "cursorBlink" | "copyOnSelect" | "rightClickPaste" | "confirmMultilinePaste" | "shellIntegration" | "autoLog";
 
 export function TerminalSection() {
   const { t } = useTranslation();
@@ -56,6 +60,16 @@ export function TerminalSection() {
         />
       </SettingRow>
     );
+  };
+
+  const chooseLogDirectory = async () => {
+    try {
+      const logDirectory = await pickTerminalLogDirectory(t(settingRows.logDirectory.title));
+      if (logDirectory !== null) updatePrefs({ logDirectory });
+    } catch (error) {
+      const { message } = readCommandError(error);
+      showToast((translate) => translate("settings.terminal.logDirectory.failed", { message }), "error");
+    }
   };
 
   const fontLabel = t(settingRows.font.title);
@@ -134,6 +148,22 @@ export function TerminalSection() {
       {toggle("rightClickPaste")}
       {toggle("confirmMultilinePaste")}
       {toggle("shellIntegration")}
+      {toggle("autoLog")}
+      <SettingRow setting={settingRows.logDirectory}>
+        <div className="flex min-w-0 max-w-72 flex-wrap items-center justify-end gap-2">
+          <span className="text-muted-foreground w-full truncate text-right text-xs" title={prefs.logDirectory ?? undefined}>
+            {prefs.logDirectory ?? t("settings.terminal.logDirectory.default")}
+          </span>
+          <Button variant="outline" size="sm" onClick={() => void chooseLogDirectory()}>
+            {t("settings.terminal.logDirectory.choose")}
+          </Button>
+          {prefs.logDirectory && (
+            <Button variant="ghost" size="sm" onClick={() => updatePrefs({ logDirectory: null })}>
+              {t("settings.terminal.logDirectory.reset")}
+            </Button>
+          )}
+        </div>
+      </SettingRow>
       <TerminalHighlightingSettings config={prefs.highlighting} updatePrefs={updatePrefs} />
     </>
   );

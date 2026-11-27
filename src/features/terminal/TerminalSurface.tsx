@@ -15,6 +15,7 @@ import {
 } from "@/lib/ipc/terminal";
 import { XtermView } from "./XtermView";
 import { shellIntegration, useShellIntegration } from "./shellIntegration";
+import { terminalLogs } from "./terminal-logs";
 import { notifyCommandFinished, watchTerminalNotifications } from "./terminal-notifications";
 
 export type OpenTerminal = (
@@ -109,6 +110,7 @@ export function TerminalSurface({
       unregisterWriter = undefined;
     };
     shellIntegration.open(paneId);
+    const log = terminalLogs.track(paneId);
     const size = () => ({ cols: xterm.cols, rows: xterm.rows });
 
     openRef
@@ -136,9 +138,15 @@ export function TerminalSurface({
           }
           return;
         }
+        if (event.type === "terminalLog") {
+          log.status(event.status);
+          return;
+        }
         if (event.type !== "exit") return;
         exited = true;
         removeWriter();
+        log.close();
+        if (id !== undefined) void closeTerminal(id).catch(() => undefined);
         id = undefined;
         shellIntegration.close(paneId);
         const message =
@@ -157,6 +165,7 @@ export function TerminalSurface({
             return;
           }
           id = opened;
+          log.attach(opened);
           if (connected) registerWriter(opened);
           onOpenedRef.current?.(opened);
           // Catch up on any resize that happened while connecting.
@@ -184,6 +193,7 @@ export function TerminalSurface({
 
     return () => {
       lifetime.abort();
+      log.close();
       stopNotifications();
       removeWriter();
       onData.dispose();

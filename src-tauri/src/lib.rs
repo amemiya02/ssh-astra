@@ -31,6 +31,7 @@ use commands::forwards::ForwardsState;
 use commands::home::StartupMeasurement;
 use commands::hosts::HostsState;
 use commands::settings::SettingsState;
+use commands::terminal::TerminalLogDirectory;
 use commands::transfers::TransfersState;
 use prompts::PendingPrompts;
 
@@ -95,6 +96,12 @@ pub fn run() {
             log::info!("application started version={}", app.package_info().version);
             app.manage(logs);
             let config_dir = app.path().app_config_dir()?;
+            let terminal_log_directory = app
+                .path()
+                .app_data_dir()
+                .unwrap_or_else(|_| config_dir.clone())
+                .join("terminal-logs");
+            app.manage(TerminalLogDirectory(terminal_log_directory));
             let hosts = HostStore::open(config_dir.join("hosts.json")).map_err(Into::into);
             // Shared with the `ssh` command line; without a home directory,
             // fall back to a file of our own.
@@ -179,6 +186,8 @@ pub fn run() {
             commands::terminal::terminal_write,
             commands::terminal::terminal_resize,
             commands::terminal::terminal_close,
+            commands::terminal::terminal_log_start,
+            commands::terminal::terminal_log_stop,
             commands::terminal::terminal_reconnect,
             commands::terminal::terminal_report_cwd,
             commands::files::files_open,

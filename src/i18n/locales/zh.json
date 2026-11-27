@@ -639,6 +639,12 @@
     "exitedUnknown": "进程已退出",
     "failedToStart": "shell 无法启动。",
     "failureDetail": "详情：{{message}}",
+    "log": {
+      "start": "开始记录终端日志",
+      "stop": "停止记录终端日志",
+      "active": "正在记录终端日志",
+      "failed": "无法写入终端日志。{{message}}"
+    },
     "pressEnterToRestart": "按 Enter 启动新的 shell。",
     "search": {
       "label": "在终端中查找",
@@ -1073,9 +1079,21 @@
         "label": "选中即复制",
         "description": "在终端中选中文本时自动复制到剪贴板。"
       },
+      "autoLog": {
+        "label": "自动记录终端日志",
+        "description": "将每个新开的本地或远程终端的输出保存为纯文本。"
+      },
+      "logDirectory": {
+        "label": "终端日志文件夹",
+        "description": "保存新终端日志的位置。",
+        "default": "SSH Astra 数据文件夹",
+        "choose": "选择文件夹",
+        "reset": "使用默认位置",
+        "failed": "无法选择终端日志文件夹。{{message}}"
+      },
       "rightClickPaste": {
         "label": "右键粘贴",
-        "description": "在终端中右键单击时粘贴剪贴板内容。"
+        "description": "开启后，在终端中右键单击会粘贴剪贴板内容。关闭后会打开终端菜单。"
       },
       "confirmMultilinePaste": {
         "label": "多行粘贴前确认",
