@@ -23,7 +23,7 @@ use crate::error::{CommandError, CommandResult};
 use crate::prompts::{ChannelPrompter, PendingPrompts, PromptRequest};
 
 /// Connects to `host` through its Jump hosts `hops` (outermost first), with
-/// the global keepalive as the default, then starts the Host's auto-start Port
+/// the global connection settings, then starts the Host's auto-start Port
 /// forwards (as saved now). Rules that fail to start are reported through
 /// the forwards channel; they never fail the connect.
 pub async fn connect_host(
@@ -51,11 +51,10 @@ pub async fn connect_host(
 fn configured_connections(app: &AppHandle) -> State<'_, ConnectionManager> {
     let connections = app.state::<ConnectionManager>();
     // Applies to the Connections this opens; open ones keep theirs.
-    let settings = app
-        .state::<SettingsState>()
-        .with(|store| Ok(store.section::<ConnectionSettings>(ConnectionSettings::SECTION)))
-        .unwrap_or_default();
-    connections.set_keepalive_interval(settings.keepalive_interval());
+    let _ = app.state::<SettingsState>().with(|store| {
+        connections.apply_settings(&store.section(ConnectionSettings::SECTION));
+        Ok(())
+    });
     connections
 }
 
