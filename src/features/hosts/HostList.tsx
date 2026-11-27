@@ -11,9 +11,10 @@ import {
   type DragMoveEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { ChevronRight, Folder, FolderInput, FolderPlus, Pencil, Trash2 } from "lucide-react";
+import { ChevronRight, Folder, FolderInput, FolderPlus, Pencil, Terminal, Trash2, Upload, X } from "lucide-react";
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { IconButton } from "@/components/IconButton";
 import { Input } from "@/components/ui/input";
 import type { Group, GroupId, Host, HostId, HostTree } from "@/lib/ipc/hosts";
 import { defineSection, useSetting } from "@/lib/storage";
@@ -24,6 +25,7 @@ import type { HostConnection } from "@/features/connect/hostConnection";
 import { privacyModeSetting } from "@/features/workspace/privacy-mode";
 import { HostMonogram } from "./HostMonogram";
 import { OpenSshMissing } from "./openSshSync";
+import { emptyHostSelection, selectHost, type HostSelection } from "./host-selection";
 import { hostMenuEntries } from "./hostMenu";
 import { RowContextMenu, RowMoreMenu, type MenuEntry } from "./RowMenu";
 
@@ -48,6 +50,14 @@ export interface HostListActions {
   move(op: MoveOp): void;
 }
 
+export interface HostBatchActions {
+  move(ids: readonly HostId[], groupId: GroupId | null): void;
+  editTag(ids: readonly HostId[], change: "addTag" | "removeTag"): void;
+  remove(ids: readonly HostId[]): void;
+  connect(ids: readonly HostId[]): void;
+  export(ids: readonly HostId[]): void;
+}
+
 interface HostListProps {
   tree: HostTree;
   /** The nodes to show: the whole tree, or search results. */
@@ -56,12 +66,15 @@ interface HostListProps {
   searching: boolean;
   /** Only the saved manual order supports drag and drop. */
   manualOrder: boolean;
-  selected: DragItem | null;
-  onSelect(item: DragItem): void;
+  selectedGroupId: GroupId | null;
+  onSelectGroup(id: GroupId): void;
+  selection: HostSelection;
+  onSelectHosts(selection: HostSelection): void;
   renamingGroupId: GroupId | null;
   /** Each Host's Connection, for the dot on its row. */
   connections: ReadonlyMap<HostId, HostConnection>;
   actions: HostListActions;
+  batchActions: HostBatchActions;
 }
 
 /** Host list preferences in the settings file. */
@@ -95,6 +108,12 @@ type DropState = { key: string; position: DropPosition; op: MoveOp };
 
 const keyOf = (item: DragItem | DropTarget) => (item.kind === "root" ? "root" : `${item.kind}:${item.id}`);
 
+function selectionMode(event: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }) {
+  if (event.shiftKey) return "range";
+  if (event.metaKey || event.ctrlKey) return "toggle";
+  return "single";
+}
+
 /**
  * The Host list tree: nested Groups (collapsible), Hosts with search
  * highlights, right-click and "More actions" menus, and drag and drop to move
@@ -106,19 +125,41 @@ export function HostList({
   nodes,
   searching,
   manualOrder,
-  selected,
-  onSelect,
+  selectedGroupId,
+  onSelectGroup,
+  selection,
+  onSelectHosts,
   renamingGroupId,
   connections,
   actions,
+  batchActions,
 }: HostListProps) {
   const { t } = useTranslation();
   const [privacyMode] = useSetting(privacyModeSetting);
   const { collapsed, toggle } = useCollapsedGroups();
   const [dragging, setDragging] = useState<DragData | null>(null);
   const [drop, setDrop] = useState<DropState | null>(null);
+  const listRef = useRef<HTMLUListElement>(null);
   const canDrag = manualOrder && !searching;
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+  const visibleIds = useMemo(() => {
+    const ids: HostId[] = [];
+    const visit = (list: TreeNode[]) => {
+      for (const node of list) {
+        if (node.kind === "host") ids.push(node.host.id);
+        else if (searching || !collapsed.has(node.group.id)) visit(node.children);
+      }
+    };
+    visit(nodes);
+    return ids;
+  }, [nodes, collapsed, searching]);
+  const selectedInList = new Set(selection.ids);
+  const ids = visibleIds.filter((id) => selectedInList.has(id));
+  const selectedSet = new Set(ids);
+  const clearSelection = () => {
+    listRef.current?.querySelector<HTMLButtonElement>('button[aria-pressed="true"]')?.focus();
+    onSelectHosts(emptyHostSelection);
+  };
 
   /** Where the pointer is over the row it hovers, as a drop (null: not allowed here). */
   const dropAt = (event: DragMoveEvent): DropState | null => {
@@ -153,22 +194,25 @@ export function HostList({
     }
   };
 
-  const groupEntries = (item: DragItem): MenuEntry[] => {
+  const groupEntries = (
+    action: (groupId: GroupId | null) => { disabled?: boolean; onSelect(): void },
+  ): MenuEntry[] => {
     const entries: MenuEntry[] = [];
-    const add = (target: DropTarget, label: string, depth: number) => {
-      const op = dropMove(tree, item, target, "inside");
-      entries.push({ type: "item", label, depth, disabled: !op, onSelect: () => op && actions.move(op) });
-    };
-    add({ kind: "root" }, t("hosts.topLevel"), 0);
+    entries.push({ type: "item", label: t("hosts.topLevel"), ...action(null) });
     const walk = (parent: GroupId | null, depth: number) => {
       for (const g of tree.groups.filter((g) => g.parentId === parent)) {
-        add({ kind: "group", id: g.id }, g.name, depth);
+        entries.push({ type: "item", label: g.name, depth, ...action(g.id) });
         walk(g.id, depth + 1);
       }
     };
     walk(null, 1);
     return entries;
   };
+  const moveEntries = (item: DragItem) => groupEntries((id) => {
+    const target: DropTarget = id === null ? { kind: "root" } : { kind: "group", id };
+    const op = dropMove(tree, item, target, "inside");
+    return { disabled: !op, onSelect: () => op && actions.move(op) };
+  });
 
   const render = (list: TreeNode[]): ReactNode =>
     list.map((node) => {
@@ -176,7 +220,7 @@ export function HostList({
         const item: DragItem = { kind: "host", id: node.host.id };
         const key = keyOf(item);
         const host = node.host;
-        const entries = hostMenuEntries(host, actions, t, groupEntries(item));
+        const entries = hostMenuEntries(host, actions, t, moveEntries(item));
         return (
           <li key={key}>
             <TreeRow
@@ -192,11 +236,17 @@ export function HostList({
                 privacyMode={privacyMode}
                 matches={node.matches}
                 connection={connections.get(host.id)}
-                selected={selected?.kind === "host" && selected.id === host.id}
-                onSelect={() => onSelect(item)}
+                selected={selectedSet.has(host.id)}
+                onSelect={(mode) => onSelectHosts(selectHost(selection, host.id, visibleIds, mode))}
+                onClear={() => {
+                  if (ids.length) onSelectHosts(emptyHostSelection);
+                }}
                 onOpen={() => actions.open(host)}
                 onEdit={() => actions.edit(host)}
-                onDelete={() => actions.remove({ kind: "host", host })}
+                onDelete={() => {
+                  if (ids.length > 1 && selectedSet.has(host.id)) batchActions.remove(ids);
+                  else actions.remove({ kind: "host", host });
+                }}
               />
             </TreeRow>
           </li>
@@ -218,7 +268,7 @@ export function HostList({
           },
         },
         { type: "item", label: t("hosts.rename"), icon: <Pencil />, onSelect: () => actions.startRename(group.id) },
-        { type: "sub", label: t("hosts.moveTo"), icon: <FolderInput />, entries: groupEntries(item) },
+        { type: "sub", label: t("hosts.moveTo"), icon: <FolderInput />, entries: moveEntries(item) },
         { type: "separator" },
         {
           type: "item",
@@ -248,9 +298,9 @@ export function HostList({
               <GroupRowButton
                 group={group}
                 open={open}
-                selected={selected?.kind === "group" && selected.id === group.id}
+                selected={selectedGroupId === group.id}
                 onToggle={() => {
-                  onSelect(item);
+                  onSelectGroup(group.id);
                   if (!searching) toggle(group.id);
                 }}
                 onRename={() => actions.startRename(group.id)}
@@ -284,10 +334,45 @@ export function HostList({
       onDragCancel={() => endDrag(null)}
     >
       <div className="flex min-h-full flex-col">
-        <ul aria-label={t("hosts.title")} className="grid grid-cols-[minmax(0,1fr)] gap-0.5">
+        <ul ref={listRef} aria-label={t("hosts.title")} className="grid grid-cols-[minmax(0,1fr)] gap-0.5">
           {render(nodes)}
         </ul>
         {canDrag && <RootDropZone active={drop?.key === "root"} />}
+        {visibleIds.length > 0 && (
+          <div className="bg-sidebar sticky bottom-0 z-10 mt-auto flex h-8 shrink-0 items-center gap-1 border-t px-2">
+            <span role="status" className="min-w-0 flex-1 truncate text-xs tabular-nums">
+              {ids.length ? t("hosts.batch.selected", { count: ids.length }) : t("hosts.batch.visible", { count: visibleIds.length })}
+            </span>
+            {ids.length > 0 && (
+              <>
+                <RowMoreMenu
+                  label={t("hosts.batch.actions")}
+                  align="end"
+                  entries={[
+                    { type: "item", label: t("hosts.batch.connect"), icon: <Terminal />, onSelect: () => batchActions.connect(ids) },
+                    {
+                      type: "sub",
+                      label: t("hosts.moveTo"),
+                      icon: <FolderInput />,
+                      entries: groupEntries((id) => ({ onSelect: () => batchActions.move(ids, id) })),
+                    },
+                    { type: "item", label: t("hosts.batch.addTag"), onSelect: () => batchActions.editTag(ids, "addTag") },
+                    {
+                      type: "item",
+                      label: t("hosts.batch.removeTag"),
+                      disabled: !tree.hosts.some((host) => selectedSet.has(host.id) && host.tags?.length),
+                      onSelect: () => batchActions.editTag(ids, "removeTag"),
+                    },
+                    { type: "item", label: t("hosts.batch.export"), icon: <Upload />, onSelect: () => batchActions.export(ids) },
+                    { type: "separator" },
+                    { type: "item", label: t("hosts.delete"), icon: <Trash2 />, destructive: true, onSelect: () => batchActions.remove(ids) },
+                  ]}
+                />
+                <IconButton label={t("hosts.batch.clear")} onClick={clearSelection}><X /></IconButton>
+              </>
+            )}
+          </div>
+        )}
       </div>
       <DragOverlay dropAnimation={null}>
         {canDrag && dragging && (
@@ -375,6 +460,7 @@ function HostRowButton({
   connection,
   selected,
   onSelect,
+  onClear,
   onOpen,
   onEdit,
   onDelete,
@@ -384,7 +470,8 @@ function HostRowButton({
   matches?: Extract<TreeNode, { kind: "host" }>["matches"];
   connection?: HostConnection;
   selected: boolean;
-  onSelect(): void;
+  onSelect(mode: ReturnType<typeof selectionMode>): void;
+  onClear(): void;
   onOpen(): void;
   onEdit(): void;
   onDelete(): void;
@@ -394,14 +481,23 @@ function HostRowButton({
     <button
       type="button"
       title={t("hosts.openHint")}
-      aria-current={selected || undefined}
+      aria-pressed={selected}
+      aria-keyshortcuts="Enter Space Shift+Space Control+Space Meta+Space"
       className={cn(rowButton, "h-7.5 gap-2 px-2 pr-8", selected ? "bg-selected" : "hover:bg-accent active:bg-accent/70")}
-      onClick={onSelect}
-      onDoubleClick={onOpen}
+      onClick={(event) => onSelect(selectionMode(event))}
+      onDoubleClick={(event) => {
+        if (selectionMode(event) === "single") onOpen();
+      }}
       onKeyDown={(event) => {
-        if (event.key === "Enter") {
+        const mode = selectionMode(event);
+        if ((event.key === "Enter" || event.key === " ") && mode !== "single") {
+          event.preventDefault();
+          if (!event.repeat) onSelect(mode);
+        } else if (event.key === "Enter") {
           event.preventDefault();
           onOpen();
+        } else if (event.key === "Escape") {
+          onClear();
         } else if (event.key === "F2") {
           event.preventDefault();
           onEdit();

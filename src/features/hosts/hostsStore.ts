@@ -4,7 +4,7 @@ import { readCommandError } from "@/lib/ipc/connect";
 import * as forwardsIpc from "@/lib/ipc/forwards";
 import type { ForwardDraft, ForwardId, PortForward } from "@/lib/ipc/forwards";
 import * as hostsIpc from "@/lib/ipc/hosts";
-import type { Bookmark, Group, GroupId, Host, HostDraft, HostId, HostImportSource, HostOsChange, HostTree, HostTreeChange, ImportReport, ImportSummary } from "@/lib/ipc/hosts";
+import type { Bookmark, Group, GroupId, Host, HostBatchEdit, HostDraft, HostId, HostImportSource, HostOsChange, HostTree, HostTreeChange, ImportReport, ImportSummary } from "@/lib/ipc/hosts";
 import { createSnapshotWatch } from "@/lib/ipc/watchSnapshot";
 import type { MoveOp } from "./hostTree";
 
@@ -17,6 +17,7 @@ export type HostsApi = Pick<
   | "saveHost"
   | "saveTemporaryHost"
   | "deleteHost"
+  | "editHosts"
   | "addBookmark"
   | "renameBookmark"
   | "deleteBookmark"
@@ -46,6 +47,7 @@ export interface HostsState {
   renameBookmark(hostId: HostId, path: string, name: string): Promise<void>;
   deleteBookmark(hostId: HostId, path: string): Promise<void>;
   deleteHost(id: HostId): Promise<void>;
+  editHosts(ids: readonly HostId[], edit: HostBatchEdit): Promise<void>;
   /** Saves a copy as `name` right after the original. */
   duplicateHost(id: HostId, name: string): Promise<Host>;
   /** Moves a Host or Group (drag and drop, "Move to"). */
@@ -61,7 +63,7 @@ export interface HostsState {
   /** Imports the chosen source and reports imported and skipped entries. */
   importHostSource(source: HostImportSource): Promise<ImportReport>;
   /** Writes the Host list to an export file (never credentials). */
-  exportHosts(path: string): Promise<void>;
+  exportHosts(path: string, ids?: readonly HostId[]): Promise<void>;
   /** Adds the Groups and Hosts of an export file; Hosts whose name is taken are skipped. */
   importHosts(path: string): Promise<ImportSummary>;
 }
@@ -189,6 +191,14 @@ export function createHostsStore(api: HostsApi): StoreApi<HostsState> {
         update((tree) => ({ ...tree, hosts: tree.hosts.filter((h) => h.id !== id) }));
       },
 
+      async editHosts(ids, edit) {
+        const tree = await api.editHosts(ids, edit);
+        if (edit.kind === "delete") {
+          for (const id of ids) osChanges.delete(id);
+        }
+        replaceTree(tree);
+      },
+
       async duplicateHost(id, name) {
         const copy = await api.duplicateHost(id, name);
         update((tree) => {
@@ -241,8 +251,8 @@ export function createHostsStore(api: HostsApi): StoreApi<HostsState> {
         return report;
       },
 
-      exportHosts(path) {
-        return api.exportHosts(path);
+      exportHosts(...args) {
+        return api.exportHosts(...args);
       },
 
       async importHosts(path) {

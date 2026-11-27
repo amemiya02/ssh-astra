@@ -25,6 +25,7 @@ function fakeApi(initial: HostTree, overrides: Partial<HostsApi> = {}): HostsApi
     renameBookmark: vi.fn((_hostId: string, path: string, name: string) => Promise.resolve({ path, name })),
     deleteBookmark: vi.fn(() => Promise.resolve()),
     deleteHost: vi.fn(() => Promise.resolve()),
+    editHosts: vi.fn(() => Promise.resolve(initial)),
     duplicateHost: vi.fn((id: string, name: string) =>
       Promise.resolve({ ...initial.hosts.find((h) => h.id === id)!, id: "copy", name }),
     ),
