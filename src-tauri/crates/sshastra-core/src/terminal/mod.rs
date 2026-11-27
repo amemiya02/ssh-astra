@@ -133,6 +133,8 @@ pub enum ConnectionState {
     /// `reason` is the last failure.
     Disconnected {
         reason: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        kind: Option<&'static str>,
         /// True once per lost Connection when the transport itself fails to reconnect.
         report_reconnect_failure: bool,
     },

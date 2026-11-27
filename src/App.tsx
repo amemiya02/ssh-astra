@@ -448,7 +448,7 @@ export function App({ initialTabs, startupTabsAcrossWindows, incomingMove }: {
       }
     }
   }
-  const shortcutCapture = useWorkspaceShortcuts(platform, runWorkspaceCommand);
+  const shortcutCapture = useWorkspaceShortcuts(platform, runWorkspaceCommand, tabActivity.prepareSound);
 
   const hosts = useHosts((s) => s.tree.hosts);
   const forwardStates = useForwards((s) => s.states);
@@ -700,7 +700,7 @@ export function App({ initialTabs, startupTabsAcrossWindows, incomingMove }: {
         onActivateTab={activateTab}
       />
       <AgentReviewDialog />
-      <QuitConfirmation interruptions={interruptions} />
+      <QuitConfirmation interruptions={interruptions} onWindowClosed={broadcast.stop} />
     </ShortcutCaptureContext.Provider>
   );
 }

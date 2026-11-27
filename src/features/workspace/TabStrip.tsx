@@ -402,9 +402,15 @@ export function TabStrip({
             const current = closed && group.tabs.some(({ id }) => id === activeId);
             const host = savedById.get(group.host.id) ?? group.host;
             const name = workspaceHostName(host, t, privacyMode);
+            const panes = closed ? group.tabs.flatMap(tabPanes) : [];
+            const status = panes.some((pane) => "reconnecting" in pane && pane.reconnecting)
+              ? "connecting"
+              : (["connected", "connecting", "disconnected"] as const)
+                .find((status) => panes.some((pane) => pane.status === status));
             const title = t("tabs.hostGroup", { name });
             const label = [
               title,
+              status && t(`tabs.status.${status}`),
               hasUnread && t("tabs.unreadOutput"),
               bellRang && t("tabs.terminalBell"),
               agentShared && t("agentAccess.sharedTerminal"),
@@ -426,7 +432,18 @@ export function TabStrip({
                 onClick={() => toggleHost(group.host.id)}
               >
                 <ChevronRight aria-hidden className={cn("shrink-0", compact ? "size-3" : "size-3.5", !closed && "rotate-90")} />
-                <HostMonogram host={{ ...host, name }} />
+                <HostMonogram host={{ ...host, name }}>
+                  {status && <span
+                    aria-hidden
+                    data-status={status}
+                    className={cn(
+                      "absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full ring-1",
+                      current ? "ring-surface" : "ring-background",
+                      statusDot[status],
+                      status === "connecting" && "motion-safe:animate-pulse",
+                    )}
+                  />}
+                </HostMonogram>
                 {!compact && <span className="truncate">{name}</span>}
                 {hasUnread && <span aria-hidden data-unread-output className={cn(
                   "bg-primary size-1.5 shrink-0 rounded-full",

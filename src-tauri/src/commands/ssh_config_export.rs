@@ -14,6 +14,7 @@ use sshastra_core::ssh_config_export::{
     ConfigExport, ExportError, ExportReport, IncludePlan, INCLUDE_LINE,
 };
 use tauri::{State, WebviewWindow};
+use tokio::sync::watch;
 
 use super::hosts::{local_username, HostsState};
 use super::settings::{SettingsChange, SettingsChanges, SettingsState};
@@ -56,6 +57,7 @@ pub struct OpenSshSync {
     export: Option<ConfigExport>,
     runtime: Mutex<Runtime>,
     changes: Arc<SettingsChanges>,
+    startup_done: watch::Sender<bool>,
 }
 
 #[derive(Serialize)]
@@ -74,6 +76,7 @@ impl OpenSshSync {
         changes: Arc<SettingsChanges>,
     ) -> Self {
         Self {
+            startup_done: watch::Sender::new(!preferences.enabled || home.is_none()),
             export: home.clone().map(ConfigExport::new),
             home,
             runtime: Mutex::new(Runtime {
@@ -206,6 +209,7 @@ impl OpenSshSync {
     }
 
     pub fn unavailable_hosts(&self) {
+        self.startup_done.send_replace(true);
         let mut runtime = self.runtime.lock().unwrap_or_else(|p| p.into_inner());
         if runtime.status.enabled {
             runtime.status.problem = Some("hostsUnavailable");
@@ -312,11 +316,23 @@ impl OpenSshSync {
         Ok(())
     }
 
+    pub async fn wait_for_startup(&self) {
+        let _ = self.startup_done.subscribe().wait_for(|done| *done).await;
+    }
+
     pub fn sync_at_startup(hosts: HostsState) {
-        tauri::async_runtime::spawn_blocking(move || {
-            if Self::read_back(&hosts, true, None).is_err() {
+        if *hosts.open_ssh().startup_done.borrow() {
+            return;
+        }
+        let done = hosts.open_ssh().startup_done.clone();
+        tauri::async_runtime::spawn(async move {
+            let result =
+                tauri::async_runtime::spawn_blocking(move || Self::read_back(&hosts, true, None))
+                    .await;
+            if !matches!(result, Ok(Ok(()))) {
                 log::warn!("Could not sync the OpenSSH config at startup");
             }
+            done.send_replace(true);
         });
     }
 }
@@ -366,6 +382,7 @@ pub fn ssh_config_export_disable(
 
 #[tauri::command]
 pub async fn ssh_config_export_refresh(hosts: State<'_, HostsState>) -> CommandResult<()> {
+    hosts.open_ssh().wait_for_startup().await;
     let hosts = hosts.inner().clone();
     tauri::async_runtime::spawn_blocking(move || OpenSshSync::read_back(&hosts, false, None))
         .await
@@ -377,6 +394,7 @@ pub async fn ssh_config_sync_import(
     hosts: State<'_, HostsState>,
     approval: u64,
 ) -> CommandResult<()> {
+    hosts.open_ssh().wait_for_startup().await;
     let hosts = hosts.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         OpenSshSync::read_back(&hosts, false, Some(approval))

@@ -1,12 +1,11 @@
-import { Channel, invoke } from "@tauri-apps/api/core";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import type { Terminal as XTerm } from "@xterm/xterm";
 import { createStore } from "zustand/vanilla";
 import type { TrackedShell } from "@/features/terminal/shellIntegration";
 import { terminalOutputs } from "@/features/terminal/terminal-outputs";
-import type { connectPromptChannel } from "@/lib/ipc/connect";
 import { isTemporaryHost } from "@/lib/ipc/hosts";
-import { decodeTerminalMessage, drainTerminalWrites, type TerminalEvent, type TerminalId, type TerminalMessage, type TerminalSize } from "@/lib/ipc/terminal";
+import { drainTerminalWrites, type TerminalId, type TerminalSize } from "@/lib/ipc/terminal";
+import { cancelTabMove, completeTabMove, openTabMove, prepareTabMove, readIncomingTabMove } from "@/lib/ipc/windows";
 import { movedTabLayout, tabPanes, type Tab } from "./tabs";
 
 type TerminalState = {
@@ -109,7 +108,7 @@ export async function moveTabToNewWindow(tab: Tab): Promise<void> {
   }));
   let deadline: ReturnType<typeof setTimeout> | undefined;
   try {
-    await invoke("window_prepare_tab_move", { token, terminals: ids, temporaryHosts });
+    await prepareTabMove(token, ids, temporaryHosts);
     await Promise.race([
       drained.then(() => drainTerminalWrites(ids)),
       new Promise<never>((_, reject) => {
@@ -133,9 +132,9 @@ export async function moveTabToNewWindow(tab: Tab): Promise<void> {
         recording: output?.recording ?? false,
       } satisfies MovedPane];
     })) };
-    await invoke("window_open_tab_move", { token, payload });
+    await openTabMove(token, payload);
   } catch (error) {
-    await invoke("window_cancel_tab_move", { token }).catch(() => undefined);
+    await cancelTabMove(token).catch(() => undefined);
     throw error;
   } finally {
     clearTimeout(deadline);
@@ -152,14 +151,14 @@ let incoming: {
 
 /** The payload is delivered only to the new Window, and exists only during the handoff. */
 export async function incomingTabMove(): Promise<{ tab: Tab; ready: Promise<void> } | null> {
-  const move = await invoke<TabMove | null>("window_incoming_tab_move");
+  const move = await readIncomingTabMove<TabMove>();
   if (!move) return null;
   const waiting = new Set(Object.keys(move.panes));
   let finish!: () => void;
   const ready = new Promise<void>((resolve) => {
     finish = () => {
       // The native timeout closes a target that cannot adopt its tab.
-      void invoke<void>("window_complete_tab_move").then(resolve, () => undefined);
+      void completeTabMove().then(resolve, () => undefined);
     };
   });
   incoming = { move, waiting, ready, finish };
@@ -188,13 +187,4 @@ export async function restoreTerminalScreen(xterm: XTerm, moved: MovedPane, sign
   if (visible) xterm.resize(cols, rows);
   xterm.scrollToLine(xterm.buffer.active.baseY - moved.scrollOffset);
   xterm.options.disableStdin = false;
-}
-
-export async function stageMovedTerminal(
-  id: TerminalId,
-  onEvent: (event: TerminalEvent) => void,
-  onPrompt?: ReturnType<typeof connectPromptChannel>,
-): Promise<void> {
-  const events = new Channel<TerminalMessage>((message) => onEvent(decodeTerminalMessage(message)));
-  await invoke("window_stage_moved_terminal", { id, events, onPrompt });
 }

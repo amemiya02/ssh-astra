@@ -5,7 +5,8 @@ import { showToast } from "@/features/toasts/toastStore";
 import { useOsFileDrop } from "@/features/transfers/use-os-file-drop";
 import { BroadcastPaneContext } from "@/features/workspace/broadcast";
 import { TabActivityContext } from "@/features/workspace/tab-activity";
-import { incomingPane, movedTerminalReady, movingSourcePane, receiveMoveFence, registerMovableTerminal, restoreTerminalScreen, stageMovedTerminal } from "@/features/workspace/tab-window-move";
+import { incomingPane, movedTerminalReady, movingSourcePane, receiveMoveFence, registerMovableTerminal, restoreTerminalScreen } from "@/features/workspace/tab-window-move";
+import { stageMovedTerminal } from "@/lib/ipc/windows";
 import {
   closeTerminal,
   openLocalTerminal,

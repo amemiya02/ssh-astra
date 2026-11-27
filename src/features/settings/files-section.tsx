@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { filesSetting } from "@/features/files/file-prefs";
 import { useTerminalPrefs } from "@/features/terminal/terminal-prefs-context";
 import { showToast } from "@/features/toasts/toastStore";
+import { operatingSystem } from "@/features/workspace/shortcuts";
 import { pickOpenPath } from "@/lib/ipc/system";
 import { commitSetting, getSetting, useSetting } from "@/lib/storage";
 import { SettingRow } from "./SettingRow";
@@ -23,8 +24,9 @@ export function FilesSection() {
     try {
       let application = null;
       if (choose) {
-        const mac = /^Mac/i.test(navigator.platform);
-        const windows = /^Win/i.test(navigator.platform);
+        const platform = operatingSystem();
+        const mac = platform === "mac";
+        const windows = platform === "windows";
         application = await pickOpenPath({
           title: t("settings.files.remoteEditApplication.pickTitle"),
           defaultPath: mac ? "/Applications" : windows ? undefined : "/usr/share/applications",

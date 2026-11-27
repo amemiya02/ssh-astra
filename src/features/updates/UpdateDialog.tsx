@@ -6,11 +6,12 @@ import { InterruptionList } from "@/features/workspace/InterruptionList";
 import type { InterruptionCounts } from "@/features/workspace/interruption-counts";
 import { ReleaseNotes } from "./ReleaseNotes";
 
-export function UpdateDialog({ version, notes, failure, interruptions, onInstall }: {
+export function UpdateDialog({ version, notes, failure, interruptions, countingConnections, onInstall }: {
   version: string;
   notes?: string;
   failure?: string;
   interruptions: InterruptionCounts;
+  countingConnections: boolean;
   onInstall(): void;
 }) {
   const { t } = useTranslation();
@@ -40,7 +41,7 @@ export function UpdateDialog({ version, notes, failure, interruptions, onInstall
         <DialogClose asChild>
           <Button ref={later} variant="outline">{t("updates.later")}</Button>
         </DialogClose>
-        <Button onClick={onInstall}>{t("updates.install")}</Button>
+        <Button disabled={countingConnections} onClick={onInstall}>{t("updates.install")}</Button>
       </DialogFooter>
     </DialogContent>
   );

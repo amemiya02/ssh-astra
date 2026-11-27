@@ -28,7 +28,8 @@ import { reconnectTerminal, setTerminalTitle, type ConnectionState, type Termina
 import { transferHost } from "@/lib/ipc/transfers";
 import { useSetting } from "@/lib/storage";
 import type { ConnectionStatus, ReconnectProgress } from "@/features/workspace/tabs";
-import { incomingPane, stageMovedTerminal } from "@/features/workspace/tab-window-move";
+import { incomingPane } from "@/features/workspace/tab-window-move";
+import { stageMovedTerminal } from "@/lib/ipc/windows";
 import { TerminalSurface, type OpenTerminal } from "./TerminalSurface";
 
 /** The tab dot while a dropped Connection is retried. */

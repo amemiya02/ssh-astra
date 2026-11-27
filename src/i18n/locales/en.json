@@ -1506,7 +1506,7 @@
       },
       "autoLog": {
         "label": "Automatically write Terminal logs",
-        "description": "Save plain-text output from every new local or remote Terminal."
+        "description": "Save plain-text output from new Local terminals and Terminals on saved Hosts."
       },
       "logDirectory": {
         "label": "Terminal output folder",

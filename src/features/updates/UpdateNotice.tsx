@@ -1,11 +1,13 @@
+import { isTauri } from "@tauri-apps/api/core";
 import type { TFunction } from "i18next";
 import { X } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
 import type { InterruptionCounts } from "@/features/workspace/interruption-counts";
+import { countLiveConnections } from "@/lib/ipc/windows";
 import { UpdateDialog } from "./UpdateDialog";
 import { updatesStore, useUpdates, type UpdateStatus } from "./updatesStore";
 
@@ -46,6 +48,25 @@ export function UpdateNotice({ interruptions }: { interruptions: InterruptionCou
   const { t } = useTranslation();
   const status = useUpdates((s) => s.status);
   const { install, dismiss } = updatesStore.getState();
+  const [connectionsAtReview, setConnectionsAtReview] = useState<number>();
+  const [counting, setCounting] = useState(false);
+  const reviews = useRef(0);
+
+  function reviewChanged(open: boolean) {
+    const review = ++reviews.current;
+    setConnectionsAtReview(undefined);
+    const readCount = open && isTauri();
+    setCounting(readCount);
+    if (readCount) {
+      void countLiveConnections().then((count) => {
+        if (reviews.current === review) setConnectionsAtReview(count);
+      }).catch((error: unknown) => {
+        console.warn("Could not count live Connections before updating", error);
+      }).finally(() => {
+        if (reviews.current === review) setCounting(false);
+      });
+    }
+  }
 
   useEffect(() => {
     if (status.type !== "upToDate" && status.type !== "checkFailed") return;
@@ -61,7 +82,7 @@ export function UpdateNotice({ interruptions }: { interruptions: InterruptionCou
   return (
     <span role="status" className="flex min-w-0 shrink-0 items-center gap-1 border-r px-2.5 tabular-nums">
       {canInstall ? (
-        <Dialog>
+        <Dialog onOpenChange={reviewChanged}>
           <DialogTrigger asChild>
             <Button variant="ghost" size="xs" className="text-foreground h-5 min-w-0 font-medium" title={text}>
               <span className="max-w-48 truncate">{text}</span>
@@ -71,7 +92,8 @@ export function UpdateNotice({ interruptions }: { interruptions: InterruptionCou
             version={status.version}
             notes={status.notes}
             failure={status.type === "installFailed" ? status.reason : undefined}
-            interruptions={interruptions}
+            interruptions={{ ...interruptions, connections: connectionsAtReview ?? interruptions.connections }}
+            countingConnections={counting}
             onInstall={() => void install()}
           />
         </Dialog>

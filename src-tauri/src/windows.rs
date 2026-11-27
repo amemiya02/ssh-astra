@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use sshastra_core::edit::{EditOwner, RemoteEditor};
 use sshastra_core::files::{FsId, FsRegistry};
 use sshastra_core::hosts::HostId;
 use sshastra_core::settings::SettingsStore;
@@ -143,6 +144,7 @@ pub(crate) struct Windows {
 pub(crate) struct WindowResources {
     pub(crate) terminals: HashMap<TerminalId, Arc<TerminalRoute>>,
     pub(crate) files: HashSet<FsId>,
+    pub(crate) edits: Arc<EditOwner>,
     pub(crate) temporary_hosts: HashSet<HostId>,
     prompts: Arc<PendingPrompts>,
 }
@@ -521,6 +523,7 @@ pub(crate) fn destroyed(app: &AppHandle, label: &str) {
         }
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
+            app.state::<RemoteEditor>().close_owner(&resources.edits);
             let terminals = app.state::<TerminalRegistry>();
             for id in resources.terminals.into_keys() {
                 let _ = terminals.close(id);

@@ -15,7 +15,11 @@ function keyFocus(target: EventTarget | null): KeyFocus {
 }
 
 /** Dispatches window shortcuts and gives the Settings recorder first use of the same key presses. */
-export function useWorkspaceShortcuts(platform: Platform, run: (command: WorkspaceCommand) => void) {
+export function useWorkspaceShortcuts(
+  platform: Platform,
+  run: (command: WorkspaceCommand) => void,
+  onKeyGesture?: (event: KeyboardEvent) => void,
+) {
   const runRef = useRef(run);
   const capture = useRef<{ target: EventTarget; handler: Capture } | null>(null);
   const registerCapture = useCallback((target: EventTarget, handler: Capture) => {
@@ -31,6 +35,7 @@ export function useWorkspaceShortcuts(platform: Platform, run: (command: Workspa
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      onKeyGesture?.(event);
       if (event.isComposing) return;
       const recording = capture.current;
       if (recording && recording.target === event.target) {
@@ -47,7 +52,7 @@ export function useWorkspaceShortcuts(platform: Platform, run: (command: Workspa
     };
     window.addEventListener("keydown", onKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
-  }, [platform]);
+  }, [platform, onKeyGesture]);
 
   return useMemo(() => ({ platform, registerCapture }), [platform, registerCapture]);
 }

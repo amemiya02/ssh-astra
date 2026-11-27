@@ -1,9 +1,9 @@
-import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { paletteActions, useRegisteredActions } from "@/features/palette/palette-actions";
 import { selectAll } from "@/features/terminal/terminal-selection";
+import { setMacosMenu } from "@/lib/ipc/windows";
 import { shortcutLabel, type ResolvedShortcuts, type ShortcutName, type WorkspaceCommand } from "./shortcuts";
 
 // AppKit can display a key equivalent for these physical keys. For a chord
@@ -112,7 +112,7 @@ export function MacosMenu({ shortcuts, canClosePane, runWorkspaceCommand }: Maco
     const next = JSON.stringify(spec);
     if (lastSpec.current === next) return;
     lastSpec.current = next;
-    void invoke("macos_menu_set", { spec }).catch((error: unknown) => {
+    void setMacosMenu(spec).catch((error: unknown) => {
       if (lastSpec.current === next) lastSpec.current = undefined;
       console.warn("Could not update the macOS menu", error);
     });

@@ -48,13 +48,6 @@ impl CommandError {
         )
     }
 
-    pub fn ssh_link_target_changed() -> Self {
-        Self::new(
-            "sshLinkTargetChanged",
-            "the approved SSH destination changed",
-        )
-    }
-
     pub fn open_ssh_home_unavailable() -> Self {
         Self::new(
             "homeUnavailable",
@@ -301,6 +294,7 @@ impl From<ConnectError> for CommandError {
             AgentKeysRejected => Self::new("agentKeysRejected", &err),
             NoSupportedMethod { methods } => Self::new("noSupportedMethod", &err)
                 .with_details(json!({ "methods": methods.join(", ") })),
+            SshLinkTargetChanged => Self::new("sshLinkTargetChanged", &err),
             Cancelled => Self::new("cancelled", &err),
             Protocol(_) => Self::new("protocol", &err),
             JumpHost { .. } => unreachable!("unwrapped above"),

@@ -21,7 +21,7 @@ use serde::Serialize;
 use sshastra_core::agent::DirectoryRead;
 use sshastra_core::files::{FsError, SftpFs};
 use sshastra_core::hosts::HostId;
-use sshastra_core::ssh::{QuickConnectTarget, RemoteTerminal, RemoteTerminalOptions};
+use sshastra_core::ssh::{ConnectError, QuickConnectTarget, RemoteTerminal, RemoteTerminalOptions};
 use sshastra_core::terminal::{
     local_shell_command, local_shells, local_wsl_paths, ConnectionState, LocalPty, LocalShell,
     OutputKind, OutputStatus, SavedTerminalMetadata, ShellCommand, ShellIntegrationEvent,
@@ -35,7 +35,7 @@ use super::agent::PendingScreens;
 use super::command_history;
 use super::connections::{detect_os_on_current_connection, HostRoute};
 use super::settings::SettingsState;
-use crate::error::{CommandError, CommandResult};
+use crate::error::CommandResult;
 use crate::prompts::{ChannelPrompter, PromptAnswer, PromptEndpoint, PromptRequest};
 use crate::terminal_handoff::{TerminalDelivery, TerminalRoute};
 use crate::windows;
@@ -90,14 +90,13 @@ enum OutputMessage {
 fn terminal_output(
     host: &str,
     size: TerminalSize,
-    settings: &TerminalSettings,
-    directory: &TerminalOutputDirectory,
+    auto_log_directory: Option<PathBuf>,
     route: Arc<TerminalRoute>,
 ) -> Arc<TerminalOutput> {
     Arc::new(TerminalOutput::new(
         host,
         size,
-        settings.auto_log.then(|| directory.resolve(settings)),
+        auto_log_directory,
         move |kind, status| {
             let message = match kind {
                 OutputKind::Log => OutputMessage::TerminalLog(status),
@@ -204,11 +203,13 @@ pub async fn local_terminal_open(
         events: on_event,
         prompts: None,
     });
+    let settings = terminal_settings(&settings);
     let output = terminal_output(
         "Local",
         size,
-        &terminal_settings(&settings),
-        &output_directory,
+        settings
+            .auto_log
+            .then(|| output_directory.resolve(&settings)),
         route.clone(),
     );
     let pty = LocalPty::spawn(command, size, output.wrap(channel_sink(route.clone())))?;
@@ -272,16 +273,16 @@ pub async fn remote_terminal_open(
     expected_target: Option<QuickConnectTarget>,
 ) -> CommandResult<OpenedRemoteTerminal> {
     let app = window.app_handle().clone();
-    let route = Arc::new(HostRoute::lookup(&app, &host_id)?);
+    let route = Arc::new(HostRoute::lookup(&app, &host_id).await?);
     let host = route.host();
     // A saved Host may be edited in another window while link approval is pending.
-    if expected_target.is_some_and(|target| {
-        target.address != host.address
-            || target.port != host.port
-            || target.user.as_deref() != Some(host.user.as_str())
-    }) {
-        return Err(CommandError::ssh_link_target_changed());
+    if expected_target
+        .as_ref()
+        .is_some_and(|target| !target.matches_host(host))
+    {
+        return Err(ConnectError::SshLinkTargetChanged.into());
     }
+    let expected_target = expected_target.map(Arc::new);
     let saved_host = matches!(route.as_ref(), HostRoute::Saved(_));
     let channel_route = TerminalRoute::new(TerminalDelivery {
         webview: webview.label().into(),
@@ -310,14 +311,18 @@ pub async fn remote_terminal_open(
     let connect_app = app.clone();
     let connect = move || {
         let (app, route, prompter) = (connect_app.clone(), Arc::clone(&route), prompts.clone());
-        async move { route.connect(&app, prompter).await }
+        let expected_target = expected_target.clone();
+        async move {
+            route
+                .connect(&app, prompter, expected_target.as_deref())
+                .await
+        }
     };
     let settings = terminal_settings(&settings);
     let output = terminal_output(
         &host.name,
         size,
-        &settings,
-        &output_directory,
+        (saved_host && settings.auto_log).then(|| output_directory.resolve(&settings)),
         channel_route.clone(),
     );
     let mut options = RemoteTerminalOptions::for_host(&host, settings.shell_integration);

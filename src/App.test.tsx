@@ -699,6 +699,15 @@ it("opens the update dialog from the status bar and keeps the offer after Later"
   expect(relaunch).toHaveBeenCalledTimes(1);
 });
 
+it("counts Connections in other Windows before restarting", async () => {
+  enableDesktopWindow();
+  liveConnectionCount = 2;
+  offerUpdate();
+  await showUpdateNotice();
+  await clickButton("SSH Astra 1.2.3 is available");
+  expect(dialog()?.textContent).toContain("2 Connections");
+});
+
 it("counts live Connections, unfinished transfers, and running Port forwards before restarting", async () => {
   enableDesktopWindow();
   offerUpdate();

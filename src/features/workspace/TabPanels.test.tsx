@@ -150,6 +150,7 @@ describe("TabPanels", () => {
       send({ type: "open", tabId: "local", pane: local("local") });
       send({ type: "open", tabId: "second", pane: remote("second") });
       send({ type: "activate", id: "work" });
+      send({ type: "status", paneId: "second", status: "connected" });
       const group = container.querySelector<HTMLButtonElement>('button[aria-label="Tabs for Build server"]')!;
       const first = document.getElementById("tab-work")!;
       const second = document.getElementById("tab-second")!;
@@ -163,6 +164,8 @@ describe("TabPanels", () => {
       });
 
       expect(group.getAttribute("aria-expanded")).toBe("false");
+      expect(group.getAttribute("aria-label")).toContain("Connected");
+      expect(group.querySelector('[data-status="connected"]')).toBeTruthy();
       expect(second.closest("[hidden]")).toBeTruthy();
       expect(panel.hasAttribute("hidden")).toBe(false);
       expect(group.getAttribute("aria-label")).toContain("Unread Terminal output");

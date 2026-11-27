@@ -45,9 +45,9 @@ pub async fn files_connect(
     on_prompt: Channel<PromptRequest>,
 ) -> CommandResult<FsId> {
     let app = window.app_handle();
-    let route = HostRoute::lookup(app, &host_id)?;
+    let route = HostRoute::lookup(app, &host_id).await?;
     let prompter = Arc::new(ChannelPrompter::new(windows::prompts(&window)?, on_prompt));
-    let connection = route.connect(app, prompter).await?;
+    let connection = route.connect(app, prompter, None).await?;
     let fs = connection.open_sftp().await?;
     schedule_os_detection(app, &host_id, &connection);
     track_files(&window, &registry, registry.insert(Arc::new(fs)))
