@@ -8,6 +8,7 @@ const MISSING_TOOL: u32 = 81;
 const MISSING_MKTEMP: u32 = 82;
 const MISSING_LINK: u32 = 83;
 const NOT_A_FILE: u32 = 84;
+const INCOMPLETE: u32 = 85;
 
 const STAGING: &str = r#"
 command -v mktemp >/dev/null 2>&1 || exit 82
@@ -109,15 +110,22 @@ if ! command mkdir -m 700 "$destination"; then
     occupied "$destination" && exit 80
     exit 1
 fi
-if (umask 077; cd "$destination" && {expand}) 3< "$archive"; then
+parent=$PWD
+if (
+    umask 077
+    cd -P "$destination" || exit 1
+    [ "$PWD" = "${{parent%/}}/${{destination#./}}" ] || exit 1
+    {expand}
+) 3< "$archive"; then
     exit 0
 fi
-command rm -rf "$destination"
-exit 1
+exit 85
 "#
     );
     // The extractors' normal path checks remain enabled inside a newly
     // created private directory. Never extract through an existing path.
+    // Failed extraction leaves its output for inspection instead of deleting
+    // a public path that could have been changed concurrently.
     run(connection, directory, destination, tool, &script, [archive]).await
 }
 
@@ -140,7 +148,7 @@ async fn run<'a>(
         r#"
 unset CDPATH TAR_OPTIONS GZIP UNZIP UNZIPOPT
 command -v {tool} >/dev/null 2>&1 || exit 81
-cd "$1" || exit 1
+cd -P "$1" || exit 1
 shift
 occupied() {{ [ -e "$1" ] || [ -L "$1" ]; }}
 {body}
@@ -167,6 +175,10 @@ occupied() {{ [ -e "$1" ] || [ -L "$1" ]; }}
         MISSING_MKTEMP => Err(FsError::ArchiveToolMissing("mktemp")),
         MISSING_LINK => Err(FsError::ArchiveToolMissing("link")),
         NOT_A_FILE => Err(FsError::ArchiveNotAFile),
+        INCOMPLETE => Err(FsError::ArchiveIncomplete {
+            path: join(directory, destination),
+            message: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+        }),
         status => {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let stderr = stderr.trim();

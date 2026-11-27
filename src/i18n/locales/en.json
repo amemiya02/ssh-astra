@@ -391,6 +391,7 @@
       "archiveUnsupported": "The archive format for “{{path}}” is unsupported.",
       "archiveNotAFile": "The archive is missing or is not a file.",
       "archiveUnavailable": "Archive operations require an SSH Connection.",
+      "archiveIncomplete": "Extraction stopped. Partial contents may remain in “{{path}}”. {{message}}",
       "archiveFailed": "The archive operation failed. {{message}}",
       "moveIntoSelf": "A folder cannot be moved into itself.",
       "notOpen": "The File panel is not connected.",

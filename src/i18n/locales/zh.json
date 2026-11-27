@@ -391,6 +391,7 @@
       "archiveUnsupported": "不支持「{{path}}」的压缩包格式。",
       "archiveNotAFile": "压缩包不存在或不是文件。",
       "archiveUnavailable": "压缩和解压需要 SSH 连接。",
+      "archiveIncomplete": "解压已中止。「{{path}}」中可能留有部分内容。{{message}}",
       "archiveFailed": "压缩包操作失败。{{message}}",
       "moveIntoSelf": "不能将文件夹移入自身。",
       "notOpen": "File panel 未连接。",

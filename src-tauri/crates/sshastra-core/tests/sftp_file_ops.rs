@@ -571,3 +571,25 @@ async fn missing_unzip_reports_the_tool_and_leaves_no_destination() {
     );
     assert_eq!(names(&fs.list_dir(&root).await.unwrap()), ["example.zip"]);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn failed_extraction_reports_the_new_folder_without_deleting_it() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let (fs, root, _dir) = scratch(&sshd).await;
+    let source = files::join(&root, "corrupt.tar");
+    let target = files::join(&root, "corrupt");
+    fs.write_file(&source, b"incomplete archive").await.unwrap();
+
+    assert!(matches!(
+        fs.extract_archive(&root, "corrupt.tar").await,
+        Err(FsError::ArchiveIncomplete { path, .. }) if path == target
+    ));
+    assert_eq!(fs.lstat(&target).await.unwrap().kind, FileKind::Dir);
+    assert_eq!(fs.read_file(&source).await.unwrap(), b"incomplete archive");
+    assert_eq!(
+        fs.extract_archive(&root, "corrupt.tar").await,
+        Err(FsError::AlreadyExists(target))
+    );
+}

@@ -138,8 +138,13 @@ impl From<FsError> for CommandError {
             ArchiveUnavailable => Self::new("archiveUnavailable", &err),
             ArchiveUnsupported(p) => Self::new("archiveUnsupported", &err).with_details(path(p)),
             ArchiveNotAFile => Self::new("archiveNotAFile", &err),
-            ArchiveToolMissing(tool) => Self::new("archiveToolMissing", &err).with_details(json!({ "tool": tool })),
+            ArchiveToolMissing(tool) => {
+                Self::new("archiveToolMissing", &err).with_details(json!({ "tool": tool }))
+            }
             ArchiveFailed(_) => Self::new("archiveFailed", &err),
+            ArchiveIncomplete { path: p, .. } => {
+                Self::new("archiveIncomplete", &err).with_details(path(p))
+            }
             TooLarge { path, limit } => {
                 let details = json!({ "path": path, "limit": limit });
                 Self::new("tooLarge", &err).with_details(details)

@@ -48,6 +48,8 @@ export function operationErrorText(t: TFunction, error: CommandError): string {
       return t("files.operationErrors.archiveNotAFile");
     case "archiveUnavailable":
       return t("files.operationErrors.archiveUnavailable");
+    case "archiveIncomplete":
+      return t("files.operationErrors.archiveIncomplete", { path, message: error.message });
     case "archiveFailed":
       return t("files.operationErrors.archiveFailed", { message: error.message });
     case "moveIntoSelf":

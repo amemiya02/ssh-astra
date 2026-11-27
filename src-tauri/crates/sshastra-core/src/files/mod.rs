@@ -154,6 +154,8 @@ pub enum FsError {
     ArchiveToolMissing(&'static str),
     #[error("{0}")]
     ArchiveFailed(String),
+    #[error("{message}")]
+    ArchiveIncomplete { path: String, message: String },
     /// A file bigger than a whole-file read allows ([`READ_FILE_LIMIT`]).
     #[error("{path} is larger than {limit} bytes")]
     TooLarge { path: String, limit: u64 },
@@ -184,6 +186,7 @@ impl FsError {
             Self::ArchiveNotAFile => "archiveNotAFile",
             Self::ArchiveToolMissing(_) => "archiveToolMissing",
             Self::ArchiveFailed(_) => "archiveFailed",
+            Self::ArchiveIncomplete { .. } => "archiveIncomplete",
             Self::TooLarge { .. } => "tooLarge",
             Self::TimedOut => "timedOut",
             Self::Protocol(_) => "protocol",
