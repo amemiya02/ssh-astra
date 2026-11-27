@@ -20,6 +20,7 @@ const entry = (name: string, kind: FileEntry["kind"] = "file"): FileEntry => ({
 });
 
 const listings: Record<string, Listing> = {
+  "/": { path: "/", entries: [entry("big", "dir")] },
   "/big": {
     path: "/big",
     entries: [entry("sub", "dir"), ...Array.from({ length: 10_000 }, (_, i) => entry(`f${String(i).padStart(5, "0")}`))],
@@ -30,7 +31,7 @@ const listings: Record<string, Listing> = {
 const api: FilesApi = {
   openFiles: vi.fn(() => Promise.resolve(1)),
   listFiles: vi.fn((_id: number, path: string) => {
-    const listing = listings[path === "" ? "/big" : path];
+    const listing = listings[path === "" || path === "~" ? "/big" : path.replace(/^~\//, "/big/")];
     return listing ? Promise.resolve(listing) : Promise.reject({ kind: "notFound", message: "no", details: { path } });
   }),
   closeFiles: vi.fn(() => Promise.resolve()),
@@ -93,6 +94,9 @@ const button = (label: string) =>
   [...(dialog()?.querySelectorAll("button") ?? [])].find((b) => b.textContent === label)!;
 const press = (key: string) =>
   container.querySelector('[role="grid"]')!.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+const pathButton = (label: string) =>
+  container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+const pathInput = () => container.querySelector<HTMLInputElement>('input[aria-label="Path"]')!;
 
 describe("FileBrowser", () => {
   it("renders only a window of a 10,000-entry folder, folders first", async () => {
@@ -118,20 +122,76 @@ describe("FileBrowser", () => {
     expect(rows().map((r) => r.textContent)).toEqual([expect.stringContaining("inner.txt")]);
   });
 
-  it("goes to a typed path and shows why one cannot be opened", async () => {
+  it("opens a directory by clicking its breadcrumb", async () => {
     const { store } = await render();
-    const input = container.querySelector<HTMLInputElement>('input[aria-label="Path"]')!;
-    const type = (value: string) => {
-      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
-      setter.call(input, value);
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    };
+    await act(async () => store.getState().navigate("/big/sub"));
 
-    act(() => type("/missing"));
-    await act(async () => input.form!.requestSubmit());
+    const crumb = (label: string) => [...container.querySelectorAll<HTMLButtonElement>('nav[aria-label="Path"] button')]
+      .find((candidate) => candidate.textContent === label)!;
+    expect(crumb("sub").getAttribute("aria-current")).toBe("location");
+    await act(async () => crumb("big").click());
+    expect(store.getState().path).toBe("/big");
+    await act(async () => crumb("/").click());
+    expect(store.getState().path).toBe("/");
+  });
+
+  it("edits the path on demand and shows why a typed path cannot be opened", async () => {
+    const { store } = await render();
+    const submit = (value: string) => act(async () => {
+      const input = pathInput();
+      type(input, value);
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    });
+
+    expect(pathInput()).toBeNull();
+    act(() => pathButton("Edit path").click());
+    expect(pathInput().value).toBe("/big");
+    expect(document.activeElement).toBe(pathInput());
+    await submit("/missing");
 
     expect(store.getState().path).toBe("/big");
     expect(container.querySelector('[role="alert"]')!.textContent).toBe("No such folder: /missing");
+    await submit("~/sub");
+    expect(store.getState().path).toBe("/big/sub");
+    expect(pathInput()).toBeNull();
+    act(() => pathButton("Edit path").click());
+    await submit("~");
+    expect(store.getState().path).toBe("/big");
+    act(() => pathButton("Edit path").click());
+    await submit("/big/sub");
+    expect(store.getState().path).toBe("/big/sub");
+  });
+
+  it("uses history buttons and keeps history shortcuts within the focused File panel", async () => {
+    const { store } = await render();
+    expect(pathButton("Back").disabled).toBe(true);
+    await act(async () => store.getState().navigate("/big/sub"));
+    await act(async () => store.getState().navigate("/"));
+    await act(async () => pathButton("Back").click());
+    expect(store.getState().path).toBe("/big/sub");
+    await act(async () => pathButton("Forward").click());
+    expect(store.getState().path).toBe("/");
+
+    const historyKey = (target: Element, key = "ArrowLeft") => target.dispatchEvent(new KeyboardEvent("keydown", {
+      key, code: key, altKey: true, bubbles: true, cancelable: true,
+    }));
+    const terminal = document.createElement("textarea");
+    terminal.className = "xterm";
+    container.append(terminal);
+    act(() => terminal.focus());
+    expect(historyKey(terminal)).toBe(true);
+    expect(store.getState().path).toBe("/");
+
+    act(() => pathButton("Edit path").click());
+    expect(historyKey(pathInput())).toBe(true);
+    expect(store.getState().path).toBe("/");
+    act(() => container.querySelector<HTMLElement>('[role="grid"]')!.focus());
+    await act(async () => expect(historyKey(document.activeElement!)).toBe(false));
+    expect(store.getState().path).toBe("/big/sub");
+    await act(async () => expect(historyKey(document.activeElement!)).toBe(false));
+    expect(store.getState().path).toBe("/big");
+    await act(async () => expect(historyKey(document.activeElement!, "ArrowRight")).toBe(false));
+    expect(store.getState().path).toBe("/big/sub");
   });
 
   it("asks before deleting, saying how many entries will go", async () => {
