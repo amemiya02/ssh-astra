@@ -51,7 +51,7 @@ export const settingRows = {
     { en: "workspace disconnect warning unsaved prompt", zh: "工作区 断开 警告 提示", "zh-Hant": "工作區 中斷 警告 提示" }, "settings.confirmClose.description",
   ),
   confirmQuit: row("appearance", "settings.confirmQuit.label",
-    { en: "workspace exit disconnect warning shutdown prompt", zh: "工作区 退出 断开 警告 提示" }, "settings.confirmQuit.description",
+    { en: "workspace exit disconnect warning shutdown prompt", zh: "工作区 退出 断开 警告 提示", "zh-Hant": "工作區 離開 結束 中斷 警告 提示" }, "settings.confirmQuit.description",
   ),
 
   font: row("terminal", "settings.terminal.font.label",

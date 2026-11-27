@@ -952,6 +952,10 @@
       "label": "關閉終端機前確認",
       "description": "關閉已連線的遠端終端機前詢問。"
     },
+    "confirmQuit": {
+      "label": "結束應用程式前確認",
+      "description": "如果仍有連線、傳輸或連接埠轉送進行中，結束時會要求確認。"
+    },
     "tabOrientation": {
       "label": "分頁方向",
       "description": "將分頁排列在工作區頂部或左側。",
@@ -1221,12 +1225,21 @@
     "releaseNotes": "發佈說明",
     "noReleaseNotes": "此版本暫無發佈說明。",
     "interruptions": "重新啟動將中斷以下活動。",
+    "later": "稍後",
+    "dismiss": "關閉"
+  },
+  "interruptions": {
     "connections_one": "{{count}} 個連線",
     "connections_other": "{{count}} 個連線",
     "transfers_one": "{{count}} 項傳輸",
-    "transfers_other": "{{count}} 項傳輸",
-    "later": "以後",
-    "dismiss": "關閉"
+    "transfers_other": "{{count}} 項傳輸"
+  },
+  "quit": {
+    "title": "結束 SSH Astra？",
+    "interruptions": "結束將中斷以下活動。",
+    "confirm": "結束",
+    "menuFile": "檔案",
+    "menuQuit": "結束 SSH Astra"
   },
   "rail": {
     "home": "首頁",
