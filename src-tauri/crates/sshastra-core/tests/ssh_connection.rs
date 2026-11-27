@@ -228,6 +228,87 @@ fn password_question(sshd: &Sshd, retry: bool) -> String {
 }
 
 #[tokio::test]
+async fn measures_the_existing_keepalive_and_sends_none_when_disabled() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpStream;
+
+    // The mixed OpenSSH fixture logs global requests at DEBUG1 and responds to
+    // keepalive@openssh.com with SSH_MSG_REQUEST_FAILURE.
+    let Some(sshd) = support::sshd(Service::Mixed) else {
+        return;
+    };
+    let requests = || {
+        sshd.logs()
+            .matches("rtype keepalive@openssh.com want_reply 1")
+            .count()
+    };
+    let before = requests();
+    let known_hosts = KnownHostsFile::empty();
+    let manager = known_hosts.manager();
+    manager.set_keepalive_interval(Some(Duration::from_secs(2)));
+    let delay = Duration::from_millis(100);
+    let delay_replies = Arc::new(AtomicBool::new(false));
+    let proxy = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let proxy_address = proxy.local_addr().unwrap();
+    let destination = (sshd.host.clone(), sshd.port);
+    let delayed = Arc::clone(&delay_replies);
+    let relay = tokio::spawn(async move {
+        let (client, _) = proxy.accept().await.unwrap();
+        let server = TcpStream::connect(destination).await.unwrap();
+        let (mut from_client, mut to_client) = client.into_split();
+        let (mut from_server, mut to_server) = server.into_split();
+        let replies = async {
+            let mut buffer = [0; 4096];
+            loop {
+                let size = from_server.read(&mut buffer).await?;
+                if size == 0 {
+                    return Ok(());
+                }
+                if delayed.load(Ordering::Relaxed) {
+                    tokio::time::sleep(delay).await;
+                }
+                to_client.write_all(&buffer[..size]).await?;
+            }
+        };
+        let _ = tokio::try_join!(tokio::io::copy(&mut from_client, &mut to_server), replies);
+    });
+    let target = host_at("127.0.0.1", proxy_address.port(), sshd.user);
+    let connection = manager
+        .connect(&target, ScriptedPrompter::trusting(&sshd))
+        .await
+        .unwrap();
+    let mut samples = connection.watch_keepalive_rtt().unwrap();
+    delay_replies.store(true, Ordering::Relaxed);
+    let sample = *tokio::time::timeout(Duration::from_secs(5), samples.wait_for(Option::is_some))
+        .await
+        .expect("the idle keepalive received a reply")
+        .unwrap();
+    assert!(
+        sample.unwrap() >= delay,
+        "the SSH reply was delayed by {delay:?}"
+    );
+    drop(connection);
+    relay.abort();
+    assert_eq!(requests(), before + 1, "one request for one latency sample");
+
+    let mut target = host(&sshd);
+    target.keepalive_seconds = Some(0);
+    let connection = manager
+        .connect(&target, ScriptedPrompter::trusting(&sshd))
+        .await
+        .unwrap();
+    assert!(connection.watch_keepalive_rtt().is_none());
+    tokio::time::sleep(Duration::from_millis(2250)).await;
+    drop(connection);
+    assert_eq!(
+        requests(),
+        before + 1,
+        "disabled keepalives do not send packets"
+    );
+}
+
+#[tokio::test]
 async fn legacy_algorithms_require_opt_in_before_host_key_verification_and_login() {
     let Some(sshd) = support::sshd(Service::Legacy) else {
         return;
@@ -1333,8 +1414,10 @@ async fn an_unreachable_second_jump_host_is_named_in_the_error() {
 
 #[tokio::test]
 async fn resource_panel_samples_and_stops_its_process_when_hidden() {
-    use sshastra_core::monitor::{watch_resources, ResourceEvent, ResourceSnapshot};
-    use tokio::sync::{mpsc, oneshot};
+    use sshastra_core::monitor::{
+        watch_resources, ResourceEvent, ResourceInterval, ResourceSnapshot,
+    };
+    use tokio::sync::{mpsc, oneshot, watch};
 
     let Some(sshd) = support::sshd(Service::Ssh) else {
         return;
@@ -1354,10 +1437,11 @@ async fn resource_panel_samples_and_stops_its_process_when_hidden() {
     done
     true"#;
     let (stop, stopped) = oneshot::channel();
+    let (set_interval, interval) = watch::channel(ResourceInterval::default());
     let (events, mut snapshots) = mpsc::unbounded_channel();
     let live = Arc::clone(&connection);
     let task = tokio::spawn(async move {
-        watch_resources(&live, stopped, |event| events.send(event).is_ok()).await;
+        watch_resources(&live, stopped, interval, |event| events.send(event).is_ok()).await;
     });
 
     async fn snapshot(events: &mut mpsc::UnboundedReceiver<ResourceEvent>) -> ResourceSnapshot {
@@ -1393,12 +1477,26 @@ async fn resource_panel_samples_and_stops_its_process_when_hidden() {
         .iter()
         .all(|link| link.receive_rate.is_some() && link.send_rate.is_some()));
 
+    set_interval.send(ResourceInterval::FiveSeconds).unwrap();
     let running = connection.exec(sampler_pids).await.unwrap();
     assert_eq!(running.status, 0);
-    assert_eq!(
-        String::from_utf8(running.stdout).unwrap().lines().count(),
-        1
+    assert_eq!(String::from_utf8_lossy(&running.stdout).lines().count(), 1);
+
+    assert!(
+        tokio::time::timeout(Duration::from_millis(2500), snapshots.recv())
+            .await
+            .is_err()
     );
+    set_interval.send(ResourceInterval::OneSecond).unwrap();
+    let faster = tokio::time::timeout(Duration::from_millis(1800), snapshot(&mut snapshots))
+        .await
+        .expect("the shorter interval should replace the old deadline");
+    assert!(faster.cpu_percent.is_some());
+    assert_eq!(
+        connection.exec(sampler_pids).await.unwrap().stdout,
+        running.stdout
+    );
+
     drop(stop); // The same cancellation used when the panel hides.
     tokio::time::timeout(Duration::from_secs(5), task)
         .await

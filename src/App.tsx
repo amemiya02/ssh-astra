@@ -30,6 +30,7 @@ import { usePaletteActions, type PaletteAction } from "@/features/palette/palett
 import { DiagnosticsPaletteActions } from "@/features/settings/diagnostics-section";
 import { AppShell } from "@/features/shell/AppShell";
 import { TerminalDock } from "@/features/resources/TerminalDock";
+import type { ResourceHistories } from "@/features/resources/resource-history";
 import { SnippetsSidebar } from "@/features/snippets/SnippetsSidebar";
 import { zoomTerminalFont } from "@/features/terminal/terminal-prefs";
 import { useTerminalPrefs } from "@/features/terminal/terminal-prefs-context";
@@ -106,6 +107,7 @@ export function App({ initialTabs, startupTabsAcrossWindows, incomingMove }: {
   const { prefs: { titleSource } } = useTerminalPrefs();
   const [state, dispatch] = useReducer(tabsReducer, initialTabs);
   const { tabs, activeId } = state;
+  const [resourceHistories] = useState<ResourceHistories>(() => new Map());
   const [moving, setMoving] = useState(incomingMove !== undefined);
   const moveInProgress = useRef(incomingMove !== undefined);
   useEffect(() => {
@@ -505,6 +507,15 @@ export function App({ initialTabs, startupTabsAcrossWindows, incomingMove }: {
       ? [{ id: pane.id, host: pane.host, status: pane.status }]
       : []), [tabs]);
   useRetainRemoteFilePanels(remoteTerminalPaneIds(state));
+  useEffect(() => {
+    if (!resourceHistories.size) return;
+    const connectedGenerations = new Map(tabs.flatMap(tabPanes).flatMap((pane) =>
+      pane.kind === "remote-terminal" && pane.status === "connected" && pane.terminalId !== undefined
+        ? [[pane.terminalId, pane.connectionGeneration ?? 0] as const] : []));
+    for (const [id, history] of resourceHistories) {
+      if (connectedGenerations.get(id) !== history.generation) resourceHistories.delete(id);
+    }
+  }, [resourceHistories, tabs]);
 
   return (
     <ShortcutCaptureContext.Provider value={shortcutCapture}>
@@ -592,6 +603,7 @@ export function App({ initialTabs, startupTabsAcrossWindows, incomingMove }: {
           <TerminalDock
             terminalId={focusedPane.status === "connected" ? focusedPane.terminalId ?? null : null}
             generation={focusedPane.connectionGeneration}
+            histories={resourceHistories}
             resources={focusedPane.showResources === true}
             paused={moving}
             onSelect={(show) => dispatch({ type: "showResources", paneId: focusedPane.id, show })}
@@ -607,6 +619,10 @@ export function App({ initialTabs, startupTabsAcrossWindows, incomingMove }: {
           transfers,
           updateNotice: <UpdateNotice interruptions={interruptions} />,
           activeRemote: focusedPane?.kind === "remote-terminal" ? focusedPane.host : null,
+          activeTerminal: !moving && focusedPane?.kind === "remote-terminal"
+            && focusedPane.status === "connected" && focusedPane.terminalId !== undefined
+            ? { id: focusedPane.terminalId, generation: focusedPane.connectionGeneration ?? 0 }
+            : undefined,
           saveTemporaryHost: focusedTemporaryHost && (() => hostsController.openTemporaryHostEditor(focusedTemporaryHost)),
           broadcast: broadcastMode && {
             scope: broadcastMode.scope,

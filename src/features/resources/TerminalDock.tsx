@@ -6,6 +6,7 @@ import { IconButton } from "@/components/IconButton";
 import { FilePanelDockContext, useFilePanelDock } from "@/features/shell/file-panel-dock";
 import type { TerminalId } from "@/lib/ipc/terminal";
 import { ResourcePanel } from "./ResourcePanel";
+import type { ResourceHistories } from "./resource-history";
 
 const tabStyle = "h-full border-b-2 border-transparent px-2 pt-0.5 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[state=active]:border-primary data-[state=active]:text-foreground";
 
@@ -16,8 +17,9 @@ function subscribePageVisibility(changed: () => void) {
 }
 
 /** The two views available in a remote Terminal's dock. */
-export function TerminalDock({ terminalId, generation, resources, paused, onSelect, children }: {
+export function TerminalDock({ terminalId, generation = 0, histories, resources, paused, onSelect, children }: {
   generation?: number;
+  histories: ResourceHistories;
   terminalId: TerminalId | null;
   resources: boolean;
   paused: boolean;
@@ -45,7 +47,7 @@ export function TerminalDock({ terminalId, generation, resources, paused, onSele
         {resources && !collapsed && !paused && visible && (
           terminalId === null
             ? <p className="text-muted-foreground p-4 text-sm" role="status">{t("resources.connect")}</p>
-            : <ResourcePanel key={`${terminalId}:${generation ?? 0}`} terminalId={terminalId} />
+            : <ResourcePanel key={`${terminalId}:${generation}`} terminalId={terminalId} generation={generation} histories={histories} />
         )}
       </Tabs.Content>
     </Tabs.Root>

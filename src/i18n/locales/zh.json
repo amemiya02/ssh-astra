@@ -505,6 +505,14 @@
     "unsupported": "此系统不支持。",
     "unavailable": "无法读取资源。",
     "waiting": "正在测量…",
+    "sampleInterval": "采样间隔",
+    "sampleSeconds_one": "{{count}} 秒",
+    "sampleSeconds_other": "{{count}} 秒",
+    "trends": "最近五分钟",
+    "loadTrend": "负载（1 分钟）",
+    "receiveTrend": "网络接收",
+    "sendTrend": "网络发送",
+    "trendRange": "最近五分钟内，{{metric}}介于 {{low}} 和 {{high}} 之间",
     "cpu": "CPU",
     "cpuValue_one": "{{usage}} · {{count}} 核",
     "cpuValue_other": "{{usage}} · {{count}} 核",
@@ -915,6 +923,9 @@
   },
   "status": {
     "noConnections": "没有连接",
+    "latency": "延迟 {{milliseconds, number}} 毫秒",
+    "latencyUnavailable": "延迟不可用",
+    "latencyHint": "上次 SSH 保活的往返时间",
     "connectedTo": "已连接：{{hosts}}",
     "reconnecting": "正在重新连接 {{host}}（{{attempt}}/{{attempts}}）",
     "forwards": "端口转发：{{list}}",
@@ -1406,6 +1417,10 @@
           "shell": "Shell 标题",
           "host": "Host 名称"
         }
+      },
+      "showLatency": {
+        "label": "显示连接延迟",
+        "description": "在状态栏显示当前远程终端的 SSH 保活往返时间。"
       },
       "bell": {
         "label": "终端响铃",

@@ -505,6 +505,14 @@
     "unsupported": "This system is unsupported.",
     "unavailable": "Could not read resources.",
     "waiting": "Measuring…",
+    "sampleInterval": "Sampling interval",
+    "sampleSeconds_one": "{{count}} second",
+    "sampleSeconds_other": "{{count}} seconds",
+    "trends": "Last five minutes",
+    "loadTrend": "Load (1 min)",
+    "receiveTrend": "Network receive",
+    "sendTrend": "Network send",
+    "trendRange": "{{metric}} ranged from {{low}} to {{high}} over the last five minutes",
     "cpu": "CPU",
     "cpuValue_one": "{{usage}} · {{count}} core",
     "cpuValue_other": "{{usage}} · {{count}} cores",
@@ -915,6 +923,9 @@
   },
   "status": {
     "noConnections": "No Connections",
+    "latency": "Latency {{milliseconds, number}} ms",
+    "latencyUnavailable": "Latency unavailable",
+    "latencyHint": "Round-trip time of the last SSH keepalive",
     "connectedTo": "Connected to {{hosts}}",
     "reconnecting": "Reconnecting to {{host}} ({{attempt}}/{{attempts}})",
     "forwards": "Port forwards: {{list}}",
@@ -1406,6 +1417,10 @@
           "shell": "Shell title",
           "host": "Host name"
         }
+      },
+      "showLatency": {
+        "label": "Show Connection latency",
+        "description": "Show the focused remote Terminal’s SSH keepalive round-trip time in the status bar."
       },
       "bell": {
         "label": "Terminal bell",

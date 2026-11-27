@@ -156,6 +156,18 @@ export function resizeTerminal(id: TerminalId, size: TerminalSize): Promise<void
   return invoke("terminal_resize", { id, size });
 }
 
+/** Streams the latest keepalive round-trip time in milliseconds for this Terminal's Connection. */
+export function watchTerminalLatency(id: TerminalId, emit: (milliseconds: number | null) => void): () => void {
+ let active = true;
+  const onSample = new Channel<number | null>((sample) => { if (active) emit(sample); });
+  const started = invoke<void>("terminal_latency_start", { id, onSample });
+  void started.catch(() => { if (active) emit(null); });
+  return () => {
+    active = false;
+    void started.then(() => invoke("terminal_latency_stop", { id, subscription: onSample.id })).catch(() => undefined);
+  };
+}
+
 /** Tries a remote Terminal's dropped Connection again now. */
 export function reconnectTerminal(id: TerminalId): Promise<void> {
   return invoke("terminal_reconnect", { id });
