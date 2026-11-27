@@ -1,5 +1,5 @@
 //! Port forward commands: the rules saved on a Host (HostStore) and starting
-//! and stopping them (PortForwarder). State changes are pushed to the single
+//! and stopping them (PortForwarder). State changes are pushed to each Window’s
 //! channel registered with `forwards_watch`.
 
 use std::sync::Arc;
@@ -8,12 +8,13 @@ use super::watch::Watcher;
 use sshastra_core::forward::{ForwardDraft, ForwardEvent, ForwardId, PortForward, PortForwarder};
 use sshastra_core::hosts::HostId;
 use tauri::ipc::Channel;
-use tauri::{AppHandle, State};
+use tauri::{Manager, State, WebviewWindow};
 
 use super::connections::{connect_host, schedule_os_detection};
 use super::hosts::HostsState;
 use crate::error::{CommandError, CommandResult};
-use crate::prompts::{ChannelPrompter, PendingPrompts, PromptRequest};
+use crate::prompts::{ChannelPrompter, PromptRequest};
+use crate::windows;
 
 /// The app's PortForwarder and the channel its state changes go to.
 pub struct ForwardsState {
@@ -32,16 +33,23 @@ impl Default for ForwardsState {
     }
 }
 
+impl ForwardsState {
+    pub(crate) fn unwatch(&self, label: &str) {
+        self.watcher.unsubscribe(label);
+    }
+}
+
 /// Sends every later state change to `on_event` (replacing any earlier
-/// channel, e.g. after a reload) and returns the rules running or failed now.
+/// channel for the same Window, e.g. after a reload) and returns the rules running or failed now.
 #[tauri::command]
 pub fn forwards_watch(
+    window: WebviewWindow,
     forwards: State<'_, ForwardsState>,
     on_event: Channel<ForwardEvent>,
 ) -> Vec<ForwardEvent> {
     forwards
         .watcher
-        .subscribe(on_event, || forwards.forwarder.list())
+        .subscribe(window.label(), on_event, || forwards.forwarder.list())
 }
 
 /// Adds a rule to Host `host_id` (`id` omitted) or replaces its rule `id`.
@@ -53,7 +61,7 @@ pub fn forward_save(
     id: Option<ForwardId>,
     draft: ForwardDraft,
 ) -> CommandResult<PortForward> {
-    hosts.with(|store| Ok(store.save_forward(&host_id, id, draft)?))
+    hosts.edit(|store| Ok(store.save_forward(&host_id, id, draft)?))
 }
 
 /// Stops and deletes Host `host_id`'s rule `id`.
@@ -64,7 +72,7 @@ pub fn forward_delete(
     host_id: HostId,
     id: ForwardId,
 ) -> CommandResult<()> {
-    hosts.with(|store| Ok(store.delete_forward(&host_id, &id)?))?;
+    hosts.edit(|store| Ok(store.delete_forward(&host_id, &id)?))?;
     forwards.forwarder.forget(&id);
     Ok(())
 }
@@ -75,13 +83,13 @@ pub fn forward_delete(
 #[tauri::command]
 pub async fn forward_start(
     hosts: State<'_, HostsState>,
-    app: AppHandle,
+    window: WebviewWindow,
     forwards: State<'_, ForwardsState>,
-    pending: State<'_, Arc<PendingPrompts>>,
     host_id: HostId,
     id: ForwardId,
     on_prompt: Channel<PromptRequest>,
 ) -> CommandResult<()> {
+    let app = window.app_handle();
     let mut hops = hosts.with(|store| {
         let hops = store.jump_chain(&host_id)?;
         if !hops
@@ -94,11 +102,11 @@ pub async fn forward_start(
     })?;
     let host = hops.pop().expect("a jump chain ends with the Host itself");
     let prompter = Arc::new(ChannelPrompter {
-        pending: Arc::clone(&pending),
+        pending: windows::prompts(&window)?,
         channel: on_prompt,
     });
-    let connection = connect_host(&app, &hops, &host, prompter).await?;
-    schedule_os_detection(&app, &host.id, &connection);
+    let connection = connect_host(app, &hops, &host, prompter).await?;
+    schedule_os_detection(app, &host.id, &connection);
     let start = hosts.with(|store| {
         let rule = store
             .get(&host_id)

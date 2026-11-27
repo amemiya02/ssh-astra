@@ -27,14 +27,15 @@ use sshastra_core::terminal::{
     REPORT_CWD,
 };
 use tauri::ipc::{Channel, InvokeResponseBody};
-use tauri::{AppHandle, State, Webview};
+use tauri::{Manager, State, Webview, WebviewWindow};
 
 use super::agent::PendingScreens;
 use super::command_history;
 use super::connections::{detect_os_on_current_connection, HostRoute};
 use super::settings::SettingsState;
 use crate::error::CommandResult;
-use crate::prompts::{ChannelPrompter, PendingPrompts, PromptAnswer, PromptRequest};
+use crate::prompts::{ChannelPrompter, PromptAnswer, PromptRequest};
+use crate::windows;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -161,7 +162,9 @@ pub struct OpenedLocalTerminal {
 
 /// Opens a Local terminal with the selected shell or the user's system default.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri injects each managed state as an argument.
 pub async fn local_terminal_open(
+    window: WebviewWindow,
     registry: State<'_, TerminalRegistry>,
     settings: State<'_, SettingsState>,
     output_directory: State<'_, TerminalOutputDirectory>,
@@ -203,6 +206,7 @@ pub async fn local_terminal_open(
     let pty = LocalPty::spawn(command, size, output.wrap(channel_sink(on_event, None)))?;
     let shell_program = pty.shell_program().to_owned();
     let id = registry.insert_with_output(Box::new(pty), output);
+    track_terminal(&window, &registry, id)?;
     Ok(OpenedLocalTerminal {
         id,
         shell_program,
@@ -246,11 +250,10 @@ pub struct OpenedRemoteTerminal {
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // Tauri injects each managed state as an argument.
 pub async fn remote_terminal_open(
-    app: AppHandle,
+    window: WebviewWindow,
     webview: Webview,
     registry: State<'_, TerminalRegistry>,
     settings: State<'_, SettingsState>,
-    pending: State<'_, Arc<PendingPrompts>>,
     pending_screens: State<'_, Arc<PendingScreens>>,
     output_directory: State<'_, TerminalOutputDirectory>,
     host_id: HostId,
@@ -259,6 +262,7 @@ pub async fn remote_terminal_open(
     on_prompt: Channel<PromptRequest>,
     cwd: Option<String>,
 ) -> CommandResult<OpenedRemoteTerminal> {
+    let app = window.app_handle().clone();
     let route = Arc::new(HostRoute::lookup(&app, &host_id)?);
     let saved_host = matches!(route.as_ref(), HostRoute::Saved(_));
     let metadata = saved_host.then(|| {
@@ -268,7 +272,7 @@ pub async fn remote_terminal_open(
     let observed = metadata.clone();
     let host = route.host().clone();
     let prompter = Arc::new(ChannelPrompter {
-        pending: Arc::clone(&pending),
+        pending: windows::prompts(&window)?,
         channel: on_prompt.clone(),
     });
     let prompts = prompter.clone();
@@ -310,10 +314,9 @@ pub async fn remote_terminal_open(
     .await?;
     // Open the PTY before using another session channel on the same SSH transport.
     detect_os_on_current_connection(app, host_id);
-    Ok(OpenedRemoteTerminal {
-        id: registry.insert_with_metadata(Box::new(terminal), output, metadata),
-        saved_host,
-    })
+    let id = registry.insert_with_metadata(Box::new(terminal), output, metadata);
+    track_terminal(&window, &registry, id)?;
+    Ok(OpenedRemoteTerminal { id, saved_host })
 }
 
 #[tauri::command]
@@ -354,8 +357,10 @@ pub async fn terminal_follow_file_directory(
 
 /// Answers a question sent on a `remote_terminal_open` prompt channel.
 #[tauri::command]
-pub fn prompt_answer(pending: State<'_, Arc<PendingPrompts>>, id: u64, answer: PromptAnswer) {
-    pending.answer(id, answer);
+pub fn prompt_answer(window: WebviewWindow, id: u64, answer: PromptAnswer) {
+    if let Ok(pending) = windows::prompts(&window) {
+        pending.answer(id, answer);
+    }
 }
 
 #[tauri::command]
@@ -383,10 +388,25 @@ pub async fn terminal_resize(
 
 #[tauri::command]
 pub async fn terminal_close(
+    window: WebviewWindow,
     registry: State<'_, TerminalRegistry>,
     id: TerminalId,
 ) -> CommandResult<()> {
+    let _ = windows::with_resources(&window, |resources| resources.terminals.remove(&id));
     Ok(registry.close(id)?)
+}
+
+fn track_terminal(
+    window: &WebviewWindow,
+    registry: &TerminalRegistry,
+    id: TerminalId,
+) -> CommandResult<()> {
+    if let Err(error) = windows::with_resources(window, |resources| resources.terminals.insert(id))
+    {
+        let _ = registry.close(id);
+        return Err(error);
+    }
+    Ok(())
 }
 
 /// Starts writing Terminal output to a plain-text file.

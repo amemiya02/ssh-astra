@@ -10,6 +10,7 @@ export type Platform = "mac" | "other";
 
 export type WorkspaceCommand =
   | { type: "newTab" }
+  | { type: "newWindow" }
   | { type: "closePane" }
   | { type: "split"; orientation: SplitOrientation }
   | { type: "cycleTab"; step: 1 | -1 }
@@ -55,7 +56,7 @@ const numberedTabShortcuts = [
 ] as const;
 
 export const shortcutNames = [
-  "newTab", "closePane", "splitRight", "splitDown", "toggleMaximizePane",
+  "newTab", "newWindow", "closePane", "splitRight", "splitDown", "toggleMaximizePane",
   ...paneSwapShortcuts.map(({ name }) => name),
   "nextTab", "previousTab", "nextPane", "previousPane", "moveTabRight", "moveTabLeft",
   ...numberedTabShortcuts,
@@ -130,6 +131,7 @@ const shared: Binding[] = [
 
 const bindings: Record<Platform, Binding[]> = {
   mac: [
+    { name: "newWindow", code: "KeyN", mods: ["meta"], command: { type: "newWindow" } },
     { name: "newTab", code: "KeyT", mods: ["meta"], command: { type: "newTab" } },
     { name: "closePane", code: "KeyW", mods: ["meta"], command: { type: "closePane" } },
     { name: "splitRight", code: "KeyD", mods: ["meta"], command: split("horizontal") },
@@ -149,6 +151,7 @@ const bindings: Record<Platform, Binding[]> = {
     ...shared,
   ],
   other: [
+    { name: "newWindow", code: "KeyN", mods: ["ctrl", "alt", "shift"], command: { type: "newWindow" } },
     { name: "newTab", code: "KeyT", mods: ["ctrl", "shift"], command: { type: "newTab" } },
     { name: "closePane", code: "KeyW", mods: ["ctrl", "shift"], command: { type: "closePane" } },
     { name: "splitRight", code: "KeyE", mods: ["ctrl", "shift"], command: split("horizontal") },
