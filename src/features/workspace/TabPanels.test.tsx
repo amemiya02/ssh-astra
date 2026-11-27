@@ -130,8 +130,8 @@ describe("TabPanels", () => {
 
     selectTabMenu("anchor", label);
 
-    expect([...container.querySelectorAll('[role="tab"]')].map((tab) => tab.id)).toEqual(survivors);
-    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.id).toBe("tab-anchor");
+    expect([...container.querySelectorAll('[role="tab"][id^="tab-"]')].map((tab) => tab.id)).toEqual(survivors);
+    expect(container.querySelector('[role="tab"][id^="tab-"][aria-selected="true"]')?.id).toBe("tab-anchor");
   });
 
   it("folds Host groups while keeping activity and navigates tabs in their displayed order", () => {
@@ -176,7 +176,7 @@ describe("TabPanels", () => {
       expect(second.querySelector("[data-unread-output]")).toBeNull();
 
       selectTabMenu("second", "Close tabs below");
-      expect([...container.querySelectorAll('[role="tab"]')].map(({ id }) => id)).toEqual(["tab-work", "tab-second"]);
+      expect([...container.querySelectorAll('[role="tab"][id^="tab-"]')].map(({ id }) => id)).toEqual(["tab-work", "tab-second"]);
       act(() => vi.runOnlyPendingTimers());
     } finally {
       vi.useRealTimers();
@@ -203,7 +203,7 @@ describe("TabPanels", () => {
     expect((opens[0]![1] as { onEvent: unknown }).onEvent).not.toBe((opens[1]![1] as { onEvent: unknown }).onEvent);
     const sizes = vi.mocked(invoke).mock.calls.filter(([command]) => command === "terminal_resize");
     expect(sizes.map(([, args]) => (args as { id: number }).id)).toEqual([3, 4]);
-    const copy = container.querySelector<HTMLElement>('[role="tabpanel"]:not([hidden])')!;
+    const copy = container.querySelector<HTMLElement>('[role="tabpanel"][id^="tabpanel-"]:not([hidden])')!;
     expect(copy.id).not.toBe("tabpanel-work");
     expect(copy.querySelectorAll('[role="group"]')).toHaveLength(2);
   });

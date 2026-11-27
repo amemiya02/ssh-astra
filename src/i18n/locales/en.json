@@ -10,7 +10,7 @@
       "read": "Read only",
       "approval": "Approval required"
     },
-    "hostHint": "Read only shares open Terminals and files on this Host. Approval required also allows individual command review requests. This permission stays on this device.",
+    "hostHint": "Read only shares open Terminals and files on this Host. Approval required also allows individual command reviews and file write requests. This permission stays on this device.",
     "review": {
       "title": "Review an agent command",
       "description": "Review this proposal for the selected Terminal. Copy it to the clipboard to paste and submit yourself. The request expires after two minutes.",
@@ -22,6 +22,19 @@
       "notification": "Open SSH Astra to review a command proposal.",
       "copied": "Command copied to the clipboard.",
       "copyFailed": "Could not copy the command. The request may have expired or the Terminal may have changed."
+    },
+    "fileReview": {
+      "title": "Approve a remote file write",
+      "description": "Write the supplied bytes to this path, replacing the file if it exists. This request expires after two minutes.",
+      "path": "Remote path",
+      "size": "File size",
+      "bytes_one": "{{bytes}} byte",
+      "bytes_other": "{{bytes}} bytes",
+      "approve": "Approve once",
+      "notification": "Open SSH Astra to review a remote file write.",
+      "written": "Remote file written.",
+      "writeFailed": "Could not confirm the remote file write.",
+      "writeUnconfirmed": "The server may have changed the file. SSH Astra could not confirm the write."
     },
     "enabled": "Agent access on",
     "turnOff": "Turn off Agent access",
@@ -43,7 +56,8 @@
         "allowed": "Allowed",
         "denied": "Denied",
         "timedOut": "Timed out",
-        "failed": "Failed"
+        "failed": "Failed",
+        "unconfirmed": "Unconfirmed"
       }
     }
   },
@@ -1521,8 +1535,8 @@
     },
     "notifications": {
       "agentReview": {
-        "label": "Agent command reviews",
-        "description": "Notify when a local MCP client requests command review while SSH Astra is in the background."
+        "label": "Agent review requests",
+        "description": "Notify when a local MCP client requests a command review or a file write while SSH Astra is in the background."
       },
       "transfers": {
         "label": "Transfer batches",

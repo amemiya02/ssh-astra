@@ -202,7 +202,7 @@ async function terminalWithLine(browser: Browser, line: string, intervalMs = 40)
 
 async function focusTerminal(browser: Browser) {
   await waitFor(() => activeTerminal(browser), "visible Terminal");
-  await browser.execute(() => document.querySelector<HTMLTextAreaElement>('[role="tabpanel"]:not([hidden]) textarea.xterm-helper-textarea')?.focus());
+  await browser.execute(() => document.querySelector<HTMLTextAreaElement>('[role="tabpanel"][id^="tabpanel-"]:not([hidden]) textarea.xterm-helper-textarea')?.focus());
   if (!(await activeTerminal(browser))?.focused) throw new Error("Terminal did not take focus");
 }
 
@@ -268,7 +268,7 @@ async function measureLocal(browser: Browser, sample: Sampler) {
   for (let index = 0; index < 20; index++) {
     const previous = (await metrics(browser))[index];
     await browser.execute((tabIndex) => {
-      document.querySelectorAll<HTMLButtonElement>('[role="tab"]')[tabIndex + 1]?.click();
+      document.querySelectorAll<HTMLButtonElement>('[role="tab"][id^="tab-"]')[tabIndex + 1]?.click();
     }, index);
     await focusTerminal(browser);
     await command(browser, `printf '\\nASTRA_TAB_%s\\n' ${index + 1}`);
@@ -324,7 +324,7 @@ async function verifyEcho(port: number) {
 }
 
 function homeHostCard(browser: Browser) {
-  return browser.$(`//*[@role='tabpanel' and not(@hidden)]//button[contains(., '${hostName}')]`);
+  return browser.$(`//*[@role='tabpanel' and starts-with(@id,'tabpanel-') and not(@hidden)]//button[contains(., '${hostName}')]`);
 }
 
 async function openRemote(browser: Browser) {
@@ -431,7 +431,7 @@ async function measureRemoteDesktop(binary: string, sshPort: number) {
     const card = homeHostCard(browser);
     await card.waitForDisplayed();
     await browser.execute((name) => {
-      const buttons = Array.from(document.querySelectorAll('[role="tabpanel"]:not([hidden]) button'));
+      const buttons = Array.from(document.querySelectorAll('[role="tabpanel"][id^="tabpanel-"]:not([hidden]) button'));
       const host = buttons.find((button) => button.textContent?.includes(name));
       const trigger = host?.parentElement?.querySelector('button[aria-label="More actions"]');
       if (!trigger) throw new Error(`Missing ${name} card's action menu`);

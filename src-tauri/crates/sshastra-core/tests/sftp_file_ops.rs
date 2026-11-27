@@ -9,7 +9,7 @@ mod support;
 use std::sync::Arc;
 
 use sshastra_core::files::{
-    self, FileKind, FsError, PermissionChange, PermissionScope, RemoteFs, SftpFs,
+    self, FileKind, FsError, PermissionChange, PermissionScope, RemoteFs, SftpFs, StagedRemoteWrite,
 };
 use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
@@ -83,6 +83,27 @@ fn names(entries: &[files::FileEntry]) -> Vec<String> {
     let mut names: Vec<_> = entries.iter().map(|e| e.name.clone()).collect();
     names.sort();
     names
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_staged_remote_write_replaces_the_file_and_keeps_its_permissions() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let (fs, root, _dir) = scratch(&sshd).await;
+    let fs = Arc::new(fs);
+    let path = files::join(&root, "sample file");
+    fs.write_file(&path, b"original").await.unwrap();
+    fs.set_permissions(&path, 0o640).await.unwrap();
+
+    let staged = StagedRemoteWrite::prepare(fs.clone(), &path, &[0xff, b'a'])
+        .await
+        .unwrap();
+    assert_eq!(fs.read_file(&path).await.unwrap(), b"original");
+    assert!(staged.publish(&|| true).await.unwrap());
+    assert_eq!(fs.read_file(&path).await.unwrap(), [0xff, b'a']);
+    assert_eq!(fs.lstat(&path).await.unwrap().permissions, Some(0o640));
+    assert_eq!(names(&fs.list_dir(&root).await.unwrap()), ["sample file"]);
 }
 
 #[tokio::test(flavor = "multi_thread")]

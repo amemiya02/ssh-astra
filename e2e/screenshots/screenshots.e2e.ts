@@ -229,8 +229,8 @@ describe("README screenshots", () => {
 
   it("Home: the Host vault the app opens with (dark)", async () => {
     // The app starts on the Home tab with no Terminal; this machine's shell is no part of the demo.
-    await $('[role="tab"][aria-label="Home"]').waitForDisplayed();
-    await $("//*[@role='tabpanel' and not(@hidden)]//button[.//*[normalize-space()='web-01']]").waitForDisplayed();
+    await $('[role="tab"][id^="tab-"][aria-label="Home"]').waitForDisplayed();
+    await $("//*[@role='tabpanel' and starts-with(@id,'tabpanel-') and not(@hidden)]//button[.//*[normalize-space()='web-01']]").waitForDisplayed();
     await shot("home-dark", { checkTerminals: false });
   });
 
@@ -316,7 +316,7 @@ describe("README screenshots", () => {
     await setFilePanel(false);
     await hostMenu("api-01", "Port forwards");
     // The sidebar's Port forwards view has a (hidden) heading of the same name: look in the shown tab.
-    await $('//*[@role="tabpanel" and not(@hidden)]//h2[normalize-space()="Port forwards"]').waitForDisplayed();
+    await $('//*[@role="tabpanel" and starts-with(@id,"tabpanel-") and not(@hidden)]//h2[normalize-space()="Port forwards"]').waitForDisplayed();
     await hostMenu("api-01", "Connect only");
     await browser.waitUntil(async () => (await $$("span=Running").length) === 2, {
       timeoutMsg: "the auto-start rules never ran",
@@ -329,7 +329,7 @@ describe("README screenshots", () => {
   });
 
   it("File panel transfer queue", async () => {
-    await $('button[role="tab"][aria-label*="web-01"]').click();
+    await $('button[role="tab"][id^="tab-"][aria-label*="web-01"]').click();
     await setFilePanel(true);
     // Back to one Terminal: close the htop pane.
     await focusTerminal(1);
