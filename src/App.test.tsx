@@ -50,6 +50,12 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
         savedHosts.push(saved);
         return saved;
       }
+      if (command === "host_save") {
+        const previous = savedHosts.find((candidate) => candidate.id === args!.id)!;
+        const saved = { ...args!.draft!, id: previous.id, groupId: previous.groupId, forwards: previous.forwards };
+        savedHosts = savedHosts.map((candidate) => candidate.id === saved.id ? saved : candidate);
+        return saved;
+      }
       if (command === "files_open" && args?.hostId && panelListings.has(args.hostId)) return args.hostId;
       if (command === "files_open" || command === "files_connect" || command === "files_local_open") return command;
       if (command === "files_list") return panelListings.get(args?.id ?? "") ?? { path: "/", entries: [] };
@@ -920,6 +926,32 @@ it("filters the Host list and Home by Tag and keeps the selection when narrowing
   expect(paletteOptions().map((option) => option.textContent)).toEqual([expect.stringContaining("Backup Node")]);
 });
 
+it("shows the same saved icon in the Host list, Home and an open Terminal tab", async () => {
+  savedHosts = [{ ...host, icon: "ubuntu" }];
+  await hostsStore.getState().load();
+  await render(workspace(
+    { type: "open", tabId: "work", pane: remote("work") },
+    { type: "open", tabId: "home", pane: newPane({ kind: "home" }, "home") },
+  ));
+  const surfaces = [
+    document.querySelector('section[aria-label="Hosts"]'),
+    document.querySelector("#tabpanel-home"),
+    document.querySelector("#tab-work"),
+  ];
+  const glyphs = () => surfaces.map((surface) => surface?.querySelector("[data-host-icon]"));
+  expect(glyphs().map((glyph) => glyph?.getAttribute("data-host-icon"))).toEqual(["ubuntu", "ubuntu", "ubuntu"]);
+
+  const terminals = [...testTerminals];
+  await act(async () => { await hostsStore.getState().saveHost({ ...host, icon: "database" }, host.id); });
+  expect(glyphs().map((glyph) => glyph?.getAttribute("data-host-icon"))).toEqual(["database", "database", "database"]);
+  expect(glyphs().every((glyph) => glyph?.querySelector("svg"))).toBe(true);
+
+  await act(async () => { await hostsStore.getState().saveHost(host, host.id); });
+  expect(glyphs()).toEqual([null, null, null]);
+  expect([...testTerminals]).toEqual(terminals);
+  expect(terminalCloses()).toHaveLength(0);
+});
+
 it("saves a Temporary Host in place after canceling and retrying the Host editor", async () => {
   await hostsStore.getState().load();
   await render(emptyTabs);
@@ -997,7 +1029,7 @@ it("masks Host details and tab titles while raw address searches still find the 
   expect(container?.innerHTML.includes(host.user), "Host user appears in the DOM").toBe(false);
   for (const id of ["tab-work", "tab-custom"]) {
     const tab = document.getElementById(id)!;
-    expect(tab.textContent).toBe(host.name);
+    expect(tab.querySelector(":scope > span:not([aria-hidden])")?.textContent).toBe(host.name);
     expect(tab.getAttribute("aria-label")).toContain(host.name);
     expect(tab.title).toContain(host.name);
   }

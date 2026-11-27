@@ -69,6 +69,25 @@ const field = (name: string) =>
   [...document.querySelectorAll<HTMLLabelElement>('[role="dialog"] label')].find((label) => label.textContent === name)!.control!;
 
 describe("Host editor", () => {
+  it.each([["Automatic", "Ubuntu", "ubuntu"], ["Ubuntu", "Automatic", undefined]] as const)(
+    "changes the Host icon from %s to %s",
+    async (previous, next, expected) => {
+      const save = vi.fn<EditorProps["save"]>().mockResolvedValue(host);
+      await renderEditor({ host: previous === "Ubuntu" ? { ...host, icon: "ubuntu" } : host, save });
+
+      const icon = field("Host icon");
+      expect(icon.textContent).toBe(previous);
+      act(() => icon.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+      const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+        .find((item) => item.textContent?.endsWith(next))!;
+      act(() => option.click());
+      await act(async () => button("Save").click());
+
+      expect(save).toHaveBeenCalledOnce();
+      expect(save.mock.calls[0]?.[0].icon).toBe(expected);
+    },
+  );
+
   it("suggests existing Tags, removes a Tag and sends the edited Tags through HostDraft", async () => {
     const save = vi.fn<EditorProps["save"]>().mockResolvedValue(host);
     await renderEditor({

@@ -7,6 +7,13 @@ export type HostId = string;
 /** Mirrors `sshastra_core::hosts::GroupId`. */
 export type GroupId = string;
 
+/** Stable ids shared with `sshastra_core::hosts::HostIcon`. */
+export const hostIcons = [
+  "linux", "ubuntu", "archLinux", "alpineLinux", "linuxMint", "nixos", "freebsd", "macos",
+  "server", "database", "cloud", "router",
+] as const;
+export type HostIcon = (typeof hostIcons)[number];
+
 /**
  * Mirrors `sshastra_core::hosts::HostAuth`. The server's allowed methods
  * determine whether a connect tries ssh-agent, then the default or specified
@@ -40,6 +47,8 @@ export interface HostDraft {
   auth: HostAuth;
   /** Organisational labels. An absent list is empty. */
   tags?: string[];
+  /** User-selected icon. An absent value uses the automatic icon. */
+  icon?: HostIcon;
   /** With a selected key, restrict ssh-agent to its matching identity. */
   identitiesOnly?: boolean;
   /** Allow the remote host to use the local SSH agent during a Connection. */

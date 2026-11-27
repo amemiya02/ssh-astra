@@ -31,14 +31,13 @@ export function contrast(a: string, b: string): number {
 }
 
 /**
- * Every colour a monogram tile sits on: Home's cards (the ground), the Host list (the sidebar,
- * and `--selected` over it), the palette's menu (raised), and a hovered or highlighted row
- * (`--accent`), as `src/index.css` derives them.
+ * The tile's backings are the ground (Home and tabs), sidebar, active tab surface, raised
+ * popover (picker and palette), and the hover and selection fills from `src/index.css`.
  */
 export function tileBackings(theme: AppTheme): string[] {
-  const { ground, sidebar, raised, foreground, primary } = theme.ui;
+  const { ground, sidebar, surface, raised, foreground, primary } = theme.ui;
   const over = (top: string, alpha: number, under: string) => format(blend(parse(top), parse(under), alpha));
-  return [ground, sidebar, raised, over(foreground, 0.09, ground), over(primary, 0.14, sidebar)];
+  return [ground, sidebar, surface, raised, over(foreground, 0.09, ground), over(primary, 0.14, sidebar)];
 }
 
 /** The tile fill (the hue at `tileAlpha`) over `backing`. */

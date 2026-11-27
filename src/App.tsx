@@ -420,6 +420,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
           <TabStrip
             activity={tabActivity}
             tabs={tabs}
+            hosts={hosts}
             activeId={activeId}
             platform={platform}
             titleSource={titleSource}

@@ -19,12 +19,13 @@ import { ProxyFields } from "@/features/connect/ProxyFields";
 import { inheritedProxyForm, type ProxyField } from "@/features/connect/proxy-form";
 import { readCommandError, refusal, type CommandError, type ConnectPrompt, type PromptAnswer } from "@/lib/ipc/connect";
 import type { testHostConnection } from "@/lib/ipc/connections";
-import { isTemporaryHost, type Group, type Host, type HostDraft, type HostId, type TerminalBackspace, type TerminalCharset } from "@/lib/ipc/hosts";
+import { hostIcons, isTemporaryHost, type Group, type Host, type HostDraft, type HostId, type TerminalBackspace, type TerminalCharset } from "@/lib/ipc/hosts";
 import { cn } from "@/lib/utils";
 import { TerminalSchemeSelect } from "@/features/terminal/TerminalSchemeSelect";
 import { useTerminalPrefs } from "@/features/terminal/terminal-prefs-context";
 import { isTerminalColorScheme } from "@/theme/terminal-themes";
 import { ClearCredentialsButton } from "./ClearCredentialsButton";
+import { HostMonogram } from "./HostMonogram";
 import { HostTagInput } from "./HostTagInput";
 import { appendHostTag } from "./host-tags";
 import { emptyHostForm, hostFormFrom, parseHostForm, type HostFormField, type HostFormResult, type HostFormValues } from "./hostForm";
@@ -71,6 +72,7 @@ const fields: { field: Exclude<HostFormField, ProxyField>; inputMode?: "numeric"
 
 /** Sentinel for "no Jump host": Radix Select reserves the empty string for clearing. */
 const NO_JUMP_HOST = "none";
+const AUTOMATIC_ICON = "automatic";
 
 const advancedFieldIds = {
   terminalScheme: "host-form-terminal-scheme",
@@ -319,6 +321,31 @@ export function HostFormDialogContent({
             onInput={setTagInput}
             onChange={(tags) => setValues((current) => ({ ...current, tags }))}
           />
+          <div className="grid gap-1.5">
+            <Label htmlFor="host-form-icon" className="text-xs">{t("hosts.fields.icon")}</Label>
+            <Select
+              value={values.icon ?? AUTOMATIC_ICON}
+              onValueChange={(value) => setValues((current) => ({
+                ...current, icon: hostIcons.find((icon) => icon === value),
+              }))}
+            >
+              <SelectTrigger id="host-form-icon" size="sm" className="w-full">
+                <SelectValue>{t(`hosts.icons.${values.icon ?? AUTOMATIC_ICON}`)}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {[AUTOMATIC_ICON, ...hostIcons].map((choice) => {
+                  const label = t(`hosts.icons.${choice}`);
+                  const icon = choice === AUTOMATIC_ICON ? undefined : choice;
+                  return (
+                    <SelectItem key={choice} value={choice} textValue={label}>
+                      <HostMonogram host={{ id: host?.id ?? "", name: values.name, icon }} />
+                      {label}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="grid gap-1.5">
             <Label htmlFor="host-form-jumpHost" className="text-xs">
               {t("hosts.fields.jumpHost")}
