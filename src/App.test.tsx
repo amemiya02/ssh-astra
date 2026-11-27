@@ -384,6 +384,7 @@ it("handles warm SSH links individually and uses Quick connect only after approv
   expect(dialog()).toBeNull();
   expect(invoke).toHaveBeenCalledWith("temporary_host_create", { target: second });
   expect(remoteOpenHostIds()).toEqual([expect.stringMatching(/^temporary-/)]);
+  expect(invoke).toHaveBeenCalledWith("remote_terminal_open", expect.objectContaining({ expectedTarget: second }));
 });
 
 it("opens each startup Host once and leaves a restored split's Host disconnected in layout-only mode", async () => {

@@ -10,16 +10,12 @@ export interface FilePromise {
   id: FsId;
   directory: string;
   name: string;
-  size: number;
+  size: number | null;
   modified: number | null;
 }
 
-export function dragFileOut(file: FilePromise): Promise<boolean> {
-  return invoke("files_drag_out", { file });
-}
-
-export function waitForFileDragExit(gesture: number): Promise<boolean> {
-  return invoke("files_wait_for_drag_exit", { gesture });
+export function dragFileOut(file: FilePromise, gesture: number, onStart: () => void): Promise<boolean> {
+  return invoke("files_drag_out", { file, gesture, onStart: new Channel<null>(onStart) });
 }
 
 export function cancelFileDragExit(gesture: number): Promise<void> {
@@ -35,6 +31,8 @@ export interface FileEntry {
   kind: FileKind;
   /** Bytes. */
   size: number;
+  /** SFTP omitted the size, leaving the display value at zero. */
+  sizeUnknown?: boolean;
   /** Seconds since the Unix epoch. */
   modified: number | null;
   /** Permission bits only, e.g. `0o755`. */

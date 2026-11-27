@@ -907,6 +907,7 @@ fn entry(name: String, meta: &Metadata) -> FileEntry {
         name,
         kind,
         size,
+        size_unknown: meta.size.is_none(),
         modified,
         permissions,
         uid: meta.uid,

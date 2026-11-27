@@ -1186,7 +1186,7 @@
       "hostKeyDeclined": "未信任主機金鑰，已取消連線。",
       "hostKeyRevoked": "主機金鑰已撤銷，連線已封鎖。",
       "authenticationFailed": "身分驗證失敗。",
-      "sshLinkTargetChanged": "確認 SSH 連結後，已儲存的主機已變更。請重新開啟連結並確認目標。",
+      "sshLinkTargetChanged": "主機設定或目前連線與已確認的 SSH 目標不一致。請關閉此主機的現有連線，再開啟連結並確認目標。",
       "proxyInvalidConfiguration": "請檢查對外代理設定",
       "proxyInvalidTarget": "此代理不支援該主機位址",
       "proxyUnreachable": "無法連線到對外代理",

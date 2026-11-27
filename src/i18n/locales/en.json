@@ -1186,7 +1186,7 @@
       "hostKeyDeclined": "The host key was not trusted. Not connected.",
       "hostKeyRevoked": "The host key is revoked. Connection blocked.",
       "authenticationFailed": "Authentication failed.",
-      "sshLinkTargetChanged": "The saved Host changed after you confirmed the SSH link. Open the link again to confirm the destination.",
+      "sshLinkTargetChanged": "The Host settings or live Connection differ from the approved SSH destination. Close any live Connection for this Host, then open the link and confirm the destination again.",
       "proxyInvalidConfiguration": "Check the outbound proxy settings",
       "proxyInvalidTarget": "The Host address is invalid for this proxy",
       "proxyUnreachable": "Could not reach the outbound proxy",

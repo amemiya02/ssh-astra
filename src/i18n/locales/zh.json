@@ -1186,7 +1186,7 @@
       "hostKeyDeclined": "未信任主机密钥，已取消连接。",
       "hostKeyRevoked": "主机密钥已被吊销，连接已阻断。",
       "authenticationFailed": "认证失败。",
-      "sshLinkTargetChanged": "确认 SSH 链接后，已保存的主机发生了变更。请重新打开链接并确认目标。",
+      "sshLinkTargetChanged": "主机设置或当前连接与已确认的 SSH 目标不一致。请关闭此主机的现有连接，再打开链接并确认目标。",
       "proxyInvalidConfiguration": "请检查出站代理设置",
       "proxyInvalidTarget": "此代理不支持该主机地址",
       "proxyUnreachable": "无法连接到出站代理",

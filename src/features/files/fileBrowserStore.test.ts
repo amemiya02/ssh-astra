@@ -113,12 +113,18 @@ describe("fileBrowserStore", () => {
   it("offers only one ordinary file from the current remote listing for drag out", async () => {
     const { store } = await connected({ listFiles: vi.fn(async (): Promise<Listing> => ({
       path: "/home/me",
-      entries: [entry("資料.txt"), entry("folder", "dir"), { ...entry("alias", "symlink"), linkTarget: "file" }],
+      entries: [
+        entry("資料.txt"), entry("folder", "dir"), { ...entry("alias", "symlink"), linkTarget: "file" },
+        { ...entry("empty.txt"), size: 0 },
+        { ...entry("unknown.txt"), size: 0, sizeUnknown: true },
+      ],
     })) });
 
     expect(store.getState().filePromise("/home/me", ["資料.txt"])).toEqual({
       id: 7, directory: "/home/me", name: "資料.txt", size: 1, modified: null,
     });
+    expect(store.getState().filePromise("/home/me", ["empty.txt"])?.size).toBe(0);
+    expect(store.getState().filePromise("/home/me", ["unknown.txt"])?.size).toBeNull();
     expect(store.getState().filePromise("/home/me", ["자료.txt"])).toBeNull();
     expect(store.getState().filePromise("/home/me", ["資料.txt", "folder"])).toBeNull();
     expect(store.getState().filePromise("/home/me", ["alias"])).toBeNull();

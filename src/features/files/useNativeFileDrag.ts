@@ -2,7 +2,7 @@ import type { DragStartEvent } from "@dnd-kit/core";
 import { useCallback, useEffect, useRef } from "react";
 import { showToast } from "@/features/toasts/toastStore";
 import { readCommandError } from "@/lib/ipc/connect";
-import { cancelFileDragExit, dragFileOut, waitForFileDragExit, type FilePromise } from "@/lib/ipc/files";
+import { cancelFileDragExit, dragFileOut, type FilePromise } from "@/lib/ipc/files";
 import { operationErrorText } from "./fileErrors";
 
 declare global {
@@ -36,15 +36,14 @@ export function useNativeFileDrag() {
     const gesture = Math.max(Date.now() * 1_000, latestGesture + 1);
     latestGesture = gesture;
     activeGesture.current = gesture;
-    void waitForFileDragExit(gesture).then(async (outside) => {
+    void dragFileOut(file, gesture, () => {
       if (activeGesture.current !== gesture) return;
       activeGesture.current = null;
-      if (outside) {
-        // The native drag consumes the release after the pointer leaves the Window.
-        document.dispatchEvent(new PointerEvent("pointercancel", { pointerId }));
-        const copied = await dragFileOut(file);
-        if (copied) showToast((t) => t("files.dragOut.copied", { name: file.name }));
-      }
+      // The native session now owns the pointer release.
+      document.dispatchEvent(new PointerEvent("pointercancel", { pointerId }));
+    }).then((copied) => {
+      if (activeGesture.current === gesture) activeGesture.current = null;
+      if (copied) showToast((t) => t("files.dragOut.copied", { name: file.name }));
     }).catch((error: unknown) => {
       if (activeGesture.current === gesture) activeGesture.current = null;
       showToast((t) => t("files.dragOut.failed", {

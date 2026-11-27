@@ -30,7 +30,7 @@ use sshastra_core::files::{FsError, FsResult};
 use tauri::{AppHandle, Manager, WebviewWindow};
 use tokio::sync::watch;
 
-use super::{PointerState, RemoteRead, Report, Source, CHUNK_SIZE};
+use super::{Handoff, PointerState, RemoteRead, Report, Source, CHUNK_SIZE};
 
 thread_local! {
     static MONITOR: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
@@ -40,10 +40,17 @@ thread_local! {
 }
 
 pub(crate) fn capture_mouse_events() {
-    let mask = NSEventMask::LeftMouseDown | NSEventMask::LeftMouseUp;
+    let mask = NSEventMask::LeftMouseDown | NSEventMask::LeftMouseUp | NSEventMask::KeyDown;
     let monitor = StackBlock::new(|event: NonNull<NSEvent>| {
         // AppKit owns the event for this callback and executes local monitors on its UI thread.
         let mouse = unsafe { event.as_ref() };
+        if mouse.r#type() == NSEventType::KeyDown && mouse.keyCode() == ESCAPE {
+            DRAG.with_borrow(|drag| {
+                if let Some(drag) = drag {
+                    drag.ivars().delivery.decide(DropDecision::Cancelled);
+                }
+            });
+        }
         MOUSE_DOWN.with_borrow_mut(|gesture| match mouse.r#type() {
             NSEventType::LeftMouseDown => *gesture = Some(mouse.retain()),
             NSEventType::LeftMouseUp => *gesture = None,
@@ -71,6 +78,8 @@ enum DropDecision {
     Cancelled,
 }
 
+const ESCAPE: u16 = 53;
+
 struct Delivery {
     started: AtomicBool,
     decision: watch::Sender<DropDecision>,
@@ -95,7 +104,6 @@ impl Delivery {
     }
 
     fn sample_escape(&self) {
-        const ESCAPE: u16 = 53;
         let held = CGEventSource::key_state(CGEventSourceStateID::CombinedSessionState, ESCAPE);
         if held {
             let _cancelled = self.decide(DropDecision::Cancelled);
@@ -395,8 +403,10 @@ pub(super) fn start(
     window: WebviewWindow,
     source: Arc<Source>,
     report: Arc<Report>,
+    handoff: Handoff,
 ) -> tauri::Result<()> {
     let app = window.app_handle().clone();
+    let owner = window.clone();
     window.with_webview(move |webview| {
         let Some(mtm) = MainThreadMarker::new() else {
             return;
@@ -405,9 +415,10 @@ pub(super) fn start(
         let Some(view) = (unsafe { webview.inner().cast::<NSView>().as_ref() }) else {
             return;
         };
-        if !matches!(physical_pointer(view), Some((_, PointerState::Outside)))
-            || DRAG.with_borrow(Option::is_some)
-        {
+        let Some((gesture, PointerState::Outside)) = physical_pointer(view) else {
+            return;
+        };
+        if DRAG.with_borrow(Option::is_some) || !handoff.claim(&owner, gesture) {
             return;
         }
         let Some(event) = MOUSE_DOWN.with_borrow_mut(Option::take) else {
@@ -459,6 +470,7 @@ pub(super) fn start(
         };
         #[cfg(feature = "e2e")]
         log::info!("file drag started AppKit session");
+        handoff.started();
         session.setAnimatesToStartingPositionsOnCancelOrFail(false);
         delivery.watch_escape();
     })

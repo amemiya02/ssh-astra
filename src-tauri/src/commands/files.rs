@@ -72,25 +72,6 @@ pub fn files_local_open(
 
 #[cfg(any(windows, target_os = "macos"))]
 #[tauri::command]
-pub async fn files_wait_for_drag_exit(window: WebviewWindow, gesture: u64) -> bool {
-    let (stop, stopped) = oneshot::channel();
-    let registered = windows::with_resources(&window, |resources| {
-        resources.file_drag_watch.start(gesture, stop)
-    });
-    if !matches!(registered, Ok(true)) {
-        return false;
-    }
-    let outside = tokio::select! {
-        biased;
-        _ = stopped => false,
-        outside = crate::file_drag::wait_for_exit(window.clone()) => outside,
-    };
-    let _ = windows::with_resources(&window, |resources| resources.file_drag_watch.stop(gesture));
-    outside
-}
-
-#[cfg(any(windows, target_os = "macos"))]
-#[tauri::command]
 pub fn files_cancel_drag_exit(window: WebviewWindow, gesture: u64) {
     let _ = windows::with_resources(&window, |resources| resources.file_drag_watch.stop(gesture));
 }
@@ -99,15 +80,44 @@ pub fn files_cancel_drag_exit(window: WebviewWindow, gesture: u64) {
 #[tauri::command]
 pub async fn files_drag_out(
     window: WebviewWindow,
+    gesture: u64,
     file: crate::file_drag::FilePromise,
+    on_start: Channel<()>,
 ) -> CommandResult<bool> {
     use crate::file_drag;
 
-    let source = windows::with_resources(&window, |resources| {
-        resources.files.get(&file.id)?.as_ref()?.upgrade()
-    })?
-    .ok_or_else(CommandError::not_open)?;
-    file_drag::start(window, file, source).await
+    let (stop, stopped) = oneshot::channel();
+    if !windows::with_resources(&window, |resources| {
+        resources.file_drag_watch.start(gesture, stop)
+    })? {
+        return Ok(false);
+    }
+
+    // Retain the same web gesture through the native boundary and setup. A cancel
+    // during setup prevents the platform from claiming this handoff.
+    let result = async {
+        let native_gesture = tokio::select! {
+            biased;
+            _ = stopped => None,
+            outside = file_drag::wait_for_exit(window.clone()) => outside,
+        };
+        let Some(native_gesture) = native_gesture else {
+            return Ok(false);
+        };
+        let source = windows::with_resources(&window, |resources| {
+            resources.files.get(&file.id)?.as_ref()?.upgrade()
+        })?
+        .ok_or_else(CommandError::not_open)?;
+        let handoff = file_drag::Handoff {
+            web_gesture: gesture,
+            native_gesture,
+            on_start,
+        };
+        file_drag::start(window.clone(), file, source, handoff).await
+    }
+    .await;
+    let _ = windows::with_resources(&window, |resources| resources.file_drag_watch.stop(gesture));
+    result
 }
 
 #[tauri::command]

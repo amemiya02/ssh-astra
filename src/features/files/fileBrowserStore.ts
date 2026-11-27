@@ -379,7 +379,7 @@ export function createFileBrowserStore(
         if (local || fsId === null || directory !== path || names.length !== 1) return null;
         const entry = entries.find(({ name }) => name === names[0]);
         if (entry?.kind !== "file") return null;
-        return { id: fsId, directory, name: entry.name, size: entry.size, modified: entry.modified };
+        return { id: fsId, directory, name: entry.name, size: entry.sizeUnknown ? null : entry.size, modified: entry.modified };
       },
 
       connect() {

@@ -206,6 +206,7 @@ impl MemoryFs {
                         name: name.to_owned(),
                         kind: s.kind,
                         size: s.size,
+                        size_unknown: false,
                         modified: None,
                         permissions: s.permissions,
                         uid: None,
