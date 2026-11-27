@@ -43,6 +43,7 @@ interface Recovery {
 interface RemoteTerminalViewProps {
   paneId: string;
   host: Host;
+  initialCwd?: string;
   /** Whether its tab is shown. A question asked while hidden waits until the tab is shown. */
   active?: boolean;
   onEditHost(): void;
@@ -68,6 +69,7 @@ interface RemoteTerminalViewProps {
 export function RemoteTerminalView({
   paneId,
   host,
+  initialCwd,
   active = true,
   onEditHost,
   onClose,
@@ -152,11 +154,12 @@ export function RemoteTerminalView({
             });
           },
         },
+        initialCwd,
       ).finally(() => {
         opening = false;
       });
     },
-    [host.id],
+    [host.id, initialCwd],
   );
   const reconnect = useCallback(() => {
     if (terminalId.current !== null) void reconnectTerminal(terminalId.current);

@@ -208,6 +208,44 @@ async function clickButton(label: string, scope: ParentNode = document) {
   await act(async () => button!.click());
 }
 
+it("splits the focused remote Terminal on the same Host and in its reported directory", async () => {
+  await render(workspace({ type: "open", tabId: "work", pane: remote("original") }));
+  const remoteOpens = () => vi.mocked(invoke).mock.calls
+    .filter(([command]) => command === "remote_terminal_open")
+    .map(([, args]) => args as { hostId: string; cwd?: string });
+
+  // No shell report yet: this split opens at the usual login directory.
+  await clickButton("Split right");
+  expect(remoteOpens()).toHaveLength(2);
+  expect(remoteOpens()[1]).toMatchObject({ hostId: host.id });
+  expect(remoteOpens()[1]?.cwd).toBeUndefined();
+
+  await sendTerminalMessage({ cwd: "/srv/other" });
+  const cwd = "/srv/work space/it's here";
+  await sendTerminalMessage({ cwd }, "remote_terminal_open", 1);
+  await clickButton("Split down");
+
+  expect(remoteOpens()).toHaveLength(3);
+  expect(remoteOpens()[2]).toMatchObject({ hostId: host.id, cwd });
+});
+
+it("starts a new Local terminal directly in the focused pane's directory", async () => {
+  await render(workspace({ type: "open", tabId: "work", pane: local("original") }));
+  const localOpens = () => vi.mocked(invoke).mock.calls
+    .filter(([command]) => command === "local_terminal_open")
+    .map(([, args]) => (args as { cwd?: string }).cwd);
+
+  await clickButton("Split down");
+  expect(localOpens()).toEqual([undefined, undefined]);
+
+  await sendTerminalMessage({ cwd: "/tmp/other" }, "local_terminal_open");
+  const cwd = "/tmp/it's here";
+  await sendTerminalMessage({ cwd }, "local_terminal_open", 1);
+  await clickButton("Split right");
+
+  expect(localOpens()).toEqual([undefined, undefined, cwd]);
+});
+
 it("applies the live bell choice to running Terminals and limits repeated sound", async () => {
   const play = vi.fn();
   vi.stubGlobal("AudioContext", class {
