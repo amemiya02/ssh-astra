@@ -25,6 +25,7 @@ fn draft(name: &str) -> HostDraft {
         auth: HostAuth::Password,
         jump_host: None,
         terminal_scheme: None,
+        identities_only: false,
         default_directory: None,
     }
 }
@@ -58,6 +59,7 @@ fn populated() -> (tempfile::TempDir, HostStore) {
                     identity_file: PathBuf::from("~/.ssh/id_ed25519"),
                 },
                 terminal_scheme: Some("ember".into()),
+                identities_only: true,
                 default_directory: Some("/srv/www".into()),
                 ..draft("web")
             },

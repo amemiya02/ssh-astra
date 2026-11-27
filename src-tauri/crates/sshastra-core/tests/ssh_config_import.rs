@@ -134,6 +134,40 @@ fn imported_hosts_are_saved_with_their_settings_jump_hosts_and_forwards() {
 }
 
 #[test]
+fn import_keeps_identities_only_with_first_matching_value_and_persists_it() {
+    let (dir, mut store) = store();
+    let report = import(
+        &mut store,
+        "
+Host build
+    IdentityFile ~/.ssh/build
+    IdentitiesOnly yes
+Host auto
+    IdentitiesOnly YES
+Host off
+    IdentitiesOnly no
+Host *
+    IdentitiesOnly yes
+",
+    );
+    assert_eq!(report.imported, ["build", "auto", "off"]);
+    assert!(report.issues.is_empty());
+    let saved = HostStore::open(dir.path().join("hosts.json")).unwrap();
+    let build = find(&saved, "build");
+    assert_eq!(
+        build.auth,
+        HostAuth::Key {
+            identity_file: "~/.ssh/build".into()
+        }
+    );
+    assert!(build.identities_only);
+    let auto = find(&saved, "auto");
+    assert_eq!(auto.auth, HostAuth::Auto);
+    assert!(auto.identities_only);
+    assert!(!find(&saved, "off").identities_only);
+}
+
+#[test]
 fn importing_again_adds_nothing_and_reports_every_host_as_skipped() {
     let (_dir, mut store) = store();
     import(&mut store, CONFIG);
@@ -160,6 +194,7 @@ fn a_host_with_a_taken_name_is_skipped_and_its_namesake_used_as_jump_host() {
                 auth: HostAuth::Password,
                 jump_host: None,
                 terminal_scheme: None,
+                identities_only: false,
                 default_directory: None,
             },
         )

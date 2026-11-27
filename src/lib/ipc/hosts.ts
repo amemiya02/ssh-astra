@@ -21,6 +21,8 @@ export interface HostDraft {
   port: number;
   user: string;
   auth: HostAuth;
+  /** With a selected key, restrict ssh-agent to its matching identity. */
+  identitiesOnly?: boolean;
   /** The Jump host this Host is reached through, or `null` to connect directly. */
   jumpHost: HostId | null;
   /** This Host's Terminal colour scheme id, overriding the global one; absent follows it. */

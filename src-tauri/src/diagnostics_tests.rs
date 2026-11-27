@@ -47,6 +47,7 @@ async fn log_files_record_an_ssh_connection_without_password_or_terminal_data() 
         auth: HostAuth::Password,
         jump_host: None,
         terminal_scheme: None,
+        identities_only: false,
         default_directory: None,
         group_id: None,
         forwards: Vec::new(),

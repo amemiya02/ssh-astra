@@ -9,11 +9,11 @@
 //! Understood: `Host` blocks with patterns (`*`, `?`, `!`), settings before
 //! the first `Host`, OpenSSH's "first value obtained wins" across every
 //! matching block (so a trailing `Host *` supplies defaults), `HostName`,
-//! `Port`, `User`, `IdentityFile` (the first one), `ProxyJump` (as Jump
-//! hosts), `Include`, `LocalForward`, `RemoteForward` and `DynamicForward` (as
-//! auto-start Port forward rules, since `ssh` sets them up on every connect). `ProxyCommand` Hosts are reported and
-//! skipped; `Match` blocks are reported and ignored; other directives are
-//! ignored.
+//! `Port`, `User`, `IdentityFile` (the first one), `IdentitiesOnly`,
+//! `ProxyJump` (as Jump hosts), `Include`, `LocalForward`, `RemoteForward`
+//! and `DynamicForward` (as auto-start Port forward rules, since `ssh` sets
+//! them up on every connect). `ProxyCommand` Hosts are reported and skipped;
+//! `Match` blocks are reported and ignored; other directives are ignored.
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -47,6 +47,7 @@ pub struct ConfigHost {
     pub user: String,
     /// `~/` is kept as written; `HostAuth::Key` understands it.
     pub identity_file: Option<PathBuf>,
+    pub identities_only: bool,
     pub jump_host: Option<String>,
     pub forwards: Vec<ForwardDraft>,
 }
@@ -368,10 +369,25 @@ struct Settings {
     port: Option<String>,
     user: Option<String>,
     identity_file: Option<String>,
+    identities_only: Option<String>,
     /// `None` inside: `ProxyJump none` / `ProxyCommand none`.
     proxy: Option<Option<Proxy>>,
     /// In order, with their keyword.
     forwards: Vec<(&'static str, String)>,
+}
+
+impl Settings {
+    fn identities_only(&self) -> Result<bool, ImportProblem> {
+        match self.identities_only.as_deref() {
+            None => Ok(false),
+            Some(value) if value.eq_ignore_ascii_case("yes") => Ok(true),
+            Some(value) if value.eq_ignore_ascii_case("no") => Ok(false),
+            Some(value) => Err(ImportProblem::InvalidValue {
+                directive: "IdentitiesOnly".into(),
+                value: value.into(),
+            }),
+        }
+    }
 }
 
 /// A resolved alias, before its Jump hosts are linked.
@@ -401,6 +417,7 @@ impl Config<'_> {
                     "port" => set(&mut s.port, d),
                     "user" => set(&mut s.user, d),
                     "identityfile" => set(&mut s.identity_file, d),
+                    "identitiesonly" => set(&mut s.identities_only, d),
                     "proxyjump" | "proxycommand" if s.proxy.is_none() => {
                         let value = d.value();
                         s.proxy = Some(if value.eq_ignore_ascii_case("none") {
@@ -458,6 +475,7 @@ impl Config<'_> {
             port,
             user,
             identity_file,
+            identities_only: s.identities_only()?,
             jump_host: None,
             forwards: Vec::new(),
         })
@@ -727,15 +745,22 @@ impl Hosts {
                 continue;
             }
             let s = config.settings(&hop.host);
-            let mut host = config.base(&hop.host, &s).unwrap_or_else(|_| ConfigHost {
-                name: hop.host.clone(),
-                address: hop.host.clone(),
-                port: 22,
-                user: config.ctx.local_user.clone(),
-                identity_file: None,
-                jump_host: None,
-                forwards: Vec::new(),
-            });
+            let mut host = match config.base(&hop.host, &s) {
+                Ok(host) => host,
+                Err(ImportProblem::InvalidValue { directive, .. }) if directive == "Port" => {
+                    ConfigHost {
+                        name: hop.host.clone(),
+                        address: hop.host.clone(),
+                        port: 22,
+                        user: config.ctx.local_user.clone(),
+                        identity_file: None,
+                        identities_only: s.identities_only()?,
+                        jump_host: None,
+                        forwards: Vec::new(),
+                    }
+                }
+                Err(problem) => return Err(problem),
+            };
             host.name = hop.name.clone();
             if let Some(user) = hop.user {
                 host.user = user;

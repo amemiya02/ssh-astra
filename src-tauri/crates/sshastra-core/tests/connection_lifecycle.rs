@@ -85,6 +85,7 @@ impl Fixture {
             jump_host: None,
             group_id: None,
             terminal_scheme: None,
+            identities_only: false,
             default_directory: None,
             forwards: Vec::new(),
         };
@@ -236,6 +237,7 @@ fn behind(name: &str, jump: &Host) -> Host {
         jump_host: Some(jump.id.clone()),
         group_id: None,
         terminal_scheme: None,
+        identities_only: false,
         default_directory: None,
         forwards: Vec::new(),
     }
