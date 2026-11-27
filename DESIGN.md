@@ -418,7 +418,7 @@ Additional toasts queue in arrival order. A normal toast stays on screen for fiv
 
 The desktop app posts system notifications while its window is in the background. Each upload, download, or copy request produces one summary after all its transfers finish, including failed and cancelled items. A lost Connection can report one failed reconnection across the Terminals sharing it. Program requests show under a localized Terminal notification title, with up to one notification per Terminal per second. Existing in-app toasts follow their own visibility rules.
 
-Settings → Notifications has independent controls for transfer batches, failed reconnections, long-running commands, and Terminal programs. The native notification click restores the main window when the desktop reports activation. See the [platform checks](docs/notifications.md) for permissions and activation behavior.
+Settings → Notifications has independent controls for transfer batches, failed reconnections, long-running commands, and Terminal programs. The long-command threshold accepts whole seconds and defaults to 10. The category explains the Shell integration requirement and how to enable it when it is off. When an integrated remote shell reports the end of a command that exceeded the threshold, the notification shows the Host name, exit code, and a command preview if the shell supplied one. The native notification click restores the main window when the desktop reports activation. See the [platform checks](docs/notifications.md) for permissions and activation behavior.
 
 ### Settings navigation
 

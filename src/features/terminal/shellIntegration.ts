@@ -13,12 +13,19 @@ interface PromptState {
   atEmptyPrompt: boolean;
 }
 
+export interface FinishedShellCommand {
+  commandLine: string | null;
+  durationMs: number;
+  exitCode: number;
+}
+
 interface TrackedShell {
   prompt: PromptState;
   /** Waiting for the first prompt or for a command to finish. */
   awaitingPrompt: boolean;
   /** Input reached the PTY in the meantime and may still be queued. */
   queuedInput: boolean;
+  command?: { commandLine: string | null; startedAt: number };
 }
 
 const disconnected: PromptState = { status: "disconnected", atEmptyPrompt: false };
@@ -49,20 +56,33 @@ export function createShellIntegrationState(enabled: () => boolean = () => true)
         return next;
       }, true);
     },
-    event(paneId: string, event: ShellIntegrationEvent, normalBuffer = true) {
+    event(paneId: string, event: ShellIntegrationEvent, normalBuffer = true): FinishedShellCommand | undefined {
       const current = store.getState().get(paneId);
       if (!current) return;
       if (event.type === "availability") {
-        save(paneId, { ...current, prompt: { status: event.status, atEmptyPrompt: false } });
-      } else if (current.prompt.status === "available") {
-        const atPrompt = event.type === "promptStart";
-        const atEmptyPrompt = atPrompt && !current.queuedInput && normalBuffer;
-        save(paneId, {
-          prompt: { status: "available", atEmptyPrompt },
-          awaitingPrompt: !atPrompt,
-          queuedInput: !atPrompt && current.queuedInput,
-        });
+        save(paneId, { ...current, prompt: { status: event.status, atEmptyPrompt: false }, command: undefined });
+        return;
       }
+      if (current.prompt.status !== "available") return;
+
+      const atPrompt = event.type === "promptStart";
+      const atEmptyPrompt = atPrompt && !current.queuedInput && normalBuffer;
+      const tracking = enabled();
+      const started = current.command;
+      const finished = tracking && event.type === "commandEnd" && started ? {
+        commandLine: started.commandLine,
+        durationMs: performance.now() - started.startedAt,
+        exitCode: event.exitCode,
+      } : undefined;
+      save(paneId, {
+        prompt: { status: "available", atEmptyPrompt },
+        awaitingPrompt: !atPrompt,
+        queuedInput: !atPrompt && current.queuedInput,
+        command: tracking && event.type === "commandStart"
+          ? { commandLine: event.commandLine, startedAt: performance.now() }
+          : undefined,
+      });
+      return finished;
     },
     input(paneId: string, data: string) {
       const current = store.getState().get(paneId);

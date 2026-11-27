@@ -15,7 +15,7 @@ import {
 } from "@/lib/ipc/terminal";
 import { XtermView } from "./XtermView";
 import { shellIntegration, useShellIntegration } from "./shellIntegration";
-import { watchTerminalNotifications } from "./terminal-notifications";
+import { notifyCommandFinished, watchTerminalNotifications } from "./terminal-notifications";
 
 export type OpenTerminal = (
   size: TerminalSize,
@@ -68,6 +68,7 @@ export function TerminalSurface({
   const onOpenedRef = useRef(onOpened);
   const onExitRef = useRef(onExit);
   const onTitleChangeRef = useRef(onTitleChange);
+  const labelRef = useRef(label);
   const tRef = useRef(t);
 
   useEffect(() => {
@@ -76,6 +77,7 @@ export function TerminalSurface({
     onOpenedRef.current = onOpened;
     onExitRef.current = onExit;
     onTitleChangeRef.current = onTitleChange;
+    labelRef.current = label;
   });
 
   const attach = useCallback((xterm: XTerm) => {
@@ -119,7 +121,8 @@ export function TerminalSurface({
           return;
         }
         if (event.type === "shellIntegration") {
-          shellIntegration.event(paneId, event.event, xterm.buffer.active.type === "normal");
+          const finished = shellIntegration.event(paneId, event.event, xterm.buffer.active.type === "normal");
+          if (finished) notifyCommandFinished(labelRef.current, finished);
           return;
         }
         if (event.type === "connection") {

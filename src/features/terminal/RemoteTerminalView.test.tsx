@@ -2,11 +2,12 @@ import { Terminal } from "@xterm/xterm";
 import { invoke } from "@tauri-apps/api/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { beforeAll, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { startI18n } from "@/i18n";
 import type { ConnectProgress } from "@/lib/ipc/connect";
 import type { Host } from "@/lib/ipc/hosts";
-import type { ConnectionState, TerminalMessage } from "@/lib/ipc/terminal";
+import type { ConnectionState, ShellIntegrationEvent, TerminalMessage } from "@/lib/ipc/terminal";
+import { startSettings } from "@/lib/storage";
 import { RemoteTerminalView } from "./RemoteTerminalView";
 import { XtermView } from "./XtermView";
 
@@ -35,6 +36,8 @@ beforeAll(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   startI18n();
 });
+
+beforeEach(() => vi.clearAllMocks());
 
 it("shows progress for each hop and keeps the failed attempt visible until Reconnect", async () => {
   const focus = vi.spyOn(document, "hasFocus").mockReturnValue(false);
@@ -96,6 +99,79 @@ it("shows progress for each hop and keeps the failed attempt visible until Recon
     expect(container.textContent).not.toContain("Disconnected");
   } finally {
     focus.mockRestore();
+    act(() => {
+      detach?.();
+      terminal.dispose();
+      root.unmount();
+    });
+  }
+});
+
+it("reports a long-running shell command only after that shell reports its exit status", async () => {
+  await startSettings({
+    load: async () => ({ notifications: { longCommandThresholdSeconds: 2 } }),
+    save: async () => undefined,
+  });
+  const focus = vi.spyOn(document, "hasFocus").mockReturnValue(false);
+  const clock = vi.spyOn(performance, "now").mockReturnValue(1_000);
+  const root = createRoot(document.createElement("div"));
+  const terminal = new Terminal();
+  act(() => root.render(<RemoteTerminalView paneId="pane" host={host} onEditHost={() => {}} onClose={() => {}} />));
+  let detach: (() => void) | undefined;
+
+  try {
+    await act(async () => { detach = vi.mocked(XtermView).mock.calls[0]![0].attach(terminal); });
+    const [, args] = vi.mocked(invoke).mock.calls.find(([command]) => command === "remote_terminal_open")!;
+    const { onEvent } = args as { onEvent: { onmessage: (message: TerminalMessage) => void } };
+    const emit = (message: TerminalMessage) => act(() => onEvent.onmessage(message));
+    const shell = (shellIntegration: ShellIntegrationEvent) => emit({ shellIntegration });
+    const notifications = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === "notification_show");
+
+    shell({ type: "availability", status: "available" });
+    shell({ type: "commandStart", commandLine: "sleep 3; false" });
+    clock.mockReturnValue(4_000);
+    expect(notifications()).toEqual([]);
+    shell({ type: "commandEnd", exitCode: 1 });
+    expect(notifications()).toEqual([["notification_show", {
+      title: "Command finished on Production",
+      body: "sleep 3; false · Exit code 1",
+    }]]);
+
+    shell({ type: "commandStart", commandLine: "sleep 1" });
+    clock.mockReturnValue(5_000);
+    shell({ type: "commandEnd", exitCode: 0 });
+    expect(notifications()).toHaveLength(1);
+
+    shell({ type: "commandStart", commandLine: "sleep 4" });
+    emit({ connection: { state: "reconnecting", attempt: 1, attempts: 3 } });
+    emit({ connection: { state: "connected" } });
+    shell({ type: "availability", status: "available" });
+    clock.mockReturnValue(9_000);
+    shell({ type: "commandEnd", exitCode: 0 });
+    expect(notifications()).toHaveLength(1);
+
+    shell({ type: "commandStart", commandLine: null });
+    clock.mockReturnValue(12_000);
+    shell({ type: "commandEnd", exitCode: 127 });
+    expect(notifications().at(-1)).toEqual(["notification_show", {
+      title: "Command finished on Production",
+      body: "Exit code 127",
+    }]);
+
+    shell({ type: "commandStart", commandLine: "sleep 3" });
+    clock.mockReturnValue(15_000);
+    focus.mockReturnValue(true);
+    shell({ type: "commandEnd", exitCode: 0 });
+    expect(notifications()).toHaveLength(2);
+
+    focus.mockReturnValue(false);
+    shell({ type: "commandStart", commandLine: "exit" });
+    clock.mockReturnValue(18_000);
+    emit({ exitCode: 0 });
+    expect(notifications()).toHaveLength(2);
+  } finally {
+    focus.mockRestore();
+    clock.mockRestore();
     act(() => {
       detach?.();
       terminal.dispose();
