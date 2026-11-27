@@ -2,25 +2,25 @@
 version: 1
 slug: "src-app-tsx"
 primary_target: "src/App.tsx"
-related_targets: ["src/features/shell"]
+related_targets: ["src/features/shell","src/theme"]
 ---
 
-Scope: the main window shell (src/App.tsx + src/features/shell). Mode: Operate.
+Scope: the main window shell (src/App.tsx + src/features/shell, the nav rail, Home, tab strip, status bar) and the app theme system (src/theme). Mode: Operate.
 
 Audience/job: developers and operators working in Terminals for hours, opening Hosts and moving files.
 
-Constraint: direction pinned by the owner in ticket #3 (Termius/Linear restraint: large radii, thin borders, soft shadows, moderate density). Pinned direction beats the roll, so concept-seed was not run.
+Constraint: redesign requested by the owner on 2026-11-27, replacing the ticket #3 "lit sheet on a tinted desk" world. The owner pinned the category standard: "仿照主流的terminal和ssh软件", benchmarked on Termius, Warp and WindTerm/MobaXterm, with whole-window themes. Pinned canon beats the roll, so concept-seed was not run. Defaults follow the system light/dark setting.
 
 ## Direction contract
 
-THESIS: The Terminal is a lit sheet laid on a quiet desk. Chrome (Host list, tab strip, status bar) shares one tinted ground; work surfaces (Terminal, File panel) are rounded panels floating on it. Refuses the default of edge-to-edge grey panes divided by heavy rules.
+THESIS: A themeable SSH workstation in the Termius/Warp mould: a nav rail, a Host vault, and Terminals that fill the window, where one theme recolours chrome and Terminal together. Refuses the old grey desk with floating white sheets and a single fixed palette.
 
-OWN-WORLD: Cool-tinted neutrals (hue 255) for chrome, white or near-black panels, one Astra blue accent for primary actions, selection and focus only. Green/amber/red are Connection states. 10px panel radius, 14px dialogs, 1px borders, soft shadow in light and border-led depth in dark. System UI sans at 13px; mono only for Terminal, paths, fingerprints.
+OWN-WORLD: Thirteen whole-window themes (Astra Light/Dark, Tokyo Night, One Dark, Nord, Catppuccin Mocha/Latte, Dracula, Gruvbox Dark, Solarized Light/Dark, GitHub Light/Dark). Each theme names a ground, a sidebar, a surface, a raised layer, text, muted text, border, accent and state colours, and its own 16-colour Terminal palette; every other token is derived. Chrome sits on the theme's ground; the Terminal panel is the theme's Terminal background, flush, 8px radius, 1px border, no floating shadow in dark themes. System UI sans 13px; mono for Terminal, addresses, paths, fingerprints.
 
-STORY: The user sees their Hosts, opens one, and the Terminal fills the stage; files sit beside it; state is always legible in tab dots and the status bar.
+STORY: The user lands on Home, a Host vault of cards with recent Hosts first, types to filter, clicks a card and the Terminal fills the stage; files follow beside it; Connection state shows on the card, the tab and the status bar.
 
-FIRST VIEWPORT: Left 248px Host list on the ground (title, add, collapse, search, groups, Local terminal at the bottom). Right: tab strip on the ground; the active tab is cut from the Terminal panel (same colour, joined edge). Terminal panel fills; File panel docked right (340px) or bottom, collapsible; 26px status bar across the bottom.
+FIRST VIEWPORT: 48px nav rail far left (app mark; Hosts, SFTP, Port forwards; then Local terminal and Settings at the bottom), Host list column 248px, compact 34px tab strip (pill tabs, status dot, Host colour), Terminal filling the workspace with the File panel docked right, a 24px dense status bar with per-Host Connection segments, forwards, transfers, the active theme and Settings.
 
-FORM: pinned direction (Termius/Linear restraint), position 1. Roll skipped: the owner pinned the direction in ticket #3, so concept-seed was deliberately not run (no seed reference). Adaptation: the Host list collapse toggle sits at the start of the tab strip so it stays reachable while the list is collapsed.
+FORM: pinned canon (category standard played straight, at Termius/Warp/WindTerm craft level), position 1. seed: none (unavailable). Signature move: Host monograms and tab marks take their colour from the active theme's ANSI palette, and hovering a theme in the gallery previews it live across the whole window, Terminals included, before click commits.
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
