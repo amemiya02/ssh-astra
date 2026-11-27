@@ -249,7 +249,7 @@ Every colour is a role in a theme, not a fixed value: the frontmatter carries As
 
 The twelve `ui` roles:
 - **Ground** (`ground`): the window behind everything: tab strip, gutters, status bar, Home's Host cards, the base of a destructive button's text.
-- **Sidebar** (`sidebar`): the nav rail and the Host list / Port forwards column, one continuous strip. In dark themes it is the deepest colour, and the source of the scrim and overlay shadow.
+- **Sidebar** (`sidebar`): the nav rail and the Hosts, Port forwards and Snippets column, one continuous strip. In dark themes it is the deepest colour, and the source of the scrim and overlay shadow.
 - **Surface** (`surface`): work panels (File panel, Home, Settings), the active tab, outline buttons, segmented-control thumbs.
 - **Raised** (`raised`, the `popover` token): menus, dialogs, the command palette, drag previews.
 - **Foreground** and **Muted foreground** (`foreground`, `mutedForeground`): text and secondary text (addresses, counts, hints, status bar, inactive tabs, rail icons at rest).
@@ -311,9 +311,11 @@ Pickers list light themes first, then dark, Astra's own at the head of each (`ap
 
 ## Layout
 
-**Anatomy.** Left to right: the 48px nav rail, then a resizable Host list column (default 248px, min 200px, max 40%, collapsible), both on `sidebar` with no rule between them; a 6px gutter; the main column on the ground. Top to bottom: the window above a full-width 24px status bar.
+**Anatomy.** Left to right: the 48px nav rail, then a resizable sidebar column (default 248px, min 200px, max 40%, collapsible), both on `sidebar` with no rule between them; a 6px gutter; the main column on the ground. Top to bottom: the window above a full-width 24px status bar.
 
-**Nav rail.** A 34px drag region clear of the macOS traffic lights, the app mark (the three-star `>_` constellation in primary, 28px), then destinations and views 4px apart: Home, Hosts, Port forwards, SFTP. Short viewports tighten those gaps to 2px so Local terminal and Settings stay reachable at the bottom. Rail buttons are 36px with 18px icons and a tooltip to the right.
+**Nav rail.** A 34px drag region clear of the macOS traffic lights, the app mark (the three-star `>_` constellation in primary, 28px), then destinations and views 4px apart: Home, Hosts, Port forwards, Snippets and SFTP. Short viewports tighten those gaps to 2px so Local terminal and Settings stay reachable at the bottom. Rail buttons are 36px with 18px icons and a tooltip to the right.
+
+**Snippets.** The sidebar groups saved commands by their optional group name. A Snippet scoped to Hosts appears when a Terminal on one of those Hosts is focused. Rows have separate Run, Edit and Delete buttons. Run is available with a live Terminal. A Snippet with variables opens a dialog with a field per variable and its default, when present. An explicit Run sends the expanded command through the focused Terminal and the active Broadcast audience, using each shell’s paste mode and the Snippet’s Enter preference.
 
 **Chrome rows.** The sidebar header, horizontal tab strip and dock toggles align in a 34px row. The empty space in the row drags the window. In vertical mode the dock toggles stay across the top beside a full-height drag region. On macOS `--chrome-inset` keeps the leftmost chrome clear of the native traffic lights at every zoom level.
 

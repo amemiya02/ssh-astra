@@ -25,11 +25,13 @@ import { CommandPalette, type PaletteTab } from "@/features/palette/CommandPalet
 import { usePaletteActions, type PaletteAction } from "@/features/palette/palette-actions";
 import { DiagnosticsPaletteActions } from "@/features/settings/diagnostics-section";
 import { AppShell } from "@/features/shell/AppShell";
+import { SnippetsSidebar } from "@/features/snippets/SnippetsSidebar";
 import { zoomTerminalFont } from "@/features/terminal/terminal-prefs";
 import { useTerminalPrefs } from "@/features/terminal/terminal-prefs-context";
 import { terminalOutputKinds, terminalOutputs } from "@/features/terminal/terminal-outputs";
 import { createBroadcast, type BroadcastScope } from "@/features/workspace/broadcast";
 import { interruptionCounts } from "@/features/workspace/interruption-counts";
+import { MacosMenu } from "@/features/workspace/MacosMenu";
 import { paneNeighbors } from "@/features/workspace/pane-layout";
 import { privacyModeSetting, togglePrivacyMode } from "@/features/workspace/privacy-mode";
 import { QuitConfirmation } from "@/features/workspace/QuitConfirmation";
@@ -306,7 +308,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
     }, [focusedLayout, focusedPaneId, paneMaximized, shortcuts, t]),
   );
 
-  const shortcutCapture = useWorkspaceShortcuts(platform, (command: WorkspaceCommand) => {
+  function runWorkspaceCommand(command: WorkspaceCommand) {
     if (pendingClose) return;
     const tab = activeTab(state);
     switch (command.type) {
@@ -341,7 +343,8 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
         return;
       }
     }
-  });
+  }
+  const shortcutCapture = useWorkspaceShortcuts(platform, runWorkspaceCommand);
 
   const hosts = useHosts((s) => s.tree.hosts);
   const forwardStates = useForwards((s) => s.states);
@@ -406,10 +409,19 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
   return (
     <ShortcutCaptureContext.Provider value={shortcutCapture}>
       <DiagnosticsPaletteActions />
+      {platform === "mac" && isTauri() && (
+        <MacosMenu shortcuts={shortcuts} canClosePane={Boolean(focused) && !pendingClose} runWorkspaceCommand={runWorkspaceCommand} />
+      )}
       <AppShell
         sidebar={{
           hosts: <HostsPanel controller={hostsController} connections={connections} />,
           forwards: <ForwardsSidebar onOpenForwards={openForwards} />,
+          snippets: <SnippetsSidebar
+            broadcast={broadcast}
+            paneId={hasFocusedTerminal ? focusedPaneId : undefined}
+            hostId={focusedPane?.kind === "remote-terminal" ? focusedPane.host.id : undefined}
+            hosts={hosts}
+          />,
         }}
         nav={{
           activeKind: focusedPane?.kind ?? null,

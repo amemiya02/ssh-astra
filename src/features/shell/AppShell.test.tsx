@@ -63,7 +63,7 @@ function shell(activeKind: PaneKind["kind"] | null) {
     <ThemeProvider>
       <TooltipProvider>
         <AppShell
-          sidebar={{ hosts: <p>hosts view</p>, forwards: <p>forwards view</p> }}
+          sidebar={{ hosts: <p>hosts view</p>, forwards: <p>forwards view</p>, snippets: <p>snippets view</p> }}
           nav={{ activeKind, onHome() {}, onSftp() {}, onLocalTerminal() {}, onSettings() {} }}
           tabs={<TabStrip
             activity={activity}
@@ -193,6 +193,17 @@ describe("AppShell", () => {
 
     act(() => paletteActions.list().find((a) => a.id === "shell.showHosts")!.run());
     expect(getSetting(layoutSetting).sidebarView).toBe("hosts");
+  });
+
+  it("switches to the Snippets view and remembers the selection", () => {
+    const container = render();
+    const railButton = container.querySelector<HTMLButtonElement>('nav button[aria-label="Snippets"]')!;
+    const view = [...container.querySelectorAll("aside > div")].find((el) => el.textContent === "snippets view")!;
+    expect(view.hasAttribute("hidden")).toBe(true);
+    act(() => railButton.click());
+    expect(railButton.getAttribute("aria-pressed")).toBe("true");
+    expect(view.hasAttribute("hidden")).toBe(false);
+    expect(layoutSetting.parse(getSetting(layoutSetting)).sidebarView).toBe("snippets");
   });
 
   it("marks the open sidebar view on the rail, and its button collapses and reopens the column", () => {
