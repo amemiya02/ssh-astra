@@ -23,6 +23,7 @@ fn host(name: &str) -> ConfigHost {
         forward_agent: false,
         keepalive_seconds: None,
         jump_host: None,
+        proxy_command: None,
         forwards: Vec::new(),
     }
 }
@@ -33,6 +34,7 @@ trait With {
     fn user(self, u: &str) -> Self;
     fn key(self, k: &str) -> Self;
     fn jump(self, j: &str) -> Self;
+    fn proxy_command(self, command: &str) -> Self;
     fn local(self, bind_address: &str, bind_port: u16, remote_host: &str, remote_port: u16)
         -> Self;
     fn remote(self, bind_address: &str, bind_port: u16, local_host: &str, local_port: u16) -> Self;
@@ -59,6 +61,10 @@ impl With for ConfigHost {
     }
     fn jump(mut self, j: &str) -> Self {
         self.jump_host = Some(j.into());
+        self
+    }
+    fn proxy_command(mut self, command: &str) -> Self {
+        self.proxy_command = Some(command.to_owned());
         self
     }
     fn local(
@@ -496,17 +502,24 @@ Host good
         .hosts(vec![host("good")])
         .issues(vec![issue("bad", true, invalid("Port", "ssh"))]),
         case(
-            "ProxyCommand Hosts cannot be reached and are not imported",
+            "ProxyCommand competes with ProxyJump in configuration order",
             "
 Host legacy
     ProxyCommand ssh -W %h:%p gw
+    ProxyJump unused
+Host tunneled
+    ProxyJump legacy
+    ProxyCommand unused
 Host plain
 Host *
     ProxyCommand none
 ",
         )
-        .hosts(vec![host("plain")])
-        .issues(vec![issue("legacy", true, unsupported("ProxyCommand"))]),
+        .hosts(vec![
+            host("legacy").proxy_command("ssh -W %h:%p gw"),
+            host("tunneled").jump("legacy"),
+            host("plain"),
+        ]),
         case(
             "Match blocks are skipped and reported",
             "

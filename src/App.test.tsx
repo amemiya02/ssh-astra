@@ -52,7 +52,12 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
       if (command === "transfers_watch" || command === "forwards_watch" || command === "connections_watch") return [];
       if (command === "hosts_import_ssh_config") return {
         tree: { hosts: savedHosts, groups: [] },
-        report: { imported: ["Imported Host"], skipped: [], issues: [] },
+        report: {
+          imported: ["Imported Host"],
+          skipped: [],
+          issues: [],
+          proxyCommands: [{ host: "Imported Host", command: 'nc "%h" %p' }],
+        },
       };
       if (command === "host_tree") return { hosts: savedHosts, groups: [] };
     }),
@@ -940,6 +945,8 @@ it("announces the OpenSSH import result and still opens the detailed report", as
     .find((button) => button.textContent === "Import ~/.ssh/config")!;
   await act(async () => importButton.click());
   expect(dialog()?.textContent).toContain("Imported Host");
+  expect(dialog()?.textContent).toContain("Imported ProxyCommands");
+  expect(dialog()?.querySelector("code")?.textContent).toBe('nc "%h" %p');
   expect(document.querySelector('[role="status"][aria-live="polite"]')?.textContent)
     .toBe("Imported 1, skipped 0, could not import 0.");
   await act(async () => dialog()!.querySelector("button")!.click());

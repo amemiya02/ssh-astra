@@ -30,6 +30,7 @@ pub enum HostProxy {
     Inherit,
     Direct,
     Override(ProxyConfig),
+    ProxyCommand(String),
 }
 
 impl HostProxy {
@@ -40,9 +41,18 @@ impl HostProxy {
     pub(crate) fn normalize(self) -> Result<Self, &'static str> {
         match self {
             Self::Override(config) => config.normalize().map(Self::Override),
+            Self::ProxyCommand(command) => normalize_command(&command).map(Self::ProxyCommand),
             other => Ok(other),
         }
     }
+}
+
+pub(crate) fn normalize_command(command: &str) -> Result<String, &'static str> {
+    let command = command.trim();
+    if command.is_empty() || command.contains('\0') {
+        return Err("proxyCommand");
+    }
+    Ok(command.to_owned())
 }
 
 impl ProxyConfig {

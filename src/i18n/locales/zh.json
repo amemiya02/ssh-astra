@@ -110,6 +110,8 @@
       "partial": "已导入，但缺少部分设置",
       "error": "无法导入 ~/.ssh/config：{{message}}",
       "close": "关闭",
+      "proxyCommands": "已导入的 ProxyCommand",
+      "proxyCommandHint": "连接下面列出的 Host 时，这些命令会在本机运行。",
       "problems": {
         "invalidValue": "无法识别 {{directive}} {{value}}",
         "unsupported": "不支持 {{directive}}",
@@ -695,6 +697,7 @@
     "direct": "直连",
     "inherit": "跟随全局代理设置",
     "jumpHint": "此连接使用首个跳板主机的代理设置。",
+    "commandHint": "连接时由本机的 Shell 执行。%h 表示 Host 地址，%p 表示端口，%r 表示用户名。",
     "passwordHint": "可选。填写用户名后，连接时会询问代理密码。",
     "save": "保存代理设置",
     "clearPassword": "清除保存的密码",
@@ -703,12 +706,14 @@
     "fields": {
       "address": "代理地址",
       "port": "代理端口",
-      "username": "代理用户名"
+      "username": "代理用户名",
+      "command": "Shell 命令"
     },
     "errors": {
       "proxyAddress": "请输入主机名或 IP 地址。",
       "proxyPort": "请输入 1 到 65535 之间的端口。",
-      "proxyUsername": "请输入此代理类型支持的用户名。"
+      "proxyUsername": "请输入此代理类型支持的用户名。",
+      "proxyCommand": "请输入有效的 Shell 命令。"
     },
     "prompt": {
       "title": "{{host}} 上 {{user}} 的代理密码",
@@ -787,6 +792,10 @@
       "proxyInvalidResponse": "出站代理返回了无效响应",
       "proxyAuthenticationFailed": "出站代理拒绝认证",
       "proxyConnectFailed": "出站代理无法连接到主机",
+      "proxyCommandInvalid": "请检查 ProxyCommand 设置",
+      "proxyCommandTarget": "Host 设置中含有 ProxyCommand 无法替换的字符",
+      "proxyCommandStart": "无法启动 ProxyCommand",
+      "proxyCommandFailed": "ProxyCommand 关闭了 SSH 连接",
       "cancelled": "已取消连接。",
       "generic": "连接失败。",
       "keyUnreadable": "无法使用私钥 {{keyPath}}：{{reason}}",

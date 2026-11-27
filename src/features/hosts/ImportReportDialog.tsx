@@ -18,6 +18,20 @@ export function ImportReportDialogContent({ report, onClose }: { report: ImportR
       <div className="grid max-h-80 gap-3 overflow-y-auto">
         <NameList heading={t("hosts.import.imported")} names={report.imported} />
         <NameList heading={t("hosts.import.skipped")} names={report.skipped} />
+        {report.proxyCommands.length > 0 && (
+          <section className="grid gap-1">
+            <h3 className="text-muted-foreground text-xs font-medium">{t("hosts.import.proxyCommands")}</h3>
+            <p className="text-xs">{t("hosts.import.proxyCommandHint")}</p>
+            <ul className="grid gap-1 text-xs">
+              {report.proxyCommands.map(({ host, command }) => (
+                <li key={host} className="grid gap-0.5">
+                  <span className="font-medium break-all">{host}</span>
+                  <code className="font-mono break-all whitespace-pre-wrap">{command}</code>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
         <IssueList heading={t("hosts.import.failed")} issues={failed} />
         <IssueList heading={t("hosts.import.partial")} issues={partial} />
       </div>

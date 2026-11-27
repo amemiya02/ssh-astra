@@ -179,3 +179,16 @@ it("writes a direct or custom first-hop proxy choice to the Host draft", () => {
   expect(parseHostForm(invalid)).toMatchObject({ ok: false, errors: { proxyAddress: "proxyAddress" } });
   expect(parseHostForm({ ...invalid, jumpHost: "jump" }, "test")).toMatchObject({ ok: true });
 });
+
+it("edits a Host's ProxyCommand and requires a command when that mode is selected", () => {
+  const config = 'nc "%h" %p';
+  const base = { address: "", port: "", username: "", mode: "proxyCommand" as const };
+  const saved = parseHostForm({ ...valid, proxy: { ...base, command: ` ${config} ` } });
+  expect(saved).toMatchObject({ ok: true, draft: { proxy: { mode: "proxyCommand", config } } });
+  if (!saved.ok) throw new Error("Expected a saved Host draft");
+  const form = hostFormFrom({ ...saved.draft, id: "1", groupId: null, forwards: [] });
+  expect(form.proxy).toMatchObject({ mode: "proxyCommand", command: config });
+  expect(parseHostForm({ ...valid, proxy: { ...base, command: " " } })).toEqual({
+    ok: false, errors: { proxyCommand: "proxyCommand" },
+  });
+});

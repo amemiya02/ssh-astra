@@ -32,7 +32,7 @@ function fakeApi(initial: HostTree, overrides: Partial<HostsApi> = {}): HostsApi
     deleteGroup: vi.fn(() => Promise.resolve(initial)),
     saveForward: vi.fn((_host: string, d: ForwardDraft, id?: string) => Promise.resolve({ ...d, id: id ?? `f${++forwards}` })),
     deleteForward: vi.fn(() => Promise.resolve()),
-    importSshConfig: vi.fn(() => Promise.resolve({ tree: initial, report: { imported: [], skipped: [], issues: [] } })),
+    importSshConfig: vi.fn(() => Promise.resolve({ tree: initial, report: { imported: [], skipped: [], issues: [], proxyCommands: [] } })),
     exportHosts: vi.fn(() => Promise.resolve()),
     importHosts: vi.fn(() =>
       Promise.resolve({ summary: { hostsAdded: 0, groupsAdded: 0, skippedHosts: [] }, tree: initial }),
@@ -166,7 +166,8 @@ describe("hosts store", () => {
     const report = {
       imported: ["web", "db"],
       skipped: ["a"],
-      issues: [{ entry: "legacy", dropped: true, problem: { kind: "unsupported" as const, directive: "ProxyCommand" } }],
+      issues: [{ entry: "legacy", dropped: true, problem: { kind: "invalidValue" as const, directive: "Port", value: "nope" } }],
+      proxyCommands: [{ host: "web", command: "nc %h %p" }],
     };
     const { store } = await loaded(
       { groups: [], hosts: [host("a")] },
