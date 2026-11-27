@@ -6,8 +6,9 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
-use crate::agent::{bound_metadata, TerminalStatus};
+use crate::agent::{bound_metadata, TerminalScreen, TerminalStatus};
 use crate::hosts::HostId;
+use crate::ssh::BoxFuture;
 
 use super::{
     ConnectionState, OutputKind, Result, Terminal, TerminalError, TerminalEvent, TerminalOutput,
@@ -31,11 +32,14 @@ impl fmt::Display for TerminalId {
     }
 }
 
-/// The metadata side of an open Terminal on a saved Host. Shell bytes and
-/// connection errors are deliberately absent.
+type ScreenReader = dyn Fn(usize) -> BoxFuture<'static, Option<TerminalScreen>> + Send + Sync;
+
+/// The metadata side of an open Terminal on a saved Host, with an optional
+/// on-demand reader for the desktop renderer's screen.
 pub struct SavedTerminalMetadata {
     pub host: HostId,
     state: Mutex<SavedTerminalState>,
+    screen: Option<Box<ScreenReader>>,
 }
 
 #[derive(Clone)]
@@ -49,12 +53,25 @@ impl SavedTerminalMetadata {
     pub fn new(host: HostId) -> Self {
         Self {
             host,
+            screen: None,
             state: Mutex::new(SavedTerminalState {
                 title: None,
                 cwd: None,
                 status: Some(TerminalStatus::Connected),
             }),
         }
+    }
+
+    pub fn with_screen_reader(
+        mut self,
+        read: impl Fn(usize) -> BoxFuture<'static, Option<TerminalScreen>> + Send + Sync + 'static,
+    ) -> Self {
+        self.screen = Some(Box::new(read));
+        self
+    }
+
+    pub fn read_screen(&self, lines: usize) -> Option<BoxFuture<'static, Option<TerminalScreen>>> {
+        Some(self.screen.as_ref()?(lines))
     }
 
     pub fn observe(&self, event: &TerminalEvent) {
@@ -140,12 +157,12 @@ impl TerminalRegistry {
             .collect()
     }
 
+    pub fn saved_terminal(&self, id: TerminalId) -> Option<Arc<SavedTerminalMetadata>> {
+        self.lock().get(&id)?.saved.clone()
+    }
+
     pub fn set_title(&self, id: TerminalId, title: String) {
-        if let Some(saved) = self
-            .lock()
-            .get(&id)
-            .and_then(|terminal| terminal.saved.clone())
-        {
+        if let Some(saved) = self.saved_terminal(id) {
             saved.set_title(title);
         }
     }

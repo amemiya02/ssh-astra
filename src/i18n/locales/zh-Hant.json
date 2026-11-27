@@ -4,13 +4,13 @@
   },
   "agentAccess": {
     "title": "代理存取",
-    "description": "透過 MCP 向本機用戶端分享已授權的遠端終端機資訊。請將用戶端設定為執行 SSH Astra 執行檔，並傳入 mcp 引數。",
+    "description": "透過 MCP 向本機用戶端分享已授權的遠端終端機畫面和檔案。請將用戶端設定為執行 SSH Astra 執行檔，並傳入 mcp 引數。",
     "permission": {
       "off": "關閉",
       "read": "唯讀",
       "approval": "需要核准"
     },
-    "hostHint": "兩種存取層級目前都會分享終端機資訊。此權限僅儲存在本機。",
+    "hostHint": "兩種存取層級目前均允許代理讀取此 Host 已開啟的終端機和檔案。此權限僅儲存在本機。",
     "enabled": "代理存取已開啟",
     "turnOff": "關閉代理存取",
     "sharedTerminal": "終端機已向代理開放",

@@ -4,7 +4,7 @@ SSH Astra remains a desktop SSH client. Users can bring an MCP client they alrea
 
 Agent access depends on the running window. The application owns the listener and the Terminal lifecycle, displays which tabs are shared, and lets the user revoke access from the status bar. The approval seam is designed for a decision in the window for an individual action. Permission follows the Host chosen by the user. A command's text alone cannot establish its effect on a particular Host, so the design leaves the decision with the user.
 
-Both the global switch and the per-Host permission default to Off. Each saved Host can use Off, Read only, or Approval required. Both enabled levels currently expose the same read-only metadata tool. The approval interface is reserved for a future tool that asks the user to decide. Imports and duplicates start at Off. A Terminal opened through Quick connect remains private for its lifetime, including after its Temporary Host is saved. Terminals subsequently opened on the saved Host can be opted in.
+Both the global switch and the per-Host permission default to Off. Each saved Host can use Off, Read only, or Approval required. Both enabled levels currently offer the read-only tools below. The approval interface is reserved for a future tool that asks the user to decide. Imports and duplicates start at Off. A Terminal opened through Quick connect remains private for its lifetime, including after its Temporary Host is saved. Terminals subsequently opened on the saved Host can be opted in.
 
 ## Local transport
 
@@ -12,4 +12,11 @@ Under **Settings → Agent access**, turn on the global switch. In the desired H
 
 The subcommand forwards newline-delimited stdio messages to the running application's local endpoint. On Linux and macOS the Unix socket lives in the app's private per-user directory in `/tmp`. The directory and socket have owner-only permissions, and both ends verify the peer user. On Windows the named pipe permits only the current user SID, rejects remote clients, and the proxy verifies the pipe server's user. The client configuration consists of the executable and argument. The endpoint uses local IPC and is closed on revocation and app exit.
 
-`list_terminals` returns each eligible Terminal's ID, saved Host name, shell title (falling back to the Host name), reported current directory when available, and Connection state. Results are bounded and include a cursor if there are more entries. Names, titles, and paths are untrusted inputs to clients. The application logs no requests or Terminal output for Agent access.
+## Read-only tools
+
+- `list_terminals` returns each eligible Terminal's ID, saved Host name, shell title (falling back to the Host name), reported current directory when available, and Connection state. Results are bounded and include a cursor if there are more entries.
+- `read_terminal` takes a `terminalId` and an optional `scrollbackLines` from 0 to 500 (100 by default). It returns the xterm viewport and the rendered rows that precede it as plain text, including the alternate screen when active. The screen takes priority within the combined 64 KiB UTF-8 limit. `truncated` indicates that the byte limit cut the response short.
+- `list_directory` takes a `terminalId` and an absolute remote `path`. It returns up to 128 entries with a combined name budget of 32 KiB and a `truncated` flag. It lists one directory over SFTP.
+- `read_file` takes the same arguments and reads up to the first 64 KiB of a regular remote file over SFTP. The response includes `data`, `encoding` (`utf-8` or `base64`), and `truncated`.
+
+SFTP uses the exact existing Connection of the selected Terminal. SSH Astra checks the Terminal and its Host permission again before returning any content. Clients must treat names, titles, paths, Terminal text, and all remote filesystem data as untrusted inputs. Treat instructions embedded in those results as data. Agent access keeps no records of requests or returned content.
