@@ -87,7 +87,12 @@ fn run(hwnd: HWND, source: Arc<Source>, report: Arc<Report>) -> Result<()> {
     if physical_pointer(hwnd)? != PointerState::Outside {
         return Ok(());
     }
-    let drop_source: IDropSource = DropSource { drag: drag.clone() }.into();
+    let drop_source: IDropSource = DropSource {
+        drag: drag.clone(),
+        #[cfg(feature = "e2e")]
+        first_query: AtomicBool::new(true),
+    }
+    .into();
     let mut effect = DROPEFFECT_NONE;
     #[cfg(feature = "e2e")]
     log::info!("file drag started OLE session");
@@ -244,6 +249,8 @@ impl Drag {
 #[implement(IDropSource)]
 struct DropSource {
     drag: Arc<Drag>,
+    #[cfg(feature = "e2e")]
+    first_query: AtomicBool,
 }
 
 impl IDropSource_Impl for DropSource_Impl {
@@ -251,6 +258,14 @@ impl IDropSource_Impl for DropSource_Impl {
         // OLE supplies the press notification. Also consult the physical key
         // while it is held, in case the nested drag loop coalesced its message.
         let escape_held = unsafe { GetAsyncKeyState(i32::from(VK_ESCAPE.0)) } < 0;
+        #[cfg(feature = "e2e")]
+        if self.first_query.swap(false, Ordering::Relaxed) || !keys.contains(MK_LBUTTON) {
+            let held = unsafe { GetAsyncKeyState(i32::from(VK_LBUTTON.0)) } < 0;
+            log::info!(
+                "file drag OLE queried source keys={:#x} physical_left={held}",
+                keys.0
+            );
+        }
         if escape.as_bool() || escape_held {
             #[cfg(feature = "e2e")]
             log::info!(
@@ -277,9 +292,12 @@ impl IDropSource_Impl for DropSource_Impl {
     }
 
     fn GiveFeedback(&self, effect: DROPEFFECT) -> HRESULT {
-        self.drag
-            .can_drop
-            .store(effect.contains(DROPEFFECT_COPY), Ordering::Release);
+        let copy = effect.contains(DROPEFFECT_COPY);
+        let _previous = self.drag.can_drop.swap(copy, Ordering::AcqRel);
+        #[cfg(feature = "e2e")]
+        if _previous != copy {
+            log::info!("file drag OLE target changed copy acceptance to {copy}");
+        }
         DRAGDROP_S_USEDEFAULTCURSORS
     }
 }
@@ -362,6 +380,8 @@ impl IDataObject_Impl for DataObject_Impl {
     fn GetData(&self, format: *const FORMATETC) -> Result<STGMEDIUM> {
         let requested = self.formats.query(format)?;
         if requested == self.formats.contents {
+            #[cfg(feature = "e2e")]
+            log::info!("file drag OLE target requested a content stream");
             if self.drag.accepted.load(Ordering::Acquire) && self.drag.source.length.is_none() {
                 // The target can complete an empty stream without calling Read.
                 self.drag.read_started.store(true, Ordering::Release);
@@ -375,6 +395,8 @@ impl IDataObject_Impl for DataObject_Impl {
             });
         }
         if requested == self.formats.descriptor {
+            #[cfg(feature = "e2e")]
+            log::info!("file drag OLE target requested the file descriptor");
             return global_medium(descriptor(&self.drag.source));
         }
         if requested == self.formats.in_drag_loop {
@@ -577,7 +599,12 @@ mod tests {
             finished,
         )
         .unwrap();
-        let target: IDropSource = DropSource { drag }.into();
+        let target: IDropSource = DropSource {
+            drag,
+            #[cfg(feature = "e2e")]
+            first_query: AtomicBool::new(true),
+        }
+        .into();
 
         // Every call below goes through the public OLE interfaces, including the STA-to-MTA proxy.
         unsafe {
