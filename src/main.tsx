@@ -7,6 +7,7 @@ import { App } from "./App";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { hostsStore } from "./features/hosts/hostsStore";
 import { restoreWorkspaceLayout, workspaceLayoutSetting } from "./features/workspace/workspace-layout";
+import { incomingTabMove } from "./features/workspace/tab-window-move";
 import { workspaceSetting } from "./features/workspace/workspace-prefs";
 import { startI18n } from "./i18n";
 import { watchFrontendErrors } from "./lib/ipc/diagnostics";
@@ -28,7 +29,10 @@ async function start() {
   await hostsStore.getState().load();
   const { tree } = hostsStore.getState();
   const mode = getSetting(workspaceSetting).restoreTabs;
-  const initialTabs = restoreWorkspaceLayout(getSetting(workspaceLayoutSetting), tree.hosts, mode);
+  const incoming = isTauri() ? await incomingTabMove() : null;
+  const initialTabs = incoming
+    ? { tabs: [incoming.tab], activeId: incoming.tab.id }
+    : restoreWorkspaceLayout(getSetting(workspaceLayoutSetting), tree.hosts, mode);
   const rawWorkspaces = isTauri() ? await startupWorkspaces() : [];
   const startupTabsAcrossWindows = rawWorkspaces?.map((layout) =>
     restoreWorkspaceLayout(workspaceLayoutSetting.parse(layout), tree.hosts, mode)) ?? null;
@@ -41,7 +45,7 @@ async function start() {
     <StrictMode>
       <ThemeProvider>
         <TooltipProvider delayDuration={500}>
-          <App initialTabs={initialTabs} startupTabsAcrossWindows={startupTabsAcrossWindows} />
+          <App initialTabs={initialTabs} startupTabsAcrossWindows={startupTabsAcrossWindows} incomingMove={incoming?.ready} />
         </TooltipProvider>
       </ThemeProvider>
     </StrictMode>,

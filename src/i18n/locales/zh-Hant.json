@@ -328,6 +328,8 @@
     "closeOthers": "關閉其他分頁",
     "closeRight": "關閉右側分頁",
     "duplicate": "複製分頁",
+    "moveToNewWindow": "移到新視窗",
+    "moveToNewWindowFailed": "無法將分頁移到新視窗。",
     "rename": "重新命名分頁",
     "renameHint": "清除標題即可還原自動命名。",
     "title": "分頁標題",

@@ -20,6 +20,9 @@ use crate::commands::settings::SettingsState;
 use crate::commands::transfers::TransfersState;
 use crate::error::{CommandError, CommandResult};
 use crate::prompts::PendingPrompts;
+use crate::terminal_handoff::TerminalRoute;
+
+pub(crate) mod tab_move;
 
 pub(crate) const MAIN: &str = "main";
 pub(crate) const SESSION: &str = "windowSession";
@@ -130,6 +133,7 @@ pub(crate) struct Windows {
     focused: Mutex<Option<String>>,
     startup: Mutex<Option<String>>,
     resources: Mutex<HashMap<String, WindowResources>>,
+    moves: Mutex<HashMap<String, tab_move::TabMove>>,
     quitting: AtomicBool,
     pending_saves: Mutex<HashMap<String, oneshot::Sender<()>>>,
 }
@@ -137,7 +141,7 @@ pub(crate) struct Windows {
 /// Resources opened for a Window, closed if its webview disappears before sending its cleanup IPC.
 #[derive(Default)]
 pub(crate) struct WindowResources {
-    pub(crate) terminals: HashSet<TerminalId>,
+    pub(crate) terminals: HashMap<TerminalId, Arc<TerminalRoute>>,
     pub(crate) files: HashSet<FsId>,
     pub(crate) temporary_hosts: HashSet<HostId>,
     prompts: Arc<PendingPrompts>,
@@ -155,6 +159,20 @@ pub(crate) fn with_resources<T>(
         .get_mut(window.label())
         .map(use_resources)
         .ok_or_else(CommandError::window_closed)
+}
+
+pub(crate) fn forget_temporary_host(window: &WebviewWindow, id: &HostId) {
+    let windows = window.state::<Windows>();
+    let mut all = windows.resources.lock().unwrap();
+    if let Some(resources) = all.get_mut(window.label()) {
+        resources.temporary_hosts.remove(id);
+    }
+    if !all
+        .values()
+        .any(|window| window.temporary_hosts.contains(id))
+    {
+        window.state::<TemporaryHosts>().forget(id);
+    }
 }
 
 pub(crate) fn prompts(window: &WebviewWindow) -> CommandResult<Arc<PendingPrompts>> {
@@ -203,31 +221,37 @@ fn build(app: &AppHandle, label: &str, focus: bool) -> tauri::Result<WebviewWind
     result
 }
 
-/// WebView2 can block window construction from a synchronous command.
-#[tauri::command]
-pub(crate) async fn window_new(app: AppHandle) -> Result<(), String> {
-    let windows = app.state::<Windows>();
+fn reserve_label(windows: &Windows) -> Result<(String, u64), String> {
     if windows.quitting.load(Ordering::Acquire) {
         return Err("SSH Astra is quitting".into());
     }
-    let (label, next_id) = {
-        let mut next = windows.next_id.lock().unwrap();
-        if *next == u64::MAX {
-            return Err("No Window IDs remain".into());
-        }
-        let label = format!("{LABEL_PREFIX}{next}");
-        *next += 1;
-        (label, *next)
-    };
+    let mut next = windows.next_id.lock().unwrap();
+    if *next == u64::MAX {
+        return Err("No Window IDs remain".into());
+    }
+    let label = format!("{LABEL_PREFIX}{next}");
+    *next += 1;
+    Ok((label, *next))
+}
+
+fn remember(app: &AppHandle, label: &str, next_id: u64) {
     // Reserve the workspace before its webview can read or write settings.
     if let Err(error) = app.state::<SettingsState>().with(|store| {
         let mut session = WindowSession::read(store);
-        session.labels.push(label.clone());
+        session.labels.push(label.to_owned());
         session.next_id = session.next_id.max(next_id);
         session.save(store)
     }) {
         log::warn!("Could not save the open Windows: {error:?}");
     }
+}
+
+/// WebView2 can block window construction from a synchronous command.
+#[tauri::command]
+pub(crate) async fn window_new(app: AppHandle) -> Result<(), String> {
+    let windows = app.state::<Windows>();
+    let (label, next_id) = reserve_label(&windows)?;
+    remember(&app, &label, next_id);
     match build(&app, &label, true) {
         Ok(window) => {
             *windows.focused.lock().unwrap() = Some(label);
@@ -378,6 +402,7 @@ pub(crate) fn focused(app: &AppHandle, label: &str) {
 
 pub(crate) fn destroyed(app: &AppHandle, label: &str) {
     let windows = app.state::<Windows>();
+    tab_move::window_destroyed(&windows, label);
     windows.pending_saves.lock().unwrap().remove(label);
     let closed_by_user = windows.closing.lock().unwrap().remove(label);
     if closed_by_user {
@@ -388,22 +413,33 @@ pub(crate) fn destroyed(app: &AppHandle, label: &str) {
     app.state::<ConnectionsState>().unwatch(label);
     app.state::<ForwardsState>().unwatch(label);
     app.state::<TransfersState>().unwatch(label);
-    let resources = windows.resources.lock().unwrap().remove(label);
+    let resources = {
+        let mut all = windows.resources.lock().unwrap();
+        let resources = all.remove(label);
+        if let Some(resources) = &resources {
+            let temporary = app.state::<TemporaryHosts>();
+            for id in &resources.temporary_hosts {
+                if !all
+                    .values()
+                    .any(|window| window.temporary_hosts.contains(id))
+                {
+                    temporary.forget(id);
+                }
+            }
+        }
+        resources
+    };
     if let Some(resources) = resources {
         resources.prompts.close();
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
             let terminals = app.state::<TerminalRegistry>();
-            for id in resources.terminals {
+            for id in resources.terminals.into_keys() {
                 let _ = terminals.close(id);
             }
             let files = app.state::<FsRegistry>();
             for id in resources.files {
                 files.remove(id);
-            }
-            let temporary = app.state::<TemporaryHosts>();
-            for id in resources.temporary_hosts {
-                temporary.forget(&id);
             }
         });
     }
