@@ -298,6 +298,23 @@ async fn changing_numeric_ownership_preserves_unspecified_ids_and_reports_denial
     assert_eq!((after[0].uid, after[0].gid), (Some(uid), Some(gid)));
     assert_eq!(after[0].permissions, before[0].permissions);
 
+    files::change_permissions(
+        &fs,
+        &path,
+        PermissionChange {
+            uid: Some(uid),
+            gid: Some(old_gid),
+            ..PermissionChange::default()
+        },
+    )
+    .await
+    .unwrap();
+    let restored = fs.list_dir(&root).await.unwrap();
+    assert_eq!(
+        (restored[0].uid, restored[0].gid),
+        (Some(uid), Some(old_gid))
+    );
+
     assert_eq!(
         files::change_permissions(
             &fs,
