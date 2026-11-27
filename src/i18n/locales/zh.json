@@ -32,6 +32,7 @@
       "identitiesOnly": "仅使用指定密钥",
       "forwardAgent": "SSH agent 转发",
       "keepaliveSeconds": "保活间隔（秒）",
+      "postLoginCommand": "登录后命令",
       "terminalScheme": "终端配色",
       "defaultDirectory": "文件面板目录"
     },
@@ -42,6 +43,7 @@
     "identitiesOnlyHint": "指定密钥文件后，ssh-agent 只提供与该文件匹配的密钥，且跳过默认密钥文件。",
     "forwardAgentHint": "连接期间，远端主机可以通过你的本机 SSH agent 使用你的 SSH 密钥。 更改后需重新连接。",
     "keepaliveHint": "留空则跟随全局设置，输入 0 则关闭保活。更改后需重新连接。",
+    "postLoginCommandHint": "每次打开新的 shell 并就绪后执行一次，重连时也会执行。",
     "errors": {
       "required": "必填",
       "port": "请输入 1 到 65535 之间的端口",

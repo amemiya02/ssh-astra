@@ -11,6 +11,7 @@
 //! With ShellIntegration on ([`RemoteTerminalOptions::shell_integration`]),
 //! every shell it starts, the first and each after a reconnect, gets the
 //! prompt hook typed in. It reports the current directory and shell markers.
+//! The configured post-login command runs in each new shell after startup.
 
 use std::future::Future;
 use std::sync::Arc;
@@ -49,12 +50,14 @@ impl Default for ReconnectPolicy {
 }
 
 /// How a [`RemoteTerminal`] runs its shells.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RemoteTerminalOptions {
     pub reconnect: ReconnectPolicy,
     /// Type the ShellIntegration hook into each new shell and report its
     /// directory (`terminal::INJECTION`).
     pub shell_integration: bool,
+    /// Command typed once into every new shell after startup.
+    pub post_login_command: Option<String>,
 }
 
 enum Command {
@@ -89,7 +92,7 @@ impl RemoteTerminal {
     {
         let options = RemoteTerminalOptions {
             reconnect: policy,
-            shell_integration: false,
+            ..RemoteTerminalOptions::default()
         };
         Self::open_with(connect, options, size, sink).await
     }
@@ -140,7 +143,14 @@ impl RemoteTerminal {
         Fut: Future<Output = Result<Arc<Connection>, ConnectError>> + Send + 'static,
         F: FnMut(TerminalEvent) + Send + 'static,
     {
-        let integration = options.shell_integration;
+        let post_login_input = options
+            .post_login_command
+            .filter(|command| !command.trim().is_empty())
+            .map(|command| {
+                let mut line = command.into_bytes();
+                line.push(b'\r');
+                line
+            });
         let (shell_tx, shell_events) = mpsc::unbounded_channel();
         let connection = connect().await?;
         let shell = start_shell(&connection, size, &shell_tx, progress.as_ref()).await?;
@@ -149,7 +159,8 @@ impl RemoteTerminal {
             connect: Box::new(move || Box::pin(connect())),
             progress,
             policy: options.reconnect,
-            integration,
+            integration: options.shell_integration,
+            post_login_input,
             size,
             sink: Box::new(sink),
             commands: command_rx,
@@ -220,21 +231,21 @@ async fn start_shell(
 }
 
 /// How long output must pause at what looks like a prompt (not after a
-/// newline) before the ShellIntegration hook is typed in.
+/// newline) before sending startup input.
 const PROMPT_QUIET: Duration = Duration::from_millis(150);
-/// The longest wait for that prompt; the hook goes in anyway after it.
+/// The longest wait for that prompt before sending startup input.
 const PROMPT_WAIT: Duration = Duration::from_secs(5);
 /// How long output is hidden waiting for the hook's ready marker.
 const READY_TIMEOUT: Duration = Duration::from_secs(3);
 
-/// Typing the ShellIntegration hook into one shell.
-enum Hook {
+/// Startup of one shell, including its optional ShellIntegration hook.
+enum Startup {
     /// Waiting for the shell's first prompt.
     Waiting(Waiting),
-    /// Typed in; output is hidden until the ready marker or this deadline.
-    Hiding(Instant),
-    /// In, given up, or ShellIntegration is off.
-    Done,
+    /// The hook is typed in; output is hidden until its ready marker or this deadline.
+    InstallingHook(Instant),
+    /// Startup input has been sent, or none was configured.
+    Ready,
 }
 
 struct Waiting {
@@ -260,18 +271,18 @@ impl Waiting {
     }
 }
 
-impl Hook {
+impl Startup {
     fn deadline(&self) -> Option<Instant> {
         match self {
-            Hook::Waiting(w) => {
+            Startup::Waiting(w) => {
                 let latest = w.started + PROMPT_WAIT;
                 Some(
                     w.at_prompt
                         .map_or(latest, |at| (at + PROMPT_QUIET).min(latest)),
                 )
             }
-            Hook::Hiding(until) => Some(*until),
-            Hook::Done => None,
+            Startup::InstallingHook(until) => Some(*until),
+            Startup::Ready => None,
         }
     }
 }
@@ -290,6 +301,7 @@ struct Runner {
     policy: ReconnectPolicy,
     /// Type the ShellIntegration hook into every new shell.
     integration: bool,
+    post_login_input: Option<Vec<u8>>,
     size: TerminalSize,
     sink: Box<dyn FnMut(TerminalEvent) + Send>,
     commands: mpsc::UnboundedReceiver<Command>,
@@ -319,22 +331,24 @@ impl Runner {
     /// after sending `Exit`).
     async fn serve(&mut self, shell: &mut RemoteShell) -> std::result::Result<(), ()> {
         let mut output = ShellOutput::default();
-        let mut hook = if self.integration {
-            Hook::Waiting(Waiting::default())
-        } else {
+        if !self.integration {
             self.report_integration(ShellIntegrationStatus::Disabled);
-            Hook::Done
+        }
+        let mut startup = if self.integration || self.post_login_input.is_some() {
+            Startup::Waiting(Waiting::default())
+        } else {
+            Startup::Ready
         };
-        // Keystrokes typed while the hook goes in, sent after it.
+        // User input waits until startup input has been sent.
         let mut typed = Vec::new();
         loop {
-            let deadline = hook.deadline();
+            let deadline = startup.deadline();
             tokio::select! {
                 // Shell events first: output that arrived before a close is shown.
                 biased;
                 event = self.shell_events.recv() => match event {
                     Some(ShellEvent::Output(bytes)) => {
-                        if let Hook::Waiting(waiting) = &mut hook {
+                        if let Startup::Waiting(waiting) = &mut startup {
                             waiting.saw(&bytes);
                         }
                         // Reports also come from `REPORT_CWD` typed in without the hook.
@@ -343,9 +357,9 @@ impl Runner {
                         for event in shown.events {
                             (self.sink)(event);
                         }
-                        if matches!(hook, Hook::Hiding(_)) && !output.is_hiding() {
-                            hook = Hook::Done;
-                            let _ = shell.write(&std::mem::take(&mut typed));
+                        if matches!(startup, Startup::InstallingHook(_)) && !output.is_hiding() {
+                            self.finish_startup(shell, std::mem::take(&mut typed));
+                            startup = Startup::Ready;
                         }
                     }
                     Some(ShellEvent::Exit { code }) => {
@@ -358,21 +372,23 @@ impl Runner {
                     None => return Err(()),
                 },
                 () = tokio::time::sleep_until(deadline.unwrap_or_else(Instant::now)), if deadline.is_some() => {
-                    if let Hook::Waiting(_) = hook {
+                    if matches!(startup, Startup::Waiting(_)) && self.integration {
                         let _ = shell.write(INJECTION.as_bytes());
                         output.hide_until_ready();
-                        hook = Hook::Hiding(Instant::now() + READY_TIMEOUT);
+                        startup = Startup::InstallingHook(Instant::now() + READY_TIMEOUT);
                     } else {
-                        // The shell never printed the marker: show what it did.
-                        self.show(output.reveal());
-                        self.report_integration(ShellIntegrationStatus::TimedOut);
-                        hook = Hook::Done;
-                        let _ = shell.write(&std::mem::take(&mut typed));
+                        if matches!(startup, Startup::InstallingHook(_)) {
+                            // The shell never printed the marker: show what it did.
+                            self.show(output.reveal());
+                            self.report_integration(ShellIntegrationStatus::TimedOut);
+                        }
+                        self.finish_startup(shell, std::mem::take(&mut typed));
+                        startup = Startup::Ready;
                     }
                 },
                 command = self.commands.recv() => match command.unwrap_or(Command::Close) {
                     // Failures mean the shell is ending; its last event follows.
-                    Command::Data(bytes) if matches!(hook, Hook::Done) => { let _ = shell.write(&bytes); }
+                    Command::Data(bytes) if matches!(startup, Startup::Ready) => { let _ = shell.write(&bytes); }
                     Command::Data(bytes) => typed.extend_from_slice(&bytes),
                     Command::Resize(size) => {
                         self.size = size;
@@ -386,6 +402,15 @@ impl Runner {
                     }
                 },
             }
+        }
+    }
+
+    fn finish_startup(&self, shell: &mut RemoteShell, typed: Vec<u8>) {
+        if let Some(line) = &self.post_login_input {
+            let _ = shell.write(line);
+        }
+        if !typed.is_empty() {
+            let _ = shell.write(&typed);
         }
     }
 

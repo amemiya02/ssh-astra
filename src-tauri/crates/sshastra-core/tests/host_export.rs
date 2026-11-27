@@ -28,6 +28,7 @@ fn draft(name: &str) -> HostDraft {
         identities_only: false,
         forward_agent: false,
         keepalive_seconds: None,
+        post_login_command: None,
         default_directory: None,
     }
 }
@@ -64,6 +65,7 @@ fn populated() -> (tempfile::TempDir, HostStore) {
                 identities_only: true,
                 forward_agent: false,
                 keepalive_seconds: None,
+                post_login_command: None,
                 default_directory: Some("/srv/www".into()),
                 ..draft("web")
             },
