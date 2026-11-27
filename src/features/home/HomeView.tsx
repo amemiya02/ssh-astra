@@ -2,6 +2,7 @@ import { FileInput, Plus, Search, Server, SquareTerminal, X } from "lucide-react
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
+import { SegmentedControl } from "@/components/SegmentedControl";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ConnectionDot } from "@/features/connect/ConnectionDot";
@@ -14,18 +15,24 @@ import { HostTagFilter } from "@/features/hosts/HostTagFilter";
 import { recentHostIds, recentHostsSetting } from "@/features/hosts/host-history";
 import { hostSortSetting, sortHostTree } from "@/features/hosts/host-sort";
 import { hasHostTag } from "@/features/hosts/host-tags";
+import { hostHue, hueClasses } from "@/features/hosts/hostHue";
 import { hostMenuEntries } from "@/features/hosts/hostMenu";
+import type { HostMatches } from "@/features/hosts/hostTree";
 import { RowContextMenu, RowMoreMenu } from "@/features/hosts/RowMenu";
 import { useHosts } from "@/features/hosts/hostsStore";
 import type { HostsController } from "@/features/hosts/useHostsController";
 import { privacyModeSetting } from "@/features/workspace/privacy-mode";
 import { reportHomeFirstPaint } from "@/lib/ipc/home";
 import type { Host, HostId, QuickConnectTarget } from "@/lib/ipc/hosts";
-import { useSetting } from "@/lib/storage";
+import { defineSection, useSetting } from "@/lib/storage";
+import { cn } from "@/lib/utils";
 import { firstHost, homeSections, recentHostsOf } from "./homeSections";
 
 const recentLimit = 4;
 const cardGrid = "grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(15rem,1fr))]";
+
+type HomeLayout = "cards" | "list";
+const homeLayoutSetting = defineSection<HomeLayout>("homeLayout", "cards", (raw) => raw === "list" ? "list" : "cards");
 
 interface HomeViewProps {
   /** The Home tab is the one shown: its search field takes focus. */
@@ -39,7 +46,7 @@ interface HomeViewProps {
 
 /**
  * The Host vault: search, the actions for getting Hosts in, Hosts opened lately, and every Host
- * as a card, by Group. A card opens a Terminal; its menu offers what the Host list's row menu does.
+ * by Group. Host cards and rows open Terminals and share the Host list's actions.
  */
 export function HomeView({ active, controller, connections, onOpenLocalTerminal, onQuickConnect }: HomeViewProps) {
   const { t } = useTranslation();
@@ -49,6 +56,9 @@ export function HomeView({ active, controller, connections, onOpenLocalTerminal,
   const [privacyMode] = useSetting(privacyModeSetting);
   const [recent] = useSetting(recentHostsSetting);
   const [sort, setSort] = useSetting(hostSortSetting);
+  const [layout, setLayout] = useSetting(homeLayoutSetting);
+  const listView = layout === "list";
+  const hostLayout = listView ? "grid grid-cols-1 gap-1.5" : cardGrid;
   const [query, setQuery] = useState("");
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const search = useRef<HTMLInputElement>(null);
@@ -131,6 +141,14 @@ export function HomeView({ active, controller, connections, onOpenLocalTerminal,
             )}
           </div>
           {!empty && <HostSortMenu order={sort} onChange={setSort} />}
+          {!empty && (
+            <SegmentedControl
+              label={t("home.layout.label")}
+              value={layout}
+              options={[{ value: "cards", label: t("home.layout.cards") }, { value: "list", label: t("home.layout.list") }]}
+              onChange={setLayout}
+            />
+          )}
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" onClick={controller.newHost}>
               <Plus aria-hidden />
@@ -155,8 +173,8 @@ export function HomeView({ active, controller, connections, onOpenLocalTerminal,
           </Button>
         )}
         {exact && (
-          <div className={cardGrid}>
-            <HostCard host={exact} privacyMode={privacyMode} controller={controller} connection={connections.get(exact.id)} />
+          <div className={hostLayout}>
+            <HomeHost host={exact} listView={listView} privacyMode={privacyMode} controller={controller} connection={connections.get(exact.id)} />
           </div>
         )}
         {status === "error" ? (
@@ -184,10 +202,10 @@ export function HomeView({ active, controller, connections, onOpenLocalTerminal,
                 <h2 id="home-recent" className="text-sm font-semibold">
                   {t("home.recent")}
                 </h2>
-                <ul className={cardGrid}>
+                <ul className={hostLayout}>
                   {recents.map((host) => (
                     <li key={host.id}>
-                      <HostCard host={host} privacyMode={privacyMode} controller={controller} connection={connections.get(host.id)} />
+                      <HomeHost host={host} listView={listView} privacyMode={privacyMode} controller={controller} connection={connections.get(host.id)} />
                     </li>
                   ))}
                 </ul>
@@ -199,10 +217,10 @@ export function HomeView({ active, controller, connections, onOpenLocalTerminal,
                   {section.title ?? t(tree.groups.length > 0 ? "home.ungrouped" : "home.hosts")}
                   <span className="text-muted-foreground ml-1.5 text-xs font-normal tabular-nums">{section.hosts.length}</span>
                 </h2>
-                <ul className={cardGrid}>
+                <ul className={hostLayout}>
                   {section.hosts.map(({ host, matches }) => (
                     <li key={host.id}>
-                      <HostCard host={host} privacyMode={privacyMode} matches={matches} controller={controller} connection={connections.get(host.id)} />
+                      <HomeHost host={host} listView={listView} privacyMode={privacyMode} matches={matches} controller={controller} connection={connections.get(host.id)} />
                     </li>
                   ))}
                 </ul>
@@ -215,17 +233,19 @@ export function HomeView({ active, controller, connections, onOpenLocalTerminal,
   );
 }
 
-/** One Host: monogram tile in its hue, name, `user@address`, a dot while connected or connecting. Click or Enter opens a Terminal. */
-function HostCard({
+/** Keep the same button and menus when switching between the Host card and row. */
+function HomeHost({
   host,
+  listView,
   privacyMode,
   matches,
   controller,
   connection,
 }: {
   host: Host;
+  listView: boolean;
   privacyMode: boolean;
-  matches?: { name?: number[]; address?: number[]; user?: number[] };
+  matches?: HostMatches;
   controller: HostsController;
   connection?: HostConnection;
 }) {
@@ -237,24 +257,49 @@ function HostCard({
       <div className="group/card relative">
         <button
           type="button"
-          className="bg-background hover:bg-accent active:bg-accent/70 focus-visible:ring-ring/50 flex h-14 w-full min-w-0 items-center gap-3 rounded-lg border px-3 pr-9 text-left transition-colors outline-none focus-visible:ring-[3px]"
+          className={cn(
+            "bg-background hover:bg-accent active:bg-accent/70 focus-visible:ring-ring/50 relative flex w-full min-w-0 items-center gap-3 rounded-lg border px-3 pr-9 text-left transition-colors outline-none focus-visible:ring-[3px]",
+            listView ? "min-h-12 py-2" : "h-14",
+          )}
           onClick={() => actions.open(host)}
         >
-          <HostMonogram host={host} size="md">
-            {connection && <ConnectionDot state={connection} className="ring-background absolute -right-0.5 -bottom-0.5 size-2 ring-2" />}
+          {listView && (
+            <span
+              aria-hidden
+              className={cn("absolute inset-y-2 left-0 w-0.5 rounded-full", hueClasses[hostHue(host.id)].line)}
+            />
+          )}
+          <HostMonogram host={host} size={listView ? "sm" : "md"}>
+            {connection && !listView && <ConnectionDot state={connection} className="ring-background absolute -right-0.5 -bottom-0.5 size-2 ring-2" />}
           </HostMonogram>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate font-medium">
-              <Highlighted text={host.name} indexes={matches?.name} />
+          <span className={cn("min-w-0 flex-1", listView && "flex flex-wrap items-center gap-x-3 gap-y-1")}>
+            <span className={cn("block min-w-0", listView && "grow basis-40")}>
+              <span className="block truncate font-medium">
+                <Highlighted text={host.name} indexes={matches?.name} />
+              </span>
+              {!privacyMode && (
+                <span className="text-muted-foreground block truncate font-mono text-xs">
+                  <Highlighted text={host.user} indexes={matches?.user} />@<Highlighted text={host.address} indexes={matches?.address} />
+                  {host.port === 22 ? "" : `:${host.port}`}
+                </span>
+              )}
             </span>
-            {!privacyMode && (
-              <span className="text-muted-foreground block truncate font-mono text-xs">
-                <Highlighted text={host.user} indexes={matches?.user} />@<Highlighted text={host.address} indexes={matches?.address} />
-                {host.port === 22 ? "" : `:${host.port}`}
+            {listView && host.tags && host.tags.length > 0 && (
+              <span className="flex min-w-0 max-w-full flex-wrap gap-1">
+                {host.tags.map((tag) => (
+                  <span key={tag} className="bg-muted text-muted-foreground max-w-full rounded-sm border px-1.5 py-0.5 text-xs [overflow-wrap:anywhere]">
+                    {tag}
+                  </span>
+                ))}
               </span>
             )}
           </span>
-          {connection && <span className="sr-only">{t(`tabs.status.${connection}`)}</span>}
+          {listView ? (
+            <span className="text-muted-foreground flex shrink-0 items-center gap-1.5 text-xs">
+              {connection && <ConnectionDot state={connection} />}
+              {t(`tabs.status.${connection ?? "disconnected"}`)}
+            </span>
+          ) : connection && <span className="sr-only">{t(`tabs.status.${connection}`)}</span>}
         </button>
         <RowMoreMenu
           entries={entries}

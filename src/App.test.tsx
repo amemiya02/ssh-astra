@@ -926,6 +926,71 @@ it("filters the Host list and Home by Tag and keeps the selection when narrowing
   expect(paletteOptions().map((option) => option.textContent)).toEqual([expect.stringContaining("Backup Node")]);
 });
 
+it("switches Home layouts with the keyboard and restores the choice after restarting", async () => {
+  savedHosts = [host];
+  await hostsStore.getState().load();
+  const tabs = workspace({ type: "open", tabId: "home", pane: newPane({ kind: "home" }) });
+  const selectedLayout = () => document.querySelector('[aria-label="Home layout"] [aria-checked="true"]')?.textContent;
+  await render(tabs);
+  expect(selectedLayout()).toBe("Cards");
+
+  const cards = document.querySelector<HTMLButtonElement>('[aria-label="Home layout"] [aria-checked="true"]')!;
+  cards.focus();
+  await act(async () => cards.dispatchEvent(new KeyboardEvent("keydown", {
+    key: "ArrowRight", bubbles: true, cancelable: true,
+  })));
+  expect(selectedLayout()).toBe("List");
+  expect(document.activeElement?.textContent).toBe("List");
+
+  await unmount();
+  await startSettings(settingsBackend);
+  await render(tabs);
+  expect(selectedLayout()).toBe("List");
+
+  const cardOption = [...document.querySelectorAll<HTMLButtonElement>('[aria-label="Home layout"] [role="radio"]')]
+    .find((option) => option.textContent === "Cards")!;
+  await act(async () => cardOption.click());
+  expect(selectedLayout()).toBe("Cards");
+});
+
+it("shows Host details in Home list rows and opens the exact match from search", async () => {
+  const gateway: Host = { ...host, name: "Edge Gateway", icon: "ubuntu", port: 2222, tags: ["West Coast", "Production"] };
+  const archive = { ...host, id: "archive", name: "Archive" };
+  savedHosts = [gateway, archive];
+  initialHeld = [gateway.id];
+  settingsFile.recentHosts = { [gateway.id]: { openedAt: 1 } };
+  await startSettings(settingsBackend);
+  await hostsStore.getState().load();
+  await render(workspace({ type: "open", tabId: "home", pane: newPane({ kind: "home" }) }));
+
+  const home = document.querySelector("#tabpanel-home")!;
+  const hostButton = (scope: ParentNode, name: string) =>
+    [...scope.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes(name))!;
+  const recent = home.querySelector('[aria-labelledby="home-recent"]')!;
+  const group = home.querySelector('[aria-labelledby="home-group-ungrouped"]')!;
+  const gatewayButton = hostButton(group, gateway.name);
+  gatewayButton.focus();
+  await clickButton("List", home);
+  expect(document.activeElement).toBe(gatewayButton);
+  for (const scope of [group, recent]) {
+    const row = hostButton(scope, gateway.name);
+    expect(row.querySelector('[data-host-icon="ubuntu"]')).not.toBeNull();
+    expect(row.textContent).toContain("deploy@example.com:2222");
+    expect(row.textContent).toContain("West Coast");
+    expect(row.textContent).toContain("Production");
+    expect(row.textContent).toContain("Connected");
+  }
+  expect(hostButton(group, archive.name).textContent).toContain("Disconnected");
+
+  await search(homeSearch(), gateway.name.toUpperCase());
+  expect(hostButton(home, gateway.name).textContent).toContain("West Coast");
+  await clickButton("Privacy mode");
+  expect(hostButton(home, gateway.name).outerHTML).not.toContain(gateway.address);
+  expect(hostButton(home, gateway.name).outerHTML).not.toContain(gateway.user);
+  await enter(homeSearch());
+  expect(vi.mocked(invoke)).toHaveBeenCalledWith("remote_terminal_open", expect.objectContaining({ hostId: gateway.id }));
+});
+
 it("shows the same saved icon in the Host list, Home and an open Terminal tab", async () => {
   savedHosts = [{ ...host, icon: "ubuntu" }];
   await hostsStore.getState().load();
