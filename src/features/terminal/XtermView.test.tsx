@@ -324,3 +324,56 @@ it("drops a pending Broadcast paste if the source shell restarts before confirma
     cleanup();
   }
 });
+
+it("decorates wrapped keywords in the normal buffer without changing selected text", async () => {
+  const { terminal, cleanup } = mountTerminal();
+  const decorate = vi.spyOn(terminal, "registerDecoration");
+  const write = (text: string) => act(async () => new Promise<void>((resolve) => terminal.write(text, resolve)));
+  try {
+    terminal.resize(10, 5);
+    await write("终12345 ERROR");
+    await vi.waitFor(() => expect(decorate).toHaveBeenCalledTimes(2));
+    expect(decorate).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      x: 8, width: 2, foregroundColor: appThemes.light.terminal.red,
+    }));
+    expect(decorate).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      x: 0, width: 3, foregroundColor: appThemes.light.terminal.red,
+    }));
+
+    act(() => terminal.select(8, 0, 5));
+    expect(terminal.getSelection()).toBe("ERROR");
+
+    await write("\x1b[?1049h\x1b[HERROR");
+    expect(terminal.buffer.active.type).toBe("alternate");
+    expect(decorate.mock.calls.every(([{ marker }]) => marker.isDisposed)).toBe(true);
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    expect(decorate).toHaveBeenCalledTimes(2);
+
+    await write("\x1b[?1049l");
+    await vi.waitFor(() => expect(decorate).toHaveBeenCalledTimes(4));
+  } finally {
+    cleanup();
+  }
+});
+
+it("skips a long logical line even if its first screen row contains a keyword", async () => {
+  const { terminal, cleanup } = mountTerminal();
+  const decorate = vi.spyOn(terminal, "registerDecoration");
+  try {
+    terminal.resize(40, 5);
+    await act(async () => new Promise<void>((resolve) =>
+      terminal.write("ERROR " + "x".repeat(1_000) + "\r\nWARN", resolve)));
+    act(() => terminal.scrollToTop());
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    expect(decorate.mock.calls.every(([{ marker }]) => marker.isDisposed)).toBe(true);
+
+    act(() => terminal.scrollToBottom());
+    const activeDecorations = () => decorate.mock.calls.map(([options]) => options).filter(({ marker }) => !marker.isDisposed);
+    await vi.waitFor(() => expect(activeDecorations()).toEqual([expect.objectContaining({
+      x: 0, width: 4, foregroundColor: appThemes.light.terminal.yellow,
+    })]));
+    expect(decorate.mock.calls.every(([{ foregroundColor }]) => foregroundColor !== appThemes.light.terminal.red)).toBe(true);
+  } finally {
+    cleanup();
+  }
+});

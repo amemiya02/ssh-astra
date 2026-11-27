@@ -17,6 +17,7 @@ import { planPaste, type PendingPaste } from "./terminal-input";
 import { terminalLinkDestination } from "./terminal-links";
 import { zoomTerminalFont, type TerminalPrefs } from "./terminal-prefs";
 import { useTerminalPrefs } from "./terminal-prefs-context";
+import { attachTerminalHighlighting } from "./xterm-highlighting";
 
 type BroadcastRecipients = ReturnType<Broadcast["capture"]>;
 
@@ -115,7 +116,7 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
     };
 
     const xterm = new XTerm({
-      allowProposedApi: true, // search highlights use decorations
+      allowProposedApi: true, // Search and keyword highlights use decorations
       ...appearanceOptions(initial),
       linkHandler: {
         // xterm's default permits only HTTP(S). Both callbacks enforce our allowlist.
@@ -219,6 +220,11 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
     const xterm = xtermRef.current;
     if (xterm) xterm.options = { ...appearanceOptions(prefs), theme: xtermTheme };
   }, [prefs, xtermTheme]);
+
+  useEffect(() => {
+    const xterm = xtermRef.current;
+    if (active && xterm) return attachTerminalHighlighting(xterm, prefs.highlighting, xtermTheme);
+  }, [active, broadcast, paneId, prefs.highlighting, xtermTheme]);
 
   useEffect(() => {
     fitIfVisible();

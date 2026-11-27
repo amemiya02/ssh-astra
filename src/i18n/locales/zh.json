@@ -797,6 +797,32 @@
           "sound": "声音"
         }
       },
+      "highlighting": {
+        "label": "关键词高亮",
+        "builtIn": {
+          "label": "内置规则",
+          "description": "为错误、警告、失败、成功和 IPv4 地址着色。"
+        },
+        "description": "最多可添加 {{max}} 条自定义规则。模式不区分大小写，靠后的规则优先。",
+        "custom": "自定义高亮规则",
+        "pattern": "模式",
+        "kind": "模式类型",
+        "text": "纯文本",
+        "regex": "正则表达式",
+        "color": "高亮颜色",
+        "colors": {
+          "red": "红色",
+          "green": "绿色",
+          "yellow": "黄色",
+          "blue": "蓝色",
+          "magenta": "品红色",
+          "cyan": "青色"
+        },
+        "enabled": "启用规则",
+        "remove": "删除规则",
+        "add": "添加规则",
+        "invalidRegex": "请输入有效的正则表达式。"
+      },
       "copyOnSelect": {
         "label": "选中即复制",
         "description": "在终端中选中文本时自动复制到剪贴板。"

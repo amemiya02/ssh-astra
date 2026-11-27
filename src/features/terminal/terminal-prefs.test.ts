@@ -44,6 +44,10 @@ describe("terminal preferences", () => {
       bell: "sound" as const,
       ligatures: true,
       colorScheme: "solarizedDark" as const,
+      highlighting: {
+        builtIn: false,
+        rules: [{ id: "job", pattern: "job \\d+", kind: "regex" as const, hue: "magenta" as const, enabled: true }],
+      },
       copyOnSelect: false,
       rightClickPaste: false,
       shellIntegration: false,
