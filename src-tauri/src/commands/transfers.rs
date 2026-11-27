@@ -14,7 +14,7 @@ use sshastra_core::files::{
     TransferSettings,
 };
 use tauri::ipc::Channel;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, State, WebviewWindow};
 
 use crate::error::CommandResult;
 
@@ -38,6 +38,10 @@ impl Default for TransfersState {
 }
 
 impl TransfersState {
+    pub(crate) fn unwatch(&self, label: &str) {
+        self.watcher.unsubscribe(label);
+    }
+
     pub fn queue(&self) -> TransferQueue {
         self.queue.clone()
     }
@@ -48,16 +52,17 @@ impl TransfersState {
     }
 }
 
-/// Sends every later change to `on_event` (replacing any earlier channel,
+/// Sends every later change to `on_event` (replacing that Window’s earlier channel,
 /// e.g. after a reload) and returns every transfer now.
 #[tauri::command]
 pub fn transfers_watch(
+    window: WebviewWindow,
     transfers: State<'_, TransfersState>,
     on_event: Channel<Transfer>,
 ) -> Vec<Transfer> {
     transfers
         .watcher
-        .subscribe(on_event, || transfers.queue.list())
+        .subscribe(window.label(), on_event, || transfers.queue.list())
 }
 
 /// Queues uploading each local file or folder in `paths` into the remote

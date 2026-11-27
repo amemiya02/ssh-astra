@@ -1105,6 +1105,7 @@
       "cancel": "Cancel",
       "actions": {
         "newTab": "New Local terminal",
+        "newWindow": "New Window",
         "closePane": "Close pane",
         "splitRight": "Split right",
         "splitDown": "Split down",
@@ -1478,6 +1479,10 @@
     "connections_other": "{{count}} Connections",
     "transfers_one": "{{count}} transfer",
     "transfers_other": "{{count}} transfers"
+  },
+  "window": {
+    "new": "New Window",
+    "openFailed": "Could not open a new Window."
   },
   "quit": {
     "title": "Quit SSH Astra?",

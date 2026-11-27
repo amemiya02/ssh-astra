@@ -1,6 +1,6 @@
 # SSH Astra
 
-A modern desktop SSH/SFTP client: saved hosts, terminals and a file panel in one window.
+A modern desktop SSH/SFTP client with saved Hosts, Terminals, and File panels.
 
 ## Language
 
@@ -37,6 +37,9 @@ A server identity (host key fingerprint) the user has accepted, shared with the 
 _Avoid_: Trusted host, fingerprint cache
 
 ### Working surfaces
+
+**Window**:
+An application window with its own tabs, sidebar, and focus. Hosts, settings, Connections, transfers, and Port forwards are shared across Windows.
 
 **Terminal**:
 One interactive shell running over a Connection, shown as a tab or a split pane.

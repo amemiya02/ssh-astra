@@ -36,6 +36,10 @@ impl CommandError {
         Self::new("notOpen", "the File panel's SFTP session is closed")
     }
 
+    pub fn window_closed() -> Self {
+        Self::new("windowClosed", "the Window closed")
+    }
+
     pub fn temporary_host_unavailable() -> Self {
         Self::new(
             "temporaryHostUnavailable",

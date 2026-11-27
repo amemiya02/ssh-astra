@@ -12,10 +12,11 @@ use sshastra_core::files::{
 use sshastra_core::hosts::HostId;
 use sshastra_core::ssh::ConnectionManager;
 use tauri::ipc::Channel;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager, State, WebviewWindow};
 use tokio::sync::oneshot;
 
-use crate::prompts::{ChannelPrompter, PendingPrompts, PromptRequest};
+use crate::prompts::{ChannelPrompter, PromptRequest};
+use crate::windows;
 
 use super::connections::{schedule_os_detection, HostRoute};
 use super::edit::SystemOpener;
@@ -26,41 +27,49 @@ use crate::error::{CommandError, CommandResult};
 /// `notConnected` if the Host has none.
 #[tauri::command]
 pub async fn files_open(
+    window: WebviewWindow,
     connections: State<'_, ConnectionManager>,
     registry: State<'_, FsRegistry>,
     host_id: HostId,
 ) -> CommandResult<FsId> {
     let fs = connections.open_sftp(&host_id).await?;
-    Ok(registry.insert(Arc::new(fs)))
+    track_files(&window, &registry, registry.insert(Arc::new(fs)))
 }
 
 /// Opens the workspace's own SFTP session. It holds the connection without a terminal.
 #[tauri::command]
 pub async fn files_connect(
-    app: AppHandle,
-    pending: State<'_, Arc<PendingPrompts>>,
+    window: WebviewWindow,
     registry: State<'_, FsRegistry>,
     host_id: HostId,
     on_prompt: Channel<PromptRequest>,
 ) -> CommandResult<FsId> {
-    let route = HostRoute::lookup(&app, &host_id)?;
+    let app = window.app_handle();
+    let route = HostRoute::lookup(app, &host_id)?;
     let prompter = Arc::new(ChannelPrompter {
-        pending: Arc::clone(&pending),
+        pending: windows::prompts(&window)?,
         channel: on_prompt,
     });
-    let connection = route.connect(&app, prompter).await?;
+    let connection = route.connect(app, prompter).await?;
     let fs = connection.open_sftp().await?;
-    schedule_os_detection(&app, &host_id, &connection);
-    Ok(registry.insert(Arc::new(fs)))
+    schedule_os_detection(app, &host_id, &connection);
+    track_files(&window, &registry, registry.insert(Arc::new(fs)))
 }
 
 #[tauri::command]
-pub fn files_local_open(app: AppHandle, registry: State<'_, FsRegistry>) -> CommandResult<FsId> {
-    let home = app
+pub fn files_local_open(
+    window: WebviewWindow,
+    registry: State<'_, FsRegistry>,
+) -> CommandResult<FsId> {
+    let home = window
         .path()
         .home_dir()
         .map_err(|e| FsError::Io(e.to_string()))?;
-    Ok(registry.insert(Arc::new(DiskBrowser::new(home))))
+    track_files(
+        &window,
+        &registry,
+        registry.insert(Arc::new(DiskBrowser::new(home))),
+    )
 }
 
 #[tauri::command]
@@ -279,7 +288,20 @@ pub async fn files_chmod(
 /// Async so the session is dropped on the Tokio runtime, where it closes its
 /// channel.
 #[tauri::command]
-pub async fn files_close(registry: State<'_, FsRegistry>, id: FsId) -> CommandResult<()> {
+pub async fn files_close(
+    window: WebviewWindow,
+    registry: State<'_, FsRegistry>,
+    id: FsId,
+) -> CommandResult<()> {
+    let _ = windows::with_resources(&window, |resources| resources.files.remove(&id));
     registry.remove(id);
     Ok(())
+}
+
+fn track_files(window: &WebviewWindow, registry: &FsRegistry, id: FsId) -> CommandResult<FsId> {
+    if let Err(error) = windows::with_resources(window, |resources| resources.files.insert(id)) {
+        registry.remove(id);
+        return Err(error);
+    }
+    Ok(id)
 }

@@ -45,6 +45,7 @@ export async function stopReplacement(): Promise<void> {
 export async function restartSmokeApp(
   browser: WebdriverIO.Browser,
   confirmQuit: () => Promise<void>,
+  requestAppQuit?: () => Promise<void>,
   startupArgs: string[] = [],
 ): Promise<void> {
   const home = process.env.SSHASTRA_E2E_HOME;
@@ -53,10 +54,13 @@ export async function restartSmokeApp(
   const driver = new URL(`http://${hostname}:${port}`);
   const status = new URL("/status", driver);
   // Closing the last window can shut down WebDriver before it sends a reply.
-  const closeRequest = fetch(new URL(`/session/${browser.sessionId}/window`, driver), {
-    method: "DELETE",
-    signal: AbortSignal.timeout(5000),
-  }).catch(() => undefined);
+  const closeRequest = requestAppQuit
+    ? requestAppQuit().then(() => undefined)
+    : fetch(new URL(`/session/${browser.sessionId}/window`, driver), {
+      method: "DELETE",
+      signal: AbortSignal.timeout(5000),
+    }).catch(() => undefined);
+  if (requestAppQuit) await closeRequest;
   await confirmQuit();
   const close = await closeRequest;
   if (close && !close.ok) throw new Error(`Could not close SSH Astra: ${await close.text()}`);

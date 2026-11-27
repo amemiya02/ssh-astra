@@ -78,7 +78,7 @@ fn schedule_activation(app: &AppHandle) {
 }
 
 fn activate_window(app: &AppHandle) {
-    let Some(window) = app.get_webview_window("main") else {
+    let Some(window) = crate::windows::active(app) else {
         return;
     };
     #[cfg(target_os = "linux")]

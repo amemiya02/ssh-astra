@@ -1,6 +1,6 @@
 use sshastra_core::ssh::ConnectionManager;
 use tauri::menu::{Menu, MenuEvent, MenuItem, MenuItemKind, Submenu};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, EventTarget, Manager, State, WebviewWindow};
 
 const QUIT: &str = "app-quit";
 
@@ -41,8 +41,12 @@ pub fn menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
 
 pub fn on_menu_event(app: &AppHandle, event: MenuEvent) {
     if event.id() == QUIT {
-        if let Some(window) = app.get_webview_window("main") {
-            if let Err(error) = window.close() {
+        if let Some(window) = crate::windows::active(app) {
+            if let Err(error) = app.emit_to(
+                EventTarget::webview_window(window.label()),
+                "app-quit-requested",
+                (),
+            ) {
                 log::warn!("could not request app quit: {error}");
             }
         }
@@ -64,4 +68,9 @@ pub fn quit_menu_localize(
 #[tauri::command]
 pub fn quit_live_connection_count(connections: State<'_, ConnectionManager>) -> usize {
     connections.live_count()
+}
+
+#[tauri::command]
+pub async fn quit_application(window: WebviewWindow) {
+    crate::windows::finish_quit(window).await;
 }

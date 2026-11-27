@@ -239,7 +239,7 @@ describe("sshastra", () => {
       await expect(quitDialog.$(`li=${connectionCount}`)).toBeDisplayed();
       // The quit can stop WebDriver before the click response arrives.
       await quitDialog.$("button=Quit").click().catch(() => undefined);
-    }, startupArgs);
+    }, undefined, startupArgs);
     await prepareWindow();
     if (isolatedLinux) await cancelSshLink(coldLink, tabs);
     await expect(activeTab()).toHaveAttribute("id", tab);
