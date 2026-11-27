@@ -1,6 +1,7 @@
 import type { Terminal as XTerm } from "@xterm/xterm";
 import { useCallback, useContext, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { dismissCommandReview, invalidateCommandReview, openCommandReview } from "@/features/agent/command-review";
 import { notifySystem } from "@/features/notifications/system-notifications";
 import { BroadcastPaneContext } from "@/features/workspace/broadcast";
 import { TabActivityContext } from "@/features/workspace/tab-activity";
@@ -85,6 +86,7 @@ export function TerminalSurface({
   const onExitRef = useRef(onExit);
   const onTitleChangeRef = useRef(onTitleChange);
   const labelRef = useRef(label);
+  const activeRef = useRef(active);
   const tRef = useRef(t);
 
   useEffect(() => {
@@ -95,6 +97,8 @@ export function TerminalSurface({
     onTitleChangeRef.current = onTitleChange;
     labelRef.current = label;
     hostRef.current = host;
+    activeRef.current = active;
+    invalidateCommandReview(paneId);
   });
 
   const attach = useCallback((xterm: XTerm) => {
@@ -143,6 +147,7 @@ export function TerminalSurface({
       unregisterWriter = undefined;
     };
     shellIntegration.open(paneId);
+    const stopReview = shellIntegration.store.subscribe(() => invalidateCommandReview(paneId));
     const output = terminalOutputs.track(paneId);
     if (moved?.log) output.status("log", { state: "active" });
     if (moved?.recording) output.status("recording", { state: "active" });
@@ -167,6 +172,7 @@ export function TerminalSurface({
     void openSurface((event) => {
       if (lifetime.signal.aborted || exited) return;
       if (event.type === "moveFence") {
+        invalidateCommandReview(paneId, true);
         receiveMoveFence(paneId, event.token);
         return;
       }
@@ -199,6 +205,21 @@ export function TerminalSurface({
       }
       if (event.type === "terminalLog" || event.type === "recording") {
         output.status(event.type === "terminalLog" ? "log" : "recording", event.status);
+        return;
+      }
+      if (event.type === "agentReview") {
+        const request = event.request;
+        openCommandReview({
+          request,
+          paneId,
+          eligible: () => activeRef.current && connected && !exited && !lifetime.signal.aborted && id === request.terminalId
+            && xterm.buffer.active.type === "normal" && !movingSourcePane(paneId)
+            && shellIntegration.isEmptyPrompt(paneId, request.promptId),
+        });
+        return;
+      }
+      if (event.type === "agentReviewClosed") {
+        dismissCommandReview(event.id);
         return;
       }
       if (event.type === "agentScreen") {
@@ -280,6 +301,8 @@ export function TerminalSurface({
 
     return () => {
       lifetime.abort();
+      stopReview();
+      invalidateCommandReview(paneId, true);
       imagePasteRef.current = null;
       output.close();
       stopNotifications();

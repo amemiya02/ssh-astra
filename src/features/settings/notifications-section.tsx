@@ -13,6 +13,7 @@ const rows = {
   reconnect: settingRows.reconnectNotifications,
   longCommand: settingRows.longCommandNotifications,
   terminal: settingRows.terminalNotifications,
+  agentReview: settingRows.agentReviewNotifications,
 };
 
 export function NotificationsSection() {

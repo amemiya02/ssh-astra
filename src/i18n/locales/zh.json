@@ -10,7 +10,19 @@
       "read": "只读",
       "approval": "需要批准"
     },
-    "hostHint": "两种访问级别目前均允许代理读取此 Host 已打开的终端和文件。此权限仅保存在本机。",
+    "hostHint": "只读权限共享此主机上打开的终端和文件。需要批准的权限还允许逐条请求审核命令。此权限只保存在本机。",
+    "review": {
+      "title": "审核代理命令",
+      "description": "请核对针对所选终端的命令。你可以将它复制到剪贴板，再自行粘贴和提交。请求将在两分钟后过期。",
+      "host": "主机",
+      "terminal": "终端",
+      "terminalId": "终端 #{{id}}",
+      "reject": "拒绝",
+      "copy": "复制命令",
+      "notification": "打开 SSH Astra 审核命令请求。",
+      "copied": "命令已复制到剪贴板。",
+      "copyFailed": "无法复制命令。请求可能已过期，或终端状态已改变。"
+    },
     "enabled": "代理访问已开启",
     "turnOff": "关闭代理访问",
     "sharedTerminal": "终端已向代理开放",
@@ -1448,6 +1460,10 @@
       }
     },
     "notifications": {
+      "agentReview": {
+        "label": "代理命令审核",
+        "description": "SSH Astra 在后台时，如果本机 MCP 客户端请求审核命令，则发送通知。"
+      },
       "transfers": {
         "label": "批量传输",
         "description": "一批上传、下载或复制在后台结束时通知。"

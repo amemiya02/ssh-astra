@@ -44,6 +44,7 @@ it("offers a ten-second threshold for older settings and saves edits with the ca
       longCommand: false,
       longCommandThresholdSeconds: 15,
       terminal: true,
+      agentReview: true,
     });
   } finally {
     act(() => root.unmount());

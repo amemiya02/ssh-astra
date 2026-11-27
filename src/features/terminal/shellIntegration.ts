@@ -63,6 +63,10 @@ export function createShellIntegrationState(enabled: () => boolean = () => true)
       const current = store.getState().get(paneId);
       if (current) save(paneId, { ...current, terminalId });
     },
+    isEmptyPrompt(paneId: string, promptId: number): boolean {
+      const current = store.getState().get(paneId);
+      return enabled() && current?.prompt.atEmptyPrompt === true && current.promptId === promptId;
+    },
     takeEmptyPrompt(paneId: string) {
       const current = store.getState().get(paneId);
       if (!enabled() || !current?.prompt.atEmptyPrompt || current.terminalId === undefined || current.promptId === undefined) return;

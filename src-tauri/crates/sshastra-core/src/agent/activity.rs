@@ -12,7 +12,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{bound_metadata, ReadTarget, HOST_NAME_BYTE_LIMIT, PATH_BYTE_LIMIT};
+use super::{
+    bound_metadata, ReadTarget, COMMAND_REVIEW_TOOL, HOST_NAME_BYTE_LIMIT, PATH_BYTE_LIMIT,
+};
 use crate::fs_util::write_atomically_private;
 
 const DAY_MS: u64 = 24 * 60 * 60 * 1000;
@@ -30,6 +32,7 @@ pub(super) enum Tool {
     ReadTerminal,
     ListDirectory,
     ReadFile,
+    RequestCommandReview,
     Unknown,
 }
 
@@ -40,6 +43,7 @@ impl Tool {
             Some("read_terminal") => Self::ReadTerminal,
             Some("list_directory") => Self::ListDirectory,
             Some("read_file") => Self::ReadFile,
+            Some(COMMAND_REVIEW_TOOL) => Self::RequestCommandReview,
             _ => Self::Unknown,
         }
     }
