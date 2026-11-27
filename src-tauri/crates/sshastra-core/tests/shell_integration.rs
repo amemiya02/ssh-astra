@@ -13,7 +13,10 @@ use sshastra_core::ssh::{
     BoxFuture, ConnectionManager, HostKeyPrompt, PasswordPrompt, Prompter, RemoteTerminal,
     RemoteTerminalOptions, Secret,
 };
-use sshastra_core::terminal::{Terminal, TerminalEvent, TerminalSize, REPORT_CWD};
+use sshastra_core::terminal::{
+    ShellIntegrationEvent, ShellIntegrationStatus, Terminal, TerminalEvent, TerminalSize,
+    REPORT_CWD,
+};
 use support::{Service, Sshd};
 use tokio::sync::mpsc;
 
@@ -40,6 +43,7 @@ struct Shell {
     rx: mpsc::UnboundedReceiver<TerminalEvent>,
     screen: vt100::Parser,
     output: Vec<u8>,
+    integration: Vec<ShellIntegrationEvent>,
     _known_hosts: tempfile::TempDir,
 }
 
@@ -81,6 +85,7 @@ impl Shell {
             rx,
             screen: vt100::Parser::new(SIZE.rows, SIZE.cols, 0),
             output: Vec::new(),
+            integration: Vec::new(),
             _known_hosts: dir,
         }
     }
@@ -103,6 +108,7 @@ impl Shell {
                     self.output.extend_from_slice(&bytes);
                 }
                 Ok(Some(TerminalEvent::Cwd(path))) => cwds.push(path),
+                Ok(Some(TerminalEvent::ShellIntegration(event))) => self.integration.push(event),
                 Ok(other) => panic!("unexpected {other:?}; output so far: {}", self.text()),
             }
         }
@@ -224,6 +230,12 @@ async fn with_shell_integration_off_nothing_is_injected_but_a_manual_report_work
     let cwds = shell.settle().await;
     assert!(cwds.is_empty(), "no hook, no reports: {cwds:?}");
     assert_eq!(
+        shell.integration,
+        [ShellIntegrationEvent::Availability {
+            status: ShellIntegrationStatus::Disabled
+        }]
+    );
+    assert_eq!(
         shell.rows().last().map(String::as_str),
         Some("tester@ssh:~$")
     );
@@ -233,4 +245,92 @@ async fn with_shell_integration_off_nothing_is_injected_but_a_manual_report_work
 
     shell.terminal.write(REPORT_CWD.as_bytes()).unwrap();
     assert_eq!(shell.next_cwd().await, "/srv/files");
+}
+
+async fn reports_command_markers(user: &str) {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let mut shell = Shell::open(&sshd, user, true).await;
+    shell.next_cwd().await;
+    shell.settle().await;
+    assert_eq!(
+        shell.integration.last(),
+        Some(&ShellIntegrationEvent::PromptStart)
+    );
+    assert_eq!(
+        shell.integration.first(),
+        Some(&ShellIntegrationEvent::Availability {
+            status: ShellIntegrationStatus::Available
+        })
+    );
+    shell.integration.clear();
+
+    let command = r#"printf '%s\n' 'hello; 100%' && true"#;
+    shell.type_line(command);
+    shell.settle().await;
+    assert_eq!(
+        shell.integration,
+        [
+            ShellIntegrationEvent::CommandStart {
+                command_line: Some(command.into())
+            },
+            ShellIntegrationEvent::CommandEnd { exit_code: 0 },
+            ShellIntegrationEvent::PromptStart,
+        ]
+    );
+    assert!(shell.rows().iter().any(|line| line == "hello; 100%"));
+    assert!(
+        shell
+            .rows()
+            .iter()
+            .all(|line| !line.contains("6973") && !line.contains("sshastra")),
+        "{:?}",
+        shell.rows()
+    );
+
+    shell.integration.clear();
+    shell.type_line("false");
+    shell.settle().await;
+    assert_eq!(
+        shell.integration,
+        [
+            ShellIntegrationEvent::CommandStart {
+                command_line: Some("false".into())
+            },
+            ShellIntegrationEvent::CommandEnd { exit_code: 1 },
+            ShellIntegrationEvent::PromptStart,
+        ]
+    );
+
+    shell.integration.clear();
+    shell.type_line("");
+    shell.settle().await;
+    assert_eq!(shell.integration, [ShellIntegrationEvent::PromptStart]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn bash_reports_command_markers_without_changing_the_screen() {
+    reports_command_markers(support::USER).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn zsh_reports_command_markers_without_changing_the_screen() {
+    reports_command_markers(support::ZSH_USER).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unsupported_shell_reports_why_integration_is_unavailable() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let mut shell = Shell::open(&sshd, "dashuser", true).await;
+    assert!(shell.settle().await.is_empty());
+    assert_eq!(
+        shell.integration,
+        [ShellIntegrationEvent::Availability {
+            status: ShellIntegrationStatus::Unsupported
+        }]
+    );
+    assert!(shell.rows().last().is_some_and(|line| line == "$"));
 }

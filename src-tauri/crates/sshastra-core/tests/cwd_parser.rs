@@ -3,7 +3,9 @@
 //! however the output is cut into chunks, and hides the shell's output while
 //! the hook is typed in.
 
-use sshastra_core::terminal::{CwdParser, ShellOutput};
+use sshastra_core::terminal::{
+    CwdParser, ShellIntegrationEvent, ShellIntegrationStatus, ShellOutput, TerminalEvent,
+};
 
 fn parse_all(chunks: &[&[u8]]) -> Vec<String> {
     let mut parser = CwdParser::default();
@@ -113,7 +115,7 @@ fn output_is_shown_unchanged_when_nothing_is_hidden() {
     let mut out = ShellOutput::default();
     let shown = out.feed(b"ls\r\n\x1b]7;file://box/srv\x07$ ");
     assert_eq!(shown.output, b"ls\r\n\x1b]7;file://box/srv\x07$ ");
-    assert_eq!(shown.cwds, ["/srv"]);
+    assert_eq!(shown.events, [TerminalEvent::Cwd("/srv".into())]);
 }
 
 #[test]
@@ -131,7 +133,15 @@ fn hidden_output_up_to_the_ready_marker_is_dropped_and_the_prompt_line_cleared()
         shown.output,
         b"\r\x1b[K\x1b]7;file://box/home/me\x07me@box:~$ "
     );
-    assert_eq!(shown.cwds, ["/home/me"]);
+    assert_eq!(
+        shown.events,
+        [
+            TerminalEvent::ShellIntegration(ShellIntegrationEvent::Availability {
+                status: ShellIntegrationStatus::Available,
+            }),
+            TerminalEvent::Cwd("/home/me".into()),
+        ]
+    );
 }
 
 #[test]
@@ -153,4 +163,36 @@ fn revealing_without_the_marker_gives_back_what_was_held() {
     out.feed(b"> ");
     assert_eq!(out.reveal(), b"fish: Unknown command\r\n> ");
     assert_eq!(out.feed(b"x").output, b"x");
+}
+
+#[test]
+fn private_markers_preserve_order_even_when_every_byte_arrives_separately() {
+    let mut shell = ShellOutput::default();
+    shell.hide_until_ready();
+    let output = [
+        READY,
+        b"\x1b]6973;start;1;printf%20%27%25%3B%27\x1b\\",
+        b"\x1b]6973;end;garbage\x07",
+        b"\x1b]6973;end;17\x07",
+        b"\x1b]6973;prompt\x07",
+    ]
+    .concat();
+    let events: Vec<_> = output
+        .chunks(1)
+        .flat_map(|byte| shell.feed(byte).events)
+        .collect();
+    assert_eq!(
+        events,
+        [
+            ShellIntegrationEvent::Availability {
+                status: ShellIntegrationStatus::Available
+            },
+            ShellIntegrationEvent::CommandStart {
+                command_line: Some("printf '%;'".into())
+            },
+            ShellIntegrationEvent::CommandEnd { exit_code: 17 },
+            ShellIntegrationEvent::PromptStart,
+        ]
+        .map(TerminalEvent::ShellIntegration)
+    );
 }

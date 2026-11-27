@@ -187,6 +187,42 @@ async fn an_encrypted_key_asks_for_its_passphrase() {
     }
 }
 
+// The four PPK fixtures re-encode the authorized test id_ed25519 key.
+#[tokio::test(flavor = "multi_thread")]
+async fn unencrypted_putty_keys_can_log_in_without_a_passphrase() {
+    for name in ["ed25519-v2-plain.ppk", "ed25519-v3-plain.ppk"] {
+        let (result, prompter) = connect_with_key(name).await;
+        result.unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert!(
+            prompter.asked().is_empty(),
+            "{name}: {:?}",
+            prompter.asked()
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn encrypted_putty_keys_can_log_in_after_a_passphrase_retry() {
+    if !docker() {
+        return;
+    }
+    for name in ["ed25519-v2-protected.ppk", "ed25519-v3-protected.ppk"] {
+        let prompter = ScriptedPrompter::answering(&[
+            Some(&["wrong passphrase"]),
+            Some(&["sshastra-ppk-test-passphrase"]),
+        ]);
+        let (result, prompter) = connect_with_key_answering(name, prompter).await;
+        result.unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_eq!(
+            prompter.asked(),
+            [
+                format!("passphrase {name} retry=false"),
+                format!("passphrase {name} retry=true"),
+            ]
+        );
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_wrong_passphrase_asks_again() {
     let prompter =
@@ -248,11 +284,16 @@ async fn a_missing_or_malformed_key_file_is_reported() {
     if !docker() {
         return;
     }
-    for name in ["no_such_key", "authorized_keys"] {
-        let (result, _) = connect_with_key(name).await;
+    for name in ["no_such_key", "authorized_keys", "malformed.ppk"] {
+        let (result, prompter) = connect_with_key(name).await;
         assert!(
             matches!(&result, Err(ConnectError::KeyUnreadable { path, .. }) if path == &support::key(name)),
             "{name}: {result:?}"
+        );
+        assert!(
+            prompter.asked().is_empty(),
+            "{name}: {:?}",
+            prompter.asked()
         );
     }
 }

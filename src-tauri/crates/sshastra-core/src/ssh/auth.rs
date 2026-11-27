@@ -16,7 +16,7 @@ use std::sync::Arc;
 use russh::client::{self, AuthResult, Handle, KeyboardInteractiveAuthResponse};
 use russh::keys::agent::client::{AgentClient, AgentStream};
 use russh::keys::agent::AgentIdentity;
-use russh::keys::{HashAlg, PrivateKey, PrivateKeyWithHashAlg};
+use russh::keys::{ssh_key, HashAlg, PrivateKey, PrivateKeyWithHashAlg};
 use russh::{AgentAuthError, MethodKind, MethodSet};
 
 use super::handshake::Deadline;
@@ -478,7 +478,7 @@ async fn load_key(
         let decode = {
             let text = Arc::clone(&text);
             let passphrase = passphrase.clone();
-            // Key derivation (bcrypt) is deliberately slow: keep it off the
+            // Key derivation is deliberately slow: keep it off the
             // async workers.
             tokio::task::spawn_blocking(move || {
                 russh::keys::decode_secret_key(&text, passphrase.as_deref())
@@ -496,6 +496,12 @@ async fn load_key(
         };
         let wrong = match (&error, &passphrase) {
             (russh::keys::Error::KeyIsEncrypted, None) => false,
+            // The encrypted PPK error variant is private to ssh-key.
+            (russh::keys::Error::SshKey(ssh_key::Error::Ppk(error)), None)
+                if error.to_string() == "private key is encrypted" =>
+            {
+                false
+            }
             (_, Some(_)) if is_wrong_passphrase(&error) => true,
             _ => return Ok(Err(unreadable(error.to_string()))),
         };
