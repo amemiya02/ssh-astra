@@ -86,7 +86,7 @@ A directory saved on a Host so the user can jump to it from the File panel.
 _Avoid_: Favorite, pinned folder
 
 **Remote edit**:
-A file from a Host opened in the local editor with automatic upload on save. File panels editing the same path on that Host share the Remote edit until the last one closes it.
+A file from a Host opened in the local editor with automatic upload on save. File panels editing the same path on that Host share the Remote edit until the last one closes it. When the remote file changes before an upload, the user can open the remote version as a separate Remote edit while keeping the local changes.
 _Avoid_: Download, transfer
 
 **Port forward**:

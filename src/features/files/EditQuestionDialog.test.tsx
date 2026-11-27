@@ -12,6 +12,8 @@ const api = (openRemoteEdit: FilesApi["openRemoteEdit"]): FilesApi => ({
   openRemoteEdit,
   retryRemoteEdit: vi.fn(() => Promise.resolve()),
   closeRemoteEdit: vi.fn(() => Promise.resolve()),
+  overwriteRemoteEdit: vi.fn(() => Promise.resolve()),
+  openRemoteEditConflictCopy: vi.fn(() => Promise.resolve(2)),
   createDir: vi.fn(() => Promise.resolve()),
   compressFiles: vi.fn(() => Promise.resolve()),
   extractArchive: vi.fn(() => Promise.resolve()),

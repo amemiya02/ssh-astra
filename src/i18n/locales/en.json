@@ -615,6 +615,18 @@
       "noApplication": "No application on this computer opens this file.",
       "notFound": "The file no longer exists.",
       "notAFile": "Only regular files open in the editor.",
+      "conflict": {
+        "title": "Remote file changed",
+        "body": "{{path}} changed on {{host}} after you opened it. Overwrite it with your latest local save, or open the remote version in another edit and keep your local changes.",
+        "review": "Review conflict",
+        "openRemote": "Open remote version",
+        "overwrite": "Overwrite remote",
+        "copyName": "{{name}} (remote version)",
+        "paused": "Local changes kept. Uploads paused.",
+        "resolving": "Resolving conflict…",
+        "changed": "The conflict has changed. Review the latest status.",
+        "resolveFailed": "Could not resolve the conflict: {{message}}"
+      },
       "question": {
         "tooLarge": {
           "title": "Too large to edit",

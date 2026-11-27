@@ -35,6 +35,7 @@ use tokio::sync::mpsc;
 #[derive(Default)]
 struct FakeFs {
     files: Arc<Mutex<HashMap<String, Vec<u8>>>>,
+    modified: Mutex<Option<u64>>,
     writes: Arc<Mutex<usize>>,
     failing: Mutex<bool>,
 }
@@ -60,6 +61,14 @@ impl FakeFs {
     fn fail_writes(&self, failing: bool) {
         *self.failing.lock().unwrap() = failing;
     }
+
+    fn change_remote(&self, path: &str, contents: &str, modified: Option<u64>) {
+        self.files
+            .lock()
+            .unwrap()
+            .insert(path.into(), contents.as_bytes().to_vec());
+        *self.modified.lock().unwrap() = modified;
+    }
 }
 
 impl RemoteFs for FakeFs {
@@ -80,7 +89,7 @@ impl RemoteFs for FakeFs {
             let stat = |kind, size| FileStat {
                 kind,
                 size,
-                modified: None,
+                modified: *self.modified.lock().unwrap(),
                 permissions: Some(0o644),
             };
             if path == "/etc" {
@@ -392,6 +401,193 @@ async fn saving_the_temp_file_uploads_it() {
     assert_eq!(next(&mut rx).await, EditEvent::Uploading);
     assert_eq!(next(&mut rx).await, EditEvent::Uploaded);
     assert_eq!(fs.contents("/etc/app.conf"), "port = 8080\n");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_remote_change_blocks_uploads_until_explicitly_overwritten() {
+    let s = setup();
+    let path = "/etc/app.conf";
+    let fs = FakeFs::with(path, "original\n");
+    fs.change_remote(path, "original\n", Some(1));
+    let (on_event, mut rx) = events();
+    let id = s
+        .editor
+        .open(fs.clone(), &host(), path, on_event)
+        .await
+        .unwrap();
+    let local = s.editor.local_path(id).unwrap();
+    // Only the timestamp changes: both versions are the same length.
+    fs.change_remote(path, "remotely\n", Some(2));
+    save(&local, "local work\n").await;
+
+    assert_eq!(next(&mut rx).await, EditEvent::Uploading);
+    let EditEvent::Conflict {
+        conflict_id,
+        reason: None,
+    } = next(&mut rx).await
+    else {
+        panic!("expected a conflict");
+    };
+    assert_eq!(fs.writes(), 0);
+    assert_eq!(fs.contents(path), "remotely\n");
+
+    save(&local, "more local work\n").await;
+    s.editor.retry(id).unwrap();
+    assert!(tokio::time::timeout(DEBOUNCE * 3, rx.recv()).await.is_err());
+    assert_eq!(fs.writes(), 0);
+
+    s.editor.overwrite(id, conflict_id).unwrap();
+    assert_eq!(next(&mut rx).await, EditEvent::Uploading);
+    assert_eq!(next(&mut rx).await, EditEvent::Uploaded);
+    assert_eq!(fs.contents(path), "more local work\n");
+
+    save(&local, "next save\n").await;
+    assert_eq!(next(&mut rx).await, EditEvent::Uploading);
+    assert_eq!(next(&mut rx).await, EditEvent::Uploaded);
+    assert_eq!(fs.contents(path), "next save\n");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn opening_the_remote_version_keeps_both_edits_live_and_independent() {
+    let s = setup_with(RecordingOpener {
+        refuse_application: true,
+        ..RecordingOpener::default()
+    });
+    let path = "/etc/app.conf";
+    let fs = FakeFs::with(path, "a\n");
+    let (on_change, mut original_events) = events();
+    let original = s
+        .editor
+        .open(fs.clone(), &host(), path, on_change)
+        .await
+        .unwrap();
+    let original_local = s.editor.local_path(original).unwrap();
+
+    // Only the size changes.
+    fs.change_remote(path, "remote version\n", None);
+    save(&original_local, "my version\n").await;
+    assert_eq!(next(&mut original_events).await, EditEvent::Uploading);
+    let EditEvent::Conflict { conflict_id, .. } = next(&mut original_events).await else {
+        panic!("expected a conflict");
+    };
+
+    let (on_copy, mut copy_events) = events();
+    let copy = s
+        .editor
+        .open_conflict_copy(
+            original,
+            conflict_id,
+            Some(Path::new("Missing Editor")),
+            on_copy,
+        )
+        .await
+        .unwrap();
+    let copy_local = s.editor.local_path(copy.id).unwrap();
+    assert_ne!(original_local, copy_local);
+    assert!(copy.application_fallback);
+    assert_eq!(
+        s.opener.opened.lock().unwrap().as_slice(),
+        [original_local.as_path(), copy_local.as_path()]
+    );
+    assert_eq!(
+        std::fs::read_to_string(&copy_local).unwrap(),
+        "remote version\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&original_local).unwrap(),
+        "my version\n"
+    );
+    assert_eq!(fs.writes(), 0);
+
+    save(&copy_local, "remote version revised\n").await;
+    assert_eq!(next(&mut copy_events).await, EditEvent::Uploading);
+    assert_eq!(next(&mut copy_events).await, EditEvent::Uploaded);
+    assert_eq!(fs.contents(path), "remote version revised\n");
+
+    // An app upload that leaves size and mtime unchanged still invalidates the sibling.
+    save(&original_local, "original version edits\n").await;
+    s.editor.overwrite(original, conflict_id).unwrap();
+    assert_eq!(next(&mut original_events).await, EditEvent::Uploading);
+    assert_eq!(next(&mut original_events).await, EditEvent::Uploaded);
+    save(&copy_local, "next version\n").await;
+    assert_eq!(next(&mut copy_events).await, EditEvent::Uploading);
+    assert!(matches!(
+        next(&mut copy_events).await,
+        EditEvent::Conflict { .. }
+    ));
+    assert_eq!(fs.contents(path), "original version edits\n");
+    assert!(s.editor.close(original));
+    assert!(copy_local.exists());
+    assert!(s.editor.close(copy.id));
+    assert!(!copy_local.exists());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_overwrite_leaves_the_edit_paused_and_requires_a_fresh_choice() {
+    let s = setup();
+    let path = "/etc/app.conf";
+    let fs = FakeFs::with(path, "a\n");
+    let (on_event, mut rx) = events();
+    let id = s
+        .editor
+        .open(fs.clone(), &host(), path, on_event)
+        .await
+        .unwrap();
+    let local = s.editor.local_path(id).unwrap();
+    fs.change_remote(path, "remote\n", None);
+    fs.fail_writes(true);
+    save(&local, "local\n").await;
+    assert_eq!(next(&mut rx).await, EditEvent::Uploading);
+    let EditEvent::Conflict { conflict_id, .. } = next(&mut rx).await else {
+        panic!("expected a conflict");
+    };
+
+    s.editor.overwrite(id, conflict_id).unwrap();
+    assert_eq!(next(&mut rx).await, EditEvent::Uploading);
+    let EditEvent::Conflict {
+        conflict_id: next_conflict,
+        reason: Some(reason),
+    } = next(&mut rx).await
+    else {
+        panic!("expected a conflict with the overwrite error");
+    };
+    assert!(reason.contains("connection lost"));
+    assert_eq!(
+        s.editor.overwrite(id, conflict_id),
+        Err(EditError::ConflictExpired)
+    );
+    assert_eq!(fs.contents(path), "remote\n");
+
+    fs.fail_writes(false);
+    s.editor.overwrite(id, next_conflict).unwrap();
+    assert_eq!(next(&mut rx).await, EditEvent::Uploading);
+    assert_eq!(next(&mut rx).await, EditEvent::Uploaded);
+    assert_eq!(fs.contents(path), "local\n");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn saving_does_not_recreate_a_file_that_vanished_on_the_host() {
+    let s = setup();
+    let path = "/etc/app.conf";
+    let fs = FakeFs::with(path, "a\n");
+    let (on_event, mut rx) = events();
+    let id = s
+        .editor
+        .open(fs.clone(), &host(), path, on_event)
+        .await
+        .unwrap();
+    let local = s.editor.local_path(id).unwrap();
+    fs.files.lock().unwrap().remove(path);
+
+    save(&local, "local\n").await;
+
+    assert_eq!(next(&mut rx).await, EditEvent::Uploading);
+    assert!(
+        matches!(next(&mut rx).await, EditEvent::UploadFailed { reason } if reason.contains("no such file"))
+    );
+    assert!(matches!(fs.stat(path).await, Err(FsError::NotFound(_))));
+    assert_eq!(fs.writes(), 0);
+    assert_eq!(std::fs::read_to_string(&local).unwrap(), "local\n");
 }
 
 #[tokio::test(flavor = "multi_thread")]
