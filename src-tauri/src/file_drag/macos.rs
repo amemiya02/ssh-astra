@@ -14,7 +14,7 @@ use objc2::{
 };
 use objc2_app_kit::{
     NSDragOperation, NSDraggingContext, NSDraggingItem, NSDraggingSession, NSDraggingSource,
-    NSEvent, NSEventMask, NSEventType, NSImage, NSView,
+    NSEvent, NSEventMask, NSEventType, NSImage, NSImageNameMultipleDocuments, NSView,
 };
 use objc2_app_kit::{NSFilePromiseProvider, NSFilePromiseProviderDelegate};
 use objc2_foundation::{
@@ -200,8 +200,7 @@ pub(super) fn start(
             NSPoint::new(point.x - 16.0, point.y - 16.0),
             NSSize::new(32.0, 32.0),
         );
-        let icon =
-            NSImage::imageWithSystemSymbolName_accessibilityDescription(ns_string!("doc"), None);
+        let icon = NSImage::imageNamed(unsafe { NSImageNameMultipleDocuments });
         unsafe { item.setDraggingFrame_contents(frame, icon.as_deref().map(|icon| icon.as_ref())) };
         let this = DragSource::alloc(mtm).set_ivars(report);
         let drag_source: Retained<DragSource> = unsafe { msg_send![super(this), init] };

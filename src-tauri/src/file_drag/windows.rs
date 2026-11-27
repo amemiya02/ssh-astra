@@ -443,10 +443,10 @@ impl IDataObjectAsyncCapability_Impl for DataObject_Impl {
         self.drag.stop_reading();
         #[cfg(feature = "e2e")]
         log::info!("file drag OLE asynchronous extraction ended");
-        let result: FsResult<bool> = status.ok().map_err(win_error).map(|()| {
-            (effect == DROPEFFECT_COPY.0 || self.drag.read_started.load(Ordering::Acquire))
-                && status != S_FALSE
-        });
+        let result: FsResult<bool> = status
+            .ok()
+            .map_err(win_error)
+            .map(|()| DROPEFFECT(effect).contains(DROPEFFECT_COPY) && status != S_FALSE);
         self.drag.report.finish(result);
         Ok(())
     }

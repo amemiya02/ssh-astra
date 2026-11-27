@@ -491,6 +491,7 @@ describe("FileBrowser", () => {
         pointerType: "mouse", isPrimary: true, pointerId: 1, clientX: x, clientY: y,
       }),
     );
+    vi.useFakeTimers();
     vi.stubGlobal("__sshastraFilePromises", true);
     const capture = {
       setPointerCapture: vi.fn(),
@@ -512,6 +513,9 @@ describe("FileBrowser", () => {
       await act(async () => pointer(folder!, "pointerup", 10, 10));
       expect(api.renameFile).not.toHaveBeenCalled();
     } finally {
+      // The dnd-kit sensor deliberately keeps its click listener for one turn after cancellation.
+      act(() => vi.advanceTimersByTime(50));
+      vi.useRealTimers();
       vi.unstubAllGlobals();
       for (const key of Object.keys(capture)) Reflect.deleteProperty(document.documentElement, key);
     }
