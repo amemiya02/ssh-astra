@@ -430,7 +430,7 @@ Settings → Connection accepts a custom Unix agent socket or Windows named pipe
 
 Appearance applies interface zoom immediately and remembers the selected percentage from 90% to 125%. The interface font takes a single local font family name and falls back to the system UI stack when that family is unavailable or the field is blank. The Terminal category has its own font family and size controls.
 
-In Shortcuts, each action lists its current key combinations. Select a combination to record its replacement, or press Esc to cancel. When a combination is in use, the row names the conflicting action and lets you replace it, leaving that action unassigned. Restore one action or reset the whole category to the platform defaults. Windows and Linux reserve Ctrl with a letter for the Terminal shell and explain this in the recorder. Window, Terminal and File panel shortcuts and their displayed hints update as soon as the setting changes.
+In Shortcuts, each action lists its current key combinations. Select a combination to record its replacement, or press Esc to cancel. When a combination is in use, the row names the conflicting action and lets you replace it, leaving that action unassigned. Restore one action or reset the whole category to the platform defaults. On Windows and Linux, the recorder explains that Ctrl with a letter is reserved for the Terminal shell. Window, Terminal and File panel shortcuts and their displayed hints update as soon as the setting changes.
 
 Terminal keyword highlighting uses the active Terminal palette. Settings → Terminal offers a switch for the built-in rules and a list of custom text or regular-expression rules. Matches use xterm decorations in the visible normal buffer.
 

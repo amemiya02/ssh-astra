@@ -852,7 +852,7 @@
       "resetAction": "恢复「{{action}}」的默认快捷键",
       "recording": "请按下快捷键，按 Esc 取消。",
       "unassigned": "未分配",
-      "shellCtrlLetter": "Ctrl 加单个字母的组合由 Terminal 中的 Shell 保留。请再加一个修饰键。",
+      "shellCtrlLetter": "Ctrl 加单个字母的组合由 终端中的 Shell 保留。请再加一个修饰键。",
       "missingModifier": "请使用功能键，或加上 Ctrl、Alt 或系统修饰键。",
       "unsupportedKey": "无法录入此按键，请换一个键。",
       "conflict": "「{{action}}」已使用此快捷键。替换后，冲突的操作将没有快捷键。",
@@ -860,7 +860,7 @@
       "replace": "替换快捷键",
       "cancel": "取消",
       "actions": {
-        "newTab": "新建 Local terminal",
+        "newTab": "新建本地终端",
         "closePane": "关闭窗格",
         "splitRight": "向右拆分",
         "splitDown": "向下拆分",
@@ -888,14 +888,14 @@
         "broadcastWindow": "广播到整个窗口",
         "commandPalette": "切换命令面板",
         "settings": "打开设置",
-        "terminalZoomIn": "增大 Terminal 字号",
-        "terminalZoomOut": "减小 Terminal 字号",
-        "find": "在 Terminal 中查找",
-        "fileBack": "在 File panel 中后退",
-        "fileForward": "在 File panel 中前进",
-        "fileCopy": "在 File panel 中复制",
-        "fileCut": "在 File panel 中剪切",
-        "filePaste": "在 File panel 中粘贴"
+        "terminalZoomIn": "增大 终端字号",
+        "terminalZoomOut": "减小 终端字号",
+        "find": "在终端中查找",
+        "fileBack": "在文件面板中后退",
+        "fileForward": "在文件面板中前进",
+        "fileCopy": "在文件面板中复制",
+        "fileCut": "在文件面板中剪切",
+        "filePaste": "在文件面板中粘贴"
       }
     },
     "confirmClose": {
