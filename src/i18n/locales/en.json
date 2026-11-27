@@ -206,7 +206,7 @@
     "connectFailed": "Could not connect to {{name}}: {{message}}",
     "import": {
       "action": "Import Hosts…",
-      "keywords": "ssh config openssh csv import putty",
+      "keywords": "ssh config openssh csv import putty mobaxterm mxtsessions",
       "pickerTitle": "Import Hosts",
       "chooseSource": "Choose where to import Hosts from.",
       "sshConfig": {
@@ -223,6 +223,15 @@
         "title": "CSV import results",
         "nothing": "The CSV file has no Hosts to import.",
         "error": "Could not import the CSV file: {{message}}"
+      },
+      "mobaxterm": {
+        "action": "MobaXterm sessions…",
+        "help": "Choose a session folder export (.mxtsessions) or a single session export (.moba).",
+        "chooseFile": "Choose a MobaXterm session export",
+        "fileType": "MobaXterm session export",
+        "title": "MobaXterm import results",
+        "nothing": "The MobaXterm file has no Hosts to import.",
+        "error": "Could not import the MobaXterm file: {{message}}"
       },
       "putty": {
         "action": "PuTTY registry export…",
@@ -260,7 +269,16 @@
         "puttyUnsupportedProtocol": "This PuTTY session uses a protocol other than SSH.",
         "puttyDefaultUser": "PuTTY had no saved username. The local username was used.",
         "puttyInvalidOption": "PuTTY option {{option}} is missing or invalid.",
-        "puttyUnsupportedOptions": "PuTTY options omitted: {{options}}."
+        "puttyUnsupportedOptions": "PuTTY options omitted: {{options}}.",
+        "mobaxtermFile": "Choose a MobaXterm session export.",
+        "mobaxtermSession": "This MobaXterm session is invalid or has an invalid name, address, or username.",
+        "mobaxtermUnsupportedSession": "This MobaXterm session uses a protocol other than SSH.",
+        "mobaxtermInvalidPort": "Port must be a whole number from 1 to 65535.",
+        "mobaxtermInvalidGroup": "The MobaXterm folder path is invalid.",
+        "mobaxtermInvalidGateway": "The MobaXterm SSH gateway settings are invalid.",
+        "mobaxtermDefaultUser": "MobaXterm had no saved username for this Host or one of its gateways. The local username was used.",
+        "mobaxtermKeyPath": "A MobaXterm private key path could not be imported.",
+        "mobaxtermUnsupportedSettings": "Some MobaXterm settings could not be imported."
       }
     },
     "transfer": {
