@@ -26,7 +26,7 @@ import { TerminalSearchBar, type SearchDirection, type SearchResults } from "./T
 import { BroadcastPaneContext, type Broadcast } from "@/features/workspace/broadcast";
 import { movingSourcePane } from "@/features/workspace/tab-window-move";
 import { getResolvedShortcuts } from "@/features/workspace/shortcut-settings";
-import { currentPlatform, matchTerminalShortcut } from "@/features/workspace/shortcuts";
+import { currentPlatform, matchTerminalShortcut, type TerminalCommand } from "@/features/workspace/shortcuts";
 import { planPaste, type PendingPaste } from "./terminal-input";
 import { TerminalPaneMenuContext } from "./terminal-pane-menu";
 import { selectAllEvent } from "./terminal-selection";
@@ -47,7 +47,7 @@ interface XtermViewProps {
   colorScheme?: string | null;
   historyHostId?: HostId;
   canPasteHistory?(): boolean;
-  onTerminalKey?(event: KeyboardEvent): boolean;
+  onTerminalKey?(event: KeyboardEvent, shortcut: TerminalCommand | null): boolean;
   /** A program set a window title (OSC 0/2); an empty string clears it. */
   onTitleChange?(title: string): void;
   /** The image paste for the running shell, or null between attachments. */
@@ -211,6 +211,10 @@ export function XtermView({ label, active, colorScheme, historyHostId, canPasteH
     xterm.attachCustomKeyEventHandler((event) => {
       if (event.type !== "keydown" || event.isComposing) return true;
       const shortcut = matchTerminalShortcut(event, getResolvedShortcuts(platform));
+      if (onTerminalKeyRef.current?.(event, shortcut)) {
+        event.preventDefault();
+        return false;
+      }
       if (shortcut === "find") {
         event.preventDefault();
         setSearching(true);
@@ -220,10 +224,6 @@ export function XtermView({ label, active, colorScheme, historyHostId, canPasteH
       if (shortcut === "commandHistory" && historyHostRef.current !== undefined) {
         event.preventDefault();
         setHistoryHost(historyHostRef.current);
-        return false;
-      }
-      if (onTerminalKeyRef.current?.(event)) {
-        event.preventDefault();
         return false;
       }
       const menuKey = !event.altKey && !event.ctrlKey && !event.metaKey &&

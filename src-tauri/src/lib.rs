@@ -341,6 +341,8 @@ pub fn run() {
             commands::terminal::prompt_answer,
             commands::terminal::terminal_write,
             commands::terminal::terminal_resize,
+            commands::terminal::terminal_completion_paths,
+            commands::terminal::terminal_completion_cancel,
             commands::terminal::terminal_close,
             commands::terminal::terminal_set_title,
             commands::terminal::terminal_latency_start,

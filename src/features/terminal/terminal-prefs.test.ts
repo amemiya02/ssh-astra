@@ -32,6 +32,7 @@ describe("terminal preferences", () => {
     expect(prefs.shellIntegration).toBe(true);
     expect(prefs.commandHistory).toBe(false);
     expect(prefs.inlineSuggestions).toBe(true);
+    expect(prefs.completionList).toBe(false);
     expect(prefs.localShell).toBeNull();
     expect(prefs.autoLog).toBe(false);
     expect(prefs.showLatency).toBe(false);
@@ -72,6 +73,7 @@ describe("terminal preferences", () => {
       shellIntegration: false,
       commandHistory: true,
       inlineSuggestions: false,
+      completionList: true,
       localShell: "/bin/zsh",
       autoLog: true,
       showLatency: true,
@@ -119,6 +121,7 @@ describe("terminal preferences", () => {
         copyOnSelect: false,
         fontFamily: "",
         shellIntegration: "no",
+        completionList: "yes",
         inlineImages: "off",
       },
     });

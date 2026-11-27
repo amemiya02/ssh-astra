@@ -29,10 +29,11 @@ vi.mock("@xterm/addon-webgl", () => ({
 
 beforeAll(startI18n);
 
-async function mount(history = Promise.resolve(["echo saved command"])) {
+async function mount(history = Promise.resolve(["echo saved command"]), completionList = false) {
   const original = getSetting(terminalSetting);
-  setSetting(terminalSetting, { ...original, commandHistory: true });
+  setSetting(terminalSetting, { ...original, commandHistory: !completionList, completionList });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("__TAURI_INTERNALS__", { transformCallback: () => 12 });
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
   vi.stubGlobal("matchMedia", () => ({ addListener() {}, removeListener() {} }));
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
@@ -66,9 +67,9 @@ async function mount(history = Promise.resolve(["echo saved command"])) {
   if (!(terminal instanceof Terminal)) throw new Error("Terminal did not open");
   const output = (text: string) => emit({ type: "output", data: new TextEncoder().encode(text) });
   const bytes = () => vi.mocked(invoke).mock.calls.flatMap(([command, args]) => command === "terminal_write" ? [args] : []);
-  const key = (key: string, number: number) => {
+  const key = (key: string, number: number, init?: KeyboardEventInit) => {
     act(() => terminal.textarea!.dispatchEvent(new KeyboardEvent("keydown", {
-      key, keyCode: number, bubbles: true, cancelable: true,
+      key, keyCode: number, bubbles: true, cancelable: true, ...init,
     })));
   };
   const ghost = () => container.querySelector(".terminal-history-suggestion")?.textContent;
@@ -84,7 +85,7 @@ async function mount(history = Promise.resolve(["echo saved command"])) {
     await new Promise<void>((resolve) => terminal.write("", resolve));
   });
   return {
-    bytes, emit, ghost, historyChanged: () => historyChanged?.(), key, prompt, receive, shellText,
+    container, bytes, emit, ghost, historyChanged: () => historyChanged?.(), key, prompt, receive, shellText,
     paste: (text: string) => act(() => terminal.paste(text)),
     close() {
       act(() => root.unmount());
@@ -217,5 +218,82 @@ it("withdraws a visible suggestion when Command history is cleared", async () =>
     await act(async () => historyChanged());
     expect(ghost()).toBeUndefined();
     expect(listCommandHistory).toHaveBeenCalledTimes(2);
+  } finally { close(); }
+});
+
+it("opens the opt-in list with Ctrl+Space, inserts a choice once and leaves Tab to the shell", async () => {
+  const { bytes, container, key, prompt, receive, close } = await mount(undefined, true);
+  try {
+    await prompt();
+    await receive("git ch");
+    const open = async () => {
+      await act(async () => {
+        key(" ", 32, { code: "Space", ctrlKey: true });
+        await import("./completion-catalog.json");
+      });
+      await vi.waitFor(() => expect(container.querySelector('[role="listbox"]')).not.toBeNull());
+    };
+    await open();
+    key("Tab", 9);
+    expect(bytes()).toEqual([{ id: 42, data: "\t" }]);
+    expect(container.querySelector('[role="listbox"]')).toBeNull();
+    await receive("e");
+    await open();
+    expect(container.querySelector('[role="option"][aria-selected="true"]')?.textContent).toBe("checkout");
+    key("Enter", 13);
+    key("Enter", 13, { repeat: true });
+    expect(bytes().at(-1)).toEqual({ id: 42, generation: 0, data: "\x1b[200~ckout \x1b[201~" });
+    expect(bytes()).toHaveLength(2);
+    expect(container.querySelector('[role="listbox"]')).toBeNull();
+  } finally { close(); }
+});
+
+it("explains an unavailable prompt without sending Ctrl+Space to the shell", async () => {
+  const { bytes, container, key, prompt, close } = await mount(undefined, true);
+  try {
+    await prompt(false);
+    key(" ", 32, { code: "Space", ctrlKey: true });
+    expect(container.textContent).toContain("Completions are available at the end of an editable shell prompt.");
+    expect(bytes()).toEqual([]);
+    act(() => setSetting(terminalSetting, { ...getSetting(terminalSetting), shellIntegration: false }));
+    key(" ", 32, { code: "Space", ctrlKey: true });
+    expect(container.textContent).toContain("Turn on Shell integration in Terminal settings");
+    expect(bytes()).toEqual([]);
+    act(() => setSetting(terminalSetting, { ...getSetting(terminalSetting), completionList: false }));
+    key(" ", 32, { code: "Space", ctrlKey: true });
+    expect(container.textContent).not.toContain("Turn on Shell integration in Terminal settings");
+    expect(bytes()).toEqual([{ id: 42, data: "\0" }]);
+  } finally { close(); }
+});
+
+it("lists paths on the current Connection and discards a completion from a previous Connection", async () => {
+  const { bytes, container, emit, key, prompt, receive, close } = await mount(undefined, true);
+  try {
+    let reply!: (value: unknown) => void;
+    const response = new Promise((resolve) => { reply = resolve; });
+    vi.mocked(invoke).mockImplementation((command, args) => {
+      if (command !== "terminal_completion_paths") return Promise.resolve(undefined);
+      (args as { onStart: { onmessage(value: null): void } }).onStart.onmessage(null);
+      return response;
+    });
+    await prompt();
+    act(() => emit({ type: "cwd", path: "/work" }));
+    await receive("cat docs/re");
+    await act(async () => {
+      key(" ", 32, { code: "Space", ctrlKey: true });
+      await import("./completion-catalog.json");
+    });
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("terminal_completion_paths", {
+      id: 42, generation: 0, query: { directory: "/work/docs/", prefix: "re", directoriesOnly: false },
+      onStart: expect.anything(),
+    }));
+    act(() => {
+      emit({ type: "connection", state: { state: "disconnected", reason: "test disconnect", reportReconnectFailure: false } });
+      emit({ type: "connection", state: { state: "connected" } });
+    });
+    await act(async () => reply({ entries: [{ name: "report", kind: "file" }] }));
+    expect(invoke).toHaveBeenCalledWith("terminal_completion_cancel", { id: 42, request: 12 });
+    expect(container.querySelector('[role="listbox"]')).toBeNull();
+    expect(bytes()).toEqual([]);
   } finally { close(); }
 });

@@ -18,7 +18,8 @@
 use std::{path::PathBuf, sync::Arc};
 
 use serde::Serialize;
-use sshastra_core::files::FsError;
+use sshastra_core::agent::DirectoryRead;
+use sshastra_core::files::{FsError, SftpFs};
 use sshastra_core::hosts::HostId;
 use sshastra_core::ssh::{QuickConnectTarget, RemoteTerminal, RemoteTerminalOptions};
 use sshastra_core::terminal::{
@@ -428,6 +429,67 @@ pub async fn terminal_write(
             None => registry.write(id, data.as_bytes())?,
         }
         Ok(())
+    })
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompletionPathQuery {
+    directory: String,
+    prefix: String,
+    directories_only: bool,
+}
+
+/// Lists a single directory on the exact transport the renderer observed.
+#[tauri::command]
+pub async fn terminal_completion_paths(
+    window: WebviewWindow,
+    registry: State<'_, TerminalRegistry>,
+    id: TerminalId,
+    generation: u64,
+    query: CompletionPathQuery,
+    on_start: Channel<()>,
+) -> CommandResult<Option<DirectoryRead>> {
+    let CompletionPathQuery { directory, prefix, directories_only } = query;
+    if !(directory.starts_with('/') || directory.starts_with("~/"))
+        || directory.len() > 8192
+        || directory.chars().any(char::is_control)
+        || prefix.len() > 1024
+        || prefix.contains('/')
+        || prefix.chars().any(char::is_control)
+    {
+        return Err(FsError::InvalidName.into());
+    }
+    let request = on_start.id();
+    let (route, connection, stopped) =
+        windows::with_resources(&window, |resources| -> CommandResult<_> {
+            let route = resources
+                .terminals
+                .get(&id)
+                .ok_or(TerminalError::NotFound(id))?;
+            let mut state = route.lock();
+            let (current, connection) = registry.connection(id)?.ok_or(FsError::NotConnected)?;
+            if current != generation {
+                return Err(FsError::NotConnected.into());
+            }
+            let stopped = state.start_completion(request).ok_or(FsError::NotConnected)?;
+            Ok((Arc::clone(route), connection, stopped))
+        })??;
+    let result = if on_start.send(()).is_ok() {
+        SftpFs::completion_paths(&connection, &directory, &prefix, directories_only, stopped).await
+    } else {
+        Ok(None)
+    };
+    route.lock().stop_completion(request);
+    Ok(result?)
+}
+
+#[tauri::command]
+pub fn terminal_completion_cancel(window: WebviewWindow, id: TerminalId, request: u32) -> CommandResult<()> {
+    windows::with_resources(&window, |resources| {
+        if let Some(route) = resources.terminals.get(&id) {
+            route.lock().stop_completion(request);
+        }
     })
 }
 

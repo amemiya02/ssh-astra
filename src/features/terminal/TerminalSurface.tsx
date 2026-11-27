@@ -1,5 +1,5 @@
 import type { Terminal as XTerm } from "@xterm/xterm";
-import { useCallback, useContext, useEffect, useRef } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { dismissAgentReview, invalidateAgentReview, openAgentReview } from "@/features/agent/agent-review";
 import { notifySystem } from "@/features/notifications/system-notifications";
@@ -29,6 +29,8 @@ import { shellIntegration, useShellIntegration } from "./shellIntegration";
 import { trackShellPromptInput } from "./shell-prompt-input";
 import { terminalOutputs } from "./terminal-outputs";
 import { notifyCommandFinished, watchTerminalNotifications } from "./terminal-notifications";
+import { TerminalCompletionList } from "./TerminalCompletionList";
+import { trackTerminalCompletion, type CompletionView } from "./terminal-completion";
 import { terminalSetting } from "./terminal-prefs";
 import { attachHistorySuggestions } from "./xterm-history-suggestions";
 
@@ -93,6 +95,8 @@ export function TerminalSurface({
   const activeRef = useRef(active);
   const historyHostRef = useRef(historyHostId);
   const suggestionsRef = useRef<ReturnType<typeof attachHistorySuggestions> | null>(null);
+  const completionRef = useRef<ReturnType<typeof trackTerminalCompletion> | null>(null);
+  const [completionView, setCompletionView] = useState<{ view: CompletionView; textarea: HTMLTextAreaElement | undefined }>();
   const tRef = useRef(t);
 
   useEffect(() => {
@@ -106,6 +110,7 @@ export function TerminalSurface({
     activeRef.current = active;
     historyHostRef.current = historyHostId;
     suggestionsRef.current?.refresh();
+    completionRef.current?.refresh();
     invalidateAgentReview(paneId);
   });
 
@@ -123,10 +128,12 @@ export function TerminalSurface({
     const moved = incomingPane(paneId);
     let canResize = moved === undefined;
     let generation = moved?.generation ?? 0;
+    let cwd = moved?.cwd;
     let unregisterMove: (() => void) | undefined;
     let unregisterWriter: (() => void) | undefined;
     const sendInput = (id: TerminalId, data: string, generation?: number) => {
-      suggestions.observeInput(data);
+      completion.close();
+      suggestions.observeInput(shellIntegration.canPasteAtPrompt(paneId) ? promptInput.observeInput(data) : undefined);
       shellIntegration.input(paneId, data);
       const write = writeTerminal(id, data, generation);
       return e2eHooks ? write.then(() => e2eHooks?.trackInput(xterm, data.length)) : write;
@@ -150,14 +157,37 @@ export function TerminalSurface({
       },
     });
     suggestionsRef.current = suggestions;
-    const stopSuggestionSettings = watchSetting(terminalSetting, suggestions.refresh);
+    const completion = trackTerminalCompletion(xterm, {
+      enabled: () => getSetting(terminalSetting).completionList && activeRef.current && !lifetime.signal.aborted,
+      source: () => {
+        if (!getSetting(terminalSetting).shellIntegration) return "integrationOff";
+        if (id === undefined || !connected || exited || movingSourcePane(paneId) ||
+          shellIntegration.get(paneId).status !== "available") return "integrationUnavailable";
+        const input = shellIntegration.canPasteAtPrompt(paneId) && promptInput.read();
+        return input && input.atEnd ? { id, generation, cwd, input } : "promptUnavailable";
+      },
+      show: (view) => setCompletionView(view && { view, textarea: xterm.textarea }),
+      insert: (source, text) => {
+        const bracketed = xterm.modes.bracketedPasteMode && !xterm.options.ignoreBracketedPasteMode;
+        void sendInput(source.id, terminalPasteInput(text, bracketed, false), source.generation).catch(() => undefined);
+      },
+    });
+    completionRef.current = completion;
+    const stopSuggestionSettings = watchSetting(terminalSetting, () => {
+      suggestions.refresh();
+      completion.refresh();
+    });
     const resetSuggestions = () => {
       promptInput.reset();
       suggestions.reset();
+      completion.close();
     };
     const afterOutput = () => {
       promptInput.afterWrite();
-      if (!lifetime.signal.aborted) suggestions.refresh();
+      if (!lifetime.signal.aborted) {
+        suggestions.refresh();
+        completion.refresh();
+      }
     };
     const enableImagePaste = (opened: TerminalId) => {
       const sourceGeneration = generation;
@@ -222,14 +252,21 @@ export function TerminalSurface({
         else xterm.write(event.data, afterOutput);
         return;
       }
+      if (event.type === "cwd") {
+        cwd = event.path;
+        completion.refresh();
+        return;
+      }
       if (event.type === "shellIntegration") {
         const finished = shellIntegration.event(paneId, event.event, xterm.buffer.active.type === "normal");
         if (finished) notifyCommandFinished(labelRef.current, finished);
         suggestions.refresh();
+        completion.refresh();
         return;
       }
       if (event.type === "connection") {
         connected = event.state.state === "connected";
+        cwd = undefined;
         resetSuggestions();
         invalidateAgentReview(paneId, true);
         if (connected) {
@@ -350,6 +387,8 @@ export function TerminalSurface({
     return () => {
       lifetime.abort();
       suggestionsRef.current = null;
+      completionRef.current = null;
+      completion.dispose();
       stopSuggestionSettings();
       suggestions.dispose();
       promptInput.dispose();
@@ -371,10 +410,16 @@ export function TerminalSurface({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="min-h-0 flex-1">
+      <div className="relative min-h-0 flex-1">
         <XtermView label={label} active={active} colorScheme={colorScheme} onTitleChange={onTitleChange} imagePasteRef={imagePasteRef} attach={attach}
           historyHostId={historyHostId} canPasteHistory={() => shellIntegration.canPasteAtPrompt(paneId)}
-          onTerminalKey={(event) => suggestionsRef.current?.accept(event) ?? false} />
+          onTerminalKey={(event, shortcut) => {
+            if (shortcut === "completionList" && completionRef.current?.open(event.repeat)) return true;
+            if (completionRef.current?.key(event)) return true;
+            return suggestionsRef.current?.accept(event) ?? false;
+          }} />
+        {completionView && active && <TerminalCompletionList {...completionView}
+          accept={(candidate) => { completionRef.current?.accept(candidate); }} />}
       </div>
       {unavailable && (
         <p className="border-border text-muted-foreground shrink-0 border-t px-3 py-1 text-xs" role="status">
