@@ -19,6 +19,7 @@ interface Props {
   /** False while the asking tab is hidden; the question stays pending. */
   open: boolean;
   onAnswer: (answer: PromptAnswer) => void;
+  hideCredentialSaving?: boolean;
 }
 
 /**
@@ -26,7 +27,7 @@ interface Props {
  * key passphrase, or answer the server's keyboard-interactive questions.
  * Escape refuses.
  */
-export function ConnectPromptDialog({ prompt, open, onAnswer }: Props) {
+export function ConnectPromptDialog({ prompt, open, onAnswer, hideCredentialSaving }: Props) {
   return (
     <Dialog
       open={open}
@@ -35,20 +36,20 @@ export function ConnectPromptDialog({ prompt, open, onAnswer }: Props) {
       }}
     >
       <DialogContent showCloseButton={false} className="max-w-[calc(100%-2rem)] gap-3.5 p-5 sm:max-w-130">
-        <Question key={prompt.id} prompt={prompt} onAnswer={onAnswer} />
+        <Question key={prompt.id} prompt={prompt} onAnswer={onAnswer} hideCredentialSaving={hideCredentialSaving} />
       </DialogContent>
     </Dialog>
   );
 }
 
-function Question({ prompt, onAnswer }: Omit<Props, "open">) {
+function Question({ prompt, onAnswer, hideCredentialSaving }: Omit<Props, "open">) {
   switch (prompt.type) {
     case "hostKey":
       return <HostKeyQuestion prompt={prompt} onAnswer={onAnswer} />;
     case "password":
-      return <PasswordQuestion prompt={prompt} onAnswer={onAnswer} />;
+      return <PasswordQuestion prompt={prompt} onAnswer={onAnswer} hideCredentialSaving={hideCredentialSaving} />;
     case "passphrase":
-      return <PassphraseQuestion prompt={prompt} onAnswer={onAnswer} />;
+      return <PassphraseQuestion prompt={prompt} onAnswer={onAnswer} hideCredentialSaving={hideCredentialSaving} />;
     case "keyboardInteractive":
       return <KeyboardInteractiveQuestion prompt={prompt} onAnswer={onAnswer} />;
   }
@@ -101,9 +102,11 @@ function FormFooter({ onCancel }: { onCancel: () => void }) {
 function PassphraseQuestion({
   prompt,
   onAnswer,
+  hideCredentialSaving,
 }: {
   prompt: Extract<ConnectPrompt, { type: "passphrase" }>;
   onAnswer: Props["onAnswer"];
+  hideCredentialSaving: Props["hideCredentialSaving"];
 }) {
   const { t } = useTranslation();
   const [passphrase, setPassphrase] = useState("");
@@ -114,7 +117,7 @@ function PassphraseQuestion({
       className="grid gap-3.5"
       onSubmit={(event) => {
         event.preventDefault();
-        onAnswer({ type: "passphrase", passphrase, save: prompt.canSave && save });
+        onAnswer({ type: "passphrase", passphrase, save: !hideCredentialSaving && prompt.canSave && save });
       }}
     >
       <DialogHeader>
@@ -142,7 +145,7 @@ function PassphraseQuestion({
           </p>
         )}
       </div>
-      <SaveField id={`${inputId}-save`} canSave={prompt.canSave} checked={save} onChange={setSave} />
+      {!hideCredentialSaving && <SaveField id={`${inputId}-save`} canSave={prompt.canSave} checked={save} onChange={setSave} />}
       <FormFooter onCancel={() => onAnswer({ type: "passphrase", passphrase: null })} />
     </form>
   );
@@ -241,9 +244,11 @@ function HostKeyQuestion({
 function PasswordQuestion({
   prompt,
   onAnswer,
+  hideCredentialSaving,
 }: {
   prompt: Extract<ConnectPrompt, { type: "password" }>;
   onAnswer: Props["onAnswer"];
+  hideCredentialSaving: Props["hideCredentialSaving"];
 }) {
   const { t } = useTranslation();
   const [password, setPassword] = useState("");
@@ -254,7 +259,7 @@ function PasswordQuestion({
       className="grid gap-3.5"
       onSubmit={(event) => {
         event.preventDefault();
-        onAnswer({ type: "password", password, save: prompt.canSave && save });
+        onAnswer({ type: "password", password, save: !hideCredentialSaving && prompt.canSave && save });
       }}
     >
       <DialogHeader>
@@ -282,7 +287,7 @@ function PasswordQuestion({
           </p>
         )}
       </div>
-      <SaveField id={`${inputId}-save`} canSave={prompt.canSave} checked={save} onChange={setSave} />
+      {!hideCredentialSaving && <SaveField id={`${inputId}-save`} canSave={prompt.canSave} checked={save} onChange={setSave} />}
       <DialogFooter>
         <Button
           type="button"

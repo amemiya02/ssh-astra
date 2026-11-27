@@ -52,6 +52,11 @@
       "keepaliveSeconds": "请输入 0 到 4,294,967,295 之间的整数"
     },
     "save": "保存",
+    "connectionTest": {
+      "action": "测试连接",
+      "testing": "正在测试连接…",
+      "succeeded": "连接测试成功。"
+    },
     "cancel": "取消",
     "edit": "编辑 Host",
     "editDescription": "修改 SSH Astra 连接这个 Host 的方式。",

@@ -1,5 +1,5 @@
 import { ChevronRight } from "lucide-react";
-import { useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -13,7 +13,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { readCommandError } from "@/lib/ipc/connect";
+import { ConnectErrorPanel } from "@/features/connect/ConnectErrorPanel";
+import { ConnectPromptDialog } from "@/features/connect/ConnectPromptDialog";
+import { readCommandError, refusal, type CommandError, type ConnectPrompt, type PromptAnswer } from "@/lib/ipc/connect";
+import type { testHostConnection } from "@/lib/ipc/connections";
 import type { Group, Host, HostDraft, HostId, TerminalBackspace, TerminalCharset } from "@/lib/ipc/hosts";
 import { cn } from "@/lib/utils";
 import { TerminalSchemeSelect } from "@/features/terminal/TerminalSchemeSelect";
@@ -69,12 +72,18 @@ const advancedFieldIds = {
   keepaliveSeconds: "host-form-keepalive-seconds",
 };
 
+type ConnectionTestState =
+  | { status: "testing" }
+  | { status: "succeeded"; values: HostFormValues }
+  | { status: "failed"; values: HostFormValues; error: CommandError };
+
 /** The Host editor: a new Host (`host` omitted) or edits to `host`. */
 export function HostFormDialogContent({
   host,
   hosts,
   groupName,
   save,
+  testConnection,
   onSaved,
   onCancel,
 }: {
@@ -84,6 +93,7 @@ export function HostFormDialogContent({
   /** The current Group or, when creating a Host, the selected Group. */
   groupName?: string;
   save: (draft: HostDraft, id?: HostId) => Promise<Host>;
+  testConnection: typeof testHostConnection;
   onSaved: (host: Host) => void;
   onCancel: () => void;
 }) {
@@ -93,6 +103,14 @@ export function HostFormDialogContent({
   const [saveError, setSaveError] = useState<{ message: string; field?: keyof typeof advancedFieldIds } | null>(null);
   const [saving, setSaving] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [connectionTest, setConnectionTest] = useState<ConnectionTestState | null>(null);
+  const [testPrompt, setTestPrompt] = useState<{ prompt: ConnectPrompt; answer(answer: PromptAnswer): void } | null>(null);
+  const testAbort = useRef<AbortController | null>(null);
+  const testing = connectionTest?.status === "testing";
+  const result = connectionTest && connectionTest.status !== "testing" && connectionTest.values === values
+    ? connectionTest : null;
+
+  useEffect(() => () => testAbort.current?.abort(), []);
 
   useLayoutEffect(() => {
     const field = saveError?.field ?? (errors.keepaliveSeconds ? "keepaliveSeconds" : undefined);
@@ -107,6 +125,49 @@ export function HostFormDialogContent({
     </p>
   );
 
+  const validate = (purpose: "save" | "test") => {
+    const result = parseHostForm(values, purpose);
+    setErrors(result.ok ? {} : result.errors);
+    if (result.ok) return result.draft;
+    if (result.errors.keepaliveSeconds) setAdvancedOpen(true);
+  };
+
+  const runTest = async () => {
+    if (testAbort.current || saving) return;
+    setConnectionTest(null);
+    setSaveError(null);
+    const draft = validate("test");
+    if (!draft) return;
+
+    const controller = new AbortController();
+    const { signal } = controller;
+    testAbort.current = controller;
+    setConnectionTest({ status: "testing" });
+    try {
+      await testConnection(draft, host?.id, (prompt) => new Promise((resolve) => {
+        if (signal.aborted) {
+          resolve(refusal(prompt));
+          return;
+        }
+        const cancel = () => resolve(refusal(prompt));
+        signal.addEventListener("abort", cancel, { once: true });
+        setTestPrompt({
+          prompt,
+          answer(answer) {
+            signal.removeEventListener("abort", cancel);
+            setTestPrompt(null);
+            resolve(answer);
+          },
+        });
+      }));
+      if (!signal.aborted) setConnectionTest({ status: "succeeded", values });
+    } catch (e: unknown) {
+      if (!signal.aborted) setConnectionTest({ status: "failed", values, error: readCommandError(e) });
+    } finally {
+      testAbort.current = null;
+    }
+  };
+
   return (
     <DialogContent
       showCloseButton={false}
@@ -116,16 +177,12 @@ export function HostFormDialogContent({
         className="grid gap-3.5"
         onSubmit={(event) => {
           event.preventDefault();
+          if (testAbort.current || saving) return;
           setSaveError(null);
-          const result = parseHostForm(values);
-          if (!result.ok) {
-            setErrors(result.errors);
-            if (result.errors.keepaliveSeconds) setAdvancedOpen(true);
-            return;
-          }
-          setErrors({});
+          const draft = validate("save");
+          if (!draft) return;
           setSaving(true);
-          save(result.draft, host?.id).then(onSaved, (e: unknown) => {
+          save(draft, host?.id).then(onSaved, (e: unknown) => {
             const error = readCommandError(e);
             const field = error.kind === "invalid" && error.details?.field;
             const advancedField = field === "terminalScheme" || field === "defaultDirectory" ? field : undefined;
@@ -410,15 +467,22 @@ export function HostFormDialogContent({
           </div>
         </div>
         {!saveError?.field && saveErrorMessage}
+        {testing && <p role="status" className="text-muted-foreground text-xs">{t("hosts.connectionTest.testing")}</p>}
+        {result?.status === "succeeded" && <p role="status" className="text-success text-xs">{t("hosts.connectionTest.succeeded")}</p>}
+        {result?.status === "failed" && <div className="text-sm [&>*]:m-0"><ConnectErrorPanel error={result.error} /></div>}
         <DialogFooter>
+          <Button type="button" variant="outline" size="sm" className="sm:mr-auto" disabled={testing || saving} onClick={() => void runTest()}>
+            {t("hosts.connectionTest.action")}
+          </Button>
           <Button type="button" variant="outline" size="sm" onClick={onCancel}>
             {t("hosts.cancel")}
           </Button>
-          <Button type="submit" size="sm" disabled={saving}>
+          <Button type="submit" size="sm" disabled={saving || testing}>
             {t("hosts.save")}
           </Button>
         </DialogFooter>
       </form>
+      {testPrompt && <ConnectPromptDialog prompt={testPrompt.prompt} onAnswer={testPrompt.answer} open hideCredentialSaving />}
     </DialogContent>
   );
 }

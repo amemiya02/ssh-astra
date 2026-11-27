@@ -10,18 +10,19 @@ mod support;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 
+use sshastra_core::credentials::{CredentialKind, CredentialVault, MemoryVault};
 use sshastra_core::files::RemoteFs;
 use sshastra_core::forward::{ForwardId, ForwardKind, PortForward, PortForwarder};
-use sshastra_core::hosts::{Host, HostAuth, HostId};
-use sshastra_core::known_hosts::KnownHosts;
+use sshastra_core::hosts::{Host, HostAuth, HostDraft, HostId, HostStore};
+use sshastra_core::known_hosts::{KnownHosts, Verdict};
 use sshastra_core::ssh::{
-    BoxFuture, Connection, ConnectionManager, HeldConnections, HostKeyPrompt, PasswordPrompt,
-    Prompter, Secret,
+    BoxFuture, ConnectError, Connection, ConnectionManager, HeldConnections, HostKeyPrompt,
+    PasswordPrompt, Prompter, Secret,
 };
 use sshastra_core::terminal::{Terminal, TerminalEvent, TerminalSize};
 use support::{Service, Sshd};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 
 /// The tests count the server's connections, so they take turns.
 static SERVER: Mutex<()> = Mutex::const_new(());
@@ -69,7 +70,7 @@ struct Fixture {
     sshd: Sshd,
     host: Host,
     manager: ConnectionManager,
-    _known_hosts: tempfile::TempDir,
+    sandbox: tempfile::TempDir,
 }
 
 impl Fixture {
@@ -98,7 +99,7 @@ impl Fixture {
             manager: ConnectionManager::new(KnownHosts::new(dir.path().join("known_hosts"))),
             sshd,
             host,
-            _known_hosts: dir,
+            sandbox: dir,
         }
     }
 
@@ -131,6 +132,150 @@ async fn open_terminal(connection: &Arc<Connection>) -> impl Terminal {
         .open_shell(TerminalSize { cols: 80, rows: 24 }, |_: TerminalEvent| {})
         .await
         .unwrap()
+}
+
+fn draft(host: &Host) -> HostDraft {
+    HostDraft {
+        name: host.name.clone(),
+        address: host.address.clone(),
+        port: host.port,
+        user: host.user.clone(),
+        auth: host.auth.clone(),
+        jump_host: host.jump_host.clone(),
+        terminal_scheme: None,
+        identities_only: false,
+        forward_agent: false,
+        keepalive_seconds: None,
+        post_login_command: None,
+        terminal_charset: None,
+        terminal_backspace: None,
+        default_directory: None,
+    }
+}
+
+struct TestLogin {
+    password: &'static str,
+    entered: Notify,
+    proceed: Notify,
+}
+
+impl Prompter for TestLogin {
+    fn confirm_host_key(&self, _: HostKeyPrompt) -> BoxFuture<'_, bool> {
+        Box::pin(async { true })
+    }
+
+    fn password(&self, prompt: PasswordPrompt) -> BoxFuture<'_, Option<Secret>> {
+        Box::pin(async move {
+            assert!(!prompt.can_save);
+            self.entered.notify_one();
+            self.proceed.notified().await;
+            Some(Secret {
+                value: self.password.to_owned(),
+                save: true,
+            })
+        })
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_draft_test_authenticates_privately_then_closes_without_saving_credentials() {
+    let Some(sshd) = support::sshd(Service::Counted) else {
+        return;
+    };
+    let _turn = SERVER.lock().await;
+    let mut fx = Fixture::new(sshd);
+    let known_hosts = KnownHosts::new(fx.sandbox.path().join("known_hosts"));
+    let vault = Arc::new(MemoryVault::default());
+    fx.manager = ConnectionManager::new(known_hosts.clone()).with_vault(vault.clone());
+    let store = HostStore::open(fx.sandbox.path().join("hosts.json")).unwrap();
+    let chain = store.draft_jump_chain(None, draft(&fx.host)).unwrap();
+    let target = &chain[0];
+    let login = Arc::new(TestLogin {
+        password: fx.sshd.password,
+        entered: Notify::new(),
+        proceed: Notify::new(),
+    });
+    fx.server_sees(0).await;
+    let while_testing = async {
+        login.entered.notified().await;
+        fx.server_sees(1).await;
+        assert!(fx.manager.live(&target.id).await.is_none());
+        login.proceed.notify_one();
+    };
+
+    let (result, ()) = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::join!(
+            fx.manager.test_connection(&[], target, login.clone()),
+            while_testing
+        )
+    })
+    .await
+    .expect("an isolated test never blocks the shared Connection lookup");
+
+    result.unwrap();
+    fx.server_sees(0).await;
+    assert!(store.list().is_empty());
+    assert_eq!(
+        vault.get(&target.id, CredentialKind::Password).unwrap(),
+        None
+    );
+    assert!(matches!(
+        known_hosts.verify(&target.address, target.port, &fx.sshd.host_key),
+        Ok(Verdict::Match)
+    ));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_draft_test_checks_authentication_and_address_even_when_the_host_is_connected() {
+    let Some(sshd) = support::sshd(Service::Counted) else {
+        return;
+    };
+    let _turn = SERVER.lock().await;
+    let fx = Fixture::new(sshd);
+    let mut store = HostStore::open(fx.sandbox.path().join("hosts.json")).unwrap();
+    let saved = store.upsert(None, draft(&fx.host)).unwrap();
+    let live = fx
+        .manager
+        .connect(&saved, CountingPrompter::new(&fx.sshd))
+        .await
+        .unwrap();
+    fx.server_sees(1).await;
+
+    let wrong_password = Arc::new(CountingPrompter {
+        password: "incorrect",
+        asked_for: StdMutex::default(),
+    });
+    let chain = store
+        .draft_jump_chain(Some(saved.id.clone()), draft(&saved))
+        .unwrap();
+    let result = fx
+        .manager
+        .test_connection(&[], &chain[0], wrong_password)
+        .await;
+    assert!(
+        matches!(result, Err(ConnectError::AuthenticationFailed)),
+        "{result:?}"
+    );
+    fx.server_sees(1).await;
+
+    let mut changed = draft(&saved);
+    changed.address = "no-such-host.invalid".into();
+    let chain = store
+        .draft_jump_chain(Some(saved.id.clone()), changed)
+        .unwrap();
+    let result = fx
+        .manager
+        .test_connection(&[], &chain[0], CountingPrompter::new(&fx.sshd))
+        .await;
+    assert!(
+        matches!(result, Err(ConnectError::Unreachable(_))),
+        "{result:?}"
+    );
+    assert_eq!(store.get(&saved.id), Some(&saved));
+    assert!(Arc::ptr_eq(
+        &live,
+        &fx.manager.live(&saved.id).await.unwrap()
+    ));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -251,6 +396,42 @@ fn behind(name: &str, jump: &Host) -> Host {
         default_directory: None,
         forwards: Vec::new(),
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_draft_test_authenticates_through_its_jump_host_on_fresh_connections() {
+    let Some(sshd) = support::sshd(Service::Jump) else {
+        return;
+    };
+    let _turn = SERVER.lock().await;
+    let fx = Fixture::new(sshd);
+    let mut store = HostStore::open(fx.sandbox.path().join("hosts.json")).unwrap();
+    let jump = store.upsert(None, draft(&fx.host)).unwrap();
+    let live_jump = fx
+        .manager
+        .connect(&jump, CountingPrompter::new(&fx.sshd))
+        .await
+        .unwrap();
+    fx.server_sees(1).await;
+    let chain = store
+        .draft_jump_chain(None, draft(&behind("internal", &jump)))
+        .unwrap();
+    let (target, hops) = chain.split_last().unwrap();
+    let login = CountingPrompter::new(&fx.sshd);
+
+    fx.manager
+        .test_connection(hops, target, login.clone())
+        .await
+        .unwrap();
+
+    assert_eq!(login.asked_for(), [jump.address.as_str(), "internal"]);
+    assert!(fx.manager.live(&target.id).await.is_none());
+    fx.server_sees(1).await;
+    assert!(Arc::ptr_eq(
+        &live_jump,
+        &fx.manager.live(&jump.id).await.unwrap()
+    ));
+    assert_eq!(store.list(), &[jump]);
 }
 
 #[tokio::test(flavor = "multi_thread")]

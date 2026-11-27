@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use super::watch::Watcher;
-use sshastra_core::hosts::{Host, HostId};
+use sshastra_core::hosts::{Host, HostDraft, HostId};
 use sshastra_core::ssh::{
     ConnectError, Connection, ConnectionManager, ConnectionSettings, HeldConnections, HeldEvent,
     Prompter,
@@ -31,13 +31,7 @@ pub async fn connect_host(
     host: &Host,
     prompter: Arc<dyn Prompter>,
 ) -> Result<Arc<Connection>, ConnectError> {
-    let connections = app.state::<ConnectionManager>();
-    // Applies to the Connections this opens; open ones keep theirs.
-    let settings = app
-        .state::<SettingsState>()
-        .with(|store| Ok(store.section::<ConnectionSettings>(ConnectionSettings::SECTION)))
-        .unwrap_or_default();
-    connections.set_keepalive_interval(settings.keepalive_interval());
+    let connections = configured_connections(app);
     let connection = connections.connect_through(hops, host, prompter).await?;
     let saved = app
         .state::<HostsState>()
@@ -51,6 +45,17 @@ pub async fn connect_host(
             .await;
     }
     Ok(connection)
+}
+
+fn configured_connections(app: &AppHandle) -> State<'_, ConnectionManager> {
+    let connections = app.state::<ConnectionManager>();
+    // Applies to the Connections this opens; open ones keep theirs.
+    let settings = app
+        .state::<SettingsState>()
+        .with(|store| Ok(store.section::<ConnectionSettings>(ConnectionSettings::SECTION)))
+        .unwrap_or_default();
+    connections.set_keepalive_interval(settings.keepalive_interval());
+    connections
 }
 
 /// The app's held ("connect only") Connections and the channel their changes
@@ -110,6 +115,28 @@ pub async fn host_connect(
     });
     let connection = connect_host(&app, &hops, &host, prompter).await?;
     connections.held.hold(&host.id, connection);
+    Ok(())
+}
+
+/// Tests the Host editor's draft over a private route, then disconnects.
+#[tauri::command]
+pub async fn host_test_connection(
+    app: AppHandle,
+    hosts: State<'_, HostsState>,
+    pending: State<'_, Arc<PendingPrompts>>,
+    id: Option<HostId>,
+    draft: HostDraft,
+    on_prompt: Channel<PromptRequest>,
+) -> CommandResult<()> {
+    let mut hops = hosts.with(|store| Ok(store.draft_jump_chain(id, draft)?))?;
+    let host = hops.pop().expect("a jump chain ends with the draft Host");
+    let prompter = Arc::new(ChannelPrompter {
+        pending: Arc::clone(&pending),
+        channel: on_prompt,
+    });
+    configured_connections(&app)
+        .test_connection(&hops, &host, prompter)
+        .await?;
     Ok(())
 }
 

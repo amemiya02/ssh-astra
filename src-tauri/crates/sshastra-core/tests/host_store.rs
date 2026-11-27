@@ -414,6 +414,23 @@ fn a_jump_host_cycle_is_refused_when_saving() {
 }
 
 #[test]
+fn a_draft_cannot_test_a_jump_route_that_leads_back_to_its_edited_host() {
+    let (_dir, path) = store_path();
+    let mut store = HostStore::open(&path).unwrap();
+    let a = store.upsert(None, draft("a")).unwrap();
+    let b = store.upsert(None, via("b", &a)).unwrap();
+
+    let result = store.draft_jump_chain(Some(a.id.clone()), via("edited a", &b));
+    match result {
+        Err(HostStoreError::JumpHostCycle(names)) => {
+            assert_eq!(names, ["edited a", "b", "edited a"])
+        }
+        other => panic!("expected a cycle, got {other:?}"),
+    }
+    assert_eq!(store.list(), [a, b]);
+}
+
+#[test]
 fn a_missing_jump_host_is_refused_when_saving() {
     let (_dir, path) = store_path();
     let mut store = HostStore::open(&path).unwrap();
