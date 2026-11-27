@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{oneshot, watch};
 
-use super::staged_write::{Partial, Side, StageLease, StageSlots, StagedWrite};
+use super::staged_write::{OpenedWrite, Partial, Side, StageLease, StageSlots, StagedWrite};
 use super::{join, FileKind, FileStat, FsError, FsResult, LocalFs, RemoteFs};
 use crate::ssh::BoxFuture;
 
@@ -158,6 +158,7 @@ struct Entry {
     job: Job,
     /// Files (relative paths) finished in earlier attempts; a retry skips them.
     done: HashSet<String>,
+    completed_bytes: u64,
     partials: Vec<StageLease>,
     cancel: Option<watch::Sender<bool>>,
     answer: Option<oneshot::Sender<ConflictAnswer>>,
@@ -374,6 +375,7 @@ impl TransferQueue {
                 info: info.clone(),
                 job,
                 done: HashSet::new(),
+                completed_bytes: 0,
                 partials: Vec::new(),
                 cancel: None,
                 answer: None,
@@ -593,7 +595,16 @@ impl Inner {
             info.bytes_total = files.clone().map(|(_, size)| size).sum();
             let done = files.filter(|(rel, _)| entry.done.contains(*rel));
             info.files_done = done.clone().count() as u64;
-            info.bytes_done = done.map(|(_, size)| size).sum();
+            entry.completed_bytes = done.map(|(_, size)| size).sum();
+            // Keep the last progress visible while a retry verifies its partial.
+            // The first file's actual offset will replace it before copying.
+            if entry.partials.is_empty() {
+                info.bytes_done = entry.completed_bytes;
+            } else {
+                info.bytes_done = info
+                    .bytes_done
+                    .clamp(entry.completed_bytes, info.bytes_total);
+            }
         });
 
         let mut directories = HashMap::new();
@@ -617,8 +628,8 @@ impl Inner {
                 let (parent, name) = item.rel.rsplit_once('/').unwrap_or(("", &item.rel));
                 directories[parent].at(name)
             };
-            let temp = file.sibling()?;
-            let slot = self.stages.for_path(&temp);
+            let parked = file.sibling()?;
+            let slot = self.stages.for_path(&parked);
             let mut partial =
                 cancellable(cancelled, async { Ok::<_, FsError>(slot.lock().await) }).await?;
             let (original, copy) = cancellable(cancelled, async {
@@ -634,7 +645,7 @@ impl Inner {
             .await?;
             if copy {
                 let source = source.at(&item.rel);
-                let mut stage = StagedWrite::new(&file, temp, original);
+                let mut stage = StagedWrite::new(&file, parked, original);
                 let result = self
                     .copy(
                         id,
@@ -645,28 +656,36 @@ impl Inner {
                         cancelled,
                     )
                     .await;
-                if result.is_ok() || stage.unprotected() {
+                if result.is_ok() {
                     *partial = None;
-                } else if let Some(retained) = stage.partial(&source, source_stat, &job.open) {
-                    let retained = Arc::new(retained);
-                    *partial = Some(retained.clone());
-                    let mut st = self.lock();
-                    let leases = &mut st
-                        .entries
-                        .get_mut(&id)
-                        .expect("a running transfer is listed")
-                        .partials;
-                    leases.retain(|lease| !Arc::ptr_eq(&lease.slot, &slot));
-                    leases.push(StageLease {
-                        slot: slot.clone(),
-                        partial: retained,
-                    });
+                } else {
+                    if !*cancelled.borrow() {
+                        stage.park().await;
+                    }
+                    if let Some(retained) =
+                        stage.partial(&source, source_stat, &job.open, partial.as_deref())
+                    {
+                        let retained = Arc::new(retained);
+                        *partial = Some(retained.clone());
+                        let mut st = self.lock();
+                        let leases = &mut st
+                            .entries
+                            .get_mut(&id)
+                            .expect("a running transfer is listed")
+                            .partials;
+                        leases.retain(|lease| !Arc::ptr_eq(&lease.slot, &slot));
+                        leases.push(StageLease {
+                            slot: slot.clone(),
+                            partial: retained,
+                        });
+                    }
                 }
                 result?;
             } else {
+                self.set_file_offset(id, 0);
                 self.progress(id, source_stat.size);
             }
-            self.file_done(id, &item.rel);
+            self.file_done(id, &item.rel, source_stat.size);
         }
         Ok(())
     }
@@ -702,16 +721,33 @@ impl Inner {
         previous: Option<&Partial>,
         cancelled: &mut watch::Receiver<bool>,
     ) -> Result<(), Stop> {
+        if *cancelled.borrow() {
+            return Err(Stop::Cancelled);
+        }
+        // Let the claim and the open below finish even if cancellation comes
+        // in. A server can move or create the file before sending its reply.
+        stage.claim(previous).await?;
         let plan = cancellable(cancelled, stage.plan(source, source_stat, previous)).await?;
-        // Allow open to finish even if cancellation comes in: the server may
-        // have created the file before its reply reaches us.
-        let (mut reader, mut writer, offset) = stage.begin(source, plan).await?;
-        if offset > 0 {
-            self.resume_progress(id, offset);
-        }
-        if stage.unprotected() && !self.lock().entries[&id].info.unprotected {
-            self.update(id, |entry| entry.info.unprotected = true);
-        }
+        let (mut reader, mut writer, unprotected) = match stage.begin(source, plan).await? {
+            OpenedWrite::Staged(reader, writer, offset) => {
+                self.set_file_offset(id, offset);
+                (reader, writer, false)
+            }
+            OpenedWrite::NeedsInPlace(reader) => {
+                if *cancelled.borrow() {
+                    return Err(Stop::Cancelled);
+                }
+                self.set_file_offset(id, 0);
+                if !self.lock().entries[&id].info.unprotected {
+                    self.update(id, |entry| entry.info.unprotected = true);
+                }
+                // Publishing the warning can itself let the user cancel.
+                if *cancelled.borrow() {
+                    return Err(Stop::Cancelled);
+                }
+                (reader, stage.begin_in_place().await?, true)
+            }
+        };
         let copied = cancellable(cancelled, async {
             let mut buf = vec![0; CHUNK];
             loop {
@@ -743,27 +779,42 @@ impl Inner {
 
         let result = async {
             copied?;
-            stage.prepare().await?;
+            if !unprotected {
+                stage.prepare().await?;
+            }
             if *cancelled.borrow() {
                 return Err(Stop::Cancelled);
             }
             // Once publication starts, finish it. A remote replacement can
             // take two requests, and an interrupted rename may have succeeded.
-            stage.commit().await?;
+            if !unprotected {
+                stage.commit().await?;
+            }
             Ok(())
         }
         .await;
-        if result.is_err() && stage.unprotected() {
+        if result.is_err() && unprotected {
             stage.discard_unprotected().await;
         }
         result
     }
 
-    fn resume_progress(&self, id: TransferId, offset: u64) {
-        self.update(id, |entry| {
-            entry.info.bytes_done += offset;
+    fn set_file_offset(&self, id: TransferId, offset: u64) {
+        let snapshot = {
+            let mut st = self.lock();
+            let entry = st
+                .entries
+                .get_mut(&id)
+                .expect("a running transfer is listed");
+            let bytes_done = entry.completed_bytes + offset;
+            if offset == 0 && entry.info.bytes_done == bytes_done {
+                return;
+            }
+            entry.info.bytes_done = bytes_done;
             entry.last_progress = Some(Instant::now());
-        });
+            entry.info.clone()
+        };
+        self.emit(&snapshot);
     }
 
     /// Counts `bytes` more done; tells the listener at most every
@@ -788,10 +839,11 @@ impl Inner {
         self.emit(&snapshot);
     }
 
-    fn file_done(&self, id: TransferId, rel: &str) {
+    fn file_done(&self, id: TransferId, rel: &str, size: u64) {
         let mut st = self.lock();
         if let Some(entry) = st.entries.get_mut(&id) {
             entry.done.insert(rel.to_owned());
+            entry.completed_bytes += size;
             entry.info.files_done += 1;
         }
     }

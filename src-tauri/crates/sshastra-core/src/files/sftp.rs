@@ -55,11 +55,11 @@ impl SftpFs {
     /// The high-level session does not expose extended requests. Open at
     /// most one extra channel on this Connection when an overwrite needs it.
     async fn rename_session(&self) -> FsResult<Option<RawSftpSession>> {
-        let channel = match self.connection.open_session_channel().await {
-            Ok(channel) => channel,
-            Err(russh::Error::ChannelOpenFailure(_)) => return Ok(None),
-            Err(e) => return Err(FsError::Protocol(e.to_string())),
-        };
+        let channel = self
+            .connection
+            .open_session_channel()
+            .await
+            .map_err(|e| FsError::Protocol(e.to_string()))?;
         channel
             .request_subsystem(true, "sftp")
             .await
@@ -67,11 +67,13 @@ impl SftpFs {
         let session = RawSftpSession::new(channel.into_stream());
         session.set_timeout(REQUEST_TIMEOUT_SECS);
         let version = session.init().await.map_err(|e| error("", e))?;
-        Ok(version
-            .extensions
-            .get(POSIX_RENAME)
-            .is_some_and(|version| version == "1")
-            .then_some(session))
+        match version.extensions.get(POSIX_RENAME).map(String::as_str) {
+            Some("1") => Ok(Some(session)),
+            Some(_) => Err(FsError::Protocol(format!(
+                "unsupported version of {POSIX_RENAME}"
+            ))),
+            None => Ok(None),
+        }
     }
 
     /// OpenSSH answers a bare "failure" when the target of a mkdir or rename

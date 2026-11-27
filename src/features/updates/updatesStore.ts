@@ -44,7 +44,7 @@ const installing = (status: UpdateStatus) => status.type === "downloading" || st
 
 export function createUpdatesStore(api: UpdatesApi): StoreApi<UpdatesState> {
   let found: AvailableUpdate | null = null;
-  let running: Promise<AvailableUpdate | null> | null = null;
+  let running: { manual: boolean; done: Promise<void> } | null = null;
 
   return createStore<UpdatesState>()((set, get) => ({
     status: { type: "idle" },
@@ -52,17 +52,36 @@ export function createUpdatesStore(api: UpdatesApi): StoreApi<UpdatesState> {
     async check(trigger) {
       if (installing(get().status)) return;
       const manual = trigger === "manual";
+      if (running) {
+        const request = running;
+        if (manual && !request.manual) {
+          request.manual = true;
+          set({ status: { type: "checking" } });
+        }
+        return request.done;
+      }
+
+      // One response publishes once, using the manual result if any caller asked for it.
+      const response = new Promise<AvailableUpdate | null>((resolve) => resolve(api.checkForUpdate()));
+      const request = { manual, done: finishCheck() };
+      running = request;
       if (manual) set({ status: { type: "checking" } });
-      running ??= api.checkForUpdate().finally(() => (running = null));
-      try {
-        found = await running;
-        if (found) set({ status: { type: "available", version: found.version } });
-        else set({ status: manual ? { type: "upToDate" } : { type: "idle" } });
-      } catch (error) {
-        const reason = errorMessage(error);
-        if (!manual) set({ status: { type: "idle" } });
-        else if (reason === ipc.noReleasePublished) set({ status: { type: "upToDate" } });
-        else set({ status: { type: "checkFailed", reason } });
+      return request.done;
+
+      async function finishCheck() {
+        let status: UpdateStatus;
+        try {
+          found = await response;
+          if (found) status = { type: "available", version: found.version };
+          else status = request.manual ? { type: "upToDate" } : { type: "idle" };
+        } catch (error) {
+          const reason = errorMessage(error);
+          if (!request.manual) status = { type: "idle" };
+          else if (reason === ipc.noReleasePublished) status = { type: "upToDate" };
+          else status = { type: "checkFailed", reason };
+        }
+        running = null;
+        set({ status });
       }
     },
 

@@ -28,7 +28,7 @@ RUN chmod 700 /home/tester/.ssh
 
 # A fixed tree for the File panel (SftpFs) tests, owned by root: tester can
 # read it but not `locked/`. `many/` holds 10,000 empty files.
-RUN mkdir -p /srv/files/docs /srv/files/locked /srv/files/many /srv/files/regular /srv/files/links \
+RUN mkdir -p /srv/files/docs /srv/files/locked /srv/files/many \
  && printf 'hello\n' > /srv/files/hello.txt \
  && printf 'x' > /srv/files/.hidden \
  && ln -s docs /srv/files/docs-link \
@@ -36,9 +36,13 @@ RUN mkdir -p /srv/files/docs /srv/files/locked /srv/files/many /srv/files/regula
  && chmod 640 /srv/files/hello.txt \
  && chmod 700 /srv/files/locked \
  && touch -d '2024-01-02T03:04:05Z' /srv/files/hello.txt \
- && cd /srv/files/many && seq -f 'f%05g' 1 10000 | xargs touch \
- && cd /srv/files/regular && seq -f 'f%04g' 1 1000 | xargs touch \
- && cd /srv/files/links && seq -f 'f%04g' 1 1000 | xargs -I '{}' ln -s ../hello.txt '{}'
+ && cd /srv/files/many && seq -f 'f%05g' 1 10000 | xargs touch
+
+# Extra listing fixtures for the performance benchmark.
+RUN mkdir -p /srv/performance/regular /srv/performance/links \
+ && ln /srv/files/hello.txt /srv/performance/hello.txt \
+ && cd /srv/performance/regular && seq -f 'f%04g' 1 1000 | xargs touch \
+ && cd /srv/performance/links && seq -f 'f%04g' 1 1000 | xargs -I '{}' ln -s ../hello.txt '{}'
 
 COPY sshd_config /etc/ssh/sshd_config
 # A fixed host key, so tests know the fingerprint the server will present.

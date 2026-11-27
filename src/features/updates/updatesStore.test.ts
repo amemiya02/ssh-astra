@@ -171,6 +171,28 @@ describe("startup updates", () => {
     expect(store.getState().status).toEqual({ type: "upToDate" });
   });
 
+  it.each([
+    { result: null, expected: { type: "upToDate" } },
+    { result: new Error("offline"), expected: { type: "checkFailed", reason: "offline" } },
+  ])("keeps $expected.type visible when startup joins a pending manual check", async ({ result, expected }) => {
+    vi.useFakeTimers();
+    let finish = () => {};
+    const { api, store } = setup(() => new Promise((resolve, reject) => {
+      finish = () => result instanceof Error ? reject(result) : resolve(result);
+    }));
+    checkOnStartup(store, () => ({ checkOnStartup: true }));
+    const manual = store.getState().check("manual");
+    expect(api.checkForUpdate).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(api.checkForUpdate).toHaveBeenCalledTimes(1);
+    expect(store.getState().status).toEqual({ type: "checking" });
+
+    finish();
+    await manual;
+    expect(store.getState().status).toEqual(expected);
+  });
+
   it("cancels a scheduled check when the window unmounts", async () => {
     vi.useFakeTimers();
     const { api, store } = setup(() => Promise.resolve(null));

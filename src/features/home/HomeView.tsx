@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import { FileInput, Plus, Search, Server, SquareTerminal, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -14,6 +13,7 @@ import { RowContextMenu, RowMoreMenu } from "@/features/hosts/RowMenu";
 import { useHosts } from "@/features/hosts/hostsStore";
 import type { HostsController } from "@/features/hosts/useHostsController";
 import { recentHostsSetting } from "@/features/palette/recent-hosts";
+import { reportHomeFirstPaint } from "@/lib/ipc/home";
 import type { Host, HostId } from "@/lib/ipc/hosts";
 import { useSetting } from "@/lib/storage";
 import { cn } from "@/lib/utils";
@@ -51,7 +51,7 @@ export function HomeView({ active, controller, connections, onOpenLocalTerminal 
     const beforePaint = requestAnimationFrame(() => {
       afterPaint = requestAnimationFrame(() => {
         delete measurement.__sshastraMeasureStartup;
-        void invoke("home_first_paint");
+        void reportHomeFirstPaint();
       });
     });
     return () => {
