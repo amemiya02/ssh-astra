@@ -1,4 +1,6 @@
+import { hostHue } from "@/features/hosts/hostHue";
 import type { Host } from "@/lib/ipc/hosts";
+import type { AnsiHue } from "@/theme/monogram-ink";
 import { resizePaneLayout, type SplitResize } from "./pane-layout";
 
 /** A remote Terminal's link to its Host, shown as the state dot on its tab. */
@@ -64,10 +66,14 @@ export const maxPanesPerTab = 8;
 
 export interface Tab {
   id: string;
-  /** A nonempty tree. Closing the last pane closes the tab. */
+  /** A nonempty tree. Closing the last pane closes an unlocked tab. */
   layout: PaneLayout;
-  /** The pane with focus; it names the tab and receives the pane shortcuts. */
+  /** The pane with focus provides the automatic title and receives pane shortcuts. */
   activePaneId: string;
+  /** A tab title that takes precedence over the focused pane's automatic title. */
+  customTitle?: string;
+  color?: AnsiHue;
+  locked?: boolean;
 }
 
 export interface TabsState {
@@ -75,9 +81,17 @@ export interface TabsState {
   activeId: string | null;
 }
 
+export type TabCustomizationAction =
+  | { type: "renameTab"; id: string; title: string }
+  | { type: "setTabColor"; id: string; color: AnsiHue | undefined }
+  | { type: "setTabLocked"; id: string; locked: boolean };
+
 export type TabsAction =
+  | TabCustomizationAction
   | { type: "open"; tabId: string; pane: Pane }
   | { type: "close"; id: string }
+  | { type: "closeOthers"; id: string }
+  | { type: "closeRight"; id: string }
   | { type: "activate"; id: string }
   | { type: "cycle"; step: 1 | -1 }
   | { type: "move"; id: string; to: number }
@@ -135,6 +149,12 @@ export function tabStatus(tab: Tab): ConnectionStatus | undefined {
   return activePane(tab).status;
 }
 
+export function tabHue(tab: Tab): AnsiHue | undefined {
+  if (tab.color) return tab.color;
+  const pane = activePane(tab);
+  return "host" in pane ? hostHue(pane.host.id) : undefined;
+}
+
 /** Hosts with at least one connected Terminal, each once, in tab order. */
 export function connectedHosts(state: TabsState): Host[] {
   const hosts = new Map<string, Host>();
@@ -163,15 +183,16 @@ export function remoteTerminalPaneIds(state: TabsState): string[] {
 }
 
 /**
- * The tab's label, from its focused pane: the program's own title, else the kind's name,
- * numbered from the second tab of that kind (`ordinal` is 1-based among tabs of the same
- * kind). A remote Terminal uses its Host's name; a Port forwards tab adds it.
+ * The tab's custom title or its focused pane's automatic label: the program's own title,
+ * else the kind's name. `ordinal` is 1-based among tabs of the same kind. A remote Terminal
+ * uses its Host's name and a Port forwards tab adds it to the kind's name.
  */
 export function tabTitle(
   tab: Tab,
   t: (key: "tabs.home" | "tabs.localTerminal" | "tabs.settings" | "tabs.portForwards" | "tabs.sftp") => string,
   ordinal: number,
 ): string {
+  if (tab.customTitle) return tab.customTitle;
   const pane = activePane(tab);
   if (pane.title) return pane.title;
   switch (pane.kind) {
@@ -208,7 +229,15 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
       return { tabs: [...state.tabs, tab], activeId: tab.id };
     }
     case "close":
-      return closeTab(state, action.id);
+    case "closeOthers":
+    case "closeRight":
+      return closeTabs(state, action.id, action.type);
+    case "renameTab":
+      return updateTab(state, action.id, { customTitle: action.title.trim() || undefined });
+    case "setTabColor":
+      return updateTab(state, action.id, { color: action.color });
+    case "setTabLocked":
+      return updateTab(state, action.id, { locked: action.locked });
     case "activate":
       if (!state.tabs.some((t) => t.id === action.id)) return state;
       return { ...state, activeId: action.id };
@@ -265,7 +294,7 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
       const tab = tabOfPane(state, action.paneId);
       if (!tab) return state;
       const layout = replaceLeaf(tab.layout, action.paneId, () => undefined);
-      if (!layout) return closeTab(state, tab.id);
+      if (!layout) return closeTabs(state, tab.id, "close");
       const index = tabPanes(tab).findIndex((pane) => pane.id === action.paneId);
       const panes = layoutPanes(layout);
       const activePaneId =
@@ -285,13 +314,19 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
   }
 }
 
-function closeTab(state: TabsState, id: string): TabsState {
-  const index = state.tabs.findIndex((t) => t.id === id);
+function closeTabs(state: TabsState, id: string, mode: "close" | "closeOthers" | "closeRight"): TabsState {
+  const index = state.tabs.findIndex((tab) => tab.id === id);
   if (index === -1) return state;
-  const tabs = state.tabs.filter((t) => t.id !== id);
-  if (state.activeId !== id) return { tabs, activeId: state.activeId };
-  const next = tabs[Math.min(index, tabs.length - 1)];
-  return { tabs, activeId: next?.id ?? null };
+  const tabs = state.tabs.filter((tab, at) => {
+    if (tab.locked) return true;
+    if (mode === "closeOthers") return at === index;
+    if (mode === "closeRight") return at <= index;
+    return at !== index;
+  });
+  if (tabs.length === state.tabs.length) return state;
+  if (state.activeId === null || tabs.some((tab) => tab.id === state.activeId)) return { tabs, activeId: state.activeId };
+  const next = mode === "close" ? tabs[Math.min(index, tabs.length - 1)]?.id : id;
+  return { tabs, activeId: next ?? null };
 }
 
 function tabOfPane(state: TabsState, paneId: string): Tab | undefined {
@@ -300,6 +335,11 @@ function tabOfPane(state: TabsState, paneId: string): Tab | undefined {
 
 function replaceTab(state: TabsState, next: Tab): TabsState {
   return { ...state, tabs: state.tabs.map((tab) => (tab.id === next.id ? next : tab)) };
+}
+
+function updateTab(state: TabsState, id: string, changes: Partial<Tab>): TabsState {
+  const tab = state.tabs.find((tab) => tab.id === id);
+  return tab ? replaceTab(state, { ...tab, ...changes }) : state;
 }
 
 function updatePane(state: TabsState, paneId: string, update: (pane: Pane) => Pane): TabsState {
