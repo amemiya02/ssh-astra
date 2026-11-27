@@ -18,12 +18,21 @@ export type ConnectionState =
   /** No more automatic tries; `reconnectTerminal` tries again. */
   | { state: "disconnected"; reason: string };
 
+export type ShellIntegrationStatus = "available" | "disabled" | "unsupported" | "timedOut";
+
+export type ShellIntegrationEvent =
+  | { type: "availability"; status: ShellIntegrationStatus }
+  | { type: "promptStart" }
+  | { type: "commandStart"; commandLine: string | null }
+  | { type: "commandEnd"; exitCode: number };
+
 export type TerminalEvent =
   | { type: "output"; data: Uint8Array }
   /** Remote Terminals only. */
   | { type: "connection"; state: ConnectionState }
   /** Remote Terminals only: the shell's current directory (ShellIntegration or `reportTerminalCwd`). */
   | { type: "cwd"; path: string }
+  | { type: "shellIntegration"; event: ShellIntegrationEvent }
   | { type: "exit"; code: number | null };
 
 /** Raw message shape on a Terminal's channel (see `src-tauri/src/commands/terminal.rs`). */
@@ -32,6 +41,7 @@ export type TerminalMessage =
   | number[]
   | { connection: ConnectionState }
   | { cwd: string }
+  | { shellIntegration: ShellIntegrationEvent }
   | { exitCode: number | null };
 
 export function decodeTerminalMessage(message: TerminalMessage): TerminalEvent {
@@ -39,6 +49,7 @@ export function decodeTerminalMessage(message: TerminalMessage): TerminalEvent {
   if (Array.isArray(message)) return { type: "output", data: Uint8Array.from(message) };
   if ("connection" in message) return { type: "connection", state: message.connection };
   if ("cwd" in message) return { type: "cwd", path: message.cwd };
+  if ("shellIntegration" in message) return { type: "shellIntegration", event: message.shellIntegration };
   return { type: "exit", code: message.exitCode };
 }
 

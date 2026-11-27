@@ -45,3 +45,20 @@ describe("decodeTerminalMessage for a remote Terminal's Connection", () => {
     });
   });
 });
+
+describe("decodeTerminalMessage for Shell integration", () => {
+  it("receives availability and command markers over the Terminal Channel", () => {
+    const markers = [
+      { type: "availability", status: "available" },
+      { type: "promptStart" },
+      { type: "commandStart", commandLine: "false" },
+      { type: "commandEnd", exitCode: 1 },
+    ] as const;
+    for (const marker of markers) {
+      expect(decodeTerminalMessage({ shellIntegration: marker })).toEqual({
+        type: "shellIntegration",
+        event: marker,
+      });
+    }
+  });
+});

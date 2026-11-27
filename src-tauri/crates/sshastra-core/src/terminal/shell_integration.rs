@@ -1,15 +1,16 @@
-//! ShellIntegration: lets a remote Terminal tell the app its shell's current
+//! Shell integration: lets a remote Terminal tell the app its shell's current
 //! directory, so the File panel can follow `cd`.
 //!
 //! - [`INJECTION`] is typed into a new bash or zsh shell once it shows its
 //!   first prompt (never written to the remote rc files). It adds a prompt
 //!   hook that reports `$PWD` with OSC 7
 //!   (`ESC ] 7 ; file://host/percent-encoded-path BEL`) before every prompt,
-//!   then prints a ready marker. Other shells only print the marker.
+//!   and emits private OSC command and prompt markers. Other shells report
+//!   that these markers are unsupported.
 //! - [`ShellOutput`] hides the shell's output from the injection to that
 //!   marker (the echoed line, the repeated prompt) and finds the directory
-//!   reports ([`CwdParser`]). Reports stay in the output: terminal emulators
-//!   ignore OSC 7.
+//!   reports ([`CwdParser`]) and private markers. Terminal emulators ignore
+//!   these OSC sequences.
 //! - [`REPORT_CWD`] asks any POSIX-ish shell for one report, for shells the
 //!   injection does not cover (the File panel's "sync" button).
 
@@ -17,41 +18,74 @@
 /// space keeps it out of history where the shell ignores such lines (bash's
 /// `ignorespace`, zsh's `HIST_IGNORE_SPACE`). One line, short enough for any
 /// canonical-mode line buffer.
+// Bash PS0 expands after reading a command and immediately before executing it.
+// Its assignment marks the pending exit status without replacing a DEBUG trap.
+// The history entry supplies the full command, including compound commands. If
+// Bash skipped the entry, never reuse the preceding command from history.
 pub const INJECTION: &str = concat!(
+    " __sshastra_ready=unsupported;",
     " [ -n \"$BASH_VERSION\" ] && eval '",
-    "__sshastra_osc7(){ local LC_ALL=C s=$PWD o= c i;",
+    "__sshastra_encode(){ local LC_ALL=C s=$1 o= c i;",
     " for ((i=0;i<${#s};i++)); do c=${s:i:1};",
     " case $c in [-/._~A-Za-z0-9]) o+=$c;; *) printf -v c %%%02X \"'\\''$c\"; o+=$c;; esac;",
-    " done; printf \"\\e]7;file://%s%s\\a\" \"$HOSTNAME\" \"$o\"; };",
-    " PROMPT_COMMAND=\"__sshastra_osc7${PROMPT_COMMAND:+;$PROMPT_COMMAND}\"';",
+    " done; printf %s \"$o\"; };",
+    " __sshastra_command(){ local LC_ALL=C line;",
+    " [[ -o history ]] && ((HISTCMD > __sshastra_history)) || return 0;",
+    " line=$(HISTTIMEFORMAT= builtin history 1); line=${line#*[0-9][*\\ ] };",
+    " if ((${#line}<=2700)); then __sshastra_encode \"$line\"; fi; };",
+    " __sshastra_prompt(){ local rc=$?;",
+    " if [[ -n ${__sshastra_running-} ]]; then printf \"\\e]6973;end;%d\\a\" \"$rc\"; fi;",
+    " unset __sshastra_running; __sshastra_history=$HISTCMD;",
+    " printf \"\\e]7;file://%s%s\\a\" \"$HOSTNAME\" \"$(__sshastra_encode \"$PWD\")\";",
+    " if [[ $__sshastra_ready == ready ]]; then printf \"\\e]6973;prompt\\a\"; fi;",
+    " return \"$rc\"; };",
+    " if [[ $(declare -p PROMPT_COMMAND 2>/dev/null) == \"declare -a \"* ]]; then",
+    " PROMPT_COMMAND=(__sshastra_prompt \"${PROMPT_COMMAND[@]}\");",
+    " else PROMPT_COMMAND=\"__sshastra_prompt${PROMPT_COMMAND:+;$PROMPT_COMMAND}\"; fi;",
+    " if ((BASH_VERSINFO[0]>4 || (BASH_VERSINFO[0]==4 && BASH_VERSINFO[1]>=4))) && shopt -q promptvars; then",
+    " PS0=\"${PS0-}\"'\\''\\e]6973;start;${__sshastra_running:=1};$(__sshastra_command)\\a'\\'';",
+    " __sshastra_ready=ready; fi';",
     " [ -n \"$ZSH_VERSION\" ] && eval '",
-    "__sshastra_osc7(){ emulate -L zsh; setopt extendedglob; local LC_ALL=C;",
-    " printf \"\\e]7;file://%s%s\\a\" \"$HOST\"",
-    " \"${PWD//(#m)[^-\\/._~A-Za-z0-9]/%${(l:2::0:)$(([##16]#MATCH))}}\"; };",
-    " autoload -Uz add-zsh-hook; add-zsh-hook precmd __sshastra_osc7';",
-    " printf '\\033]6973;ready\\007'\r",
+    "__sshastra_encode(){ emulate -L zsh; setopt extendedglob; local LC_ALL=C s=$1;",
+    " printf %s \"${s//(#m)[^-\\/._~A-Za-z0-9]/%${(l:2::0:)$(([##16]#MATCH))}}\"; };",
+    " __sshastra_preexec(){ local LC_ALL=C line=$1; __sshastra_running=1;",
+    " printf \"\\e]6973;start;1;\";",
+    " if ((${#line}<=2700)); then __sshastra_encode \"$line\"; fi; printf \"\\a\"; };",
+    " __sshastra_prompt(){ local rc=$?;",
+    " if [[ -n ${__sshastra_running-} ]]; then printf \"\\e]6973;end;%d\\a\" \"$rc\"; fi;",
+    " unset __sshastra_running;",
+    " printf \"\\e]7;file://%s%s\\a\" \"$HOST\" \"$(__sshastra_encode \"$PWD\")\";",
+    " printf \"\\e]6973;prompt\\a\"; };",
+    " autoload -Uz add-zsh-hook;",
+    " add-zsh-hook precmd __sshastra_prompt && add-zsh-hook preexec __sshastra_preexec",
+    " && __sshastra_ready=ready';",
+    " printf '\\033]6973;%s\\007' \"$__sshastra_ready\"\r",
 );
 
-/// The OSC payload [`INJECTION`] prints when it is done.
+/// The OSC payloads printed when the injection finishes.
 const READY: &[u8] = b"6973;ready";
+const UNSUPPORTED: &[u8] = b"6973;unsupported";
 
 /// Typed into the Terminal (visibly) to make the shell report its directory
 /// once, when ShellIntegration is off or the shell is not bash/zsh.
 pub const REPORT_CWD: &str = " printf '\\033]7;file://%s%s\\007' \"$(hostname)\" \"$PWD\"\r";
 
+use super::{ShellIntegrationEvent, ShellIntegrationStatus, TerminalEvent};
+
 /// One remote shell's output on its way to the screen.
 #[derive(Debug, Default)]
 pub struct ShellOutput {
     parser: CwdParser,
+    integrated: bool,
     /// Output held back since [`Self::hide_until_ready`]; `None` when shown.
     held: Option<Vec<u8>>,
 }
 
-/// What to show of a chunk of output, and the directories it reported.
+/// What to show of a chunk of output, and the shell events it reported.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Shown {
     pub output: Vec<u8>,
-    pub cwds: Vec<String>,
+    pub events: Vec<TerminalEvent>,
 }
 
 impl ShellOutput {
@@ -73,13 +107,25 @@ impl ShellOutput {
     }
 
     pub fn feed(&mut self, bytes: &[u8]) -> Shown {
-        let mut cwds = Vec::new();
+        let mut events = Vec::new();
         let mut ready_at = None;
+        let awaiting_ready = self.held.is_some();
         self.parser.scan(bytes, |end, payload| {
-            if payload == READY {
-                ready_at.get_or_insert(end);
+            if awaiting_ready && ready_at.is_none() {
+                let status = match payload {
+                    READY => ShellIntegrationStatus::Available,
+                    UNSUPPORTED => ShellIntegrationStatus::Unsupported,
+                    _ => return,
+                };
+                ready_at = Some(end);
+                self.integrated = status == ShellIntegrationStatus::Available;
+                events.push(TerminalEvent::ShellIntegration(
+                    ShellIntegrationEvent::Availability { status },
+                ));
             } else if let Some(cwd) = cwd_from_osc(payload) {
-                cwds.push(cwd);
+                events.push(TerminalEvent::Cwd(cwd));
+            } else if self.integrated {
+                events.extend(marker_from_osc(payload).map(TerminalEvent::ShellIntegration));
             }
         });
         let output = match (&mut self.held, ready_at) {
@@ -93,7 +139,7 @@ impl ShellOutput {
                 Vec::new()
             }
         };
-        Shown { output, cwds }
+        Shown { output, events }
     }
 }
 
@@ -168,6 +214,21 @@ impl CwdParser {
             };
         }
     }
+}
+
+fn marker_from_osc(payload: &[u8]) -> Option<ShellIntegrationEvent> {
+    let marker = payload.strip_prefix(b"6973;")?;
+    if marker == b"prompt" {
+        return Some(ShellIntegrationEvent::PromptStart);
+    }
+    if let Some(command) = marker.strip_prefix(b"start;1;") {
+        let command_line = (!command.is_empty())
+            .then(|| String::from_utf8_lossy(&percent_decode(command)).into_owned());
+        return Some(ShellIntegrationEvent::CommandStart { command_line });
+    }
+    let code = marker.strip_prefix(b"end;")?;
+    let exit_code = std::str::from_utf8(code).ok()?.parse().ok()?;
+    Some(ShellIntegrationEvent::CommandEnd { exit_code })
 }
 
 /// The directory in an OSC payload `7;file://host/path`, if it is one.

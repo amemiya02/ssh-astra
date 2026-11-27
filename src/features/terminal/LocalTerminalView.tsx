@@ -65,7 +65,7 @@ export function LocalTerminalView({ active = true, onTitleChange }: LocalTermina
           return;
         }
         // Local terminals have no Connection and no ShellIntegration.
-        if (event.type === "connection" || event.type === "cwd") return;
+        if (event.type !== "exit") return;
         exited = true;
         const message =
           event.code === null

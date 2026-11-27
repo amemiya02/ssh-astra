@@ -118,6 +118,7 @@ function PaneContent({
     case "remote-terminal":
       return (
         <RemoteTerminalView
+          paneId={pane.id}
           host={pane.host}
           active={active}
           onTitleChange={(title) => onTitleChange(pane.id, title)}

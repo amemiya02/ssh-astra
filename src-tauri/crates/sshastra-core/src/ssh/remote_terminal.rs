@@ -10,8 +10,7 @@
 //!
 //! With ShellIntegration on ([`RemoteTerminalOptions::shell_integration`]),
 //! every shell it starts, the first and each after a reconnect, gets the
-//! prompt hook typed in, and the directories it reports come out as
-//! [`TerminalEvent::Cwd`].
+//! prompt hook typed in. It reports the current directory and shell markers.
 
 use std::future::Future;
 use std::sync::Arc;
@@ -24,8 +23,8 @@ use tokio::sync::mpsc;
 use super::shell::ShellEvent;
 use super::{ConnectError, Connection, RemoteShell};
 use crate::terminal::{
-    ConnectionState, Result, ShellOutput, Terminal, TerminalError, TerminalEvent, TerminalSize,
-    INJECTION,
+    ConnectionState, Result, ShellIntegrationEvent, ShellIntegrationStatus, ShellOutput, Terminal,
+    TerminalError, TerminalEvent, TerminalSize, INJECTION,
 };
 
 /// How a [`RemoteTerminal`] retries a dropped Connection.
@@ -270,6 +269,7 @@ impl Runner {
         let mut hook = if self.integration {
             Hook::Waiting(Waiting::default())
         } else {
+            self.report_integration(ShellIntegrationStatus::Disabled);
             Hook::Done
         };
         // Keystrokes typed while the hook goes in, sent after it.
@@ -286,14 +286,17 @@ impl Runner {
                         }
                         // Reports also come from `REPORT_CWD` typed in without the hook.
                         let shown = output.feed(&bytes);
-                        self.show(shown.output, shown.cwds);
+                        self.show(shown.output);
+                        for event in shown.events {
+                            (self.sink)(event);
+                        }
                         if matches!(hook, Hook::Hiding(_)) && !output.is_hiding() {
                             hook = Hook::Done;
                             let _ = shell.write(&std::mem::take(&mut typed));
                         }
                     }
                     Some(ShellEvent::Exit { code }) => {
-                        self.show(output.reveal(), Vec::new());
+                        self.show(output.reveal());
                         (self.sink)(TerminalEvent::Exit { code });
                         return Err(());
                     }
@@ -308,7 +311,8 @@ impl Runner {
                         hook = Hook::Hiding(Instant::now() + READY_TIMEOUT);
                     } else {
                         // The shell never printed the marker: show what it did.
-                        self.show(output.reveal(), Vec::new());
+                        self.show(output.reveal());
+                        self.report_integration(ShellIntegrationStatus::TimedOut);
                         hook = Hook::Done;
                         let _ = shell.write(&std::mem::take(&mut typed));
                     }
@@ -332,13 +336,16 @@ impl Runner {
         }
     }
 
-    fn show(&mut self, output: Vec<u8>, cwds: Vec<String>) {
+    fn show(&mut self, output: Vec<u8>) {
         if !output.is_empty() {
             (self.sink)(TerminalEvent::Output(output));
         }
-        for cwd in cwds {
-            (self.sink)(TerminalEvent::Cwd(cwd));
-        }
+    }
+
+    fn report_integration(&mut self, status: ShellIntegrationStatus) {
+        (self.sink)(TerminalEvent::ShellIntegration(
+            ShellIntegrationEvent::Availability { status },
+        ));
     }
 
     /// A new shell on a new Connection: automatic tries with growing delays,
