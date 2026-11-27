@@ -1,5 +1,5 @@
 import type { Terminal as XTerm } from "@xterm/xterm";
-import { useCallback, useContext, useEffect, useRef } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BroadcastPaneContext } from "@/features/workspace/broadcast";
 import { TabActivityContext } from "@/features/workspace/tab-activity";
@@ -10,8 +10,10 @@ import {
   writeTerminal,
   type TerminalId,
 } from "@/lib/ipc/terminal";
+import { getSetting } from "@/lib/storage";
 import { XtermView } from "./XtermView";
 import { terminalOutputs } from "./terminal-outputs";
+import { terminalSetting } from "./terminal-prefs";
 
 const dim = (text: string) => `\x1b[2m${text}\x1b[0m`;
 
@@ -19,6 +21,7 @@ interface LocalTerminalViewProps {
   /** Whether its tab is shown; becoming active refits and focuses the Terminal. */
   active?: boolean;
   initialCwd?: string;
+  shellId?: string;
   onCwd?(cwd: string): void;
   /** The shell set a window title (OSC 0/2); an empty string clears it. */
   onTitleChange?(title: string): void;
@@ -29,8 +32,9 @@ interface LocalTerminalViewProps {
  * Stays mounted while its tab is hidden. When the shell exits or cannot start,
  * Enter starts a new one in the same tab.
  */
-export function LocalTerminalView({ active = true, initialCwd, onCwd, onTitleChange }: LocalTerminalViewProps) {
+export function LocalTerminalView({ active = true, initialCwd, shellId, onCwd, onTitleChange }: LocalTerminalViewProps) {
   const { t } = useTranslation();
+  const [shellFallback, setShellFallback] = useState(false);
   const { broadcast, tabId, paneId } = useContext(BroadcastPaneContext) ?? {};
   const { activity, tabId: activityTabId } = useContext(TabActivityContext) ?? {};
   // Read through refs so a language change or a new callback never recreates the Terminal.
@@ -87,6 +91,10 @@ export function LocalTerminalView({ active = true, initialCwd, onCwd, onTitleCha
           onCwdRef.current?.(event.path);
           return;
         }
+        if (event.type === "localShellFallback") {
+          setShellFallback(true);
+          return;
+        }
         if (event.type === "terminalLog" || event.type === "recording") {
           output?.status(event.type === "terminalLog" ? "log" : "recording", event.status);
           return;
@@ -101,7 +109,7 @@ export function LocalTerminalView({ active = true, initialCwd, onCwd, onTitleCha
             : tRef.current("terminal.exited", { code: event.code });
         xterm.write(`\r\n${dim(message)}\r\n`);
         offerRestart();
-      }, cwd).then(
+      }, cwd, shellId ?? getSetting(terminalSetting).localShell ?? undefined).then(
         (opened) => {
           if (disposed || exited) {
             void closeTerminal(opened);
@@ -137,6 +145,7 @@ export function LocalTerminalView({ active = true, initialCwd, onCwd, onTitleCha
       if (id !== undefined) void writeTerminal(id, data);
       else if (!waitingForRestart) pendingInput += data;
       else if (data === "\r") {
+        setShellFallback(false);
         xterm.write("\r\n");
         start();
       }
@@ -159,7 +168,18 @@ export function LocalTerminalView({ active = true, initialCwd, onCwd, onTitleCha
       onBell.dispose();
       if (id !== undefined) void closeTerminal(id);
     };
-  }, [activity, activityTabId, broadcast, paneId, tabId]);
+  }, [activity, activityTabId, broadcast, paneId, shellId, tabId]);
 
-  return <XtermView active={active} onTitleChange={onTitleChange} attach={attach} />;
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {shellFallback && (
+        <p role="status" className="bg-surface text-foreground shrink-0 border-b px-3 py-1.5 text-xs">
+          {t("terminal.localShell.fallback")}
+        </p>
+      )}
+      <div className="min-h-0 flex-1">
+        <XtermView active={active} onTitleChange={onTitleChange} attach={attach} />
+      </div>
+    </div>
+  );
 }

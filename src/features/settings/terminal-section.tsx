@@ -9,6 +9,7 @@ import { readCommandError } from "@/lib/ipc/connect";
 import { pickTerminalOutputDirectory } from "@/lib/ipc/terminal";
 import { CommitField } from "./CommitField";
 import { SettingRow } from "./SettingRow";
+import { LocalShellSetting } from "./local-shell-setting";
 import { settingRows } from "./setting-rows";
 import { TerminalHighlightingSettings } from "./terminal-highlighting-settings";
 import { TerminalSchemeSettings } from "./terminal-scheme-settings";
@@ -81,6 +82,9 @@ export function TerminalSection() {
 
   return (
     <>
+      <SettingRow setting={settingRows.localShell}>
+        <LocalShellSetting value={prefs.localShell} onChange={(localShell) => updatePrefs({ localShell })} />
+      </SettingRow>
       <SettingRow setting={settingRows.font}>
         <CommitField
           id="settings-terminal-font"

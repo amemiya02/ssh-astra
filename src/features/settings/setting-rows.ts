@@ -54,6 +54,10 @@ export const settingRows = {
     { en: "workspace exit disconnect warning shutdown prompt", zh: "工作区 退出 断开 警告 提示", "zh-Hant": "工作區 離開 結束 中斷 警告 提示" }, "settings.confirmQuit.description",
   ),
 
+  localShell: row("terminal", "settings.terminal.localShell.label",
+    { en: "local terminal bash zsh powershell cmd WSL", zh: "本地 终端 命令行 bash zsh powershell cmd WSL", "zh-Hant": "本機 終端機 命令列 bash zsh powershell cmd WSL" },
+    "settings.terminal.localShell.description",
+  ),
   font: row("terminal", "settings.terminal.font.label",
     { en: "typeface monospace family typography", zh: "字形 等宽 字体族 排版", "zh-Hant": "字形 等寬 字型系列 排版" }, "settings.terminal.font.description",
   ),

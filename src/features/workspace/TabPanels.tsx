@@ -178,6 +178,7 @@ function PaneContent({
         <LocalTerminalView
           active={active}
           initialCwd={pane.cwd}
+          shellId={pane.shellId}
           onTitleChange={(title) => onTitleChange(pane.id, title)}
           onCwd={(cwd) => onLocalCwd(pane.id, cwd)}
         />

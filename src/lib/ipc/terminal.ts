@@ -9,6 +9,15 @@ export interface TerminalSize {
   rows: number;
 }
 
+export interface LocalShell {
+  id: string;
+  label: string;
+}
+
+export function listLocalShells(): Promise<LocalShell[]> {
+  return invoke("local_terminal_shells");
+}
+
 /**
  * Where a remote Terminal stands after its Connection dropped (mirrors
  * `sshastra_core::terminal::ConnectionState`). `connected` means it is back, with a new shell.
@@ -42,6 +51,7 @@ export type TerminalEvent =
   | { type: "cwd"; path: string }
   | { type: "shellIntegration"; event: ShellIntegrationEvent }
   | { type: "terminalLog" | "recording"; status: TerminalOutputStatus }
+  | { type: "localShellFallback" }
   | { type: "exit"; code: number | null };
 
 /** Raw message shape on a Terminal's channel (see `src-tauri/src/commands/terminal.rs`). */
@@ -53,6 +63,7 @@ export type TerminalMessage =
   | { shellIntegration: ShellIntegrationEvent }
   | { terminalLog: TerminalOutputStatus }
   | { recording: TerminalOutputStatus }
+  | { localShellFallback: true }
   | { exitCode: number | null };
 
 export function decodeTerminalMessage(message: TerminalMessage): TerminalEvent {
@@ -63,6 +74,7 @@ export function decodeTerminalMessage(message: TerminalMessage): TerminalEvent {
   if ("shellIntegration" in message) return { type: "shellIntegration", event: message.shellIntegration };
   if ("terminalLog" in message) return { type: "terminalLog", status: message.terminalLog };
   if ("recording" in message) return { type: "recording", status: message.recording };
+  if ("localShellFallback" in message) return { type: "localShellFallback" };
   return { type: "exit", code: message.exitCode };
 }
 
@@ -74,9 +86,10 @@ export async function openLocalTerminal(
   size: TerminalSize,
   onEvent: (event: TerminalEvent) => void,
   cwd?: string,
+  shellId?: string,
 ): Promise<TerminalId> {
   const channel = new Channel<TerminalMessage>((message) => onEvent(decodeTerminalMessage(message)));
-  return invoke<TerminalId>("local_terminal_open", { size, onEvent: channel, cwd });
+  return invoke<TerminalId>("local_terminal_open", { size, onEvent: channel, cwd, shellId });
 }
 
 export function writeTerminal(id: TerminalId, data: string): Promise<void> {

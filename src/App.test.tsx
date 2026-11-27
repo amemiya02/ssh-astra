@@ -48,6 +48,10 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
       draft?: HostDraft;
     }) => {
       if (command === "remote_terminal_open" || command === "local_terminal_open") return ++nextTerminalId;
+      if (command === "local_terminal_shells") return [
+        { id: "/bin/zsh", label: "/bin/zsh" },
+        { id: "/bin/bash", label: "/bin/bash" },
+      ];
       if (command === "temporary_host_create") {
         const target = { ...args!.target!, user: args!.target!.user ?? "local-user" };
         return { ...host, ...target, id: `temporary-${++nextTemporaryId}`, name: quickConnectLabel(target), auth: { type: "auto" } };
@@ -619,6 +623,54 @@ it("starts a new Local terminal directly in the focused pane's directory", async
   await clickButton("Split right");
 
   expect(localOpens()).toEqual([undefined, undefined, cwd]);
+});
+
+it("opens the configured default Local terminal shell and reports a missing selection", async () => {
+  await render(workspace({ type: "open", tabId: "settings", pane: newPane({ kind: "settings" }, "settings-pane") }));
+  await clickButton("Terminal");
+  const select = document.querySelector<HTMLSelectElement>('select[aria-label="Default local shell"]')!;
+  expect([...select.options].map((option) => option.textContent)).toEqual(["System default", "/bin/zsh", "/bin/bash"]);
+  await act(async () => {
+    select.value = "/bin/zsh";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(settingsFile.terminal).toMatchObject({ localShell: "/bin/zsh" });
+  await clickButton("New Local terminal");
+  expect(vi.mocked(invoke).mock.calls.find(([command]) => command === "local_terminal_open")?.[1])
+    .toMatchObject({ shellId: "/bin/zsh" });
+
+  await sendTerminalMessage({ localShellFallback: true }, "local_terminal_open");
+  expect([...document.querySelectorAll('[role="status"]')].map((item) => item.textContent))
+    .toContain("The selected shell is unavailable. Using the system default shell.");
+});
+
+it("opens a one-off shell from the tab strip and preserves it through split and restore", async () => {
+  settingsFile.terminal = { localShell: "/bin/zsh" };
+  await startSettings(settingsBackend);
+  await render(emptyTabs);
+  const chooser = document.querySelector('[aria-label="Choose a Local terminal shell"]')!;
+  await act(async () => chooser.dispatchEvent(new KeyboardEvent("keydown", {
+    key: "ArrowDown", bubbles: true, cancelable: true,
+  })));
+  await act(async () => contextMenuItem("/bin/bash").click());
+  const localOpens = () => vi.mocked(invoke).mock.calls
+    .filter(([command]) => command === "local_terminal_open")
+    .map(([, args]) => args as { shellId?: string; cwd?: string });
+  expect(localOpens()[0]).toMatchObject({ shellId: "/bin/bash" });
+  expect(settingsFile.terminal).toMatchObject({ localShell: "/bin/zsh" });
+
+  const cwd = "/tmp/it's here";
+  await sendTerminalMessage({ cwd }, "local_terminal_open");
+  await clickButton("Split right");
+  expect(localOpens()[1]).toMatchObject({ shellId: "/bin/bash", cwd });
+
+  await unmount();
+  await startSettings(settingsBackend);
+  await render(restoreWorkspaceLayout(getSetting(workspaceLayoutSetting), [], "layout"));
+  expect(localOpens().slice(2)).toMatchObject([
+    { shellId: "/bin/bash", cwd },
+    { shellId: "/bin/bash", cwd },
+  ]);
 });
 
 it("applies the live bell choice to running Terminals and limits repeated sound", async () => {
