@@ -1,6 +1,6 @@
 import { defineSection } from "@/lib/storage";
 
-export const notificationCategories = ["transfers", "reconnect", "longCommand", "terminal"] as const;
+export const notificationCategories = ["transfers", "reconnect", "longCommand", "terminal", "agentReview"] as const;
 export type NotificationCategory = (typeof notificationCategories)[number];
 type NotificationSettings = Record<NotificationCategory, boolean> & { longCommandThresholdSeconds: number };
 
@@ -10,6 +10,7 @@ const defaults: NotificationSettings = {
   longCommand: true,
   longCommandThresholdSeconds: 10,
   terminal: true,
+  agentReview: true,
 };
 
 export function isLongCommandThreshold(value: unknown): value is number {

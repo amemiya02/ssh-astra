@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { connectionsStore, useConnections } from "@/features/connect/connectionsStore";
 import { hostConnections } from "@/features/connect/hostConnection";
+import { AgentReviewDialog } from "@/features/agent/AgentReviewDialog";
 import { SshLinkConfirmation } from "@/features/connect/SshLinkConfirmation";
 import { CommandDialog, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { FilePanelContent, type FilePanelPane } from "@/features/files/FilePanelContent";
@@ -650,6 +651,7 @@ export function App({ initialTabs, startupTabsAcrossWindows, incomingMove }: {
         onQuickConnect={openQuickConnect}
         onActivateTab={activateTab}
       />
+      <AgentReviewDialog />
       <QuitConfirmation interruptions={interruptions} />
     </ShortcutCaptureContext.Provider>
   );

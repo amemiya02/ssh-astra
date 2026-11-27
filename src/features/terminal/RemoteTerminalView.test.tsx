@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeAll, beforeEach, expect, it, vi } from "vitest";
+import { AgentReviewDialog } from "@/features/agent/AgentReviewDialog";
+import { agentAccessSetting } from "@/features/agent/agent-access";
 import { filesSetting } from "@/features/files/file-prefs";
 import { fileBrowsers } from "@/features/files/fileBrowsers";
 import { terminalCwds } from "@/features/files/terminalCwds";
@@ -77,6 +79,61 @@ it("returns the rendered viewport and recent scrollback through its own Terminal
       terminal.dispose();
       root.unmount();
     });
+  }
+});
+
+it("reviews the exact pending command with a separate clipboard choice", async () => {
+  const paneId = "review-pane";
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const terminal = new Terminal({ allowProposedApi: true });
+  const ipc = vi.mocked(invoke);
+  ipc.mockImplementation(async (command) => command === "remote_terminal_open" ? { id: 7, savedHost: true } : undefined);
+  setSetting(agentAccessSetting, { enabled: true });
+  act(() => root.render(<>
+    <AgentReviewDialog />
+    <RemoteTerminalView paneId={paneId} host={{ ...host, agentAccess: "approval" }} onEditHost={() => {}} onClose={() => {}} />
+  </>));
+  let detach: (() => void) | undefined;
+  try {
+    await act(async () => { detach = vi.mocked(XtermView).mock.lastCall![0].attach(terminal); });
+    const { onEvent } = ipc.mock.calls.find(([command]) => command === "remote_terminal_open")![1] as {
+      onEvent: { onmessage: (message: TerminalMessage) => void };
+    };
+    const request = { id: 31, terminalId: 7, host: "Production", promptId: 2, command: "  printf '%s' 'hello there'  " };
+    act(() => onEvent.onmessage({ agentReview: request }));
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+    expect(ipc).toHaveBeenCalledWith("terminal_agent_review_answer", { id: 31, choice: "unavailable" });
+
+    act(() => {
+      onEvent.onmessage({ shellIntegration: { type: "availability", status: "available" } });
+      onEvent.onmessage({ shellIntegration: { type: "promptStart", promptId: 2 } });
+      onEvent.onmessage({ agentReview: { ...request, id: 32 } });
+    });
+    const dialog = document.body.querySelector('[role="dialog"]');
+    expect(dialog?.textContent).toContain("Production");
+    expect(dialog?.textContent).toContain("Terminal #7");
+    expect(dialog?.querySelector("code")?.textContent).toBe(request.command);
+    const copy = Array.from(dialog?.querySelectorAll("button") ?? []).find((button) => button.textContent === "Copy command");
+    expect(copy).toBeDefined();
+    act(() => copy?.click());
+    expect(ipc).toHaveBeenCalledWith("terminal_agent_review_answer", { id: 32, choice: "copy" });
+    expect(ipc.mock.calls.filter(([command]) => command === "terminal_write")).toEqual([]);
+
+    act(() => {
+      onEvent.onmessage({ agentReview: { ...request, id: 33 } });
+      onEvent.onmessage({ shellIntegration: { type: "promptStart", promptId: 3 } });
+    });
+    expect(ipc).toHaveBeenCalledWith("terminal_agent_review_answer", { id: 33, choice: "unavailable" });
+  } finally {
+    act(() => {
+      detach?.();
+      terminal.dispose();
+      root.unmount();
+    });
+    container.remove();
+    setSetting(agentAccessSetting, { enabled: false });
   }
 });
 

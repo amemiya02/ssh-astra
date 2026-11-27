@@ -1,3 +1,4 @@
+import type { AgentReviewRequest } from "./agent-review";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { TransferHost } from "./transfers";
@@ -70,6 +71,8 @@ export type TerminalEvent =
   | { type: "shellIntegration"; event: ShellIntegrationEvent }
   | { type: "terminalLog" | "recording"; status: TerminalOutputStatus }
   | { type: "agentScreen"; request: AgentScreenRequest }
+  | { type: "agentReview"; request: AgentReviewRequest }
+  | { type: "agentReviewClosed"; id: number }
   | { type: "localShellFallback" }
   | { type: "moveFence"; token: string }
   | { type: "exit"; code: number | null };
@@ -84,6 +87,8 @@ export type TerminalMessage =
   | { terminalLog: TerminalOutputStatus }
   | { recording: TerminalOutputStatus }
   | { agentScreen: AgentScreenRequest }
+  | { agentReview: AgentReviewRequest }
+  | { agentReviewClosed: number }
   | { localShellFallback: true }
   | { moveFence: string }
   | { exitCode: number | null };
@@ -96,6 +101,8 @@ export function decodeTerminalMessage(message: TerminalMessage): TerminalEvent {
   if ("shellIntegration" in message) return { type: "shellIntegration", event: message.shellIntegration };
   if ("terminalLog" in message) return { type: "terminalLog", status: message.terminalLog };
   if ("recording" in message) return { type: "recording", status: message.recording };
+  if ("agentReview" in message) return { type: "agentReview", request: message.agentReview };
+  if ("agentReviewClosed" in message) return { type: "agentReviewClosed", id: message.agentReviewClosed };
   if ("agentScreen" in message) return { type: "agentScreen", request: message.agentScreen };
   if ("moveFence" in message) return { type: "moveFence", token: message.moveFence };
   if ("localShellFallback" in message) return { type: "localShellFallback" };

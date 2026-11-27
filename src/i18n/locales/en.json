@@ -10,7 +10,19 @@
       "read": "Read only",
       "approval": "Approval required"
     },
-    "hostHint": "Both access levels currently let agents read open Terminals and files on this Host. This permission stays on this device.",
+    "hostHint": "Read only shares open Terminals and files on this Host. Approval required also allows individual command review requests. This permission stays on this device.",
+    "review": {
+      "title": "Review an agent command",
+      "description": "Review this proposal for the selected Terminal. Copy it to the clipboard to paste and submit yourself. The request expires after two minutes.",
+      "host": "Host",
+      "terminal": "Terminal",
+      "terminalId": "Terminal #{{id}}",
+      "reject": "Reject",
+      "copy": "Copy command",
+      "notification": "Open SSH Astra to review a command proposal.",
+      "copied": "Command copied to the clipboard.",
+      "copyFailed": "Could not copy the command. The request may have expired or the Terminal may have changed."
+    },
     "enabled": "Agent access on",
     "turnOff": "Turn off Agent access",
     "sharedTerminal": "Terminal shared with agents",
@@ -1412,6 +1424,10 @@
       }
     },
     "notifications": {
+      "agentReview": {
+        "label": "Agent command reviews",
+        "description": "Notify when a local MCP client requests command review while SSH Astra is in the background."
+      },
       "transfers": {
         "label": "Transfer batches",
         "description": "Notify when a group of uploads, downloads, or copies finishes in the background."
