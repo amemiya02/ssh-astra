@@ -271,6 +271,33 @@ describe("tabsReducer: splits", () => {
     expect(tabsReducer(state, { type: "focusPane", paneId: "zzz" })).toBe(state);
   });
 
+  it("temporarily maximizes the focused pane and restores the original split", () => {
+    const state = tabsReducer(withTabs(["a"], "a"), { type: "split", orientation: "horizontal", pane: local("a.2") });
+    const maximized = tabsReducer(state, { type: "toggleMaximizePane" });
+    expect(maximized.tabs[0]).toMatchObject({ activePaneId: "a.2", paneMaximized: true });
+    expect(maximized.tabs[0]?.layout).toBe(state.tabs[0]?.layout);
+    expect(tabsReducer(maximized, { type: "toggleMaximizePane" })).toEqual(state);
+  });
+
+  it.each([
+    { type: "split", orientation: "vertical", pane: local("a.4") },
+    { type: "closePane", paneId: "a.3" },
+    { type: "closePane", paneId: "a.1" },
+    { type: "focusPane", paneId: "a.1" },
+    { type: "cyclePane", step: 1 },
+  ] as const)("restores the layout when changing panes with $type", (action) => {
+    let state = withTabs(["a"], "a");
+    state = tabsReducer(state, { type: "split", orientation: "horizontal", pane: local("a.2") });
+    state = tabsReducer(state, { type: "split", orientation: "vertical", pane: local("a.3") });
+    const maximized = tabsReducer(state, { type: "toggleMaximizePane" });
+    expect(tabsReducer(maximized, action)).toEqual(tabsReducer(state, action));
+  });
+
+  it("ignores maximize when only one pane is open", () => {
+    const state = withTabs(["a"], "a");
+    expect(tabsReducer(state, { type: "toggleMaximizePane" })).toBe(state);
+  });
+
   it("cycles focus through the active tab's panes", () => {
     let state = withTabs(["a"], "a");
     state = tabsReducer(state, { type: "split", orientation: "horizontal", pane: local("a.2") });
@@ -299,6 +326,58 @@ describe("tabsReducer: splits", () => {
   it("closing a tab's last pane closes the tab", () => {
     const state = withTabs(["a", "b"], "b");
     expect(tabsReducer(state, { type: "closePane", paneId: "b.1" })).toEqual(withTabs(["a"], "a"));
+  });
+});
+
+describe("tabsReducer: pane swaps", () => {
+  function nestedSplit(): TabsState {
+    let state = withTabs(["a"], "a");
+    state = tabsReducer(state, { type: "split", orientation: "horizontal", pane: local("a.2") });
+    state = tabsReducer(state, { type: "split", orientation: "vertical", pane: local("a.3") });
+    return tabsReducer(state, { type: "resizeSplit", tabId: "a", path: [1], after: 0, fraction: 0.25 });
+  }
+
+  it("swaps right with the pane sharing the most edge in a nested split, keeping focus and proportions", () => {
+    const state = tabsReducer(nestedSplit(), { type: "focusPane", paneId: "a.1" });
+    const swapped = tabsReducer(state, { type: "swapPane", direction: "right" });
+    expect(paneIds(swapped, "a")).toEqual(["a.3", "a.2", "a.1"]);
+    expect(swapped.tabs[0]).toMatchObject({
+      activePaneId: "a.1",
+      layout: {
+        orientation: "horizontal",
+        children: [
+          { ratio: 0.5 },
+          {
+            ratio: 0.5,
+            layout: {
+              orientation: "vertical",
+              children: [{ ratio: 0.25 }, { ratio: 0.75 }],
+            },
+          },
+        ],
+      },
+    });
+  });
+
+  it.each([
+    { paneId: "a.2", direction: "left", order: ["a.2", "a.1", "a.3"] },
+    { paneId: "a.2", direction: "down", order: ["a.1", "a.3", "a.2"] },
+    { paneId: "a.3", direction: "up", order: ["a.1", "a.3", "a.2"] },
+  ] as const)("swaps $direction and keeps the same Terminal focused", ({ paneId, direction, order }) => {
+    const state = tabsReducer(nestedSplit(), { type: "focusPane", paneId });
+    const swapped = tabsReducer(state, { type: "swapPane", direction });
+    expect(paneIds(swapped, "a")).toEqual(order);
+    expect(swapped.tabs[0]?.activePaneId).toBe(paneId);
+  });
+
+  it.each([
+    { paneId: "a.1", direction: "left" },
+    { paneId: "a.3", direction: "right" },
+    { paneId: "a.2", direction: "up" },
+    { paneId: "a.3", direction: "down" },
+  ] as const)("ignores swaps $direction at the edge of the tab", ({ paneId, direction }) => {
+    const state = tabsReducer(nestedSplit(), { type: "focusPane", paneId });
+    expect(tabsReducer(state, { type: "swapPane", direction })).toBe(state);
   });
 });
 
