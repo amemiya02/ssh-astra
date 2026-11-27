@@ -217,7 +217,7 @@ impl RemoteFs for SftpFs {
         path: &'a str,
         cancelled: oneshot::Receiver<()>,
     ) -> BoxFuture<'a, FsResult<Option<u64>>> {
-        Box::pin(self.scan(cancelled, |stream| async move {
+        Box::pin(self.scan(cancelled, move |stream| async move {
             let scan = Self::from_stream(Arc::clone(&self.connection), stream).await?;
             sum_folder(&scan, path).await
         }))
@@ -230,7 +230,7 @@ impl RemoteFs for SftpFs {
         mode: NameSearchMode,
         cancelled: oneshot::Receiver<()>,
     ) -> BoxFuture<'a, FsResult<Option<NameSearchResult>>> {
-        Box::pin(self.scan(cancelled, |stream| async move {
+        Box::pin(self.scan(cancelled, move |stream| async move {
             let scan = RawSftpSession::new(stream);
             scan.set_timeout(REQUEST_TIMEOUT_SECS);
             scan.init().await.map_err(|e| error(path, e))?;
