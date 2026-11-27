@@ -54,7 +54,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
       if (command === "remote_terminal_open") {
         const connect = args?.hostId && remoteOpenFixtures.get(args.hostId);
         if (connect) await connect(args.onPrompt!);
-        return ++nextTerminalId;
+        return { id: ++nextTerminalId, savedHost: !args?.hostId?.startsWith("temporary-") };
       }
       if (command === "local_terminal_open") return {
         id: ++nextTerminalId,
@@ -1864,4 +1864,28 @@ it("starts a Recording from the Terminal menu and stops it from the command pale
 
   expect(tab.getAttribute("aria-label")).not.toContain("Recording active");
   expect(tab.getAttribute("aria-label")).toContain("Terminal log active");
+});
+
+
+it("marks only a shared saved Host's Terminal and disables Agent access from the status bar", async () => {
+  settingsFile.agentAccess = { enabled: true };
+  await startSettings(settingsBackend);
+  const shared = { ...host, agentAccess: "read" } as const;
+  const privateHost = { ...host, id: "private", name: "Private" };
+  savedHosts = [shared, privateHost];
+  await hostsStore.getState().load();
+  await render(workspace(
+    { type: "open", tabId: "shared", pane: newPane({ kind: "remote-terminal", host: shared }) },
+    { type: "open", tabId: "private", pane: newPane({ kind: "remote-terminal", host: privateHost }) },
+    { type: "open", tabId: "local", pane: local("local-shell") },
+  ));
+
+  expect(document.getElementById("tab-shared")?.getAttribute("aria-label")).toContain("Terminal shared with agents");
+  expect(document.getElementById("tab-private")?.querySelector("[data-agent-access]")).toBeNull();
+  expect(document.getElementById("tab-local")?.querySelector("[data-agent-access]")).toBeNull();
+
+  await clickButton("Turn off Agent access");
+  expect(settingsFile.agentAccess).toEqual({ enabled: false });
+  expect(document.querySelector("[data-agent-access]")).toBeNull();
+  expect(document.querySelector('[aria-label="Turn off Agent access"]')).toBeNull();
 });

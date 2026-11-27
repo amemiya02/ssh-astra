@@ -32,6 +32,7 @@ interface TabPanelsProps {
   onConnectRestoredPane(paneId: string): void;
   /** A program in the pane set its title (empty string clears it). */
   onTitleChange(paneId: string, title: string): void;
+  onSavedHostTerminal?(paneId: string, available: boolean): void;
   onLocalCwd(paneId: string, cwd: string): void;
   onStatusChange(paneId: string, status: ConnectionStatus, reconnecting?: ReconnectProgress): void;
   onResizeSplit(tabId: string, resize: SplitResize): void;
@@ -161,6 +162,7 @@ function PaneContent({
   onTitleChange,
   onLocalCwd,
   onStatusChange,
+  onSavedHostTerminal,
   onClosePane,
   onEditHost,
   renderHome,
@@ -200,7 +202,10 @@ function PaneContent({
           onTitleChange={(title) => onTitleChange(pane.id, title)}
           onStatusChange={(status, reconnecting) => onStatusChange(pane.id, status, reconnecting)}
           onCwd={(path) => terminalCwds.report(pane.id, path)}
-          onTerminal={(id) => terminalCwds.attach(pane.id, id)}
+          onTerminal={(id, savedHost) => {
+            terminalCwds.attach(pane.id, id);
+            onSavedHostTerminal?.(pane.id, id !== null && savedHost);
+          }}
         />
       );
     case "sftp":

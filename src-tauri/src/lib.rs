@@ -2,6 +2,7 @@
 //! as Tauri commands and pushes its event streams to the front end through
 //! Tauri channels. Domain logic belongs in `sshastra-core`, not here.
 
+mod agent_transport;
 mod commands;
 mod diagnostics;
 mod error;
@@ -19,6 +20,7 @@ mod diagnostics_tests;
 use std::sync::Arc;
 use std::time::Instant;
 
+use sshastra_core::agent::AgentSettings;
 use sshastra_core::credentials;
 use sshastra_core::edit::RemoteEditor;
 use sshastra_core::files::{FsRegistry, TransferSettings};
@@ -30,6 +32,9 @@ use sshastra_core::ssh::{Agent, ConnectionManager};
 use sshastra_core::terminal::{CommandHistory, TerminalRegistry};
 use tauri::Manager;
 use tauri_plugin_window_state::StateFlags;
+
+use agent_transport::AgentService;
+pub use agent_transport::run_stdio as run_agent_stdio;
 
 use commands::clipboard::ClipboardImages;
 use commands::connections::{ConnectionsState, TemporaryHosts};
@@ -137,7 +142,18 @@ pub fn run() {
             let vault = credentials::system_vault();
             #[cfg(feature = "e2e")]
             let vault: Arc<dyn credentials::CredentialVault> = Arc::new(credentials::NoVault);
-            app.manage(HostsState::new(hosts));
+            let hosts = HostsState::new(hosts);
+            let agent_service = AgentService::new(
+                hosts.agent_terminals(app.state::<TerminalRegistry>().inner().clone()),
+            );
+            if let Ok(store) = &settings {
+                let agent: AgentSettings = store.section(AgentSettings::SECTION);
+                if agent.enabled && agent_service.apply(true, || Ok(())).is_err() {
+                    log::warn!("Could not start the local Agent access service");
+                }
+            }
+            app.manage(agent_service);
+            app.manage(hosts);
             app.manage(SnippetsState::new(
                 SnippetStore::open(config_dir.join("snippets.json")).map_err(Into::into),
             ));
@@ -234,6 +250,7 @@ pub fn run() {
             commands::terminal::terminal_write,
             commands::terminal::terminal_resize,
             commands::terminal::terminal_close,
+            commands::terminal::terminal_set_title,
             commands::terminal::terminal_log_start,
             commands::terminal::terminal_log_stop,
             commands::terminal::terminal_recording_start,
@@ -285,6 +302,7 @@ pub fn run() {
                 tauri::RunEvent::Exit => {
                     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
                     drop(wake_listener.take());
+                    app.state::<AgentService>().stop();
                     // Remote edits and pasted images' temp files go with the app.
                     app.state::<RemoteEditor>().close_all();
                     app.state::<ClipboardImages>().close();

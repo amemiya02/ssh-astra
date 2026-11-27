@@ -25,7 +25,7 @@ pub use transfer::{ImportSummary, EXPORT_FORMAT};
 /// The file format version this build writes, to the store and to export
 /// files. Bump it together with a migration step in [`migrate`], which reads
 /// both.
-const CURRENT_VERSION: u32 = 21;
+const CURRENT_VERSION: u32 = 22;
 
 const MAX_HOST_TAGS: usize = 10;
 const MAX_TAG_LENGTH: usize = 32;
@@ -1044,8 +1044,9 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
         // v19 adds Bookmarks. Older Hosts default to an empty Bookmark list.
         // v20 adds startup connections, off by default. v21 adds HTTP
         // CONNECT Port forwards without changing existing rules.
+        // v22 adds local Agent access permissions, off by default.
         2 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20
-        | CURRENT_VERSION => {
+        | 21 | CURRENT_VERSION => {
             let FileV2 { groups, hosts } = serde_json::from_str(text).map_err(corrupt)?;
             Ok(Library { groups, hosts })
         }
@@ -1088,6 +1089,9 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
             return Err(HostStoreError::Corrupt(
                 "HTTP Port forwards require format version 21".into(),
             ));
+        }
+        if version < 22 {
+            host.agent_access = AgentPermission::Off;
         }
         host.tags = normalize_tags(&host.tags);
         bookmarks::retain_valid(&mut host.bookmarks);

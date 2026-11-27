@@ -1,5 +1,6 @@
 import { isTauri } from "@tauri-apps/api/core";
 import type { ComponentType } from "react";
+import { AgentAccessSection } from "./agent-access-section";
 import { ConnectionSection } from "./connection-section";
 import { DiagnosticsSection } from "./diagnostics-section";
 import { FilesSection } from "./files-section";
@@ -24,6 +25,7 @@ export const settingsPageSections: readonly { id: SettingsCategory; Component: C
     { id: "knownHosts", Component: KnownHostsSection },
     { id: "notifications", Component: NotificationsSection },
     { id: "updates", Component: UpdatesSection },
+    { id: "agentAccess", Component: AgentAccessSection },
     { id: "diagnostics", Component: DiagnosticsSection },
   ] as const : []),
 ];

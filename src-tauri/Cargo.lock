@@ -5484,6 +5484,7 @@ dependencies = [
  "objc2-foundation",
  "png",
  "regex",
+ "rustix",
  "serde",
  "serde_json",
  "sshastra-core",

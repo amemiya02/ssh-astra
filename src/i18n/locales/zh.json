@@ -2,6 +2,21 @@
   "app": {
     "name": "SSH Astra"
   },
+  "agentAccess": {
+    "title": "代理访问",
+    "description": "通过 MCP 向本机客户端共享已授权的远程终端信息。请将客户端配置为运行 SSH Astra 可执行文件，并传入 mcp 参数。",
+    "permission": {
+      "off": "关闭",
+      "read": "只读",
+      "approval": "需要批准"
+    },
+    "hostHint": "两种访问级别目前均共享终端信息。此权限仅保存在本机。",
+    "enabled": "代理访问已开启",
+    "turnOff": "关闭代理访问",
+    "sharedTerminal": "终端已向代理开放",
+    "startFailed": "无法开启代理访问。",
+    "saveFailed": "本次运行的代理访问已关闭，但无法保存设置。"
+  },
   "shell": {
     "workspace": "终端",
     "navigation": "导航",
@@ -1014,6 +1029,7 @@
       "knownHosts": "已知主机",
       "notifications": "通知",
       "updates": "更新",
+      "agentAccess": "代理访问",
       "diagnostics": "诊断"
     },
     "shortcuts": {
