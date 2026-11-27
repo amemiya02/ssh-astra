@@ -33,9 +33,13 @@ COPY --chmod=644 keys/id_ed25519.pub /etc/ssh/limitedauth-authorized-keys
 
 # A fixed tree for the File panel (SftpFs) tests, owned by root: tester can
 # read it but not `locked/`. `many/` holds 10,000 empty files.
-RUN mkdir -p /srv/files/docs /srv/files/locked /srv/files/many \
+RUN mkdir -p /srv/files/docs/nested /srv/files/locked /srv/files/many \
  && printf 'hello\n' > /srv/files/hello.txt \
  && printf 'x' > /srv/files/.hidden \
+ && printf 'manual\n' > /srv/files/docs/readme.txt \
+ && printf 'details\n' > /srv/files/docs/nested/.notes \
+ && ln -s ../.hidden /srv/files/docs/file-link \
+ && ln -s ../locked /srv/files/docs/folder-link \
  && ln -s docs /srv/files/docs-link \
  && ln -s missing /srv/files/dangling \
  && chmod 640 /srv/files/hello.txt \

@@ -46,6 +46,7 @@ const api: FilesApi = {
   createEmptyFile: vi.fn(() => Promise.resolve()),
   renameFile: vi.fn(() => Promise.resolve()),
   countFiles: vi.fn(() => Promise.resolve(2)),
+  folderSize: vi.fn(() => Promise.resolve(3072)),
   deleteFiles: vi.fn(() => Promise.resolve()),
   chmodFile: vi.fn(() => Promise.resolve()),
 };
@@ -111,6 +112,44 @@ const pathButton = (label: string) =>
 const pathInput = () => container.querySelector<HTMLInputElement>('input[aria-label="Path"]')!;
 
 describe("FileBrowser", () => {
+  it("calculates a folder on demand and shows the result in its Size cell until leaving the directory", async () => {
+    const { rows, store } = await render({ startPath: "/move" });
+    const sizeCell = () => rows()[0]!.querySelectorAll('[role="gridcell"]')[1]!;
+    expect(sizeCell().textContent).toBe("");
+    expect(api.folderSize).not.toHaveBeenCalled();
+
+    await act(async () => rows()[0]!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+    const calculate = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+      .find((item) => item.textContent === "Calculate folder size")!;
+    await act(async () => calculate.click());
+    expect(api.folderSize).toHaveBeenCalledExactlyOnceWith(1, "/move/sub", expect.any(AbortSignal));
+    expect(sizeCell().textContent).toBe("3 KB");
+
+    await act(async () => store.getState().navigate("/move/sub"));
+    await act(async () => store.getState().goBack());
+    expect(sizeCell().textContent).toBe("");
+  });
+
+  it("cancels the active folder scan and ignores a result that arrives afterwards", async () => {
+    let finish!: (bytes: number) => void;
+    vi.mocked(api.folderSize).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const { rows } = await render({ startPath: "/move" });
+    const sizeCell = rows()[0]!.querySelectorAll('[role="gridcell"]')[1]!;
+
+    await act(async () => rows()[0]!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+    const calculate = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+      .find((item) => item.textContent === "Calculate folder size")!;
+    await act(async () => calculate.click());
+
+    const signal = vi.mocked(api.folderSize).mock.calls[0]![2];
+    const cancel = sizeCell.querySelector<HTMLButtonElement>('button[aria-label="Cancel folder size calculation for sub"]')!;
+    expect(signal.aborted).toBe(false);
+    await act(async () => cancel.click());
+    expect(signal.aborted).toBe(true);
+    await act(async () => finish(3072));
+    expect(sizeCell.textContent).toBe("");
+  });
+
   it("renders only a window of a 10,000-entry folder, folders first", async () => {
     const { rows } = await render();
 

@@ -21,8 +21,11 @@ pub use transfer::{
     TransferSettings, TransferState,
 };
 
+use std::future::Future;
+
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::sync::oneshot;
 
 use crate::ssh::BoxFuture;
 
@@ -183,6 +186,16 @@ pub trait RemoteFs: Send + Sync {
     /// The metadata of `path` itself: a symlink is [`FileKind::Symlink`].
     fn lstat<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileStat>>;
 
+    /// Sums regular file sizes inside a folder, without following symlinks.
+    /// Sending or dropping the cancellation sender stops the scan and returns `None`.
+    fn folder_size<'a>(
+        &'a self,
+        path: &'a str,
+        cancelled: oneshot::Receiver<()>,
+    ) -> BoxFuture<'a, FsResult<Option<u64>>> {
+        Box::pin(cancellable_folder_scan(cancelled, sum_folder(self, path)))
+    }
+
     /// Creates the directory `path` (its parent must exist).
     fn create_dir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>>;
     /// Creates an empty file at `path`; fails with [`FsError::AlreadyExists`]
@@ -331,6 +344,43 @@ pub async fn browse(fs: &dyn RemoteFs, path: &str) -> FsResult<Listing> {
 /// followed.
 pub async fn count_tree(fs: &dyn RemoteFs, path: &str) -> FsResult<u64> {
     Ok(walk(fs, path).await?.len() as u64)
+}
+
+async fn cancellable_folder_scan(
+    mut cancelled: oneshot::Receiver<()>,
+    scan: impl Future<Output = FsResult<u64>>,
+) -> FsResult<Option<u64>> {
+    tokio::select! {
+        biased;
+        _ = &mut cancelled => Ok(None),
+        result = scan => result.map(Some),
+    }
+}
+
+async fn sum_folder(fs: &(impl RemoteFs + ?Sized), path: &str) -> FsResult<u64> {
+    // A trailing slash makes POSIX lstat resolve a directory symlink.
+    let trimmed = path.trim_end_matches('/');
+    let path = if trimmed.is_empty() { path } else { trimmed };
+    if fs.lstat(path).await?.kind != FileKind::Dir {
+        return Err(FsError::NotADirectory(path.to_owned()));
+    }
+
+    let mut bytes: u64 = 0;
+    let mut pending = vec![path.to_owned()];
+    while let Some(dir) = pending.pop() {
+        for entry in fs.list_dir_no_follow(&dir).await? {
+            match entry.kind {
+                FileKind::Dir => pending.push(join(&dir, &entry.name)),
+                FileKind::File => {
+                    bytes = bytes.checked_add(entry.size).ok_or_else(|| {
+                        FsError::Protocol("folder size exceeds 64-bit byte count".into())
+                    })?;
+                }
+                FileKind::Symlink | FileKind::Other => {}
+            }
+        }
+    }
+    Ok(bytes)
 }
 
 /// Deletes `path`, and everything in it if it is a directory. Symlinks are

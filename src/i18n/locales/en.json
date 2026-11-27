@@ -253,6 +253,11 @@
       "permissions": "Permissions"
     },
     "emptyFolder": "This folder is empty.",
+    "folderSize": {
+      "calculate": "Calculate folder size",
+      "calculating": "Calculating folder size for {{name}}…",
+      "cancel": "Cancel folder size calculation for {{name}}"
+    },
     "entryCount_one": "{{count, number}} item",
     "entryCount_other": "{{count, number}} items",
     "selectedCount": "{{count, number}} selected",

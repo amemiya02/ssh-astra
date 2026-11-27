@@ -32,6 +32,8 @@ export function operationErrorText(t: TFunction, error: CommandError): string {
       return t("files.operationErrors.notFound", { path });
     case "permissionDenied":
       return t("files.operationErrors.permissionDenied", { path });
+    case "notADirectory":
+      return t("files.errors.notADirectory", { path });
     case "ownershipUnavailable":
       return t("files.operationErrors.ownershipUnavailable", { path });
     case "invalidName":
