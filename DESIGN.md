@@ -376,6 +376,7 @@ Compact and native-feeling; controls recede until hovered, pressed or focused.
 - **Active:** `surface` fill, 1px border, foreground text.
 - **Tab colour.** A 2px pill underline runs along a Host tab's bottom edge in its automatic ANSI hue at full strength when active and 40% when inactive. The tab's context menu offers six colours and an automatic setting. A custom colour replaces the underline and uses the matching `--ansi-*-ink` token at full strength for contrast in every theme.
 - **Locked tabs.** A 14px lock in muted foreground takes the close button's place and appears in the tab's accessible label. Locking applies to the whole tab. Panes in a locked split can close while another pane remains open.
+- **Restored panes.** A remote pane restored in Restore layout mode centres its disconnected status and an outlined Connect button on the workspace surface. In Restore and connect mode, each pane waiting its turn shows a muted waiting status.
 - **Behaviour:** arrow keys, Home and End move; Delete and middle-click close; dragging reorders with a 2px `ring` insertion bar. Split and dock toggles sit at the far right.
 
 ### Host list rows

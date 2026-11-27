@@ -543,6 +543,11 @@
       "title": "{{user}}@{{host}} 需要验证",
       "description": "服务器需要更多信息才能登录。"
     },
+    "restored": {
+      "disconnected": "未连接到 {{host}}。",
+      "waiting": "正在等待连接到 {{host}}…",
+      "connect": "连接"
+    },
     "lost": {
       "title": "已断开",
       "reconnecting": "正在重新连接…第 {{attempt}} 次，共 {{attempts}} 次",
@@ -556,6 +561,7 @@
     "lead": "修改立即生效，重启后保持不变。",
     "open": "设置",
     "sections": {
+      "workspace": "工作区",
       "appearance": "外观",
       "terminal": "终端",
       "connection": "连接",
@@ -563,6 +569,15 @@
       "transfers": "传输",
       "updates": "更新",
       "diagnostics": "诊断"
+    },
+    "restoreTabs": {
+      "label": "恢复标签",
+      "description": "选择下次启动 SSH Astra 时如何恢复标签和分屏。",
+      "options": {
+        "none": "从主页开始",
+        "layout": "恢复布局",
+        "connect": "恢复并连接"
+      }
     },
     "theme": {
       "follow": {

@@ -6,12 +6,13 @@ import { AppearanceSection, LanguageSection } from "./general-sections";
 import { TerminalSection } from "./terminal-section";
 import { TransfersSection } from "./transfers-section";
 import { UpdatesSection } from "./updates-section";
+import { WorkspaceSection } from "./workspace-section";
 
 /** A group of related settings on the Settings page. */
 export interface SettingsPageSection {
   id: string;
   /** i18n key of the section heading, under `settings.sections`. */
-  title: "appearance" | "language" | "terminal" | "connection" | "transfers" | "updates" | "diagnostics";
+  title: "appearance" | "workspace" | "language" | "terminal" | "connection" | "transfers" | "updates" | "diagnostics";
   /** Renders the section's `SettingRow`s; reads and writes its settings with `useSetting`. */
   Component: ComponentType;
 }
@@ -24,6 +25,7 @@ export interface SettingsPageSection {
  */
 export const settingsPageSections: readonly SettingsPageSection[] = [
   { id: "appearance", title: "appearance", Component: AppearanceSection },
+  { id: "workspace", title: "workspace", Component: WorkspaceSection },
   { id: "terminal", title: "terminal", Component: TerminalSection },
   { id: "connection", title: "connection", Component: ConnectionSection },
   { id: "transfers", title: "transfers", Component: TransfersSection },

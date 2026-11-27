@@ -46,6 +46,8 @@ export type Pane = {
   title?: string;
   /** Remote Terminals only. */
   status?: ConnectionStatus;
+  /** A restored remote pane waits for a manual click or its turn in the startup queue. */
+  restoreConnection?: "manual" | { order: number };
   /** While a dropped Connection is retried: which try this is, of how many. */
   reconnecting?: ReconnectProgress;
 } & PaneKind;
@@ -100,6 +102,7 @@ export type TabsAction =
   | { type: "focusPane"; paneId: string }
   | { type: "cyclePane"; step: 1 | -1 }
   | { type: "closePane"; paneId: string }
+  | { type: "connectRestoredPane"; paneId: string }
   | { type: "retitle"; paneId: string; title: string }
   | { type: "status"; paneId: string; status: ConnectionStatus; reconnecting?: ReconnectProgress };
 
@@ -133,6 +136,17 @@ export function layoutPanes<P>(layout: PaneLayout<P>): P[] {
 
 export function tabPanes(tab: Tab): Pane[] {
   return layoutPanes(tab.layout);
+}
+
+/** The next restored remote pane connects only after the previous attempt settles. */
+export function nextRestoreConnection(tabs: readonly Tab[]): string | undefined {
+  let next: { id: string; order: number } | undefined;
+  for (const { id, restoreConnection } of tabs.flatMap(tabPanes)) {
+    if (typeof restoreConnection === "object" && (!next || restoreConnection.order < next.order)) {
+      next = { id, order: restoreConnection.order };
+    }
+  }
+  return next?.id;
 }
 
 export function activePane(tab: Tab): Pane {
@@ -305,10 +319,15 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
       const title = action.title.trim() || undefined;
       return updatePane(state, action.paneId, (pane) => ({ ...pane, title }));
     }
+    case "connectRestoredPane":
+      return updatePane(state, action.paneId, (pane) => pane.restoreConnection === "manual"
+        ? { ...pane, restoreConnection: undefined, status: "connecting" }
+        : pane);
     case "status":
       return updatePane(state, action.paneId, (pane) => ({
         ...pane,
         status: action.status,
+        restoreConnection: action.status === "connecting" ? pane.restoreConnection : undefined,
         reconnecting: action.reconnecting,
       }));
   }

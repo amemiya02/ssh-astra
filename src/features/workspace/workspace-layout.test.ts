@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { openSettings } from "@/lib/storage";
 import type { Host } from "@/lib/ipc/hosts";
-import { emptyTabs, newPane, tabsReducer } from "./tabs";
-import { serializeWorkspaceLayout, workspaceLayoutSetting } from "./workspace-layout";
+import { emptyTabs, newPane, nextRestoreConnection, tabPanes, tabsReducer } from "./tabs";
+import { restoreWorkspaceLayout, serializeWorkspaceLayout, workspaceLayoutSetting } from "./workspace-layout";
+import { workspaceSetting } from "./workspace-prefs";
 
 const local = (id: string) => newPane({ kind: "local-terminal" }, id);
 const pane = (id: string) => ({ type: "pane", pane: local(id) });
@@ -131,5 +132,127 @@ describe("workspace layout storage", () => {
       type: "pane",
       pane: { id: "a", kind: "remote-terminal", hostId: "remote" },
     });
+  });
+});
+
+const host: Host = {
+  id: "kept",
+  name: "Current name",
+  address: "current.example",
+  port: 22,
+  user: "operator",
+  auth: { type: "password" },
+  jumpHost: null,
+  groupId: null,
+  forwards: [],
+};
+
+const remote = (id: string, hostId: string) => ({ type: "pane", pane: { id, kind: "remote-terminal", hostId } });
+
+describe("workspace startup", () => {
+  it("restores the saved tree and customization, rehydrates current Hosts, and removes panes for deleted Hosts", () => {
+    const raw = {
+      activeId: "removed",
+      tabs: [
+        { id: "removed", layout: remote("missing", "deleted"), locked: true },
+        {
+          id: "work",
+          activePaneId: "gone",
+          customTitle: "  Ops  ",
+          color: "green",
+          locked: true,
+          layout: {
+            type: "split",
+            orientation: "vertical",
+            children: [
+              { ratio: 0.1875, layout: {
+                type: "split",
+                orientation: "horizontal",
+                children: [
+                  { ratio: 0.5, layout: remote("live", "kept") },
+                  { ratio: 0.5, layout: remote("gone-inner", "deleted") },
+                ],
+              } },
+              { ratio: 0.5, layout: remote("gone", "deleted") },
+              { ratio: 0.3125, layout: pane("local") },
+            ],
+          },
+        },
+      ],
+    };
+    const saved = workspaceLayoutSetting.parse(raw);
+    const state = restoreWorkspaceLayout(saved, [host], "layout");
+
+    expect(nextRestoreConnection(state.tabs)).toBeUndefined();
+    expect(state.activeId).toBe("work");
+    expect(state.tabs).toHaveLength(1);
+    expect(state.tabs[0]).toMatchObject({
+      id: "work", activePaneId: "live", customTitle: "Ops", color: "green", locked: true,
+    });
+    expect(tabPanes(state.tabs[0]!)).toEqual([
+      { id: "live", kind: "remote-terminal", host, status: "disconnected", restoreConnection: "manual" },
+      local("local"),
+    ]);
+    expect(serializeWorkspaceLayout(state)).toEqual({
+      activeId: "work",
+      tabs: [{
+        id: "work",
+        activePaneId: "live",
+        customTitle: "Ops",
+        color: "green",
+        locked: true,
+        layout: {
+          type: "split",
+          orientation: "vertical",
+          children: [
+            { ratio: 0.375, layout: remote("live", "kept") },
+            { ratio: 0.625, layout: pane("local") },
+          ],
+        },
+      }],
+    });
+  });
+
+  it("advances automatic reconnections after success, failure, or closure without changing focus", () => {
+    const saved = workspaceLayoutSetting.parse({
+      activeId: "home",
+      tabs: [
+        { id: "first-tab", layout: remote("first", "kept") },
+        { id: "second-tab", layout: remote("second", "kept") },
+        { id: "third-tab", layout: remote("third", "kept") },
+        { id: "home", layout: { type: "pane", pane: { id: "home-pane", kind: "home" } } },
+      ],
+    });
+    let state = restoreWorkspaceLayout(saved, [host], "connect");
+    expect(nextRestoreConnection(state.tabs)).toBe("first");
+    state = tabsReducer(state, { type: "move", id: "third-tab", to: 0 });
+    state = tabsReducer(state, { type: "status", paneId: "first", status: "connecting" });
+    expect(nextRestoreConnection(state.tabs)).toBe("first");
+    state = tabsReducer(state, { type: "status", paneId: "first", status: "connected" });
+    expect(nextRestoreConnection(state.tabs)).toBe("second");
+    state = tabsReducer(state, { type: "status", paneId: "second", status: "disconnected" });
+    expect(nextRestoreConnection(state.tabs)).toBe("third");
+    state = tabsReducer(state, { type: "close", id: "third-tab" });
+    expect(nextRestoreConnection(state.tabs)).toBeUndefined();
+    expect(state.activeId).toBe("home");
+  });
+
+  it("starts on Home with restoration disabled and when no saved pane survives", () => {
+    const saved = workspaceLayoutSetting.parse({
+      activeId: "work",
+      tabs: [{ id: "work", activePaneId: "remote", layout: remote("remote", "kept") }],
+    });
+    for (const state of [restoreWorkspaceLayout(saved, [host], "none"), restoreWorkspaceLayout(saved, [], "layout")]) {
+      expect(state.activeId).toBe(state.tabs[0]?.id);
+      expect(state.tabs).toHaveLength(1);
+      expect(tabPanes(state.tabs[0]!).map(({ kind }) => kind)).toEqual(["home"]);
+    }
+  });
+
+  it("defaults to layout-only restoration and repairs unknown options", () => {
+    expect(workspaceSetting.parse(undefined)).toEqual({ restoreTabs: "layout" });
+    expect(workspaceSetting.parse({ restoreTabs: "unknown" })).toEqual({ restoreTabs: "layout" });
+    expect(workspaceSetting.parse({ restoreTabs: "connect" })).toEqual({ restoreTabs: "connect" });
+    expect(workspaceSetting.parse({ restoreTabs: "none" })).toEqual({ restoreTabs: "none" });
   });
 });

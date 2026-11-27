@@ -1,5 +1,6 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { Button } from "@/components/ui/button";
 import { PortForwardsPanel } from "@/features/forwards/PortForwardsPanel";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { LocalTerminalView } from "@/features/terminal/LocalTerminalView";
@@ -9,7 +10,7 @@ import { RemoteTerminalView } from "@/features/terminal/RemoteTerminalView";
 import { cn } from "@/lib/utils";
 import { PaneDivider } from "./PaneDivider";
 import { positionPanes, resizePaneLayout, type PaneBounds, type SplitResize } from "./pane-layout";
-import { tabId, tabPanelId, type ConnectionStatus, type Pane, type ReconnectProgress, type Tab } from "./tabs";
+import { nextRestoreConnection, tabId, tabPanelId, type ConnectionStatus, type Pane, type ReconnectProgress, type Tab } from "./tabs";
 
 interface TabPanelsProps {
   tabs: Tab[];
@@ -17,6 +18,7 @@ interface TabPanelsProps {
   /** Home, drawn for the Home tab (or when no tab is open). `active`: it is the pane shown. */
   renderHome(active: boolean): ReactNode;
   onFocusPane(paneId: string): void;
+  onConnectRestoredPane(paneId: string): void;
   /** A program in the pane set its title (empty string clears it). */
   onTitleChange(paneId: string, title: string): void;
   onStatusChange(paneId: string, status: ConnectionStatus, reconnecting?: ReconnectProgress): void;
@@ -32,6 +34,7 @@ export function TabPanels({ tabs, activeId, ...paneProps }: TabPanelsProps) {
   // Closing the last tab leaves Home, never an empty stage.
   if (tabs.length === 0) return <div className="absolute inset-0">{paneProps.renderHome(true)}</div>;
 
+  const nextConnection = nextRestoreConnection(tabs);
   return tabs.map((tab) => {
     const active = tab.id === activeId;
     return (
@@ -43,7 +46,7 @@ export function TabPanels({ tabs, activeId, ...paneProps }: TabPanelsProps) {
         hidden={!active}
         className="absolute inset-0"
       >
-        <SplitPanes tab={tab} active={active} {...paneProps} />
+        <SplitPanes tab={tab} active={active} nextConnection={nextConnection} {...paneProps} />
       </div>
     );
   });
@@ -51,7 +54,11 @@ export function TabPanels({ tabs, activeId, ...paneProps }: TabPanelsProps) {
 
 type PaneCallbacks = Omit<TabPanelsProps, "tabs" | "activeId" | "onResizeSplit">;
 
-function SplitPanes({ tab, active, onResizeSplit, ...callbacks }: { tab: Tab; active: boolean } & Omit<TabPanelsProps, "tabs" | "activeId">) {
+function SplitPanes({ tab, active, nextConnection, onResizeSplit, ...callbacks }: {
+  tab: Tab;
+  active: boolean;
+  nextConnection: string | undefined;
+} & Omit<TabPanelsProps, "tabs" | "activeId">) {
   const { t } = useTranslation();
   const [preview, setPreview] = useState<{ id: string; fraction: number } | null>(null);
   const saved = positionPanes(tab.layout);
@@ -72,14 +79,15 @@ function SplitPanes({ tab, active, onResizeSplit, ...callbacks }: { tab: Tab; ac
             aria-label={split ? t("tabs.pane", { index: index + 1, count: panes.length }) : undefined}
             style={paneStyle(bounds)}
             className={cn("absolute overflow-hidden transition-opacity", split && !focused && "opacity-70")}
-            onFocusCapture={() => {
-              if (!focused) callbacks.onFocusPane(pane.id);
+            onFocusCapture={(event) => {
+              // A startup sign-in dialog can belong to a pane in a different tab.
+              if (!focused && event.target instanceof Node && event.currentTarget.contains(event.target)) callbacks.onFocusPane(pane.id);
             }}
-            onPointerDown={() => {
-              if (!focused) callbacks.onFocusPane(pane.id);
+            onPointerDown={(event) => {
+              if (!focused && event.target instanceof Node && event.currentTarget.contains(event.target)) callbacks.onFocusPane(pane.id);
             }}
           >
-            <PaneContent pane={pane} active={active && focused} {...callbacks} />
+            <PaneContent pane={pane} active={active && focused} autoConnect={pane.id === nextConnection} {...callbacks} />
             {/* A Terminal canvas can paint over the pane's inset shadow. Draw the focus ring on top. */}
             {split && focused && (
               <span aria-hidden data-pane-focus className="ring-primary/50 pointer-events-none absolute inset-0 z-10 ring-1 ring-inset" />
@@ -106,10 +114,19 @@ function paneStyle({ left, top, width, height }: PaneBounds): CSSProperties {
 function PaneContent({
   pane,
   active,
+  autoConnect,
+  onConnectRestoredPane,
   onTitleChange,
   onStatusChange,
   renderHome,
-}: { pane: Pane; active: boolean } & PaneCallbacks) {
+}: { pane: Pane; active: boolean; autoConnect: boolean } & PaneCallbacks) {
+  if (pane.restoreConnection && !autoConnect && (pane.kind === "remote-terminal" || pane.kind === "sftp")) {
+    return <RestoredConnection
+      host={pane.host.name}
+      onConnect={pane.restoreConnection === "manual" ? () => onConnectRestoredPane(pane.id) : undefined}
+    />;
+  }
+
   switch (pane.kind) {
     case "home":
       return renderHome(active);
@@ -121,6 +138,7 @@ function PaneContent({
           paneId={pane.id}
           host={pane.host}
           active={active}
+          showPrompts={active || autoConnect}
           onTitleChange={(title) => onTitleChange(pane.id, title)}
           onStatusChange={(status, reconnecting) => onStatusChange(pane.id, status, reconnecting)}
           onCwd={(path) => terminalCwds.report(pane.id, path)}
@@ -128,10 +146,22 @@ function PaneContent({
         />
       );
     case "sftp":
-      return <SftpWorkspace id={pane.id} host={pane.host} active={active} onStatusChange={onStatusChange} />;
+      return <SftpWorkspace id={pane.id} host={pane.host} active={active} showPrompts={active || autoConnect} onStatusChange={onStatusChange} />;
     case "settings":
       return <SettingsPage />;
     case "port-forwards":
       return <PortForwardsPanel host={pane.host} active={active} />;
   }
+}
+
+function RestoredConnection({ host, onConnect }: { host: string; onConnect?: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <div className="grid h-full place-content-center justify-items-center gap-3 overflow-auto p-4 text-center">
+      <p className="text-muted-foreground text-sm" role="status">
+        {t(onConnect ? "connect.restored.disconnected" : "connect.restored.waiting", { host })}
+      </p>
+      {onConnect && <Button variant="outline" size="sm" onClick={onConnect}>{t("connect.restored.connect")}</Button>}
+    </div>
+  );
 }

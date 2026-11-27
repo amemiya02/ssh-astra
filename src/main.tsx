@@ -4,10 +4,13 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import { App } from "./App";
 import { TooltipProvider } from "./components/ui/tooltip";
+import { hostsStore } from "./features/hosts/hostsStore";
+import { restoreWorkspaceLayout, workspaceLayoutSetting } from "./features/workspace/workspace-layout";
+import { workspaceSetting } from "./features/workspace/workspace-prefs";
 import { startI18n } from "./i18n";
 import { watchFrontendErrors } from "./lib/ipc/diagnostics";
 import { tauriSettingsBackend } from "./lib/ipc/settings";
-import { browserStore, localStorageBackend, startSettings } from "./lib/storage";
+import { browserStore, getSetting, localStorageBackend, startSettings } from "./lib/storage";
 import { applyInitialTheme } from "./theme/theme";
 import { ThemeProvider } from "./theme/ThemeProvider";
 
@@ -19,6 +22,14 @@ async function start() {
   applyInitialTheme();
   startI18n();
 
+  // Resolve Host ids from the saved workspace only after the Host list is available.
+  await hostsStore.getState().load();
+  const initialTabs = restoreWorkspaceLayout(
+    getSetting(workspaceLayoutSetting),
+    hostsStore.getState().tree.hosts,
+    getSetting(workspaceSetting).restoreTabs,
+  );
+
   const root = document.getElementById("root");
   if (!root) throw new Error("#root element missing from index.html");
 
@@ -26,7 +37,7 @@ async function start() {
     <StrictMode>
       <ThemeProvider>
         <TooltipProvider delayDuration={500}>
-          <App />
+          <App initialTabs={initialTabs} />
         </TooltipProvider>
       </ThemeProvider>
     </StrictMode>,
