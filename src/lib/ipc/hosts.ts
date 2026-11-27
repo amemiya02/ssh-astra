@@ -147,6 +147,7 @@ export interface Group {
 export interface HostTree {
   groups: Group[];
   hosts: Host[];
+  shared?: true;
 }
 
 export function listHosts(): Promise<Host[]> {
@@ -158,9 +159,11 @@ export interface HostOsChange {
   detectedOs: DetectedOs | null;
 }
 
-export function loadHostTree(onOsChange?: (event: HostOsChange) => void): Promise<HostTree> {
-  return onOsChange
-    ? invoke<HostTree>("host_tree_watch", { onOsChange: new Channel(onOsChange) })
+export type HostTreeChange = HostOsChange | { tree: HostTree };
+
+export function loadHostTree(onChange?: (event: HostTreeChange) => void): Promise<HostTree> {
+  return onChange
+    ? invoke<HostTree>("host_tree_watch", { onChange: new Channel(onChange) })
     : invoke<HostTree>("host_tree");
 }
 

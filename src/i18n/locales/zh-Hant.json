@@ -1086,6 +1086,7 @@
       "cancel": "取消",
       "actions": {
         "newTab": "新增本機終端機",
+        "newWindow": "新增視窗",
         "closePane": "關閉窗格",
         "splitRight": "向右拆分",
         "splitDown": "向下拆分",
@@ -1459,6 +1460,10 @@
     "connections_other": "{{count}} 個連線",
     "transfers_one": "{{count}} 項傳輸",
     "transfers_other": "{{count}} 項傳輸"
+  },
+  "window": {
+    "new": "新增視窗",
+    "openFailed": "無法開啟新視窗。"
   },
   "quit": {
     "title": "結束 SSH Astra？",

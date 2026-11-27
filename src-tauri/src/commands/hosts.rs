@@ -7,12 +7,12 @@ use serde::{Deserialize, Serialize};
 use sshastra_core::agent::{OpenTerminal, TerminalOrigin};
 use sshastra_core::host_import::{parse_csv, parse_putty, ParsedConfig};
 use sshastra_core::hosts::{
-    Bookmark, DetectedOs, Group, GroupId, Host, HostDraft, HostId, HostStore, HostTree,
-    ImportReport, ImportSummary,
+    Bookmark, Group, GroupId, Host, HostDraft, HostId, HostStore, HostTree, ImportReport,
+    ImportSummary,
 };
 use sshastra_core::ssh_config::{parse_user_config, ParseContext};
 use sshastra_core::terminal::{CommandHistory, TerminalRegistry};
-use tauri::{ipc::Channel, State};
+use tauri::{ipc::Channel, State, WebviewWindow};
 
 use super::connections::ConnectionsState;
 use super::forwards::ForwardsState;
@@ -24,21 +24,26 @@ use crate::error::{CommandError, CommandResult};
 /// file, which is left untouched rather than overwritten).
 pub struct HostsState {
     store: Arc<Mutex<Result<HostStore, CommandError>>>,
-    os_changes: Watcher<HostOsChange>,
+    changes: Watcher<HostTreeChange>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct HostTreeChange {
+    tree: HostTree,
 }
 
 #[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HostOsChange {
-    host_id: HostId,
-    detected_os: Option<DetectedOs>,
+pub struct SharedHostTree {
+    #[serde(flatten)]
+    tree: HostTree,
+    shared: bool,
 }
 
 impl HostsState {
     pub fn new(store: Result<HostStore, CommandError>) -> Self {
         Self {
             store: Arc::new(Mutex::new(store)),
-            os_changes: Watcher::default(),
+            changes: Watcher::default(),
         }
     }
 
@@ -48,6 +53,22 @@ impl HostsState {
             Ok(store) => f(store),
             Err(e) => Err(e.clone()),
         }
+    }
+
+    /// Publish the committed tree in the same order as its writes.
+    pub(super) fn edit<T>(
+        &self,
+        f: impl FnOnce(&mut HostStore) -> CommandResult<T>,
+    ) -> CommandResult<T> {
+        self.with(|store| {
+            let result = f(store)?;
+            self.changes.send(HostTreeChange { tree: store.tree() });
+            Ok(result)
+        })
+    }
+
+    pub(crate) fn unwatch(&self, label: &str) {
+        self.changes.unsubscribe(label);
     }
 
     pub(crate) fn agent_terminals(
@@ -83,13 +104,6 @@ impl HostsState {
                 .collect()
         }
     }
-
-    pub(super) fn publish_os_change(&self, host_id: HostId, detected_os: Option<DetectedOs>) {
-        self.os_changes.send(HostOsChange {
-            host_id,
-            detected_os,
-        });
-    }
 }
 
 #[tauri::command]
@@ -104,7 +118,7 @@ pub fn host_save(
     id: Option<HostId>,
     draft: HostDraft,
 ) -> CommandResult<Host> {
-    hosts.with(|store| Ok(store.upsert(id, draft)?))
+    hosts.edit(|store| Ok(store.upsert(id, draft)?))
 }
 
 #[tauri::command]
@@ -113,7 +127,7 @@ pub fn host_bookmark_add(
     host_id: HostId,
     path: String,
 ) -> CommandResult<Bookmark> {
-    hosts.with(|store| Ok(store.add_bookmark(&host_id, &path)?))
+    hosts.edit(|store| Ok(store.add_bookmark(&host_id, &path)?))
 }
 
 #[tauri::command]
@@ -123,7 +137,7 @@ pub fn host_bookmark_rename(
     path: String,
     name: String,
 ) -> CommandResult<Bookmark> {
-    hosts.with(|store| Ok(store.rename_bookmark(&host_id, &path, &name)?))
+    hosts.edit(|store| Ok(store.rename_bookmark(&host_id, &path, &name)?))
 }
 
 #[tauri::command]
@@ -132,7 +146,7 @@ pub fn host_bookmark_delete(
     host_id: HostId,
     path: String,
 ) -> CommandResult<()> {
-    hosts.with(|store| Ok(store.delete_bookmark(&host_id, &path)?))
+    hosts.edit(|store| Ok(store.delete_bookmark(&host_id, &path)?))
 }
 
 /// Deletes a Host and its Command history, stopping its running Port forwards
@@ -146,7 +160,7 @@ pub fn host_delete(
     history: State<'_, CommandHistory>,
     id: HostId,
 ) -> CommandResult<()> {
-    hosts.with(|store| {
+    hosts.edit(|store| {
         store.delete(&id)?;
         if let Err(error) = history.clear(&id) {
             log::warn!(
@@ -170,13 +184,21 @@ pub fn host_tree(hosts: State<'_, HostsState>) -> CommandResult<HostTree> {
     hosts.with(|store| Ok(store.tree()))
 }
 
-/// Returns the Host tree and streams subsequent changes to its detected operating systems.
+/// Returns the saved tree and streams all later edits to this Window.
 #[tauri::command]
 pub fn host_tree_watch(
+    window: WebviewWindow,
     hosts: State<'_, HostsState>,
-    on_os_change: Channel<HostOsChange>,
-) -> CommandResult<HostTree> {
-    hosts.with(|store| Ok(hosts.os_changes.subscribe(on_os_change, || store.tree())))
+    on_change: Channel<HostTreeChange>,
+) -> CommandResult<SharedHostTree> {
+    hosts.with(|store| {
+        Ok(hosts
+            .changes
+            .subscribe(window.label(), on_change, || SharedHostTree {
+                tree: store.tree(),
+                shared: true,
+            }))
+    })
 }
 
 /// Saves a copy of a Host as `name`, right after the original.
@@ -186,7 +208,7 @@ pub fn host_duplicate(
     id: HostId,
     name: String,
 ) -> CommandResult<Host> {
-    hosts.with(|store| Ok(store.duplicate_host(&id, &name)?))
+    hosts.edit(|store| Ok(store.duplicate_host(&id, &name)?))
 }
 
 /// Moves a Host into `group_id` (`None`: the top level) at `index`.
@@ -197,7 +219,7 @@ pub fn host_move(
     group_id: Option<GroupId>,
     index: usize,
 ) -> CommandResult<HostTree> {
-    hosts.with(|store| {
+    hosts.edit(|store| {
         store.move_host(&id, group_id, index)?;
         Ok(store.tree())
     })
@@ -209,7 +231,7 @@ pub fn group_create(
     name: String,
     parent_id: Option<GroupId>,
 ) -> CommandResult<Group> {
-    hosts.with(|store| Ok(store.create_group(&name, parent_id)?))
+    hosts.edit(|store| Ok(store.create_group(&name, parent_id)?))
 }
 
 #[tauri::command]
@@ -218,13 +240,13 @@ pub fn group_rename(
     id: GroupId,
     name: String,
 ) -> CommandResult<Group> {
-    hosts.with(|store| Ok(store.rename_group(&id, &name)?))
+    hosts.edit(|store| Ok(store.rename_group(&id, &name)?))
 }
 
 /// Deletes a Group; its contents move up into its parent.
 #[tauri::command]
 pub fn group_delete(hosts: State<'_, HostsState>, id: GroupId) -> CommandResult<HostTree> {
-    hosts.with(|store| {
+    hosts.edit(|store| {
         store.delete_group(&id)?;
         Ok(store.tree())
     })
@@ -238,7 +260,7 @@ pub fn group_move(
     parent_id: Option<GroupId>,
     index: usize,
 ) -> CommandResult<HostTree> {
-    hosts.with(|store| {
+    hosts.edit(|store| {
         store.move_group(&id, parent_id, index)?;
         Ok(store.tree())
     })
@@ -276,7 +298,7 @@ pub async fn hosts_import_source(
     })
     .await
     .map_err(std::io::Error::other)??;
-    hosts.with(|store| {
+    hosts.edit(|store| {
         let report = store.import_config(parsed)?;
         Ok(SourceImportResult {
             tree: store.tree(),
@@ -324,7 +346,7 @@ pub struct ImportResult {
 /// is taken are skipped.
 #[tauri::command]
 pub fn hosts_import(hosts: State<'_, HostsState>, path: PathBuf) -> CommandResult<ImportResult> {
-    hosts.with(|store| {
+    hosts.edit(|store| {
         let summary = store.import_from(&path)?;
         Ok(ImportResult {
             summary,

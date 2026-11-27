@@ -94,29 +94,44 @@ pub enum PromptAnswer {
 }
 
 /// Prompts waiting for an answer, shared by every connect in progress.
-#[derive(Default)]
 pub struct PendingPrompts {
     next_id: AtomicU64,
-    waiting: Mutex<HashMap<u64, oneshot::Sender<PromptAnswer>>>,
+    // None after the owning Window closes. A connect cannot leave a prompt behind
+    // even if it reaches authentication during or after Window teardown.
+    waiting: Mutex<Option<HashMap<u64, oneshot::Sender<PromptAnswer>>>>,
+}
+
+impl Default for PendingPrompts {
+    fn default() -> Self {
+        Self {
+            next_id: AtomicU64::new(0),
+            waiting: Mutex::new(Some(HashMap::new())),
+        }
+    }
 }
 
 impl PendingPrompts {
+    pub fn close(&self) {
+        *self.lock() = None;
+    }
     /// Delivers `answer` to the prompt `id`. Unknown ids (already answered or
     /// abandoned) are ignored.
     pub fn answer(&self, id: u64, answer: PromptAnswer) {
-        if let Some(tx) = self.lock().remove(&id) {
+        if let Some(tx) = self.lock().as_mut().and_then(|waiting| waiting.remove(&id)) {
             let _ = tx.send(answer);
         }
     }
 
-    fn register(&self) -> (u64, oneshot::Receiver<PromptAnswer>) {
+    fn register(&self) -> Option<(u64, oneshot::Receiver<PromptAnswer>)> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
         let (tx, rx) = oneshot::channel();
-        self.lock().insert(id, tx);
-        (id, rx)
+        self.lock().as_mut()?.insert(id, tx);
+        Some((id, rx))
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<PromptAnswer>>> {
+    fn lock(
+        &self,
+    ) -> std::sync::MutexGuard<'_, Option<HashMap<u64, oneshot::Sender<PromptAnswer>>>> {
         self.waiting
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -132,9 +147,11 @@ impl ChannelPrompter {
     /// Sends the request built for a fresh id and waits for the reply.
     /// `None` if the webview went away.
     async fn ask(&self, request: impl FnOnce(u64) -> PromptRequest) -> Option<PromptAnswer> {
-        let (id, rx) = self.pending.register();
+        let (id, rx) = self.pending.register()?;
         if self.channel.send(request(id)).is_err() {
-            self.pending.lock().remove(&id);
+            if let Some(waiting) = self.pending.lock().as_mut() {
+                waiting.remove(&id);
+            }
             return None;
         }
         rx.await.ok()

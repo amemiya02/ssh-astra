@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { useEffect, useEffectEvent, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { paletteActions, useRegisteredActions } from "@/features/palette/palette-actions";
@@ -39,7 +39,7 @@ export function MacosMenu({ shortcuts, canClosePane, runWorkspaceCommand }: Maco
 
   useEffect(() => {
     let active = true;
-    const subscription = listen<string>("macos-menu-action", ({ payload }) => {
+    const subscription = getCurrentWebviewWindow().listen<string>("macos-menu-action", ({ payload }) => {
       if (active) run(payload);
     });
     void subscription.catch((error: unknown) => console.warn("Could not listen for macOS menu actions", error));
@@ -78,6 +78,7 @@ export function MacosMenu({ shortcuts, canClosePane, runWorkspaceCommand }: Maco
         paletteItem("updates.check", t("updates.check")),
       ],
       file: [
+        paletteItem("window.new", t("window.new"), "newWindow"),
         paletteItem("terminal.newLocal", t("tabs.newLocalTerminal"), "newTab"),
         paletteItem("files.openSftp", t("sftp.open")),
         item("close-pane", t("settings.shortcuts.actions.closePane"), canClosePane, "closePane"),

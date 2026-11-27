@@ -4,7 +4,7 @@ import { readCommandError } from "@/lib/ipc/connect";
 import * as forwardsIpc from "@/lib/ipc/forwards";
 import type { ForwardDraft, ForwardId, PortForward } from "@/lib/ipc/forwards";
 import * as hostsIpc from "@/lib/ipc/hosts";
-import type { Bookmark, Group, GroupId, Host, HostDraft, HostId, HostImportSource, HostOsChange, HostTree, ImportReport, ImportSummary } from "@/lib/ipc/hosts";
+import type { Bookmark, Group, GroupId, Host, HostDraft, HostId, HostImportSource, HostOsChange, HostTree, HostTreeChange, ImportReport, ImportSummary } from "@/lib/ipc/hosts";
 import { createSnapshotWatch } from "@/lib/ipc/watchSnapshot";
 import type { MoveOp } from "./hostTree";
 
@@ -73,7 +73,10 @@ export interface HostsState {
  */
 export function createHostsStore(api: HostsApi): StoreApi<HostsState> {
   return createStore<HostsState>()((set, get) => {
-    const update = (change: (tree: HostTree) => HostTree) => set({ tree: change(get().tree) });
+    let shared = false;
+    const update = (change: (tree: HostTree) => HostTree) => {
+      if (!shared) set({ tree: change(get().tree) });
+    };
     // A command reply may describe the tree before an OS update just received on the channel.
     const osChanges = new Map<HostId, HostOsChange["detectedOs"]>();
     const withCurrentOs = (host: Host): Host => osChanges.has(host.id)
@@ -89,21 +92,29 @@ export function createHostsStore(api: HostsApi): StoreApi<HostsState> {
       return result;
     };
     const replaceTree = (tree: HostTree) => {
+      if (shared) return;
       const current = new Map(get().tree.hosts.map((host) => [host.id, host]));
       set({ tree: { ...tree, hosts: tree.hosts.map((host) => withCurrentBookmarks(withCurrentOs(host), current.get(host.id))) } });
     };
-    const watch = createSnapshotWatch<HostTree, HostOsChange>(
+    const watch = createSnapshotWatch<HostTree, HostTreeChange>(
       api.loadHostTree,
-      (tree) => {
+      ({ shared: watching, groups, hosts }) => {
         osChanges.clear();
-        set({ tree, status: "ready", error: null });
+        shared = watching === true;
+        set({ tree: { groups, hosts }, status: "ready", error: null });
       },
-      ({ hostId, detectedOs }) => {
+      (event) => {
+        if ("tree" in event) {
+          set({ tree: event.tree });
+          return;
+        }
+        const { hostId, detectedOs } = event;
         osChanges.set(hostId, detectedOs);
         update((tree) => ({ ...tree, hosts: tree.hosts.map((host) => host.id === hostId ? withCurrentOs(host) : host) }));
       },
     );
     const publishHost = (saved: Host) => {
+      if (shared) return saved;
       const host = withCurrentBookmarks(withCurrentOs(saved), get().tree.hosts.find((h) => h.id === saved.id));
       update((tree) => ({
         ...tree,

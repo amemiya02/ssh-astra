@@ -5,7 +5,7 @@ use tauri::menu::{
     AboutMetadata, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu, HELP_SUBMENU_ID,
     WINDOW_SUBMENU_ID,
 };
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, State};
 
 use crate::quit::QuitMenu;
 
@@ -144,8 +144,12 @@ pub fn on_menu_event(app: &AppHandle, event: MenuEvent) {
     let Some(action) = event.id().as_ref().strip_prefix(ACTION_PREFIX) else {
         return;
     };
-    if let Some(window) = app.get_webview_window("main") {
-        if let Err(error) = window.emit("macos-menu-action", action) {
+    if let Some(window) = crate::windows::active(app) {
+        if let Err(error) = app.emit_to(
+            tauri::EventTarget::webview_window(window.label()),
+            "macos-menu-action",
+            action,
+        ) {
             log::warn!("could not dispatch macOS menu action: {error}");
         }
     }

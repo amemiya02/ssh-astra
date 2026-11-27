@@ -27,8 +27,16 @@ export function defineSection<T>(key: string, defaults: T, parse: (raw: unknown)
 export interface SettingsBackend {
   /** Every saved section by key. */
   load(): Promise<Record<string, unknown>>;
+  /** Atomically loads the initial snapshot and subscribes to subsequent native writes. */
+  watch?(receive: (event: SettingsChange) => void): Promise<Record<string, unknown>>;
   /** Replaces one section in the file. */
-  save(section: string, value: unknown): Promise<void>;
+  save(section: string, value: unknown): Promise<SettingsChange | void>;
+}
+
+export interface SettingsChange {
+  section: string;
+  value: unknown;
+  revision: number;
 }
 
 export interface Settings {
@@ -37,6 +45,8 @@ export interface Settings {
   commit<T>(section: SettingsSection<T>, value: T, immediate: boolean): Promise<void>;
   /** Called after any section changes. Returns the unsubscribe function. */
   subscribe(listener: () => void): () => void;
+  receive(event: SettingsChange): void;
+  flush(): Promise<void>;
 }
 
 /** The slice of `Storage` used to move preferences out of localStorage. */
@@ -50,10 +60,51 @@ function createSettings(backend: SettingsBackend, saved: Record<string, unknown>
   const raw = { ...saved };
   const parsed = new Map<string, unknown>();
   const listeners = new Set<() => void>();
+  const written = new Map<string, SettingsChange>();
+  const pending = new Map<string, Promise<void>>();
+  const notify = () => { for (const listener of [...listeners]) listener(); };
   function publish<T>(section: SettingsSection<T>, value: T) {
     raw[section.key] = value;
     parsed.set(section.key, value);
-    for (const listener of [...listeners]) listener();
+    notify();
+  }
+  function apply({ section, value }: SettingsChange) {
+    if (JSON.stringify(raw[section]) === JSON.stringify(value)) return;
+    raw[section] = value;
+    parsed.delete(section);
+    notify();
+  }
+  function remember(event: SettingsChange) {
+    if ((written.get(event.section)?.revision ?? 0) >= event.revision) return false;
+    written.set(event.section, event);
+    return true;
+  }
+  function save<T>(section: SettingsSection<T>, value: T, immediate: boolean): Promise<void> {
+    const key = section.key;
+    const write = () => backend.save(key, value);
+    const previous = pending.get(key);
+    const previousRevision = written.get(key)?.revision ?? 0;
+    const saving = previous && backend.watch ? previous.catch(() => {}).then(write) : write();
+    const completion = saving.then((event) => {
+      if (event) remember(event);
+      if (pending.get(key) !== completion) return;
+      if (event) {
+        const latest = written.get(key);
+        if (latest) apply(latest);
+      } else if (!immediate) {
+        publish(section, value);
+      }
+    }, (error: unknown) => {
+      const latest = written.get(key);
+      if (pending.get(key) === completion && latest && latest.revision > previousRevision) apply(latest);
+      throw error;
+    }).finally(() => {
+      if (pending.get(key) === completion) {
+        pending.delete(key);
+      }
+    });
+    pending.set(key, completion);
+    return completion;
   }
 
   return {
@@ -63,18 +114,23 @@ function createSettings(backend: SettingsBackend, saved: Record<string, unknown>
     },
     set<T>(section: SettingsSection<T>, value: T) {
       publish(section, value);
-      backend.save(section.key, value).catch((error: unknown) => {
+      save(section, value, true).catch((error: unknown) => {
         console.warn(`Could not save the ${section.key} settings`, error);
       });
     },
     async commit<T>(section: SettingsSection<T>, value: T, immediate: boolean) {
       if (immediate) publish(section, value);
-      await backend.save(section.key, value);
-      if (!immediate) publish(section, value);
+      await save(section, value, immediate);
     },
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
+    },
+    receive(event) {
+      if (remember(event) && !pending.has(event.section)) apply(event);
+    },
+    async flush() {
+      await Promise.allSettled(pending.values());
     },
   };
 }
@@ -114,9 +170,16 @@ function importLegacy(saved: Record<string, unknown>, legacy: KeyValueStore): Re
  */
 export async function openSettings(backend: SettingsBackend, legacy?: KeyValueStore): Promise<Settings> {
   let saved: Record<string, unknown> = {};
+  const changes: SettingsChange[] = [];
+  let settings: Settings | undefined;
   let readable = true;
   try {
-    saved = await backend.load();
+    saved = backend.watch
+      ? await backend.watch((event) => {
+        if (settings) settings.receive(event);
+        else changes.push(event);
+      })
+      : await backend.load();
   } catch (error) {
     readable = false;
     console.warn("Could not read the settings file; using defaults", error);
@@ -127,7 +190,9 @@ export async function openSettings(backend: SettingsBackend, legacy?: KeyValueSt
       console.warn(`Could not save the ${section} settings`, error);
     });
   }
-  return createSettings(backend, { ...saved, ...imported });
+  settings = createSettings(backend, { ...saved, ...imported });
+  for (const event of changes) settings.receive(event);
+  return settings;
 }
 
 const noBackend: SettingsBackend = { load: () => Promise.resolve({}), save: () => Promise.resolve() };
@@ -146,6 +211,10 @@ export function getSetting<T>(section: SettingsSection<T>): T {
 
 export function setSetting<T>(section: SettingsSection<T>, value: T): void {
   active.set(section, value);
+}
+
+export function flushSettings(): Promise<void> {
+  return active.flush();
 }
 
 /** Waits for a preference with native side effects. Revocation can apply locally first. */

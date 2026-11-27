@@ -1086,6 +1086,7 @@
       "cancel": "取消",
       "actions": {
         "newTab": "新建本地终端",
+        "newWindow": "新建窗口",
         "closePane": "关闭窗格",
         "splitRight": "向右拆分",
         "splitDown": "向下拆分",
@@ -1459,6 +1460,10 @@
     "connections_other": "{{count}} 个连接",
     "transfers_one": "{{count}} 项传输",
     "transfers_other": "{{count}} 项传输"
+  },
+  "window": {
+    "new": "新建窗口",
+    "openFailed": "无法打开新窗口。"
   },
   "quit": {
     "title": "退出 SSH Astra？",

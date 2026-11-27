@@ -60,6 +60,21 @@ describe("hosts store", () => {
     expect(ids(store.getState().tree)).toEqual({ groups: ["prod"], hosts: ["a"] });
   });
 
+  it("shows Host and Group edits from another window after a local save", async () => {
+    const original = host("a");
+    const oldReply = { ...original, name: "renamed here" };
+    const sharedTree = { groups: [group("second window")], hosts: [{ ...original, name: "renamed there" }] };
+    const { store } = await loaded({ groups: [], hosts: [original] }, {
+      async loadHostTree(receive) {
+        receive?.({ tree: sharedTree });
+        return { groups: [], hosts: [original], shared: true };
+      },
+      saveHost: () => Promise.resolve(oldReply),
+    });
+    await store.getState().saveHost(draft(oldReply.name), original.id);
+    expect(store.getState().tree).toEqual(sharedTree);
+  });
+
   it("shows live OS changes without overwriting a concurrent Host edit", async () => {
     const original = host("a");
     const { store } = await loaded({ groups: [], hosts: [original] }, {

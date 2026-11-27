@@ -15,6 +15,7 @@ mod prompts;
 mod quit;
 #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
 mod wake;
+mod windows;
 
 #[cfg(test)]
 mod diagnostics_tests;
@@ -49,7 +50,6 @@ use commands::settings::SettingsState;
 use commands::snippets::SnippetsState;
 use commands::terminal::TerminalOutputDirectory;
 use commands::transfers::TransfersState;
-use prompts::PendingPrompts;
 
 // The E2E WebDriver server must never ship.
 #[cfg(all(feature = "e2e", not(debug_assertions)))]
@@ -89,7 +89,7 @@ pub fn run() {
     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
     let mut wake_listener = None;
     builder
-        // Restores the main window's size, position and maximized state, and
+        // Restores each Window's size, position and maximized state, and
         // saves them on exit (`.window-state.json` in the app config dir).
         .plugin(
             tauri_plugin_window_state::Builder::default()
@@ -183,8 +183,10 @@ pub fn run() {
             app.manage(Vault(vault));
             // Each primary instance owns one scratch directory for remote edits.
             app.manage(remote_editor());
+            windows::restore(app)?;
             Ok(())
         })
+        .manage(windows::Windows::default())
         .manage(TerminalRegistry::default())
         .manage(ClipboardImages::default())
         .manage(ForwardsState::default())
@@ -192,13 +194,23 @@ pub fn run() {
         .manage(TemporaryHosts::default())
         .manage(FsRegistry::default())
         .manage(TransfersState::default())
-        .manage(Arc::new(PendingPrompts::default()))
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::Focused(true) = event {
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::Focused(true) => {
+                windows::focused(window.app_handle(), window.label());
                 window.state::<TerminalRegistry>().reconnect_disconnected();
             }
+            tauri::WindowEvent::Destroyed => {
+                windows::destroyed(window.app_handle(), window.label())
+            }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
+            windows::window_new,
+            windows::window_try_close,
+            windows::window_startup_workspaces,
+            windows::window_settings_saved,
+            #[cfg(desktop)]
+            quit::quit_application,
             #[cfg(target_os = "macos")]
             macos_menu::macos_menu_set,
             #[cfg(desktop)]

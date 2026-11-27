@@ -95,6 +95,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
       if (command === "snippets_list") return snippetLibrary;
       if (command === "forwards_watch") return initialForwards;
       if (command === "connections_watch") return initialHeld;
+      if (command === "window_try_close") return true;
       if (command === "quit_live_connection_count") return liveConnectionCount;
       if (command === "hosts_import_source" && args?.source?.kind === "csv") return {
         tree: { hosts: savedHosts, groups: [] },
@@ -297,7 +298,7 @@ async function requestWindowClose() {
   await act(async () => emit(TauriEvent.WINDOW_CLOSE_REQUESTED));
 }
 
-const windowDestroys = () => desktopIPC.mock.calls.filter(([command]) => command === "plugin:window|destroy");
+const appQuits = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === "quit_application");
 const dialog = () => document.querySelector('[role="dialog"]');
 const terminalCloses = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === "terminal_close");
 const tabIds = () => [...document.querySelectorAll('[role="tab"]')].map((tab) => tab.id);
@@ -1121,16 +1122,16 @@ it("confirms app quit for a shared Connection even after opting out of Terminal 
     "1 Connection", "0 transfers", "0 Port forwards",
   ]);
   expect(document.activeElement?.textContent).toBe("Cancel");
-  expect(windowDestroys()).toHaveLength(0);
+  expect(appQuits()).toHaveLength(0);
 
   await requestWindowClose();
   expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
   await clickButton("Cancel", dialog()!);
-  expect(windowDestroys()).toHaveLength(0);
+  expect(appQuits()).toHaveLength(0);
 
   await requestWindowClose();
   await clickButton("Quit", dialog()!);
-  expect(windowDestroys()).toHaveLength(1);
+  expect(appQuits()).toHaveLength(1);
 });
 
 it("quits without asking when the workspace is idle", async () => {
@@ -1139,7 +1140,7 @@ it("quits without asking when the workspace is idle", async () => {
 
   await requestWindowClose();
   expect(dialog()).toBeNull();
-  expect(windowDestroys()).toHaveLength(1);
+  expect(appQuits()).toHaveLength(1);
 });
 
 it("confirms quit when a transfer or File panel is the last holder of a Connection", async () => {
@@ -1150,7 +1151,7 @@ it("confirms quit when a transfer or File panel is the last holder of a Connecti
   await requestWindowClose();
   expect(dialog()?.querySelector("h2")?.textContent).toBe("Quit SSH Astra?");
   expect(dialog()?.querySelector("li")?.textContent).toBe("1 Connection");
-  expect(windowDestroys()).toHaveLength(0);
+  expect(appQuits()).toHaveLength(0);
 });
 
 it("saves a separate quit preference and applies it while a Connection is open", async () => {
@@ -1165,7 +1166,7 @@ it("saves a separate quit preference and applies it while a Connection is open",
 
   await requestWindowClose();
   expect(dialog()).toBeNull();
-  expect(windowDestroys()).toHaveLength(1);
+  expect(appQuits()).toHaveLength(1);
 });
 
 async function broadcastShortcut(inWindow = false) {
@@ -1507,9 +1508,9 @@ it("shows the same manual or detected icon in the Host list, Home and an open Te
   expect(tabChrome.querySelector(".bg-ansi-cyan")).not.toBeNull();
 
   const watch = vi.mocked(invoke).mock.calls.filter(([command]) => command === "host_tree_watch").at(-1)?.[1] as {
-    onOsChange: { onmessage(event: HostOsChange): void };
+    onChange: { onmessage(event: HostOsChange): void };
   };
-  act(() => watch.onOsChange.onmessage({ hostId: host.id, detectedOs: "debian" }));
+  act(() => watch.onChange.onmessage({ hostId: host.id, detectedOs: "debian" }));
   expect(glyphs().map((glyph) => glyph?.getAttribute("data-host-icon"))).toEqual(["ubuntu", "ubuntu", "ubuntu"]);
 
   const terminals = [...testTerminals];
@@ -1521,7 +1522,7 @@ it("shows the same manual or detected icon in the Host list, Home and an open Te
 
   await act(async () => { await hostsStore.getState().saveHost(host, host.id); });
   expect(glyphs().map((glyph) => glyph?.getAttribute("data-host-icon"))).toEqual(["debian", "debian", "debian"]);
-  act(() => watch.onOsChange.onmessage({ hostId: host.id, detectedOs: null }));
+  act(() => watch.onChange.onmessage({ hostId: host.id, detectedOs: null }));
   expect(glyphs()).toEqual([null, null, null]);
   expect([...testTerminals]).toEqual(terminals);
   expect(terminalCloses()).toHaveLength(0);

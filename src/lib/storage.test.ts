@@ -30,6 +30,23 @@ const fontSize = defineSection("example", { size: 13 }, (raw) => {
 });
 
 describe("settings", () => {
+  it("applies native settings changes already in flight at startup and continues watching", async () => {
+    const backend = memoryBackend({ example: { size: 14 } });
+    let update: Parameters<NonNullable<SettingsBackend["watch"]>>[0] = () => {};
+    const settings = await openSettings({ ...backend, watch: async (receive) => {
+      update = receive;
+      update({ section: fontSize.key, value: { size: 16 }, revision: 1 });
+      return structuredClone(backend.file);
+    } });
+    expect(settings.get(fontSize)).toEqual({ size: 16 });
+
+    const listener = vi.fn();
+    settings.subscribe(listener);
+    update({ section: fontSize.key, value: { size: 20 }, revision: 2 });
+    expect(listener).toHaveBeenCalledOnce();
+    expect(settings.get(fontSize)).toEqual({ size: 20 });
+  });
+
   it("gives a section's defaults when the file has nothing for it", async () => {
     const settings = await openSettings(memoryBackend());
     expect(settings.get(fontSize)).toEqual({ size: 13 });
