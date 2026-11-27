@@ -116,6 +116,15 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
           proxyCommands: [],
         },
       };
+      if (command === "hosts_import_source" && args?.source?.kind === "securecrt") return {
+        tree: { hosts: savedHosts, groups: [] },
+        report: {
+          imported: ["Lab server"],
+          skipped: [],
+          issues: [{ entry: "Lab/Lab server.ini", dropped: false, problem: { kind: "securecrtCredentials" } }],
+          proxyCommands: [],
+        },
+      };
       if (command === "hosts_import_source" && args?.source?.kind === "xshell") return {
         tree: { hosts: savedHosts, groups: [] },
         report: {
@@ -1959,25 +1968,28 @@ it("selects a MobaXterm session export and shows line-based import results", asy
   await act(async () => dismiss!.click());
 });
 
-it("selects an Xshell session folder and reports per-file outcomes", async () => {
+it.each([
+  { name: "Xshell", kind: "xshell", entry: "Work/Build server.xsh" },
+  { name: "SecureCRT", kind: "securecrt", entry: "Lab/Lab server.ini" },
+])("selects a $name session folder and reports per-file outcomes", async ({ name, kind, entry }) => {
   await render(workspace({ type: "open", tabId: "home", pane: newPane({ kind: "home" }) }));
   const importButton = [...document.querySelectorAll<HTMLButtonElement>("#tabpanel-home button")]
     .find((button) => button.textContent === "Import Hosts…")!;
   await act(async () => importButton.click());
-  const chooseXshell = [...dialog()!.querySelectorAll("button")]
-    .find((button) => button.textContent === "Xshell session folder…")!;
-  await act(async () => chooseXshell.click());
+  const chooseFolder = [...dialog()!.querySelectorAll("button")]
+    .find((button) => button.textContent === `${name} session folder…`)!;
+  await act(async () => chooseFolder.click());
   expect(dialog()?.textContent).toContain("Choose where to import Hosts from.");
   expect(invoke).not.toHaveBeenCalledWith("hosts_import_source", expect.anything());
 
-  importPath = "/fixtures/Xshell Sessions";
-  await act(async () => chooseXshell.click());
+  importPath = `/fixtures/${name} Sessions`;
+  await act(async () => chooseFolder.click());
   expect(openFileDialog).toHaveBeenCalledWith({
-    title: "Choose an Xshell session folder", multiple: false, directory: true,
+    title: `Choose ${name === "Xshell" ? "an" : "a"} ${name} session folder`, multiple: false, directory: true,
   });
-  expect(invoke).toHaveBeenCalledWith("hosts_import_source", { source: { kind: "xshell", path: importPath } });
-  expect(dialog()?.textContent).toContain("Xshell import results");
-  expect(dialog()?.textContent).toContain("Work/Build server.xsh: Saved credentials were omitted.");
+  expect(invoke).toHaveBeenCalledWith("hosts_import_source", { source: { kind, path: importPath } });
+  expect(dialog()?.textContent).toContain(`${name} import results`);
+  expect(dialog()?.textContent).toContain(`${entry}: Saved credentials were omitted.`);
   await act(async () => dialog()!.querySelector("button")!.click());
   const dismiss = document.querySelector<HTMLButtonElement>('button[aria-label^="Dismiss notification: Imported"]');
   await act(async () => dismiss!.click());

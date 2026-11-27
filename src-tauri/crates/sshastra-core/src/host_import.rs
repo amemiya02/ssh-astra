@@ -2,7 +2,7 @@
 
 use std::borrow::Cow;
 use std::net::Ipv6Addr;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 
 use encoding_rs::{Encoding, WINDOWS_1252};
 use serde::Serialize;
@@ -17,6 +17,9 @@ pub use mobaxterm::parse_mobaxterm;
 
 mod putty;
 pub use putty::parse_putty;
+
+mod securecrt;
+pub use securecrt::{parse_securecrt, SECURECRT_NON_SESSION_FILES};
 
 mod xshell;
 pub use xshell::parse_xshell;
@@ -123,6 +126,16 @@ pub enum ImportProblem {
     XshellUnsupportedSettings,
     XshellUnsupportedProxy,
     XshellInvalidJumpHost,
+    SecurecrtCredentials,
+    SecurecrtFile,
+    SecurecrtFolderLimit,
+    SecurecrtInvalidPort,
+    SecurecrtUnsupportedSession,
+    SecurecrtDefaultUser,
+    SecurecrtKeyPath,
+    SecurecrtUnsupportedSettings,
+    SecurecrtUnsupportedFirewall,
+    SecurecrtJumpHostUnavailable,
 }
 
 /// The outcome of parsing an import source.
@@ -161,4 +174,37 @@ fn ssh_address(value: &str) -> Option<&str> {
             .chars()
             .all(|ch| ch.is_alphanumeric() || matches!(ch, '.' | '-' | '_'));
     valid.then_some(host)
+}
+
+fn relative_session_path<'a>(path: &'a Path, extension: &str) -> Option<Vec<&'a str>> {
+    if !path.extension()?.to_str()?.eq_ignore_ascii_case(extension) {
+        return None;
+    }
+    path.components()
+        .map(|component| {
+            let Component::Normal(part) = component else {
+                return None;
+            };
+            let part = part.to_str()?;
+            (valid_label(part) && !part.trim().is_empty() && !part.contains(['\\', ':']))
+                .then_some(part)
+        })
+        .collect()
+}
+
+fn portable_key_path(value: &str) -> Option<PathBuf> {
+    let value = value
+        .strip_prefix('"')
+        .and_then(|path| path.strip_suffix('"'))
+        .unwrap_or(value);
+    let windows_absolute =
+        matches!(value.as_bytes(), [drive, b':', b'\\' | b'/', ..] if drive.is_ascii_alphabetic());
+    if !valid_label(value) || value.contains("://") {
+        return None;
+    }
+    (Path::new(value).is_absolute()
+        || windows_absolute
+        || value.starts_with("~/")
+        || value.starts_with("\\\\"))
+    .then(|| PathBuf::from(value))
 }

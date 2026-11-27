@@ -101,10 +101,7 @@ pub async fn forward_start(
         Ok(hops)
     })?;
     let host = hops.pop().expect("a jump chain ends with the Host itself");
-    let prompter = Arc::new(ChannelPrompter {
-        pending: windows::prompts(&window)?,
-        channel: on_prompt,
-    });
+    let prompter = Arc::new(ChannelPrompter::new(windows::prompts(&window)?, on_prompt));
     let connection = connect_host(app, &hops, &host, prompter).await?;
     schedule_os_detection(app, &host.id, &connection);
     let start = hosts.with(|store| {

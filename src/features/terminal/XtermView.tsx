@@ -24,6 +24,7 @@ import { PasteConfirmDialog } from "./PasteConfirmDialog";
 import { TerminalOutputMenuItems } from "./TerminalOutputMenuItems";
 import { TerminalSearchBar, type SearchDirection, type SearchResults } from "./TerminalSearchBar";
 import { BroadcastPaneContext, type Broadcast } from "@/features/workspace/broadcast";
+import { movingSourcePane } from "@/features/workspace/tab-window-move";
 import { getResolvedShortcuts } from "@/features/workspace/shortcut-settings";
 import { currentPlatform, matchTerminalShortcut } from "@/features/workspace/shortcuts";
 import { planPaste, type PendingPaste } from "./terminal-input";
@@ -118,7 +119,7 @@ export function XtermView({ label, active, colorScheme, historyHostId, canPasteH
   /** Use the source xterm's line endings and bracketed-paste mode for every recipient. */
   const applyPaste = useCallback((text: string, recipients: BroadcastRecipients) => {
     const xterm = xtermRef.current;
-    if (!xterm || (recipients && !recipients.canPaste())) return;
+    if (!xterm || (paneId !== undefined && movingSourcePane(paneId)) || (recipients && !recipients.canPaste())) return;
     const relay = recipients && xterm.onData(recipients.send);
     applyingPaste.current = true;
     try {
@@ -127,7 +128,7 @@ export function XtermView({ label, active, colorScheme, historyHostId, canPasteH
       applyingPaste.current = false;
       relay?.dispose();
     }
-  }, []);
+  }, [paneId]);
 
   const requestPaste = useCallback((text: string, recipients: BroadcastRecipients) => {
     if (recipients && !recipients.canPaste()) return;

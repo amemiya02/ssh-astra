@@ -19,7 +19,7 @@ export interface FinishedShellCommand {
   exitCode: number;
 }
 
-interface TrackedShell {
+export interface TrackedShell {
   prompt: PromptState;
   terminalId?: TerminalId;
   promptId?: number;
@@ -55,6 +55,9 @@ export function createShellIntegrationState(enabled: () => boolean = () => true)
         queuedInput: false,
         terminalId,
       });
+    },
+    restore(paneId: string, state: TrackedShell) {
+      save(paneId, state);
     },
     attach(paneId: string, terminalId: TerminalId) {
       const current = store.getState().get(paneId);

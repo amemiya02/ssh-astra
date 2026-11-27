@@ -1,6 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { Server } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { connectionsStore, useConnections } from "@/features/connect/connectionsStore";
@@ -45,6 +46,7 @@ import { transferSummary, transfersStore, useTransfers } from "@/features/transf
 import { CloseTerminalsDialog } from "@/features/workspace/CloseTerminalsDialog";
 import { TabStrip } from "@/features/workspace/TabStrip";
 import { createTabActivity } from "@/features/workspace/tab-activity";
+import { moveTabToNewWindow } from "@/features/workspace/tab-window-move";
 import {
   activePane,
   activeTab,
@@ -62,6 +64,7 @@ import {
   type PaneKind,
   type ReconnectProgress,
   type SplitOrientation,
+  type Tab,
   type TabsState,
 } from "@/features/workspace/tabs";
 import { ShortcutCaptureContext, useWorkspaceShortcuts } from "@/features/workspace/use-workspace-shortcuts";
@@ -81,9 +84,10 @@ const updatable = isTauri() && import.meta.env.VITE_E2E !== "1";
  * Composes one Window. Each slot of `AppShell` is owned by a feature:
  * Host list (features/hosts), tabs and splits (features/workspace), File panel (features/files).
  */
-export function App({ initialTabs, startupTabsAcrossWindows }: {
+export function App({ initialTabs, startupTabsAcrossWindows, incomingMove }: {
   initialTabs: TabsState;
   startupTabsAcrossWindows?: readonly TabsState[] | null;
+  incomingMove?: Promise<void>;
 }) {
   const { t } = useTranslation();
   const shortcuts = useResolvedShortcuts(platform);
@@ -91,10 +95,33 @@ export function App({ initialTabs, startupTabsAcrossWindows }: {
   const { prefs: { titleSource } } = useTerminalPrefs();
   const [state, dispatch] = useReducer(tabsReducer, initialTabs);
   const { tabs, activeId } = state;
+  const [moving, setMoving] = useState(incomingMove !== undefined);
+  const moveInProgress = useRef(incomingMove !== undefined);
+  useEffect(() => {
+    void incomingMove?.then(() => {
+      moveInProgress.current = false;
+      setMoving(false);
+    });
+  }, [incomingMove]);
+
+  const moveToWindow = async (tab: Tab) => {
+    if (moveInProgress.current) return;
+    moveInProgress.current = true;
+    flushSync(() => setMoving(true));
+    try {
+      await moveTabToNewWindow(tab);
+      dispatch({ type: "removeMovedTab", id: tab.id });
+    } catch {
+      showToast((t) => t("tabs.moveToNewWindowFailed"), "error");
+    } finally {
+      moveInProgress.current = false;
+      setMoving(false);
+    }
+  };
   const [pendingClose, setPendingClose] = useState<{ action: CloseAction; count: number } | null>(null);
 
   function requestClose(action: CloseAction) {
-    if (pendingClose) return;
+    if (pendingClose || moveInProgress.current) return;
     const count = getSetting(workspaceSetting).confirmClose ? countTerminalsClosing(state, action) : 0;
     if (count > 0) setPendingClose({ action, count });
     else dispatch(action);
@@ -116,11 +143,11 @@ export function App({ initialTabs, startupTabsAcrossWindows }: {
     const tabIds = tabs.map((tab) => tab.id);
     tabActivity.updateWorkspace(activeId, tabIds);
     broadcast.updateWorkspace(
-      focusedPaneId,
+      moving ? undefined : focusedPaneId,
       tabIds,
-      tabs.flatMap((tab) => tabPanes(tab).map((pane) => pane.id)),
+      moving ? [] : tabs.flatMap((tab) => tabPanes(tab).map((pane) => pane.id)),
     );
-  }, [activeId, broadcast, focusedPaneId, tabActivity, tabs]);
+  }, [activeId, broadcast, focusedPaneId, moving, tabActivity, tabs]);
 
   const toggleBroadcast = useCallback((scope: BroadcastScope) => {
     if (activeId !== null && hasFocusedTerminal) broadcast.toggle(scope, activeId);
@@ -148,11 +175,14 @@ export function App({ initialTabs, startupTabsAcrossWindows }: {
   ], [activeId, broadcast, broadcastMode, hasFocusedTerminal, shortcuts, t, toggleBroadcast]));
   const lastLayout = useRef<string | undefined>(undefined);
   useEffect(() => {
+    if (moving) return;
     const layout = serializeWorkspaceLayout(state);
     const snapshot = JSON.stringify(layout);
-    if (lastLayout.current !== undefined && lastLayout.current !== snapshot) setSetting(workspaceLayoutSetting, layout);
+    if ((incomingMove || lastLayout.current !== undefined) && lastLayout.current !== snapshot) {
+      setSetting(workspaceLayoutSetting, layout);
+    }
     lastLayout.current = snapshot;
-  }, [state]);
+  }, [incomingMove, moving, state]);
 
   const openTab = useCallback(
     (kind: PaneKind, startupOrder?: number) => {
@@ -357,7 +387,7 @@ export function App({ initialTabs, startupTabsAcrossWindows }: {
   );
 
   function runWorkspaceCommand(command: WorkspaceCommand) {
-    if (pendingClose) return;
+    if (pendingClose || moveInProgress.current) return;
     const tab = activeTab(state);
     switch (command.type) {
       case "newTab":
@@ -463,6 +493,7 @@ export function App({ initialTabs, startupTabsAcrossWindows }: {
         <MacosMenu shortcuts={shortcuts} canClosePane={Boolean(focused) && !pendingClose} runWorkspaceCommand={runWorkspaceCommand} />
       )}
       <AppShell
+        movingTab={moving}
         sidebar={{
           hosts: <HostsPanel controller={hostsController} connections={connections} />,
           forwards: <ForwardsSidebar onOpenForwards={openForwards} />,
@@ -505,10 +536,12 @@ export function App({ initialTabs, startupTabsAcrossWindows }: {
             onNewLocalShell={(shellId) => openTab({ kind: "local-terminal", shellId })}
             onSplit={split}
             onSaveTemporaryHost={hostsController.openTemporaryHostEditor}
+            onMoveToWindow={isTauri() ? (tab) => { void moveToWindow(tab); } : undefined}
           />
         }
         workspace={
           <TabPanels
+            moving={moving}
             activity={tabActivity}
             broadcast={broadcast}
             tabs={tabs}

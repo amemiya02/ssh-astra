@@ -224,7 +224,7 @@
     "connectFailed": "無法連線到 {{name}}：{{message}}",
     "import": {
       "action": "匯入 Host…",
-      "keywords": "ssh config openssh csv 匯入 putty mobaxterm mxtsessions xshell xsh",
+      "keywords": "ssh config openssh csv 匯入 putty mobaxterm mxtsessions xshell xsh securecrt ini",
       "pickerTitle": "匯入 Host",
       "chooseSource": "選擇要從哪裡匯入 Host。",
       "sshConfig": {
@@ -249,6 +249,14 @@
         "title": "Xshell 匯入結果",
         "nothing": "Xshell 資料夾中沒有可匯入的 Host。",
         "error": "無法匯入 Xshell 資料夾：{{message}}"
+      },
+      "securecrt": {
+        "action": "SecureCRT 工作階段資料夾…",
+        "help": "選擇包含 .ini 檔案的 SecureCRT Sessions 資料夾。子資料夾會成為群組。",
+        "chooseFolder": "選擇 SecureCRT 工作階段資料夾",
+        "title": "SecureCRT 匯入結果",
+        "nothing": "SecureCRT 資料夾中沒有可匯入的 Host。",
+        "error": "無法匯入 SecureCRT 資料夾：{{message}}"
       },
       "mobaxterm": {
         "action": "MobaXterm 工作階段…",
@@ -314,7 +322,17 @@
         "xshellKeyPath": "請在 Host 編輯器中選擇可存取的私密金鑰。",
         "xshellUnsupportedSettings": "部分 Xshell 設定無法匯入。",
         "xshellUnsupportedProxy": "無法匯入此 Xshell 工作階段的代理伺服器。",
-        "xshellInvalidJumpHost": "Xshell 跳板主機設定不完整或無效。"
+        "xshellInvalidJumpHost": "Xshell 跳板主機設定不完整或無效。",
+        "securecrtCredentials": "已略過儲存的憑證。",
+        "securecrtFile": "無法讀取此 SecureCRT 工作階段，或其連線資訊無效。",
+        "securecrtFolderLimit": "SecureCRT 資料夾超過匯入大小或巢狀深度限制。",
+        "securecrtInvalidPort": "連接埠必須是 1 到 65535 之間的整數。",
+        "securecrtUnsupportedSession": "此 SecureCRT 工作階段使用的通訊協定並非 SSH2。",
+        "securecrtDefaultUser": "SecureCRT 未儲存使用者名稱，已使用本機使用者名稱。",
+        "securecrtKeyPath": "請在 Host 編輯器中選擇可存取的私密金鑰。",
+        "securecrtUnsupportedSettings": "部分 SecureCRT 設定無法匯入。",
+        "securecrtUnsupportedFirewall": "無法匯入此 SecureCRT 工作階段的防火牆設定。",
+        "securecrtJumpHostUnavailable": "SecureCRT 跳板主機缺失、無法唯一識別，或其連線路徑無效。"
       }
     },
     "transfer": {
@@ -364,6 +382,8 @@
     "closeOthers": "關閉其他分頁",
     "closeRight": "關閉右側分頁",
     "duplicate": "複製分頁",
+    "moveToNewWindow": "移到新視窗",
+    "moveToNewWindowFailed": "無法將分頁移到新視窗。",
     "rename": "重新命名分頁",
     "renameHint": "清除標題即可還原自動命名。",
     "title": "分頁標題",

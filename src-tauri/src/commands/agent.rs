@@ -184,49 +184,54 @@ pub(crate) struct PendingScreens {
     requests: Mutex<HashMap<u64, PendingScreen>>,
 }
 
-struct ScreenWait<'a> {
-    pending: &'a PendingScreens,
+struct ScreenWait {
+    pending: Arc<PendingScreens>,
     id: u64,
 }
 
-impl Drop for ScreenWait<'_> {
+impl Drop for ScreenWait {
     fn drop(&mut self) {
         self.pending.lock().remove(&self.id);
     }
 }
 
 impl PendingScreens {
-    pub fn reader(
+    pub(super) fn request(
         self: &Arc<Self>,
-        webview: String,
-        channel: Channel<InvokeResponseBody>,
-    ) -> impl Fn(usize) -> BoxFuture<'static, Option<TerminalScreen>> + Send + Sync + 'static {
-        let pending = Arc::clone(self);
-        move |scrollback_lines| {
-            let (pending, webview, channel) =
-                (Arc::clone(&pending), webview.clone(), channel.clone());
-            Box::pin(async move {
-                let (reply, receive) = oneshot::channel();
-                let id = pending.next.fetch_add(1, Ordering::Relaxed) + 1;
-                pending.lock().insert(id, PendingScreen { webview, reply });
-                let _wait = ScreenWait {
-                    pending: &pending,
-                    id,
-                };
-                let message = ScreenMessage {
-                    agent_screen: ScreenRequest {
-                        request_id: id,
-                        scrollback_lines,
-                    },
-                };
-                channel
-                    .send(InvokeResponseBody::Json(
-                        serde_json::to_string(&message).ok()?,
-                    ))
-                    .ok()?;
+        webview: &str,
+        channel: &Channel<InvokeResponseBody>,
+        scrollback_lines: usize,
+    ) -> BoxFuture<'static, Option<TerminalScreen>> {
+        let (reply, receive) = oneshot::channel();
+        let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
+        self.lock().insert(
+            id,
+            PendingScreen {
+                webview: webview.into(),
+                reply,
+            },
+        );
+        let wait = ScreenWait {
+            pending: self.clone(),
+            id,
+        };
+        let message = ScreenMessage {
+            agent_screen: ScreenRequest {
+                request_id: id,
+                scrollback_lines,
+            },
+        };
+        let sent = serde_json::to_string(&message)
+            .ok()
+            .is_some_and(|json| channel.send(InvokeResponseBody::Json(json)).is_ok());
+        Box::pin(async move {
+            let _wait = wait;
+            if sent {
                 receive.await.ok()
-            })
-        }
+            } else {
+                None
+            }
+        })
     }
 
     fn lock(&self) -> MutexGuard<'_, HashMap<u64, PendingScreen>> {
@@ -290,8 +295,7 @@ mod tests {
             send.send(body).unwrap();
             Ok(())
         });
-        let read = pending.reader("origin".into(), channel);
-        let request = tokio::spawn(read(6));
+        let request = tokio::spawn(pending.request("origin", &channel, 6));
         let InvokeResponseBody::Json(message) = receive.recv().await.unwrap() else {
             panic!("screen request must be JSON");
         };

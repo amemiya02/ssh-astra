@@ -63,6 +63,7 @@ interface TabStripProps {
   onNewLocalShell(id: string): void;
   onSplit(orientation: SplitOrientation): void;
   onSaveTemporaryHost?(host: TemporaryHost): void;
+  onMoveToWindow?(tab: Tab): void;
 }
 
 const statusDot: Record<ConnectionStatus, string> = {
@@ -106,6 +107,7 @@ export function TabStrip({
   onNewLocalShell,
   onSplit,
   onSaveTemporaryHost,
+  onMoveToWindow,
 }: TabStripProps) {
   const { t } = useTranslation();
   const shortcuts = useResolvedShortcuts(platform);
@@ -257,6 +259,7 @@ export function TabStrip({
           title={title}
           vertical={vertical}
           onSaveTemporaryHost={onSaveTemporaryHost}
+          onMoveToWindow={onMoveToWindow}
           onAction={(action) => {
             if (vertical && action.type === "closeRight") {
               const index = ordered.findIndex(({ id }) => id === tab.id);

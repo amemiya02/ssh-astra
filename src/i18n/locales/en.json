@@ -224,7 +224,7 @@
     "connectFailed": "Could not connect to {{name}}: {{message}}",
     "import": {
       "action": "Import Hosts…",
-      "keywords": "ssh config openssh csv import putty mobaxterm mxtsessions xshell xsh",
+      "keywords": "ssh config openssh csv import putty mobaxterm mxtsessions xshell xsh securecrt ini",
       "pickerTitle": "Import Hosts",
       "chooseSource": "Choose where to import Hosts from.",
       "sshConfig": {
@@ -249,6 +249,14 @@
         "title": "Xshell import results",
         "nothing": "The Xshell folder has no Hosts to import.",
         "error": "Could not import the Xshell folder: {{message}}"
+      },
+      "securecrt": {
+        "action": "SecureCRT session folder…",
+        "help": "Choose the SecureCRT Sessions folder containing .ini files. Subfolders become Groups.",
+        "chooseFolder": "Choose a SecureCRT session folder",
+        "title": "SecureCRT import results",
+        "nothing": "The SecureCRT folder has no Hosts to import.",
+        "error": "Could not import the SecureCRT folder: {{message}}"
       },
       "mobaxterm": {
         "action": "MobaXterm sessions…",
@@ -314,7 +322,17 @@
         "xshellKeyPath": "Select an accessible private key in the Host editor.",
         "xshellUnsupportedSettings": "Some Xshell settings could not be imported.",
         "xshellUnsupportedProxy": "The proxy for this Xshell session could not be imported.",
-        "xshellInvalidJumpHost": "The Xshell Jump host is incomplete or invalid."
+        "xshellInvalidJumpHost": "The Xshell Jump host is incomplete or invalid.",
+        "securecrtCredentials": "Saved credentials were omitted.",
+        "securecrtFile": "This SecureCRT session could not be read or has invalid connection details.",
+        "securecrtFolderLimit": "The SecureCRT folder exceeds the import size or nesting limit.",
+        "securecrtInvalidPort": "Port must be a whole number from 1 to 65535.",
+        "securecrtUnsupportedSession": "This SecureCRT session uses a protocol other than SSH2.",
+        "securecrtDefaultUser": "SecureCRT had no saved username. The local username was used.",
+        "securecrtKeyPath": "Select an accessible private key in the Host editor.",
+        "securecrtUnsupportedSettings": "Some SecureCRT settings could not be imported.",
+        "securecrtUnsupportedFirewall": "The firewall configured for this SecureCRT session could not be imported.",
+        "securecrtJumpHostUnavailable": "The SecureCRT Jump host is missing, ambiguous, or part of an invalid route."
       }
     },
     "transfer": {
@@ -364,6 +382,8 @@
     "closeOthers": "Close other tabs",
     "closeRight": "Close tabs to the right",
     "duplicate": "Duplicate tab",
+    "moveToNewWindow": "Move to New Window",
+    "moveToNewWindowFailed": "Could not move the tab to a new Window.",
     "rename": "Rename tab",
     "renameHint": "Clear the title to use the automatic name.",
     "title": "Tab title",
