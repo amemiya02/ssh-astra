@@ -147,6 +147,12 @@
     },
     "splitRight": "向右分屏",
     "splitDown": "向下分屏",
+    "maximizePane": "最大化窗格",
+    "restorePaneLayout": "还原窗格布局",
+    "swapPaneLeft": "与左侧窗格交换",
+    "swapPaneRight": "与右侧窗格交换",
+    "swapPaneUp": "与上方窗格交换",
+    "swapPaneDown": "与下方窗格交换",
     "resizePanes": "调整分屏大小",
     "pane": "第 {{index}} 个窗格，共 {{count}} 个",
     "status": {

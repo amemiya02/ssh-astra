@@ -99,3 +99,41 @@ export function positionPanes(layout: PaneLayout) {
   place(layout, { left: 0, top: 0, width: 1, height: 1 }, []);
   return { panes, dividers };
 }
+
+export type PaneDirection = "left" | "right" | "up" | "down";
+
+/** Find panes sharing an edge with the focused pane. Prefer the longest shared edge in each direction. */
+export function paneNeighbors(layout: PaneLayout, paneId: string): Partial<Record<PaneDirection, Pane>> {
+  const neighbors: Partial<Record<PaneDirection, Pane>> = {};
+  if (layout.type === "pane") return neighbors;
+
+  const { panes } = positionPanes(layout);
+  const focused = panes.find((entry) => entry.pane.id === paneId);
+  if (!focused) return neighbors;
+
+  const { left, top, width, height } = focused.bounds;
+  const right = left + width;
+  const bottom = top + height;
+  const bestOverlap = { left: 0, right: 0, up: 0, down: 0 };
+  // Nested proportions can place the same edge a few floating-point steps apart.
+  const tolerance = 8 * Number.EPSILON;
+  for (const { pane, bounds } of panes) {
+    if (pane.id === paneId) continue;
+    const candidateRight = bounds.left + bounds.width;
+    const candidateBottom = bounds.top + bounds.height;
+    const verticalOverlap = Math.min(bottom, candidateBottom) - Math.max(top, bounds.top);
+    const horizontalOverlap = Math.min(right, candidateRight) - Math.max(left, bounds.left);
+    const edges = [
+      ["left", left, candidateRight, verticalOverlap],
+      ["right", right, bounds.left, verticalOverlap],
+      ["up", top, candidateBottom, horizontalOverlap],
+      ["down", bottom, bounds.top, horizontalOverlap],
+    ] as const;
+    for (const [direction, edge, candidateEdge, overlap] of edges) {
+      if (Math.abs(edge - candidateEdge) > tolerance || overlap <= bestOverlap[direction] + tolerance) continue;
+      bestOverlap[direction] = overlap;
+      neighbors[direction] = pane;
+    }
+  }
+  return neighbors;
+}

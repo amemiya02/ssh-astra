@@ -12,7 +12,7 @@ export type SavedPane = { id: string } & (
 );
 
 export interface WorkspaceLayout {
-  tabs: (Omit<Tab, "layout"> & { layout: PaneLayout<SavedPane> })[];
+  tabs: (Omit<Tab, "layout" | "paneMaximized"> & { layout: PaneLayout<SavedPane> })[];
   activeId: string | null;
 }
 

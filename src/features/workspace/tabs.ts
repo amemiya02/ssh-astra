@@ -1,7 +1,7 @@
 import { hostHue } from "@/features/hosts/hostHue";
 import type { Host } from "@/lib/ipc/hosts";
 import type { AnsiHue } from "@/theme/monogram-ink";
-import { resizePaneLayout, type SplitResize } from "./pane-layout";
+import { paneNeighbors, resizePaneLayout, type PaneDirection, type SplitResize } from "./pane-layout";
 
 /** A remote Terminal's link to its Host, shown as the state dot on its tab. */
 export type ConnectionStatus = "connecting" | "connected" | "disconnected";
@@ -72,6 +72,8 @@ export interface Tab {
   layout: PaneLayout;
   /** The pane with focus provides the automatic title and receives pane shortcuts. */
   activePaneId: string;
+  /** Temporarily show only the focused pane without changing the layout. */
+  paneMaximized?: true;
   /** A tab title that takes precedence over the focused pane's automatic title. */
   customTitle?: string;
   color?: AnsiHue;
@@ -101,6 +103,8 @@ export type TabsAction =
   | ({ type: "resizeSplit"; tabId: string } & SplitResize)
   | { type: "focusPane"; paneId: string }
   | { type: "cyclePane"; step: 1 | -1 }
+  | { type: "toggleMaximizePane" }
+  | { type: "swapPane"; direction: PaneDirection }
   | { type: "closePane"; paneId: string }
   | { type: "connectRestoredPane"; paneId: string }
   | { type: "retitle"; paneId: string; title: string }
@@ -282,18 +286,19 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
           { ratio: 0.5, layout: { type: "pane", pane: action.pane } },
         ],
       }))!;
-      return { ...replaceTab(state, { ...tab, layout, activePaneId: action.pane.id }), activeId: tab.id };
+      return { ...replaceTab(state, { ...tab, layout, activePaneId: action.pane.id, paneMaximized: undefined }), activeId: tab.id };
     }
     case "resizeSplit": {
       const tab = state.tabs.find((tab) => tab.id === action.tabId);
-      if (!tab) return state;
+      if (!tab || tab.paneMaximized) return state;
       const layout = resizePaneLayout(tab.layout, action);
       return layout === tab.layout ? state : replaceTab(state, { ...tab, layout });
     }
     case "focusPane": {
       const tab = tabOfPane(state, action.paneId);
       if (!tab) return state;
-      return { ...replaceTab(state, { ...tab, activePaneId: action.paneId }), activeId: tab.id };
+      const paneMaximized = tab.activePaneId === action.paneId ? tab.paneMaximized : undefined;
+      return { ...replaceTab(state, { ...tab, activePaneId: action.paneId, paneMaximized }), activeId: tab.id };
     }
     case "cyclePane": {
       const tab = activeTab(state);
@@ -302,7 +307,25 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
       const count = panes.length;
       const index = panes.findIndex((pane) => pane.id === tab.activePaneId);
       const next = panes[(index + action.step + count) % count]!;
-      return replaceTab(state, { ...tab, activePaneId: next.id });
+      return replaceTab(state, { ...tab, activePaneId: next.id, paneMaximized: undefined });
+    }
+    case "toggleMaximizePane": {
+      const tab = activeTab(state);
+      if (tab?.layout.type !== "split") return state;
+      return replaceTab(state, { ...tab, paneMaximized: tab.paneMaximized ? undefined : true });
+    }
+    case "swapPane": {
+      const tab = activeTab(state);
+      if (!tab) return state;
+      const focused = activePane(tab);
+      const neighbor = paneNeighbors(tab.layout, focused.id)[action.direction];
+      if (!neighbor) return state;
+      const layout = mapLeaves(tab.layout, (leaf) => {
+        if (leaf.pane.id === focused.id) return { type: "pane", pane: neighbor };
+        if (leaf.pane.id === neighbor.id) return { type: "pane", pane: focused };
+        return leaf;
+      })!;
+      return replaceTab(state, { ...tab, layout });
     }
     case "closePane": {
       const tab = tabOfPane(state, action.paneId);
@@ -313,7 +336,7 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
       const panes = layoutPanes(layout);
       const activePaneId =
         tab.activePaneId === action.paneId ? panes[Math.min(index, panes.length - 1)]!.id : tab.activePaneId;
-      return replaceTab(state, { ...tab, layout, activePaneId });
+      return replaceTab(state, { ...tab, layout, activePaneId, paneMaximized: undefined });
     }
     case "retitle": {
       const title = action.title.trim() || undefined;
@@ -371,9 +394,16 @@ function updatePane(state: TabsState, paneId: string, update: (pane: Pane) => Pa
 }
 
 function replaceLeaf(layout: PaneLayout, paneId: string, replace: (pane: Pane) => PaneLayout | undefined): PaneLayout | undefined {
-  if (layout.type === "pane") return layout.pane.id === paneId ? replace(layout.pane) : layout;
+  return mapLeaves(layout, (leaf) => leaf.pane.id === paneId ? replace(leaf.pane) : leaf);
+}
+
+function mapLeaves(
+  layout: PaneLayout,
+  replace: (leaf: Extract<PaneLayout, { type: "pane" }>) => PaneLayout | undefined,
+): PaneLayout | undefined {
+  if (layout.type === "pane") return replace(layout);
   const children = layout.children.flatMap((child) => {
-    const next = replaceLeaf(child.layout, paneId, replace);
+    const next = mapLeaves(child.layout, replace);
     if (next === undefined) return [];
     return [next === child.layout ? child : { ...child, layout: next }];
   });

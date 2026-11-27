@@ -22,7 +22,8 @@ import { usePaletteActions, type PaletteAction } from "@/features/palette/palett
 import { rememberHostOpened } from "@/features/palette/recent-hosts";
 import { DiagnosticsPaletteActions } from "@/features/settings/diagnostics-section";
 import { AppShell } from "@/features/shell/AppShell";
-import { currentPlatform, shortcutLabel, type WorkspaceCommand } from "@/features/workspace/shortcuts";
+import { paneNeighbors } from "@/features/workspace/pane-layout";
+import { currentPlatform, paneSwapShortcuts, shortcutLabel, type WorkspaceCommand } from "@/features/workspace/shortcuts";
 import { TabPanels } from "@/features/workspace/TabPanels";
 import { ConflictDialog } from "@/features/transfers/ConflictDialog";
 import { transferSummary, transfersStore, useTransfers } from "@/features/transfers/transfersStore";
@@ -63,6 +64,9 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
   const { tabs, activeId } = state;
   const focused = activeTab(state);
   const canSplitFocused = focused !== undefined && canSplit(focused);
+  const focusedLayout = focused?.layout;
+  const focusedPaneId = focused?.activePaneId;
+  const paneMaximized = focused?.paneMaximized;
   const lastLayout = useRef<string | undefined>(undefined);
   useEffect(() => {
     const layout = serializeWorkspaceLayout(state);
@@ -184,6 +188,29 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
     ),
   );
 
+  usePaletteActions(
+    useMemo((): PaletteAction[] => {
+      if (focusedLayout?.type !== "split" || !focusedPaneId) return [];
+      const neighbors = paneNeighbors(focusedLayout, focusedPaneId);
+      return [
+        {
+          id: "workspace.toggleMaximizePane",
+          title: t(paneMaximized ? "tabs.restorePaneLayout" : "tabs.maximizePane"),
+          shortcut: shortcutLabel("toggleMaximizePane", platform),
+          run: () => dispatch({ type: "toggleMaximizePane" }),
+        },
+        ...paneSwapShortcuts
+          .filter(({ direction }) => neighbors[direction])
+          .map(({ name, direction }): PaletteAction => ({
+            id: `workspace.${name}`,
+            title: t(`tabs.${name}`),
+            shortcut: shortcutLabel(name, platform),
+            run: () => dispatch({ type: "swapPane", direction }),
+          })),
+      ];
+    }, [focusedLayout, focusedPaneId, paneMaximized, t]),
+  );
+
   useWorkspaceShortcuts(platform, (command: WorkspaceCommand) => {
     const tab = activeTab(state);
     switch (command.type) {
@@ -196,6 +223,9 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
         return split(command.orientation);
       case "cycleTab":
         return dispatch({ type: "cycle", step: command.step });
+      case "toggleMaximizePane":
+      case "swapPane":
+        return dispatch(command);
       case "cyclePane":
         return dispatch({ type: "cyclePane", step: command.step });
       case "moveTab":
