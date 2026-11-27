@@ -5,6 +5,7 @@ use sshastra_core::edit::EditError;
 use sshastra_core::files::FsError;
 use sshastra_core::forward::ForwardError;
 use sshastra_core::hosts::HostStoreError;
+use sshastra_core::known_hosts::KnownHostsError;
 use sshastra_core::settings::SettingsError;
 use sshastra_core::ssh::{ConnectError, HostKeyRecord};
 use sshastra_core::terminal::TerminalError;
@@ -63,6 +64,12 @@ impl From<TerminalError> for CommandError {
 impl From<std::io::Error> for CommandError {
     fn from(err: std::io::Error) -> Self {
         Self::new("io", err)
+    }
+}
+
+impl From<KnownHostsError> for CommandError {
+    fn from(err: KnownHostsError) -> Self {
+        Self::new("knownHosts", err)
     }
 }
 

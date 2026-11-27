@@ -899,6 +899,7 @@
       "connection": "Connection",
       "transfers": "Transfers",
       "shortcuts": "Shortcuts",
+      "knownHosts": "Known hosts",
       "notifications": "Notifications",
       "updates": "Updates",
       "diagnostics": "Diagnostics"
@@ -1201,6 +1202,26 @@
         "label": "Terminal programs",
         "description": "Allow programs in a Terminal to send a notification while the window is in the background."
       }
+    },
+    "knownHosts": {
+      "label": "OpenSSH host key file",
+      "description": "View the host keys in your user file. This page is read-only.",
+      "refresh": "Refresh",
+      "reveal": "Show in file manager",
+      "loading": "Reading Known hosts…",
+      "loadFailed": "Could not read the Known hosts file.",
+      "missing": "The Known hosts file does not exist yet.",
+      "empty": "The file contains no Known host entries.",
+      "private": "Privacy mode hides host details and the file path.",
+      "posix": "Paste a copied command into a local POSIX shell. It removes all matching keys and any aliases on those lines.",
+      "powershell": "Paste a copied command into local PowerShell. It removes all matching keys and any aliases on those lines.",
+      "line": "Line {{line}}",
+      "copy": "Copy removal command",
+      "copyForLine": "Copy removal command for line {{line}}",
+      "unavailable": "Removal command unavailable",
+      "copied": "Removal command copied.",
+      "revealFailed": "Could not show the Known hosts file.",
+      "copyFailed": "Could not copy the removal command."
     },
     "diagnostics": {
       "logs": "Log files",
