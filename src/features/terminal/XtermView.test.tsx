@@ -1,5 +1,6 @@
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { invoke } from "@tauri-apps/api/core";
 import { BroadcastPaneContext, createBroadcast } from "@/features/workspace/broadcast";
 import { currentPlatform } from "@/features/workspace/shortcuts";
 import type { Terminal } from "@xterm/xterm";
@@ -23,6 +24,7 @@ vi.hoisted(() => {
 
 vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({ readText: vi.fn(), writeText: vi.fn() }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(async () => {}) }));
+vi.mock("@tauri-apps/api/core", { spy: true });
 
 vi.mock("@xterm/addon-webgl", () => ({
   WebglAddon: class {
@@ -37,9 +39,11 @@ beforeAll(startI18n);
 function mountTerminal(
   broadcast?: ReturnType<typeof createBroadcast>,
   pasteImage?: () => Promise<void>,
+  historyHostId?: string,
 ) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+  Element.prototype.scrollIntoView = () => {};
   vi.stubGlobal("matchMedia", () => ({ addListener() {}, removeListener() {} }));
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
   // jsdom has no layout. Give xterm an 8×10 character measurement so it can hit-test real buffer cells.
@@ -63,7 +67,7 @@ function mountTerminal(
     }}>
       <BroadcastPaneContext.Provider value={broadcast && { broadcast, tabId: "work", paneId: "source" }}>
         <TooltipProvider>
-          <XtermView active imagePasteRef={{ current: pasteImage ?? null }} attach={(xterm) => {
+          <XtermView active imagePasteRef={{ current: pasteImage ?? null }} historyHostId={historyHostId} canPasteHistory={() => true} attach={(xterm) => {
             terminal = xterm;
             const subscription = xterm.onData((data) => input.push(data));
             return () => subscription.dispose();
@@ -79,6 +83,7 @@ function mountTerminal(
     cleanup() {
       act(() => root.unmount());
       container.remove();
+      Reflect.deleteProperty(Element.prototype, "scrollIntoView");
       vi.restoreAllMocks();
       vi.unstubAllGlobals();
     },
@@ -165,6 +170,83 @@ it("right-clicks straight into the same paste path when direct paste is selected
     setSetting(terminalSetting, original);
   }
 });
+
+it("fuzzy searches the focused Host and pastes the chosen command without Enter or Broadcast", async () => {
+  const { terminal, input, inTab, otherTab, cleanup } = broadcastFixture("saved-host");
+  vi.mocked(invoke).mockResolvedValue(["git status", "cargo test"]);
+  try {
+    await openHistory(terminal);
+    expect(invoke).toHaveBeenCalledExactlyOnceWith("command_history_list", { hostId: "saved-host" });
+    const search = document.querySelector<HTMLInputElement>('[role="combobox"]')!;
+    expect(search).toBe(document.activeElement);
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "cgt");
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect([...document.querySelectorAll('[role="option"]')].map((item) => item.textContent)).toEqual(["cargo test"]);
+    await act(async () => search.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })));
+    expect(input).toEqual(["cargo test"]);
+    expect(inTab).not.toHaveBeenCalled();
+    expect(otherTab).not.toHaveBeenCalled();
+  } finally {
+    cleanup();
+    vi.mocked(invoke).mockReset();
+  }
+});
+
+it("keeps line breaks in a bracketed paste and rejects unbracketed or escaped commands", async () => {
+  const { terminal, input, inTab, cleanup } = broadcastFixture("saved-host");
+  vi.mocked(invoke).mockResolvedValue(["echo one\necho two\n", "echo three\x1b[201~\necho four"]);
+  try {
+    await openHistory(terminal);
+    const search = document.querySelector<HTMLInputElement>('[role="combobox"]')!;
+    const key = (key: string) => act(async () => search.dispatchEvent(new KeyboardEvent("keydown", {
+      key, bubbles: true, cancelable: true,
+    })));
+    await key("Enter");
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain("require bracketed paste");
+    expect(input).toEqual([]);
+    await act(async () => new Promise<void>((resolve) => terminal.write("\x1b[?2004h", resolve)));
+    await key("ArrowDown");
+    await key("Enter");
+    expect(input).toEqual([]);
+    await key("ArrowUp");
+    await key("Enter");
+    expect(input).toEqual(["\x1b[200~echo one\recho two\r\x1b[201~"]);
+    expect(inTab).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(document.activeElement).toBe(terminal.textarea));
+  } finally {
+    cleanup();
+    vi.mocked(invoke).mockReset();
+  }
+});
+
+it("clears the focused Host's history after confirmation", async () => {
+  const { terminal, cleanup } = mountTerminal(undefined, undefined, "saved-host");
+  vi.mocked(invoke).mockResolvedValueOnce(["git status"]).mockResolvedValueOnce(undefined);
+  try {
+    await openHistory(terminal);
+    const button = (label: string) => [...document.querySelectorAll("button")].find((item) => item.textContent === label)!;
+    await act(async () => button("Clear this Host’s history").click());
+    expect(invoke).toHaveBeenCalledTimes(1);
+    await act(async () => button("Clear history").click());
+    expect(invoke).toHaveBeenLastCalledWith("command_history_clear", { hostId: "saved-host" });
+    expect(document.querySelector('[role="option"]')).toBeNull();
+    expect(document.querySelector('[role="status"]')?.textContent).toBe("This Host has no recorded commands.");
+  } finally {
+    cleanup();
+    vi.mocked(invoke).mockReset();
+  }
+});
+
+async function openHistory(terminal: Terminal) {
+  const mac = currentPlatform() === "mac";
+  const event = new KeyboardEvent("keydown", {
+    key: "H", code: "KeyH", shiftKey: true, metaKey: mac, ctrlKey: !mac, bubbles: true, cancelable: true,
+  });
+  await act(async () => terminal.textarea!.dispatchEvent(event));
+  expect(event.defaultPrevented).toBe(true);
+}
 
 it("only hands explicit image-only pastes to the enabled Terminal image action", async () => {
   const original = getSetting(terminalSetting);
@@ -373,11 +455,11 @@ it("zooms the open Terminal with Ctrl or Cmd and wheel, within the saved font-si
   }
 });
 
-function broadcastFixture() {
+function broadcastFixture(historyHostId?: string) {
   const broadcast = createBroadcast();
   const inTab = vi.fn();
   const otherTab = vi.fn();
-  const mounted = mountTerminal(broadcast);
+  const mounted = mountTerminal(broadcast, undefined, historyHostId);
   broadcast.updateWorkspace("source", ["work", "other"], ["source", "peer", "other-peer", "new-peer"]);
   const removeSource = broadcast.register("work", "source", vi.fn());
   const removePeer = broadcast.register("work", "peer", inTab);

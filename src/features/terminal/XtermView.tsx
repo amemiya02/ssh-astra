@@ -18,6 +18,8 @@ import { openExternalUrl, readClipboardText, writeClipboardText } from "@/lib/ip
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/theme/theme-context";
 import { resolveTerminalTheme, terminalSearchDecorations } from "@/theme/terminal-themes";
+import type { HostId } from "@/lib/ipc/hosts";
+import { CommandHistoryDialog } from "./CommandHistoryDialog";
 import { PasteConfirmDialog } from "./PasteConfirmDialog";
 import { TerminalOutputMenuItems } from "./TerminalOutputMenuItems";
 import { TerminalSearchBar, type SearchDirection, type SearchResults } from "./TerminalSearchBar";
@@ -42,6 +44,8 @@ interface XtermViewProps {
   active: boolean;
   /** The Host's own colour scheme, overriding the global one. */
   colorScheme?: string | null;
+  historyHostId?: HostId;
+  canPasteHistory?(): boolean;
   /** A program set a window title (OSC 0/2); an empty string clears it. */
   onTitleChange?(title: string): void;
   /** The image paste for the running shell, or null between attachments. */
@@ -64,7 +68,7 @@ function appearanceOptions(
  * the user's font, size, ligatures and colour scheme (live), find in scrollback,
  * clickable links, copy on select, right-click paste and paste confirmation.
  */
-export function XtermView({ label, active, colorScheme, onTitleChange, imagePasteRef, attach }: XtermViewProps) {
+export function XtermView({ label, active, colorScheme, historyHostId, canPasteHistory, onTitleChange, imagePasteRef, attach }: XtermViewProps) {
   const { t } = useTranslation();
   const { theme } = useTheme();
   const { broadcast, paneId } = useContext(BroadcastPaneContext) ?? {};
@@ -84,11 +88,14 @@ export function XtermView({ label, active, colorScheme, onTitleChange, imagePast
   const themeRef = useRef(xtermTheme);
   const attachRef = useRef(attach);
   const onTitleChangeRef = useRef(onTitleChange);
+  const historyHostRef = useRef(historyHostId);
   const [canCopy, setCanCopy] = useState(false);
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<SearchResults | null>(null);
   const [pendingPaste, setPendingPaste] = useState<{ preview: PendingPaste; recipients: BroadcastRecipients } | null>(null);
   const [linkDestination, setLinkDestination] = useState<string | null>(null);
+  const [historyHost, setHistoryHost] = useState<HostId>();
+  if (historyHost !== undefined && (!active || historyHost !== historyHostId)) setHistoryHost(undefined);
 
   const restoreTerminalFocus = (event: Event) => {
     event.preventDefault();
@@ -105,6 +112,7 @@ export function XtermView({ label, active, colorScheme, onTitleChange, imagePast
     themeRef.current = xtermTheme;
     attachRef.current = attach;
     onTitleChangeRef.current = onTitleChange;
+    historyHostRef.current = historyHostId;
   });
 
   /** Use the source xterm's line endings and bracketed-paste mode for every recipient. */
@@ -198,10 +206,16 @@ export function XtermView({ label, active, colorScheme, onTitleChange, imagePast
     const platform = currentPlatform();
     xterm.attachCustomKeyEventHandler((event) => {
       if (event.type !== "keydown" || event.isComposing) return true;
-      if (matchTerminalShortcut(event, getResolvedShortcuts(platform)) === "find") {
+      const shortcut = matchTerminalShortcut(event, getResolvedShortcuts(platform));
+      if (shortcut === "find") {
         event.preventDefault();
         setSearching(true);
         searchInputRef.current?.focus();
+        return false;
+      }
+      if (shortcut === "commandHistory" && historyHostRef.current !== undefined) {
+        event.preventDefault();
+        setHistoryHost(historyHostRef.current);
         return false;
       }
       const menuKey = !event.altKey && !event.ctrlKey && !event.metaKey &&
@@ -442,6 +456,21 @@ export function XtermView({ label, active, colorScheme, onTitleChange, imagePast
       )}
       {searching && <TerminalSearchBar inputRef={searchInputRef} results={results} onFind={find} onClose={closeSearch} />}
       {snippetRunner.dialog}
+      <CommandHistoryDialog
+        hostId={active && historyHost === historyHostId ? historyHost : undefined}
+        onClose={() => setHistoryHost(undefined)}
+        onCloseAutoFocus={restoreTerminalFocus}
+        onPaste={(command) => {
+          const xterm = xtermRef.current;
+          if (!xterm || xterm.buffer.active.type !== "normal" || !canPasteHistory?.()) return "promptUnavailable";
+          // Only a bracketed paste can carry CR, LF or Tab without acting as a key.
+          // Reject other control characters, including an embedded end-paste sequence.
+          const bracketed = xterm.modes.bracketedPasteMode && !xterm.options.ignoreBracketedPasteMode;
+          if (/(?![\t\r\n])\p{Cc}/u.test(command) || (!bracketed && /[\t\r\n]/.test(command))) return "unsafePaste";
+          applyPaste(command, undefined);
+          setHistoryHost(undefined);
+        }}
+      />
       <PasteConfirmDialog
         paste={pendingPaste?.preview ?? null}
         onCloseAutoFocus={restoreTerminalFocus}

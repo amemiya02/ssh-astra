@@ -747,6 +747,21 @@
       "uploadFailed": "无法开始向 {{host}} 上传文件。",
       "pasteFailed": "无法将拖入的路径粘贴到此 shell。"
     },
+    "commandHistory": {
+      "title": "命令历史",
+      "description": "搜索此主机的历史命令。按回车将选中的命令粘贴到 Shell 提示符处。",
+      "search": "搜索命令",
+      "loading": "正在读取命令历史…",
+      "empty": "此主机没有命令历史。",
+      "noMatches": "没有匹配的命令。",
+      "loadFailed": "无法读取此主机的命令历史。",
+      "clearFailed": "无法清空此主机的命令历史。",
+      "promptUnavailable": "请等待启用了 Shell 集成的 Shell 回到空闲提示符。",
+      "unsafePaste": "无法安全粘贴此命令。换行和制表符需要括号粘贴模式。",
+      "clear": "清空此主机的命令历史",
+      "confirmClear": "确认清空",
+      "cancel": "取消"
+    },
     "shellIntegration": {
       "disabled": "设置中已关闭 Shell 集成。",
       "unsupported": "当前 Shell 不支持集成。请使用启用了提示符展开的 bash 4.4 或更高版本，或使用 zsh。",
@@ -1049,6 +1064,7 @@
         "terminalZoomIn": "增大 终端字号",
         "terminalZoomOut": "减小 终端字号",
         "find": "在终端中查找",
+        "commandHistory": "命令历史",
         "fileBack": "在文件面板中后退",
         "fileForward": "在文件面板中前进",
         "fileCopy": "在文件面板中复制",
@@ -1253,6 +1269,11 @@
       "confirmMultilinePaste": {
         "label": "多行粘贴前确认",
         "description": "粘贴多于一行的内容前先询问，因为 shell 会逐行立即执行。"
+      },
+      "commandHistory": {
+        "label": "命令历史",
+        "description": "已保存主机的命令行会以明文保存在本机。需要远程 zsh 或启用提示符展开的 bash 4.4+ 提供 Shell 集成。",
+        "shellIntegrationDisabled": "Shell 集成已关闭。请开启后打开新的远程终端。记录生效时，命令行会以明文保存在本机。"
       },
       "pasteImages": {
         "label": "将剪贴板图片粘贴为路径",

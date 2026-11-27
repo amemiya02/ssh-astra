@@ -67,6 +67,7 @@ describe("terminal preferences", () => {
       rightClickPaste: false,
       pasteImages: true,
       shellIntegration: false,
+      commandHistory: true,
       localShell: "/bin/zsh",
       autoLog: true,
       logDirectory: "/tmp/my Terminal logs",

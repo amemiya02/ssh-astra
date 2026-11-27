@@ -43,6 +43,11 @@ export function createShellIntegrationState(enabled: () => boolean = () => true)
     get(paneId: string): PromptState {
       return enabled() ? store.getState().get(paneId)?.prompt ?? disconnected : disabled;
     },
+    canPasteAtPrompt(paneId: string): boolean {
+      const current = store.getState().get(paneId);
+      return enabled() && current?.terminalId !== undefined && current.prompt.status === "available"
+        && !current.awaitingPrompt && !current.queuedInput;
+    },
     open(paneId: string, terminalId?: TerminalId) {
       save(paneId, {
         prompt: { status: "starting", atEmptyPrompt: false },
@@ -102,6 +107,14 @@ export function createShellIntegrationState(enabled: () => boolean = () => true)
     input(paneId: string, data: string) {
       const current = store.getState().get(paneId);
       if (!current || data.length === 0) return;
+      if (data.startsWith("\x1b[200~") && data.endsWith("\x1b[201~") &&
+        !/(?![\t\r\n])\p{Cc}/u.test(data.slice(6, -6))) {
+        // A whole bracketed paste changes the line without submitting it.
+        if (current.prompt.atEmptyPrompt) {
+          save(paneId, { ...current, prompt: { ...current.prompt, atEmptyPrompt: false } });
+        }
+        return;
+      }
       // The next marker can precede queued input reaching the editor. Trust a
       // later fresh prompt once Ctrl+C at the prompt has cleared the line.
       const interruptAt = data.indexOf("\x03");
