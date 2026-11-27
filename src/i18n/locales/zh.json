@@ -700,13 +700,17 @@
     "title": "设置",
     "lead": "修改立即生效，重启后保持不变。",
     "open": "设置",
+    "search": {
+      "categories": "设置类别",
+      "placeholder": "搜索设置",
+      "clear": "清除设置搜索",
+      "noResults": "未找到匹配的设置。"
+    },
     "sections": {
-      "workspace": "工作区",
       "appearance": "外观",
       "terminal": "终端",
       "files": "文件",
       "connection": "连接",
-      "language": "语言",
       "transfers": "传输",
       "updates": "更新",
       "diagnostics": "诊断"
@@ -727,6 +731,7 @@
       "label": "按 Host 分组",
       "description": "将同一 Host 的多个标签放入可折叠的分组。"
     },
+    "groupTabsRequiresVertical": "将标签方向设为纵向即可使用此设置。",
     "restoreTabs": {
       "label": "恢复标签",
       "description": "选择下次启动 SSH Astra 时如何恢复标签和分屏。",
@@ -741,6 +746,7 @@
         "label": "跟随系统外观",
         "description": "随电脑的浅色或深色设置在浅色与深色主题之间切换。"
       },
+      "gallery": "主题库",
       "lightGroup": "浅色主题",
       "darkGroup": "深色主题",
       "usedWhenLight": "电脑为浅色时使用",

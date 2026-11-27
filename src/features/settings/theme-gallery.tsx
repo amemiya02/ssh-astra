@@ -1,9 +1,10 @@
 import { Check } from "lucide-react";
-import { useEffect, useRef, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/theme/theme-context";
 import { appThemes, darkThemeIds, lightThemeIds, type AppTheme, type AppThemeId } from "@/theme/themes";
+import { settingRows } from "./setting-rows";
 
 /** The six ANSI hues a swatch row shows, then the accent: what tells dark themes apart at a glance. */
 const swatchHues = ["red", "green", "yellow", "blue", "magenta", "cyan"] as const;
@@ -82,7 +83,7 @@ function ThemeGroup<T extends AppThemeId>({ label, hint, ids, checked, onPick, o
   return (
     <div className="space-y-2">
       <div className="flex items-baseline gap-2">
-        <h3 className="text-xs font-medium">{label}</h3>
+        <h4 className="text-xs font-medium">{label}</h4>
         {hint && <p className="text-muted-foreground text-xs">{hint}</p>}
       </div>
       <div role="radiogroup" aria-label={label} className="grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-3">
@@ -140,13 +141,15 @@ export function ThemeGallery() {
   const { t } = useTranslation();
   const { settings, setTheme, setLightTheme, setDarkTheme, preview } = useTheme();
   const following = settings.theme === "system";
+  const heading = useId();
 
   // A preview must not outlive the gallery (a tab switch can unmount a focused card without a blur).
   useEffect(() => () => preview(null), [preview]);
 
   const fixed = following ? null : settings.theme;
   return (
-    <div className="space-y-5 py-3">
+    <div role="group" aria-labelledby={heading} className="space-y-3 py-3">
+      <p id={heading} className="font-medium">{t(settingRows.themeGallery.title)}</p>
       <ThemeGroup
         label={t("settings.theme.lightGroup")}
         hint={following ? t("settings.theme.usedWhenLight") : undefined}
