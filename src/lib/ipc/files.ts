@@ -5,6 +5,27 @@ import type { HostId } from "./hosts";
 /** Mirrors `sshastra_core::files::FsId`: one open remote file system (a File panel's SFTP session). */
 export type FsId = number;
 
+/** Listing metadata for one ordinary remote file. The OS asks for its bytes after a drop. */
+export interface FilePromise {
+  id: FsId;
+  directory: string;
+  name: string;
+  size: number;
+  modified: number | null;
+}
+
+export function dragFileOut(file: FilePromise): Promise<boolean> {
+  return invoke("files_drag_out", { file });
+}
+
+export function waitForFileDragExit(gesture: number): Promise<boolean> {
+  return invoke("files_wait_for_drag_exit", { gesture });
+}
+
+export function cancelFileDragExit(gesture: number): Promise<void> {
+  return invoke("files_cancel_drag_exit", { gesture });
+}
+
 /** Mirrors `sshastra_core::files::FileKind`. */
 export type FileKind = "file" | "dir" | "symlink" | "other";
 

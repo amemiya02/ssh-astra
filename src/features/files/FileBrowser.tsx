@@ -50,7 +50,7 @@ import {
 import { getResolvedShortcuts, useResolvedShortcuts } from "@/features/workspace/shortcut-settings";
 import { matchFileHistoryShortcut, matchFileClipboardShortcut, shortcutAriaLabel, shortcutLabel, type ResolvedShortcuts } from "@/features/workspace/shortcuts";
 import type { CommandError } from "@/lib/ipc/connect";
-import type { FileEntry } from "@/lib/ipc/files";
+import type { FileEntry, FilePromise } from "@/lib/ipc/files";
 import type { HostId } from "@/lib/ipc/hosts";
 import { copyTextWithToast } from "@/features/toasts/copyFeedback";
 import { showToast } from "@/features/toasts/toastStore";
@@ -63,6 +63,7 @@ import { FileOperationDialog, MoveFailureDialog, type FileOperation } from "./Fi
 import { FileBookmarks } from "./FileBookmarks";
 import { FileNameSearch } from "./FileNameSearch";
 import { filesSetting } from "./file-prefs";
+import { useNativeFileDrag } from "./useNativeFileDrag";
 import {
   archiveFolderName,
   childPath,
@@ -145,6 +146,7 @@ export function FileBrowser({
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const panel = useRef<HTMLDivElement>(null);
   const dragged = useRef<FileMove | undefined>(undefined);
+  const nativeDrag = useNativeFileDrag();
   const focusPanel = () => panel.current?.focus({ preventScroll: true });
   const toggleSearch = exchange?.side === "local" ? undefined : () => {
     if (searchOpen) focusPanel();
@@ -213,12 +215,14 @@ export function FileBrowser({
   if (!enableMove || remoteClipboard) return browser;
   return (
     <DndContext sensors={sensors} collisionDetection={pointerWithin}
-      onDragStart={({ active }) => {
+      onDragStart={(event) => {
         // The source row may scroll out of the virtualized list before the drop.
-        dragged.current = active.data.current?.move as FileMove | undefined;
+        dragged.current = event.active.data.current?.move as FileMove | undefined;
+        nativeDrag.track(event);
       }}
-      onDragCancel={() => { dragged.current = undefined; }}
+      onDragCancel={() => { nativeDrag.stop(); dragged.current = undefined; }}
       onDragEnd={({ over }) => {
+        nativeDrag.stop();
         const source = dragged.current;
         dragged.current = undefined;
         const folder = over?.data.current?.folder as string | undefined;
@@ -704,6 +708,7 @@ function FileTable({
                             path={path}
                             exchange={exchange}
                             dragPaths={paths}
+                            filePromise={() => store.getState().filePromise(path, names)}
                             paneId={remoteClipboard?.paneId}
                             move={canStartMove ? { directory: path, names } : undefined}
                             cut={cutNames.has(entry.name)}
@@ -849,6 +854,7 @@ function FileRow({
   onDownload,
   exchange,
   dragPaths,
+  filePromise,
   onCopy,
   paneId,
   move,
@@ -876,6 +882,7 @@ function FileRow({
   onDownload?: () => void;
   exchange?: FileExchange;
   dragPaths?: string[];
+  filePromise(): FilePromise | null;
   onCopy?: () => void;
   paneId?: string;
   move?: FileMove;
@@ -889,7 +896,8 @@ function FileRow({
   const renameOnMenuClose = useRef(false);
   const dir = isDirLike(entry);
   const { setNodeRef: setDragRef, listeners, isDragging } = useDraggable({
-    id, disabled: (!dragPaths && !move) || !!nameEditor, data: { side: exchange?.side, paths: dragPaths, move, paneId },
+    id, disabled: (!dragPaths && !move) || !!nameEditor,
+    data: { side: exchange?.side, paths: dragPaths, move, paneId, filePromise },
   });
   const { setNodeRef: setDropRef, isOver } = useDroppable({
     id, disabled: !move || !dir || !!nameEditor, data: { folder: entry.name, directory: path, paneId } satisfies FilePanelDropTarget,

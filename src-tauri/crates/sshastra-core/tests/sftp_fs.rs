@@ -16,6 +16,7 @@ use sshastra_core::ssh::{
     BoxFuture, ConnectionManager, HostKeyDecision, HostKeyPrompt, PasswordPrompt, Prompter, Secret,
 };
 use support::{Service, Sshd};
+use tokio::io::AsyncReadExt;
 
 struct Trusting(&'static str);
 
@@ -77,6 +78,35 @@ async fn home_is_the_users_home_directory() {
     let (fs, _dir) = sftp(&sshd).await;
 
     assert_eq!(fs.home().await.unwrap(), "/home/tester");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn promised_regular_file_reads_from_an_offset_and_refuses_links_or_stale_metadata() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let (fs, _dir) = sftp(&sshd).await;
+    let path = "/srv/files/docs/readme.txt";
+    let entry = fs.lstat(path).await.unwrap();
+    let mut reader = fs
+        .open_regular_read_at(path, 2, Some(7), entry.modified)
+        .await
+        .unwrap();
+    let mut suffix = Vec::new();
+    reader.read_to_end(&mut suffix).await.unwrap();
+    assert_eq!(suffix, b"nual\n");
+    assert!(fs
+        .open_regular_read_at(path, 0, Some(5), entry.modified)
+        .await
+        .is_err());
+    assert!(fs
+        .open_regular_read_at("/srv/files/docs/file-link", 0, None, None)
+        .await
+        .is_err());
+    assert!(fs
+        .open_regular_read_at("/srv/files/docs", 0, None, None)
+        .await
+        .is_err());
 }
 
 #[tokio::test(flavor = "multi_thread")]

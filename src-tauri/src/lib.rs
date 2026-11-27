@@ -6,6 +6,8 @@ mod agent_transport;
 mod commands;
 mod diagnostics;
 mod error;
+#[cfg(any(windows, target_os = "macos", test))]
+mod file_drag;
 #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
 mod launch;
 #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
@@ -74,6 +76,9 @@ pub fn run() {
     ))]
     let context = launch::e2e_context(context);
     let builder = tauri::Builder::default();
+    #[cfg(any(windows, target_os = "macos"))]
+    let builder =
+        builder.append_invoke_initialization_script("window.__sshastraFilePromises = true;");
     // Secondary launches hand off their arguments before other plugins start.
     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
     let builder = builder
@@ -120,6 +125,8 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            file_drag::capture_mouse_events();
             app.manage(ForwardsState::new(app.handle()));
             #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
             commands::notifications::listen(app.handle())?;
@@ -374,6 +381,12 @@ pub fn run() {
             commands::files::files_local_delete,
             commands::files::files_local_open_path,
             commands::files::files_list,
+            #[cfg(any(windows, target_os = "macos"))]
+            commands::files::files_wait_for_drag_exit,
+            #[cfg(any(windows, target_os = "macos"))]
+            commands::files::files_cancel_drag_exit,
+            #[cfg(any(windows, target_os = "macos"))]
+            commands::files::files_drag_out,
             commands::files::files_remote_home,
             commands::files::files_create_dir,
             commands::files::files_create_empty,

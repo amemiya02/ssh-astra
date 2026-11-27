@@ -3,7 +3,7 @@ import type { ConnectionStatus } from "@/features/workspace/tabs";
 import { readCommandError, type CommandError } from "@/lib/ipc/connect";
 import { maxEditSize } from "@/lib/ipc/edit";
 import * as ipc from "@/lib/ipc/files";
-import type { FileEntry, FsId, NameMatch, NameSearchMode, NameSearchResult, PermissionChange } from "@/lib/ipc/files";
+import type { FileEntry, FilePromise, FsId, NameMatch, NameSearchMode, NameSearchResult, PermissionChange } from "@/lib/ipc/files";
 import type { HostId } from "@/lib/ipc/hosts";
 import {
   createSharedRemoteEdits,
@@ -68,6 +68,7 @@ export interface FileBrowserState {
   error: CommandError | null;
   /** Selected entry names in `path`. File operations and transfers act on these. */
   selection: ReadonlySet<string>;
+  filePromise(directory: string, names: readonly string[]): FilePromise | null;
 
   /** Opens an SFTP session on the Host's live Connection, then lists where it was (first time: home). */
   connect(): Promise<void>;
@@ -372,6 +373,14 @@ export function createFileBrowserStore(
       folderSizes: new Map(),
       search: null,
       revealedName: null,
+
+      filePromise(directory, names) {
+        const { path, entries } = get();
+        if (local || fsId === null || directory !== path || names.length !== 1) return null;
+        const entry = entries.find(({ name }) => name === names[0]);
+        if (entry?.kind !== "file") return null;
+        return { id: fsId, directory, name: entry.name, size: entry.size, modified: entry.modified };
+      },
 
       connect() {
         if (get().phase === "open") return Promise.resolve();

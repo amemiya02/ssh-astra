@@ -81,14 +81,40 @@ tauri-plugin-single-instance = "2.5.5"
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6"
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWorkspace"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "block2", "NSNotification", "NSObject", "NSOperation", "NSProcessInfo", "NSString"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+    "std", "block2", "NSDragging", "NSDraggingItem", "NSDraggingSession", "NSEvent",
+    "NSFilePromiseProvider", "NSImage", "NSPasteboard", "NSResponder", "NSView", "NSWindow",
+    "NSWorkspace",
+] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = [
+    "std", "CGEventSource", "CGEventTypes", "CGRemoteOperation",
+] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "std", "block2", "FoundationErrors", "NSArray", "NSDictionary", "NSError", "NSGeometry",
+    "NSNotification", "NSObject", "NSOperation", "NSProcessInfo", "NSString", "NSURL",
+] }
 plist = "1"
 
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1", features = ["fs", "process"] }
 
 [target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_Com_Marshal",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_System_SystemServices",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+windows-core = "0.62"
 winreg = "0.56"
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",

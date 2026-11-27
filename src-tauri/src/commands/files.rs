@@ -7,7 +7,7 @@ use std::sync::Arc;
 use sshastra_core::edit::Opener;
 use sshastra_core::files::{
     self, DiskBrowser, FsError, FsId, FsRegistry, FsResult, Listing, NameSearchMode,
-    NameSearchResult, OpenRemote, PermissionChange, RemoteFs,
+    NameSearchResult, OpenRemote, PermissionChange, RemoteFs, SftpFs,
 };
 use sshastra_core::hosts::HostId;
 use sshastra_core::ssh::ConnectionManager;
@@ -33,7 +33,7 @@ pub async fn files_open(
     host_id: HostId,
 ) -> CommandResult<FsId> {
     let fs = connections.open_sftp(&host_id).await?;
-    track_files(&window, &registry, registry.insert(Arc::new(fs)))
+    track_remote_files(&window, &registry, fs)
 }
 
 /// Opens the workspace's own SFTP session. It holds the connection without a terminal.
@@ -50,7 +50,7 @@ pub async fn files_connect(
     let connection = route.connect(app, prompter, None).await?;
     let fs = connection.open_sftp().await?;
     schedule_os_detection(app, &host_id, &connection);
-    track_files(&window, &registry, registry.insert(Arc::new(fs)))
+    track_remote_files(&window, &registry, fs)
 }
 
 #[tauri::command]
@@ -66,7 +66,48 @@ pub fn files_local_open(
         &window,
         &registry,
         registry.insert(Arc::new(DiskBrowser::new(home))),
+        None,
     )
+}
+
+#[cfg(any(windows, target_os = "macos"))]
+#[tauri::command]
+pub async fn files_wait_for_drag_exit(window: WebviewWindow, gesture: u64) -> bool {
+    let (stop, stopped) = oneshot::channel();
+    let registered = windows::with_resources(&window, |resources| {
+        resources.file_drag_watch.start(gesture, stop)
+    });
+    if !matches!(registered, Ok(true)) {
+        return false;
+    }
+    let outside = tokio::select! {
+        biased;
+        _ = stopped => false,
+        outside = crate::file_drag::wait_for_exit(window.clone()) => outside,
+    };
+    let _ = windows::with_resources(&window, |resources| resources.file_drag_watch.stop(gesture));
+    outside
+}
+
+#[cfg(any(windows, target_os = "macos"))]
+#[tauri::command]
+pub fn files_cancel_drag_exit(window: WebviewWindow, gesture: u64) {
+    let _ = windows::with_resources(&window, |resources| resources.file_drag_watch.stop(gesture));
+}
+
+#[cfg(any(windows, target_os = "macos"))]
+#[tauri::command]
+pub async fn files_drag_out(
+    window: WebviewWindow,
+    file: crate::file_drag::FilePromise,
+) -> CommandResult<bool> {
+    use crate::file_drag;
+
+    let source = windows::with_resources(&window, |resources| {
+        resources.files.get(&file.id)?.as_ref()?.upgrade()
+    })?
+    .ok_or_else(CommandError::not_open)?;
+    file_drag::start(window, file, source).await
 }
 
 #[tauri::command]
@@ -295,10 +336,27 @@ pub async fn files_close(
     Ok(())
 }
 
-fn track_files(window: &WebviewWindow, registry: &FsRegistry, id: FsId) -> CommandResult<FsId> {
-    if let Err(error) = windows::with_resources(window, |resources| resources.files.insert(id)) {
+fn track_files(
+    window: &WebviewWindow,
+    registry: &FsRegistry,
+    id: FsId,
+    remote: Option<std::sync::Weak<SftpFs>>,
+) -> CommandResult<FsId> {
+    if let Err(error) =
+        windows::with_resources(window, |resources| resources.files.insert(id, remote))
+    {
         registry.remove(id);
         return Err(error);
     }
     Ok(id)
+}
+
+fn track_remote_files(
+    window: &WebviewWindow,
+    registry: &FsRegistry,
+    fs: SftpFs,
+) -> CommandResult<FsId> {
+    let source = Arc::new(fs);
+    let remote = Arc::downgrade(&source);
+    track_files(window, registry, registry.insert(source), Some(remote))
 }

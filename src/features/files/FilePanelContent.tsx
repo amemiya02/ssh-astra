@@ -28,6 +28,7 @@ import { filesSetting } from "./file-prefs";
 import { FilePanel } from "./FilePanel";
 import { RemoteEdits } from "./RemoteEdits";
 import { terminalCwds } from "./terminalCwds";
+import { useNativeFileDrag } from "./useNativeFileDrag";
 
 /** The focused remote Terminal pane, whose Host the File panel browses. */
 export interface FilePanelPane {
@@ -63,6 +64,7 @@ export function FilePanelContent({ pane, peers = [], onOpenSftp, tabbed }: {
   const [copyError, setCopyError] = useState<string | null>(null);
   const dragged = useRef<{ pane: FilePanelPane; files: FileMove } | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const nativeDrag = useNativeFileDrag();
   if (!pane) return <FilePanel />;
   const candidatesByHost = new Map<string, FilePanelPane>();
   for (const peer of peers) {
@@ -79,13 +81,16 @@ export function FilePanelContent({ pane, peers = [], onOpenSftp, tabbed }: {
     void transfersStore.getState().copyRemote(selection.host, selection.paths, transferHost(target.host), directory)
       .catch((error: unknown) => setCopyError(operationErrorText(t, readCommandError(error))));
   };
-  const startDrag = ({ active }: DragStartEvent) => {
+  const startDrag = (event: DragStartEvent) => {
+    const { active } = event;
     const source = findPanel(active.data.current?.paneId as string | undefined);
     const files = active.data.current?.move as FileMove | undefined;
     // The virtual list can unmount the source row during a drag.
     dragged.current = source && files ? { pane: source, files } : null;
+    nativeDrag.track(event);
   };
   const drop = ({ over }: DragEndEvent) => {
+    nativeDrag.stop();
     const source = dragged.current;
     dragged.current = null;
     const destination = over?.data.current as FilePanelDropTarget | undefined;
@@ -123,7 +128,7 @@ export function FilePanelContent({ pane, peers = [], onOpenSftp, tabbed }: {
   );
   return (
     <DndContext sensors={sensors} collisionDetection={filePanelCollisions}
-      onDragStart={startDrag} onDragCancel={() => { dragged.current = null; }} onDragEnd={drop}>
+      onDragStart={startDrag} onDragCancel={() => { nativeDrag.stop(); dragged.current = null; }} onDragEnd={drop}>
       <RemoteFilePanel key={pane.id} pane={pane} onOpenSftp={onOpenSftp} onCopy={copy} tabbed={tabbed}
         extraActions={peerPicker} copyError={copyError}
         peer={peer && <RemoteFilePanel key={peer.id} pane={peer} onCopy={copy} embedded />} />
