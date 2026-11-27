@@ -10,10 +10,11 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::agent::AgentPermission;
 use crate::forward::{ForwardDraft, ForwardId, ForwardKind, PortForward};
 use crate::fs_util::write_atomically;
+use crate::host_import::{ImportIssue, ParsedConfig};
 use crate::proxy::HostProxy;
-use crate::ssh_config::{ImportIssue, ParsedConfig};
 use crate::terminal::{TerminalBackspace, TerminalCharset};
 
 mod bookmarks;
@@ -24,7 +25,7 @@ pub use transfer::{ImportSummary, EXPORT_FORMAT};
 /// The file format version this build writes, to the store and to export
 /// files. Bump it together with a migration step in [`migrate`], which reads
 /// both.
-const CURRENT_VERSION: u32 = 21;
+const CURRENT_VERSION: u32 = 22;
 
 const MAX_HOST_TAGS: usize = 10;
 const MAX_TAG_LENGTH: usize = 32;
@@ -185,6 +186,13 @@ pub struct Host {
     /// Open a Terminal on this Host when the app starts.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub open_on_startup: bool,
+    /// Agent access authorized locally for this saved Host.
+    #[serde(
+        default,
+        deserialize_with = "AgentPermission::deserialize_saved",
+        skip_serializing_if = "AgentPermission::is_off"
+    )]
+    pub agent_access: AgentPermission,
     /// Outbound proxy choice for this Host when it is the first TCP hop.
     #[serde(default, skip_serializing_if = "HostProxy::is_inherit")]
     pub proxy: HostProxy,
@@ -253,6 +261,9 @@ pub struct HostDraft {
     /// Open a Terminal on this Host when the app starts.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub open_on_startup: bool,
+    /// Agent access authorized locally for this saved Host.
+    #[serde(default, skip_serializing_if = "AgentPermission::is_off")]
+    pub agent_access: AgentPermission,
     /// Outbound proxy choice for this Host when it is the first TCP hop.
     #[serde(default, skip_serializing_if = "HostProxy::is_inherit")]
     pub proxy: HostProxy,
@@ -317,6 +328,7 @@ impl HostDraft {
             forward_agent: self.forward_agent,
             allow_legacy_algorithms: self.allow_legacy_algorithms,
             open_on_startup: self.open_on_startup,
+            agent_access: self.agent_access,
             proxy: self.proxy.normalize().map_err(HostStoreError::Invalid)?,
             keepalive_seconds: self.keepalive_seconds,
             post_login_command: self.post_login_command.filter(|s| !s.trim().is_empty()),
@@ -471,6 +483,30 @@ impl Library {
             .ok_or_else(|| HostStoreError::GroupNotFound(id.clone()))
     }
 
+    fn import_group_path(&mut self, path: &[String]) -> Result<Option<GroupId>, HostStoreError> {
+        let mut parent_id = None;
+        for segment in path {
+            let name = required_name(segment)?;
+            let group = self
+                .groups
+                .iter()
+                .find(|group| group.parent_id == parent_id && group.name == name);
+            parent_id = Some(match group {
+                Some(group) => group.id.clone(),
+                None => {
+                    let id = GroupId::generate();
+                    self.groups.push(Group {
+                        id: id.clone(),
+                        name,
+                        parent_id,
+                    });
+                    id
+                }
+            });
+        }
+        Ok(parent_id)
+    }
+
     /// `id`, its parent, its parent's parent, ... up to the top level.
     fn ancestors_and_self<'a>(&'a self, id: &'a GroupId) -> impl Iterator<Item = &'a GroupId> {
         // Bounded by the Group count, so a damaged file with a parent cycle
@@ -516,7 +552,7 @@ pub struct HostTree {
     pub hosts: Vec<Host>,
 }
 
-/// What [`HostStore::import_ssh_config`] did, by Host name.
+/// What [`HostStore::import_config`] did, by Host name.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportReport {
@@ -730,13 +766,9 @@ impl HostStore {
         self.save(library)
     }
 
-    /// Adds the Hosts of a parsed `~/.ssh/config` at the top level, in one
-    /// save. A Host whose name is already taken is skipped, and a Jump host
-    /// named after a saved Host is that Host.
-    pub fn import_ssh_config(
-        &mut self,
-        parsed: ParsedConfig,
-    ) -> Result<ImportReport, HostStoreError> {
+    /// Adds parsed Hosts and their Groups in one save. A Host whose name is
+    /// already taken is skipped, and a Jump host named after a saved Host is that Host.
+    pub fn import_config(&mut self, parsed: ParsedConfig) -> Result<ImportReport, HostStoreError> {
         let mut library = self.library.clone();
         let mut report = ImportReport {
             issues: parsed.issues,
@@ -779,6 +811,7 @@ impl HostStore {
                 forward_agent: entry.forward_agent,
                 allow_legacy_algorithms: false,
                 open_on_startup: false,
+                agent_access: AgentPermission::Off,
                 proxy: entry
                     .proxy_command
                     .map(HostProxy::ProxyCommand)
@@ -792,6 +825,7 @@ impl HostStore {
                 default_directory: None,
             }
             .into_host(id)?;
+            host.group_id = library.import_group_path(&entry.group_path)?;
             for draft in entry.forwards {
                 host.forwards.push(
                     draft
@@ -842,11 +876,12 @@ impl HostStore {
             .iter()
             .position(|h| &h.id == id)
             .ok_or_else(|| HostStoreError::NotFound(id.clone()))?;
-        // A clone, so every setting (including ones added later) is copied.
+        // A new Host must be opted in separately before any Terminal can be shared.
         let mut copy = Host {
             id: HostId::generate(),
             name: required_name(name)?,
             detected_os: None,
+            agent_access: AgentPermission::Off,
             ..library.hosts[at].clone()
         };
         for forward in &mut copy.forwards {
@@ -1034,8 +1069,9 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
         // v19 adds Bookmarks. Older Hosts default to an empty Bookmark list.
         // v20 adds startup connections, off by default. v21 adds HTTP
         // CONNECT Port forwards without changing existing rules.
+        // v22 adds local Agent access permissions, off by default.
         2 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20
-        | CURRENT_VERSION => {
+        | 21 | CURRENT_VERSION => {
             let FileV2 { groups, hosts } = serde_json::from_str(text).map_err(corrupt)?;
             Ok(Library { groups, hosts })
         }
@@ -1078,6 +1114,9 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
             return Err(HostStoreError::Corrupt(
                 "HTTP Port forwards require format version 21".into(),
             ));
+        }
+        if version < 22 {
+            host.agent_access = AgentPermission::Off;
         }
         host.tags = normalize_tags(&host.tags);
         bookmarks::retain_valid(&mut host.bookmarks);

@@ -1,15 +1,17 @@
 //! Host commands: the saved Host list (HostStore) with its Groups.
 
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use sshastra_core::agent::{OpenTerminal, TerminalOrigin};
+use sshastra_core::host_import::{parse_csv, ParsedConfig};
 use sshastra_core::hosts::{
     Bookmark, DetectedOs, Group, GroupId, Host, HostDraft, HostId, HostStore, HostTree,
     ImportReport, ImportSummary,
 };
 use sshastra_core::ssh_config::{parse_user_config, ParseContext};
-use sshastra_core::terminal::CommandHistory;
+use sshastra_core::terminal::{CommandHistory, TerminalRegistry};
 use tauri::{ipc::Channel, State};
 
 use super::connections::ConnectionsState;
@@ -21,7 +23,7 @@ use crate::error::{CommandError, CommandResult};
 /// The HostStore, or why it could not be loaded at startup (e.g. a damaged
 /// file, which is left untouched rather than overwritten).
 pub struct HostsState {
-    store: Mutex<Result<HostStore, CommandError>>,
+    store: Arc<Mutex<Result<HostStore, CommandError>>>,
     os_changes: Watcher<HostOsChange>,
 }
 
@@ -35,7 +37,7 @@ pub struct HostOsChange {
 impl HostsState {
     pub fn new(store: Result<HostStore, CommandError>) -> Self {
         Self {
-            store: Mutex::new(store),
+            store: Arc::new(Mutex::new(store)),
             os_changes: Watcher::default(),
         }
     }
@@ -45,6 +47,40 @@ impl HostsState {
         match guard.as_mut() {
             Ok(store) => f(store),
             Err(e) => Err(e.clone()),
+        }
+    }
+
+    pub(crate) fn agent_terminals(
+        &self,
+        registry: TerminalRegistry,
+    ) -> impl Fn() -> Vec<OpenTerminal> + Send + Sync + 'static {
+        let hosts = Arc::clone(&self.store);
+        move || {
+            let guard = hosts.lock().unwrap_or_else(|p| p.into_inner());
+            let Ok(store) = guard.as_ref() else {
+                return Vec::new();
+            };
+            registry
+                .saved_terminals()
+                .into_iter()
+                .filter_map(|(id, metadata)| {
+                    let host = store.get(&metadata.host)?;
+                    if host.agent_access.is_off() {
+                        return None;
+                    }
+                    let state = metadata.snapshot();
+                    Some(OpenTerminal {
+                        id,
+                        origin: TerminalOrigin::Saved {
+                            name: host.name.clone(),
+                            permission: host.agent_access,
+                        },
+                        title: state.title,
+                        cwd: state.cwd,
+                        status: state.status?,
+                    })
+                })
+                .collect()
         }
     }
 
@@ -210,15 +246,43 @@ pub fn group_move(
 
 /// The Host list after an import, and what the import did.
 #[derive(Serialize)]
-pub struct SshConfigImport {
+pub struct SourceImportResult {
     tree: HostTree,
     report: ImportReport,
 }
 
-/// Imports the Hosts in the user's `~/.ssh/config` (with its `Include`s),
-/// skipping names already taken. A missing file imports nothing.
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum HostImportSource {
+    SshConfig,
+    Csv { path: PathBuf },
+}
+
+/// Reads the selected source, then saves its parsed Hosts in one import.
 #[tauri::command]
-pub fn hosts_import_ssh_config(hosts: State<'_, HostsState>) -> CommandResult<SshConfigImport> {
+pub async fn hosts_import_source(
+    hosts: State<'_, HostsState>,
+    source: HostImportSource,
+) -> CommandResult<SourceImportResult> {
+    let parsed = tauri::async_runtime::spawn_blocking(move || match source {
+        HostImportSource::SshConfig => read_ssh_config(),
+        HostImportSource::Csv { path } => {
+            std::fs::read_to_string(path).map(|text| parse_csv(&text))
+        }
+    })
+    .await
+    .map_err(std::io::Error::other)??;
+    hosts.with(|store| {
+        let report = store.import_config(parsed)?;
+        Ok(SourceImportResult {
+            tree: store.tree(),
+            report,
+        })
+    })
+}
+
+/// A missing `~/.ssh/config` imports nothing.
+fn read_ssh_config() -> std::io::Result<ParsedConfig> {
     let var = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty());
     let home = var(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
         .map(PathBuf::from)
@@ -226,14 +290,7 @@ pub fn hosts_import_ssh_config(hosts: State<'_, HostsState>) -> CommandResult<Ss
     let local_user = var(if cfg!(windows) { "USERNAME" } else { "USER" })
         .map(|u| u.to_string_lossy().into_owned())
         .unwrap_or_else(|| "root".to_owned());
-    let parsed = parse_user_config(&home, &ParseContext { local_user })?;
-    hosts.with(|store| {
-        let report = store.import_ssh_config(parsed)?;
-        Ok(SshConfigImport {
-            tree: store.tree(),
-            report,
-        })
-    })
+    parse_user_config(&home, &ParseContext { local_user })
 }
 
 /// Writes the whole Host list (no credentials) as an export file at `path`.

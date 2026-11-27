@@ -7,10 +7,11 @@ import { usePaletteActions } from "@/features/palette/palette-actions";
 import { showToast } from "@/features/toasts/toastStore";
 import { readCommandError, refusal, type ConnectPrompt, type PromptAnswer } from "@/lib/ipc/connect";
 import { testHostConnection } from "@/lib/ipc/connections";
-import { isTemporaryHost, redetectHostOs, type Host, type HostDraft, type HostId, type ImportReport, type TemporaryHost } from "@/lib/ipc/hosts";
+import { isTemporaryHost, redetectHostOs, type Host, type HostDraft, type HostId, type HostImportSource, type ImportReport, type TemporaryHost } from "@/lib/ipc/hosts";
 import { pickOpenPath, pickSavePath } from "@/lib/ipc/system";
 import { ConfirmRemoveDialogContent, HostFormDialogContent, type Removal } from "./HostDialogs";
 import type { HostListActions } from "./HostList";
+import { HostImportDialogContent } from "./HostImportDialog";
 import { ImportReportDialogContent } from "./ImportReportDialog";
 import { importReportSummary } from "./importReportSummary";
 import type { DragItem } from "./hostTree";
@@ -38,8 +39,8 @@ export interface HostsController {
   newHost(): void;
   openTemporaryHostEditor(host: TemporaryHost): void;
   createGroup(parentId: string | null): Promise<void>;
-  /** Imports ~/.ssh/config, then shows the report (or why it failed). */
-  importSshConfig(): void;
+  /** Opens the source picker for importing Hosts. */
+  openImport(): void;
   importHosts(): Promise<void>;
   exportHosts(): Promise<void>;
   /** The last action's error (alert) and notice (status), if any. */
@@ -71,7 +72,7 @@ export function useHostsController(openers: HostOpeners, onTemporaryHostSaved: (
       }),
     [],
   );
-  const [importReport, setImportReport] = useState<ImportReport | null>(null);
+  const [importDialog, setImportDialog] = useState<"source" | { report: ImportReport; source: HostImportSource["kind"] } | null>(null);
   /** The outcome of the last export. */
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -134,20 +135,17 @@ export function useHostsController(openers: HostOpeners, onTemporaryHostSaved: (
     };
   }, [t, attempt]);
 
-  const importSshConfig = useCallback(() => {
+  const openImport = useCallback(() => {
     setActionError(null);
     setNotice(null);
-    hostsStore
-      .getState()
-      .importSshConfig()
-      .then((report) => {
-        setImportReport(report);
-        showToast((t) => importReportSummary(t, report), report.issues.some((issue) => issue.dropped) ? "error" : "status");
-      }, (e: unknown) => {
-        const { message } = readCommandError(e);
-        showToast((t) => t("hosts.import.error", { message }), "error");
-      });
+    setImportDialog("source");
   }, []);
+
+  const importSource = async (source: HostImportSource) => {
+    const report = await store().importHostSource(source);
+    setImportDialog({ report, source: source.kind });
+    showToast((t) => importReportSummary(t, report, source.kind), report.issues.some((issue) => issue.dropped) ? "error" : "status");
+  };
 
   usePaletteActions(
     useMemo(
@@ -155,13 +153,13 @@ export function useHostsController(openers: HostOpeners, onTemporaryHostSaved: (
         { id: "hosts.import", title: t("hosts.transfer.import"), run: () => void transfer.importHosts() },
         { id: "hosts.export", title: t("hosts.transfer.export"), run: () => void transfer.exportHosts() },
         {
-          id: "hosts.importSshConfig",
+          id: "hosts.importSource",
           title: t("hosts.import.action"),
           keywords: t("hosts.import.keywords").split(" "),
-          run: importSshConfig,
+          run: openImport,
         },
       ],
-      [t, transfer, importSshConfig],
+      [t, transfer, openImport],
     ),
   );
 
@@ -268,8 +266,12 @@ export function useHostsController(openers: HostOpeners, onTemporaryHostSaved: (
           }}
         />
       )}
-      <Dialog open={importReport !== null} onOpenChange={(open) => !open && setImportReport(null)}>
-        {importReport && <ImportReportDialogContent report={importReport} onClose={() => setImportReport(null)} />}
+      <Dialog open={importDialog !== null} onOpenChange={(open) => !open && setImportDialog(null)}>
+        {importDialog === "source" ? (
+          <HostImportDialogContent onImport={importSource} onClose={() => setImportDialog(null)} />
+        ) : importDialog && (
+          <ImportReportDialogContent {...importDialog} onClose={() => setImportDialog(null)} />
+        )}
       </Dialog>
       <Dialog open={removing !== null} onOpenChange={(open) => !open && setRemoving(null)}>
         {removing && (
@@ -297,7 +299,7 @@ export function useHostsController(openers: HostOpeners, onTemporaryHostSaved: (
     newHost: () => setEditing("new"),
     openTemporaryHostEditor: setEditing,
     createGroup,
-    importSshConfig,
+    openImport,
     importHosts: transfer.importHosts,
     exportHosts: transfer.exportHosts,
     messages,

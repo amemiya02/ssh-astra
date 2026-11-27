@@ -21,7 +21,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   Channel: class<T> {
     constructor(public onmessage: (message: T) => void) {}
   },
-  invoke: vi.fn(async (command: string) => command === "remote_terminal_open" ? 7 : undefined),
+  invoke: vi.fn(async (command: string) => command === "remote_terminal_open" ? { id: 7, savedHost: true } : undefined),
   isTauri: () => true,
 }));
 
@@ -58,7 +58,7 @@ it("pastes an uploaded image only into the initiating Host and exact shell", asy
   const upload = new Promise<string>((resolve) => { finishUpload = resolve; });
   const uploaded = "/home/my user/.sshastra-clipboard/image-example.png";
   ipc.mockImplementation(async (command) => {
-    if (command === "remote_terminal_open") return 7;
+    if (command === "remote_terminal_open") return { id: 7, savedHost: true };
     if (command === "terminal_save_clipboard_image") return upload;
   });
 
@@ -96,7 +96,7 @@ it("pastes an uploaded image only into the initiating Host and exact shell", asy
       terminal.dispose();
       root.unmount();
     });
-    ipc.mockImplementation(async (command) => command === "remote_terminal_open" ? 7 : undefined);
+    ipc.mockImplementation(async (command) => command === "remote_terminal_open" ? { id: 7, savedHost: true } : undefined);
   }
 });
 
@@ -112,7 +112,7 @@ it("follows the File panel only on its own ready Terminal, even with Broadcast e
   broadcast.toggle("window", "tab");
   const ipc = vi.mocked(invoke);
   ipc.mockImplementation(async (command, args) => {
-    if (command === "remote_terminal_open") return 7;
+    if (command === "remote_terminal_open") return { id: 7, savedHost: true };
     if (command === "files_open") return 8;
     if (command === "files_list") {
       const { path } = args as { path: string };
@@ -186,7 +186,7 @@ it("follows the File panel only on its own ready Terminal, even with Broadcast e
     hidePeer();
     fileBrowsers.retain(new Set());
     terminalCwds.retain(new Set());
-    ipc.mockImplementation(async (command) => command === "remote_terminal_open" ? 7 : undefined);
+    ipc.mockImplementation(async (command) => command === "remote_terminal_open" ? { id: 7, savedHost: true } : undefined);
   }
 });
 

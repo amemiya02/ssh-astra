@@ -10,6 +10,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use super::{chain, migrate, FileRef, Group, GroupId, Host, HostId, HostStore, HostStoreError};
+use crate::agent::AgentPermission;
 use crate::forward::ForwardId;
 use crate::fs_util::write_atomically;
 
@@ -36,13 +37,17 @@ struct FileFormat {
 }
 
 impl HostStore {
-    /// The whole Host list as an export file (JSON), with no credentials.
+    /// The whole Host list as an export file (JSON), without credentials or local Agent access.
     pub fn export(&self) -> String {
+        let mut hosts = self.library.hosts.clone();
+        for host in &mut hosts {
+            host.agent_access = AgentPermission::Off;
+        }
         serde_json::to_string_pretty(&FileRef {
             format: Some(EXPORT_FORMAT),
             version: super::CURRENT_VERSION,
             groups: &self.library.groups,
-            hosts: &self.library.hosts,
+            hosts: &hosts,
         })
         .expect("the Host list always serializes")
     }
@@ -106,6 +111,7 @@ impl HostStore {
             copy.id = HostId::generate();
             // Automatically connecting can run the Host's ProxyCommand.
             copy.open_on_startup = false;
+            copy.agent_access = AgentPermission::Off;
             copy.group_id = host.group_id.as_ref().and_then(|g| groups.get(g).cloned());
             for forward in &mut copy.forwards {
                 forward.id = ForwardId::generate();

@@ -1,5 +1,5 @@
 import { parseProxyForm, proxyFormFrom, type ProxyField, type ProxyFormValues } from "@/features/connect/proxy-form";
-import type { Host, HostAuth, HostDraft, HostIcon, TerminalBackspace, TerminalCharset } from "@/lib/ipc/hosts";
+import type { AgentPermission, Host, HostAuth, HostDraft, HostIcon, TerminalBackspace, TerminalCharset } from "@/lib/ipc/hosts";
 import type { AnsiHue } from "@/theme/monogram-ink";
 import { isTerminalColorScheme, type ImportedTerminalScheme, type TerminalColorScheme } from "@/theme/terminal-themes";
 
@@ -21,6 +21,7 @@ export interface HostFormValues {
   forwardAgent: boolean;
   allowLegacyAlgorithms: boolean;
   openOnStartup: boolean;
+  agentAccess: AgentPermission;
   proxy?: ProxyFormValues;
   /** Blank follows the global keepalive interval. */
   keepaliveSeconds?: string;
@@ -38,7 +39,7 @@ export interface HostFormValues {
 type HostInputField = Exclude<
   keyof HostFormValues,
   "jumpHost" | "authType" | "identitiesOnly" | "forwardAgent" | "allowLegacyAlgorithms" | "terminalScheme" | "defaultDirectory" |
-  "postLoginCommand" | "terminalCharset" | "terminalBackspace" | "proxy" | "tags" | "icon" | "color" | "openOnStartup"
+  "postLoginCommand" | "terminalCharset" | "terminalBackspace" | "proxy" | "tags" | "icon" | "color" | "openOnStartup" | "agentAccess"
 >;
 /** Error codes; the UI maps them to copy under `hosts.errors.*`. */
 export type HostFormError = "required" | "port" | "keepaliveSeconds";
@@ -62,6 +63,7 @@ export const emptyHostForm: HostFormValues = {
   forwardAgent: false,
   allowLegacyAlgorithms: false,
   openOnStartup: false,
+  agentAccess: "off",
   terminalCharset: "utf8",
   terminalBackspace: "del",
 };
@@ -82,6 +84,7 @@ export function hostFormFrom(host: Host, importedSchemes: readonly ImportedTermi
     forwardAgent: host.forwardAgent ?? false,
     allowLegacyAlgorithms: host.allowLegacyAlgorithms ?? false,
     openOnStartup: host.openOnStartup ?? false,
+    agentAccess: host.agentAccess ?? "off",
     terminalCharset: host.terminalCharset ?? emptyHostForm.terminalCharset,
     terminalBackspace: host.terminalBackspace ?? emptyHostForm.terminalBackspace,
   };
@@ -126,6 +129,7 @@ export function parseHostForm(values: HostFormValues, purpose: "save" | "test" =
     allowLegacyAlgorithms: values.allowLegacyAlgorithms,
     openOnStartup: values.openOnStartup,
   };
+  if (values.agentAccess !== "off") draft.agentAccess = values.agentAccess;
   if (values.tags.length > 0) draft.tags = values.tags;
   if (values.icon) draft.icon = values.icon;
   if (values.color) draft.color = values.color;

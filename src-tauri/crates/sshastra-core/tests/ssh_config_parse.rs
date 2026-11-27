@@ -25,6 +25,7 @@ fn host(name: &str) -> ConfigHost {
         jump_host: None,
         proxy_command: None,
         forwards: Vec::new(),
+        group_path: Vec::new(),
     }
 }
 
@@ -108,6 +109,7 @@ impl With for ConfigHost {
 
 fn issue(entry: &str, dropped: bool, problem: ImportProblem) -> ImportIssue {
     ImportIssue {
+        line: None,
         entry: entry.into(),
         dropped,
         problem,

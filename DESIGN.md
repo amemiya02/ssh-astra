@@ -422,6 +422,8 @@ While Broadcast is active, the first segment shows a warning-colour radio icon a
 
 The privacy toggle sits beside the theme menu. Its pressed state uses the `selected` surface and an eye-off icon. While active, Host cards, rows, tabs, and the status bar show Host names in place of connection details. Address search remains available and the Port forward count stays visible.
 
+When Agent access is enabled, a status bar segment shows its name and a cable icon. Click it to turn access off for all Hosts. The tab strip shows the same icon and names the shared state in the tab label whenever an open Terminal in that tab is exposed. A collapsed Host group carries the icon for its shared tabs.
+
 ### Toasts
 
 The lower-right corner of the workspace stacks up to three in-app toasts above the status bar. Cards use the raised surface, a 1px border, 10px radius and a status icon. They report completed or failed transfers when both transfer lists are out of view, Port forward failures, Remote edit upload failures, import results and explicit copy actions. Terminal copy on select is silent.
@@ -512,6 +514,12 @@ Show live counts for Connections, unfinished transfers (including paused transfe
 - The Tags field suggests Tags already used on other Hosts. Press Enter or use Add Tag to add the typed value. Added Tags wrap above the input as 24px `muted` chips with a labelled remove button. The note below the field shows the limit of ten Tags and 32 characters per Tag.
 - **Advanced** is a full-width disclosure below Basic information. It starts collapsed and contains Identities only, Terminal colours, the File panel folder, and the action to clear a saved Host's credentials. A save error attached to an advanced field opens the section, displays the message by the field, and moves focus to it.
 - **Test connection** is an outlined action in the footer. The result appears above the footer with a muted progress message, a success message, or the standard Connection error panel.
+
+### Host import
+
+Import Hosts opens the same source picker from Home, the Hosts sidebar, and the command palette. The OpenSSH option reads `~/.ssh/config` directly. The CSV option opens the native file picker and shows the expected headers and Group path separator. Cancelling the native picker returns to the source picker.
+
+The report lists imported Hosts, skipped names, and problems. CSV problems identify the starting line of the record. The OpenSSH report shows each saved ProxyCommand as literal shell text beside its Host.
 
 ### Connection view
 A remote Terminal pane shows a scrollable Connection view on the workspace surface until its shell opens. The progress list groups steps by Host in route order, including each named Jump host. Reach server, Verify host key and Log in apply to each hop. Open shell applies to the destination. An extra step appears while this pane waits for another connection attempt.

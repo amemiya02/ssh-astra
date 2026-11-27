@@ -35,7 +35,7 @@ function fakeApi(initial: HostTree, overrides: Partial<HostsApi> = {}): HostsApi
     deleteGroup: vi.fn(() => Promise.resolve(initial)),
     saveForward: vi.fn((_host: string, d: ForwardDraft, id?: string) => Promise.resolve({ ...d, id: id ?? `f${++forwards}` })),
     deleteForward: vi.fn(() => Promise.resolve()),
-    importSshConfig: vi.fn(() => Promise.resolve({ tree: initial, report: { imported: [], skipped: [], issues: [], proxyCommands: [] } })),
+    importHostSource: vi.fn(() => Promise.resolve({ tree: initial, report: { imported: [], skipped: [], issues: [], proxyCommands: [] } })),
     exportHosts: vi.fn(() => Promise.resolve()),
     importHosts: vi.fn(() =>
       Promise.resolve({ summary: { hostsAdded: 0, groupsAdded: 0, skippedHosts: [] }, tree: initial }),
@@ -202,10 +202,10 @@ describe("hosts store", () => {
     };
     const { store } = await loaded(
       { groups: [], hosts: [host("a")] },
-      { importSshConfig: () => Promise.resolve({ tree: imported, report }) },
+      { importHostSource: () => Promise.resolve({ tree: imported, report }) },
     );
 
-    expect(await store.getState().importSshConfig()).toEqual(report);
+    expect(await store.getState().importHostSource({ kind: "sshConfig" })).toEqual(report);
     expect(ids(store.getState().tree).hosts).toEqual(["a", "web", "db"]);
   });
 

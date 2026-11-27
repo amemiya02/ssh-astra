@@ -2,6 +2,21 @@
   "app": {
     "name": "SSH Astra"
   },
+  "agentAccess": {
+    "title": "代理存取",
+    "description": "透過 MCP 向本機用戶端分享已授權的遠端終端機資訊。請將用戶端設定為執行 SSH Astra 執行檔，並傳入 mcp 引數。",
+    "permission": {
+      "off": "關閉",
+      "read": "唯讀",
+      "approval": "需要核准"
+    },
+    "hostHint": "兩種存取層級目前都會分享終端機資訊。此權限僅儲存在本機。",
+    "enabled": "代理存取已開啟",
+    "turnOff": "關閉代理存取",
+    "sharedTerminal": "終端機已向代理開放",
+    "startFailed": "無法開啟代理存取。",
+    "saveFailed": "本次執行的代理存取已關閉，但無法儲存設定。"
+  },
   "shell": {
     "workspace": "終端機",
     "navigation": "導航",
@@ -190,16 +205,31 @@
     "disconnect": "中斷連線",
     "connectFailed": "無法連線到 {{name}}：{{message}}",
     "import": {
-      "action": "匯入 ~/.ssh/config",
-      "keywords": "ssh config openssh 匯入",
-      "title": "已匯入 ~/.ssh/config",
+      "action": "匯入 Host…",
+      "keywords": "ssh config openssh csv 匯入",
+      "pickerTitle": "匯入 Host",
+      "chooseSource": "選擇要從哪裡匯入 Host。",
+      "sshConfig": {
+        "action": "匯入 ~/.ssh/config",
+        "title": "已匯入 ~/.ssh/config",
+        "nothing": "~/.ssh/config 中沒有可匯入的 Host。",
+        "error": "無法匯入 ~/.ssh/config：{{message}}"
+      },
+      "csv": {
+        "action": "CSV 檔案…",
+        "help": "標題列需包含 Name、Address 和 Username。Port 和 Group 可省略，Port 預設為 22。用 / 分隔巢狀群組，例如 工作/正式環境。",
+        "chooseFile": "選擇要匯入的 CSV 檔案",
+        "fileType": "CSV 檔案",
+        "title": "CSV 匯入結果",
+        "nothing": "CSV 檔案中沒有可匯入的 Host。",
+        "error": "無法匯入 CSV 檔案：{{message}}"
+      },
       "summary": "匯入 {{imported}} 個，略過 {{skipped}} 個，無法匯入 {{failed}} 個。",
-      "nothing": "~/.ssh/config 中沒有可匯入的 Host。",
       "imported": "已匯入",
       "skipped": "已略過：已有同名 Host",
       "failed": "未匯入",
       "partial": "已匯入，但缺少部分設定",
-      "error": "無法匯入 ~/.ssh/config：{{message}}",
+      "line": "第 {{line}} 行",
       "close": "關閉",
       "proxyCommands": "已匯入的 ProxyCommand",
       "proxyCommandHint": "連線至以下 Host 時，這些指令會在本機執行。",
@@ -209,7 +239,12 @@
         "includeFailed": "無法讀取：{{reason}}",
         "jumpChainConflict": "此 Host 的 ProxyJump 鏈連到 {{hop}} 的方式，與 {{hop}} 自身的設定不同",
         "jumpHostLoop": "跳板主機的路徑指回此 Host",
-        "jumpHostUnavailable": "跳板主機 {{hop}} 未匯入"
+        "jumpHostUnavailable": "跳板主機 {{hop}} 未匯入",
+        "csvHeaders": "請使用 Name、Address 和 Username 欄位名稱。每個支援的欄位名稱只能出現一次。",
+        "csvMissingField": "必須填寫 {{field}}。",
+        "csvInvalidPort": "Port 必須是 1 到 65535 之間的整數。",
+        "csvInvalidGroup": "Group 路徑中的每一層都需要名稱。",
+        "csvMalformedRecord": "這筆 CSV 記錄的引號格式有誤。"
       }
     },
     "transfer": {
@@ -1014,6 +1049,7 @@
       "knownHosts": "已知主機",
       "notifications": "通知",
       "updates": "更新",
+      "agentAccess": "代理存取",
       "diagnostics": "診斷"
     },
     "shortcuts": {

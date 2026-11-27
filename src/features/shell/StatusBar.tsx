@@ -1,7 +1,8 @@
-import { ArrowDownUp, BookmarkPlus, Eye, EyeOff, Radio, Settings, Waypoints } from "lucide-react";
+import { ArrowDownUp, BookmarkPlus, Cable, Eye, EyeOff, Radio, Settings, Waypoints } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
+import { agentAccessSetting, setAgentAccess } from "@/features/agent/agent-access";
 import { quickConnectLabel } from "@/features/connect/quick-connect";
 import { formatSize } from "@/features/files/fileList";
 import type { BroadcastScope } from "@/features/workspace/broadcast";
@@ -53,6 +54,7 @@ export function StatusBar({
 }) {
   const { t } = useTranslation();
   const settingsShortcut = shortcutLabel("settings", useResolvedShortcuts());
+  const [{ enabled: agentEnabled }] = useSetting(agentAccessSetting);
   const [privacyMode] = useSetting(privacyModeSetting);
   const { connected, reconnecting, forwards, transfers, activeRemote, saveTemporaryHost, broadcast, updateNotice } = info;
   const transferStatus = transfers.bytesPerSecond > 0
@@ -74,6 +76,17 @@ export function StatusBar({
         >
           <Radio className="text-warning size-3 shrink-0" aria-hidden />
           <span className="max-w-40 truncate">{broadcastStatus}</span>
+        </Segment>
+      )}
+      {agentEnabled && (
+        <Segment
+          as="button"
+          label={t("agentAccess.turnOff")}
+          title={t("agentAccess.turnOff")}
+          onClick={() => void setAgentAccess(false)}
+        >
+          <Cable className="text-primary size-3 shrink-0" aria-hidden />
+          <span className="max-w-40 truncate">{t("agentAccess.enabled")}</span>
         </Segment>
       )}
       <div role="status" className="flex min-w-0 flex-1 items-stretch overflow-hidden">

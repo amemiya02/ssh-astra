@@ -26,6 +26,9 @@ export type DetectedOs = Extract<HostIcon,
  */
 export type HostAuth = { type: "auto" } | { type: "password" } | { type: "key"; identityFile: string };
 
+export const agentPermissions = ["off", "read", "approval"] as const;
+export type AgentPermission = (typeof agentPermissions)[number];
+
 export type TerminalCharset = "utf8" | "gbk" | "big5" | "latin1";
 export type TerminalBackspace = "del" | "ctrlH";
 
@@ -64,6 +67,8 @@ export interface HostDraft {
   allowLegacyAlgorithms?: boolean;
   /** Open a Terminal on this saved Host when the app starts. Off when absent. */
   openOnStartup?: boolean;
+  /** Local Agent access for this saved Host. Off when absent. */
+  agentAccess?: AgentPermission;
   /** Outbound proxy choice when this Host is the first hop. */
   proxy?: HostProxy;
   /** Seconds between keepalives; absent follows the global setting, 0 turns them off. */
@@ -213,19 +218,22 @@ export function moveGroup(id: GroupId, parentId: GroupId | null, index: number):
   return invoke<HostTree>("group_move", { id, parentId, index });
 }
 
-/** Why part of `~/.ssh/config` was not imported (`sshastra_core::ssh_config::ImportProblem`). */
+/** Why an entry was left out (`sshastra_core::host_import::ImportProblem`). */
 export type ImportProblem =
   | { kind: "invalidValue"; directive: string; value: string }
   | { kind: "unsupported"; directive: string }
   | { kind: "includeFailed"; reason: string }
   | { kind: "jumpChainConflict"; hop: string }
   | { kind: "jumpHostLoop" }
-  | { kind: "jumpHostUnavailable"; hop: string };
+  | { kind: "jumpHostUnavailable"; hop: string }
+  | { kind: "csvHeaders" | "csvInvalidPort" | "csvInvalidGroup" | "csvMalformedRecord" }
+  | { kind: "csvMissingField"; field: string };
 
-/** One thing an import left out (`sshastra_core::ssh_config::ImportIssue`). */
+/** One thing an import left out (`sshastra_core::host_import::ImportIssue`). */
 export interface ImportIssue {
-  /** The Host alias, or the `Include` / `Match` line. */
+  /** The OpenSSH Host alias or directive. CSV reports a line instead. */
   entry: string;
+  line?: number;
   /** The whole Host was left out, not just part of it. */
   dropped: boolean;
   problem: ImportProblem;
@@ -240,12 +248,11 @@ export interface ImportReport {
   proxyCommands: { host: string; command: string }[];
 }
 
-/**
- * Imports the Hosts in `~/.ssh/config` (and its `Include`s) at the top level, skipping names
- * already taken. Returns the whole Host list and the report.
- */
-export function importSshConfig(): Promise<{ tree: HostTree; report: ImportReport }> {
-  return invoke("hosts_import_ssh_config");
+export type HostImportSource = { kind: "sshConfig" } | { kind: "csv"; path: string };
+
+/** Imports Hosts from the chosen source, skipping names already taken. */
+export function importHostSource(source: HostImportSource): Promise<{ tree: HostTree; report: ImportReport }> {
+  return invoke("hosts_import_source", { source });
 }
 
 /** What an import added and left out (`sshastra_core::hosts::ImportSummary`). */
