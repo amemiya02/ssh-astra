@@ -1,0 +1,12 @@
+Password,Group,Name,Username,Port,Address,Extra
+CSV_TEST_PASSWORD,"Work / Production","Web, ""Primary""",deploy,2201,web.example.test,"CSV_TEST_EXTRA, quoted"
+
+CSV_TEST_PASSWORD,,Default port,ops,,db.example.test
+CSV_TEST_PASSWORD,Unused,Invalid port,ops,CSV_TEST_INVALID_PORT,db.example.test
+CSV_TEST_PASSWORD,Unused,Missing address,ops,22
+CSV_TEST_PASSWORD,Work//Broken,Invalid group,ops,22,db.example.test
+CSV_TEST_PASSWORD,Work/Production,Web Backup,ops,65535,backup.example.test
+CSV_TEST_PASSWORD,,Bad"quoting,ops,22,db.example.test
+CSV_TEST_PASSWORD,,"Two
+lines",ops,22,multiline.example.test
+CSV_TEST_PASSWORD,Skip/Unused,Existing,new-user,22,new.example.test

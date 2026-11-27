@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::forward::{ForwardDraft, ForwardId, ForwardKind, PortForward};
 use crate::fs_util::write_atomically;
+use crate::host_import::{ImportIssue, ParsedConfig};
 use crate::proxy::HostProxy;
-use crate::ssh_config::{ImportIssue, ParsedConfig};
 use crate::terminal::{TerminalBackspace, TerminalCharset};
 
 mod bookmarks;
@@ -471,6 +471,30 @@ impl Library {
             .ok_or_else(|| HostStoreError::GroupNotFound(id.clone()))
     }
 
+    fn import_group_path(&mut self, path: &[String]) -> Result<Option<GroupId>, HostStoreError> {
+        let mut parent_id = None;
+        for segment in path {
+            let name = required_name(segment)?;
+            let group = self
+                .groups
+                .iter()
+                .find(|group| group.parent_id == parent_id && group.name == name);
+            parent_id = Some(match group {
+                Some(group) => group.id.clone(),
+                None => {
+                    let id = GroupId::generate();
+                    self.groups.push(Group {
+                        id: id.clone(),
+                        name,
+                        parent_id,
+                    });
+                    id
+                }
+            });
+        }
+        Ok(parent_id)
+    }
+
     /// `id`, its parent, its parent's parent, ... up to the top level.
     fn ancestors_and_self<'a>(&'a self, id: &'a GroupId) -> impl Iterator<Item = &'a GroupId> {
         // Bounded by the Group count, so a damaged file with a parent cycle
@@ -516,7 +540,7 @@ pub struct HostTree {
     pub hosts: Vec<Host>,
 }
 
-/// What [`HostStore::import_ssh_config`] did, by Host name.
+/// What [`HostStore::import_config`] did, by Host name.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportReport {
@@ -730,13 +754,9 @@ impl HostStore {
         self.save(library)
     }
 
-    /// Adds the Hosts of a parsed `~/.ssh/config` at the top level, in one
-    /// save. A Host whose name is already taken is skipped, and a Jump host
-    /// named after a saved Host is that Host.
-    pub fn import_ssh_config(
-        &mut self,
-        parsed: ParsedConfig,
-    ) -> Result<ImportReport, HostStoreError> {
+    /// Adds parsed Hosts and their Groups in one save. A Host whose name is
+    /// already taken is skipped, and a Jump host named after a saved Host is that Host.
+    pub fn import_config(&mut self, parsed: ParsedConfig) -> Result<ImportReport, HostStoreError> {
         let mut library = self.library.clone();
         let mut report = ImportReport {
             issues: parsed.issues,
@@ -792,6 +812,7 @@ impl HostStore {
                 default_directory: None,
             }
             .into_host(id)?;
+            host.group_id = library.import_group_path(&entry.group_path)?;
             for draft in entry.forwards {
                 host.forwards.push(
                     draft

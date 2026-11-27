@@ -4,6 +4,7 @@ import { emit, TauriEvent } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import type { DragDropEvent } from "@tauri-apps/api/webview";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, Update } from "@tauri-apps/plugin-updater";
@@ -22,7 +23,7 @@ import i18n, { startI18n } from "@/i18n";
 import type { ConnectPrompt } from "@/lib/ipc/connect";
 import type { Listing } from "@/lib/ipc/files";
 import type { ForwardEvent, PortForward } from "@/lib/ipc/forwards";
-import type { Host, HostDraft, HostOsChange, QuickConnectTarget } from "@/lib/ipc/hosts";
+import type { Host, HostDraft, HostImportSource, HostOsChange, QuickConnectTarget } from "@/lib/ipc/hosts";
 import type { Snippet } from "@/lib/ipc/snippets";
 import type { TerminalMessage } from "@/lib/ipc/terminal";
 import type { Transfer } from "@/lib/ipc/transfers";
@@ -48,6 +49,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
       hostId?: string;
       id?: string;
       shellId?: string;
+      source?: HostImportSource;
       draft?: HostDraft;
       onPrompt?: PromptChannel;
     }) => {
@@ -94,7 +96,16 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
       if (command === "forwards_watch") return initialForwards;
       if (command === "connections_watch") return initialHeld;
       if (command === "quit_live_connection_count") return liveConnectionCount;
-      if (command === "hosts_import_ssh_config") return {
+      if (command === "hosts_import_source" && args?.source?.kind === "csv") return {
+        tree: { hosts: savedHosts, groups: [] },
+        report: {
+          imported: ["CSV Host"],
+          skipped: ["Existing Host"],
+          issues: [{ entry: "", line: 3, dropped: true, problem: { kind: "csvInvalidPort" } }],
+          proxyCommands: [],
+        },
+      };
+      if (command === "hosts_import_source") return {
         tree: { hosts: savedHosts, groups: [] },
         report: {
           imported: ["Imported Host"],
@@ -111,6 +122,11 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
 vi.mock("@tauri-apps/plugin-clipboard-manager", async (importOriginal) => ({
   ...await importOriginal<typeof import("@tauri-apps/plugin-clipboard-manager")>(),
   writeText: vi.fn(async () => {}),
+}));
+
+vi.mock("@tauri-apps/plugin-dialog", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@tauri-apps/plugin-dialog")>(),
+  open: vi.fn(async () => importPath),
 }));
 
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(async () => {}) }));
@@ -158,6 +174,7 @@ const host: Host = {
   auth: { type: "password" }, jumpHost: null, groupId: null, forwards: [],
 };
 let savedHosts: Host[] = [];
+let importPath: string | null;
 let snippetLibrary: Snippet[] = [];
 let initialTransfers: Transfer[] = [];
 let initialForwards: ForwardEvent[] = [];
@@ -204,6 +221,7 @@ beforeAll(() => {
 
 beforeEach(async () => {
   saveTemporaryError = undefined;
+  importPath = null;
   settingsFile = { workspacePreferences: { restoreTabs: "none" } };
   await startSettings(settingsBackend);
   await i18n.changeLanguage("en");
@@ -229,6 +247,7 @@ afterEach(async () => {
   initialHeld = [];
   liveConnectionCount = undefined;
   vi.mocked(invoke).mockClear();
+  vi.mocked(openFileDialog).mockClear();
   vi.mocked(check).mockReset();
   vi.mocked(openUrl).mockClear();
   vi.mocked(relaunch).mockReset();
@@ -1768,13 +1787,44 @@ it("announces transfer results when the Transfers panel is hidden and offers err
 it("announces the OpenSSH import result and still opens the detailed report", async () => {
   await render(workspace({ type: "open", tabId: "home", pane: newPane({ kind: "home" }) }));
   const importButton = [...document.querySelectorAll<HTMLButtonElement>("#tabpanel-home button")]
-    .find((button) => button.textContent === "Import ~/.ssh/config")!;
+    .find((button) => button.textContent === "Import Hosts…")!;
   await act(async () => importButton.click());
+  expect(dialog()?.textContent).toContain("CSV file");
+  const importConfig = [...dialog()!.querySelectorAll("button")]
+    .find((button) => button.textContent === "Import ~/.ssh/config")!;
+  await act(async () => importConfig.click());
+  expect(invoke).toHaveBeenCalledWith("hosts_import_source", { source: { kind: "sshConfig" } });
   expect(dialog()?.textContent).toContain("Imported Host");
   expect(dialog()?.textContent).toContain("Imported ProxyCommands");
   expect(dialog()?.querySelector("code")?.textContent).toBe('nc "%h" %p');
   expect(document.querySelector('[role="status"][aria-live="polite"]')?.textContent)
     .toBe("Imported 1, skipped 0, could not import 0.");
+  await act(async () => dialog()!.querySelector("button")!.click());
+  const dismiss = document.querySelector<HTMLButtonElement>('button[aria-label^="Dismiss notification: Imported"]');
+  await act(async () => dismiss!.click());
+});
+
+it("keeps the import source picker on CSV cancellation and reports the selected file's outcomes", async () => {
+  await render(workspace({ type: "open", tabId: "home", pane: newPane({ kind: "home" }) }));
+  const importButton = [...document.querySelectorAll<HTMLButtonElement>("#tabpanel-home button")]
+    .find((button) => button.textContent === "Import Hosts…")!;
+  await act(async () => importButton.click());
+  const chooseCsv = [...dialog()!.querySelectorAll("button")]
+    .find((button) => button.textContent === "CSV file…")!;
+  await act(async () => chooseCsv.click());
+  expect(dialog()?.textContent).toContain("Choose where to import Hosts from.");
+  expect(invoke).not.toHaveBeenCalledWith("hosts_import_source", expect.anything());
+
+  importPath = "/fixtures/host-import.csv";
+  await act(async () => chooseCsv.click());
+  expect(openFileDialog).toHaveBeenCalledWith(expect.objectContaining({
+    multiple: false, directory: false, filters: [{ name: "CSV file", extensions: ["csv"] }],
+  }));
+  expect(invoke).toHaveBeenCalledWith("hosts_import_source", { source: { kind: "csv", path: importPath } });
+  expect(dialog()?.textContent).toContain("CSV import results");
+  expect(dialog()?.textContent).toContain("CSV Host");
+  expect(dialog()?.textContent).toContain("Existing Host");
+  expect(dialog()?.textContent).toContain("Line 3: Port must be a whole number from 1 to 65535.");
   await act(async () => dialog()!.querySelector("button")!.click());
   const dismiss = document.querySelector<HTMLButtonElement>('button[aria-label^="Dismiss notification: Imported"]');
   await act(async () => dismiss!.click());

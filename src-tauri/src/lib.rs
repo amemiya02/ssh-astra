@@ -206,7 +206,7 @@ pub fn run() {
             commands::connections::temporary_host_create,
             commands::connections::temporary_host_save,
             commands::connections::temporary_host_forget,
-            commands::hosts::hosts_import_ssh_config,
+            commands::hosts::hosts_import_source,
             commands::hosts::hosts_export,
             commands::hosts::hosts_import,
             commands::forwards::forwards_watch,
