@@ -13,7 +13,9 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use sshastra_core::edit::{EditError, EditEvent, Opener, RemoteEditor, MAX_EDIT_SIZE};
+use sshastra_core::edit::{
+    EditError, EditEvent, OpenEditOptions, Opener, RemoteEditor, MAX_EDIT_SIZE,
+};
 use sshastra_core::files::{
     FileEntry, FileKind, FileReader, FileStat, FileWriter, FsError, FsResult, RemoteFs,
     READ_FILE_LIMIT,
@@ -196,6 +198,8 @@ fn unused<'a>() -> BoxFuture<'a, FsResult<()>> {
 struct RecordingOpener {
     opened: Mutex<Vec<PathBuf>>,
     refuse: bool,
+    application_opens: Mutex<Vec<(PathBuf, PathBuf)>>,
+    refuse_application: bool,
 }
 
 impl Opener for RecordingOpener {
@@ -204,6 +208,17 @@ impl Opener for RecordingOpener {
             return Err("no application can open this file".into());
         }
         self.opened.lock().unwrap().push(path.to_owned());
+        Ok(())
+    }
+
+    fn open_application(&self, path: &Path, application: &Path) -> Result<(), String> {
+        self.application_opens
+            .lock()
+            .unwrap()
+            .push((path.to_owned(), application.to_owned()));
+        if self.refuse_application {
+            return Err("selected application unavailable".into());
+        }
         Ok(())
     }
 }
@@ -275,6 +290,90 @@ async fn opening_downloads_the_file_and_opens_it_in_the_editor() {
     assert!(local.starts_with(s.root.path().join("edit").join("host-1")));
     assert_eq!(std::fs::read_to_string(&local).unwrap(), "port = 80\n");
     assert_eq!(*s.opener.opened.lock().unwrap(), [local]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn opening_and_reopening_use_the_chosen_application_and_keep_one_temp_file() {
+    let s = setup();
+    let fs = FakeFs::with("/etc/app.conf", "port = 80\n");
+    let id = s
+        .editor
+        .open_with(
+            fs.clone(),
+            &host(),
+            "/etc/app.conf",
+            OpenEditOptions {
+                application: Some(Path::new("An Editor")),
+                ..OpenEditOptions::default()
+            },
+            |_| {},
+        )
+        .await
+        .unwrap()
+        .id;
+    let local = s.editor.local_path(id).unwrap();
+    assert_eq!(std::fs::read_to_string(&local).unwrap(), "port = 80\n");
+
+    let shown = s
+        .editor
+        .open_with(
+            fs,
+            &host(),
+            "/etc/app.conf",
+            OpenEditOptions {
+                application: Some(Path::new("Another Editor")),
+                ..OpenEditOptions::default()
+            },
+            |_| {},
+        )
+        .await
+        .unwrap();
+    assert_eq!(shown.id, id);
+    assert!(!shown.application_fallback);
+    assert_eq!(
+        *s.opener.application_opens.lock().unwrap(),
+        [
+            (local.clone(), PathBuf::from("An Editor")),
+            (local, PathBuf::from("Another Editor")),
+        ]
+    );
+    assert!(s.opener.opened.lock().unwrap().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unavailable_application_falls_back_and_the_edit_keeps_uploading() {
+    let s = setup_with(RecordingOpener {
+        refuse_application: true,
+        ..RecordingOpener::default()
+    });
+    let fs = FakeFs::with("/etc/app.conf", "port = 80\n");
+    let (on_event, mut rx) = events();
+    let opened = s
+        .editor
+        .open_with(
+            fs.clone(),
+            &host(),
+            "/etc/app.conf",
+            OpenEditOptions {
+                application: Some(Path::new("Missing Editor")),
+                ..OpenEditOptions::default()
+            },
+            on_event,
+        )
+        .await
+        .unwrap();
+
+    let local = s.editor.local_path(opened.id).unwrap();
+    assert_eq!(
+        s.opener.opened.lock().unwrap().as_slice(),
+        [local.as_path()]
+    );
+    assert!(opened.application_fallback);
+
+    save(&local, "port = 8080\n").await;
+    assert_eq!(next(&mut rx).await, EditEvent::Uploading);
+    assert_eq!(next(&mut rx).await, EditEvent::Uploaded);
+    assert_eq!(fs.contents("/etc/app.conf"), "port = 8080\n");
 }
 
 #[tokio::test(flavor = "multi_thread")]
