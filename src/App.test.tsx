@@ -8,7 +8,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, Update } from "@tauri-apps/plugin-updater";
 import { Terminal } from "@xterm/xterm";
-import { act, useEffect } from "react";
+import { act, Fragment, StrictMode, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -17,7 +17,7 @@ import { hostsStore } from "@/features/hosts/hostsStore";
 import { updatesStore } from "@/features/updates/updatesStore";
 import { currentPlatform } from "@/features/workspace/shortcuts";
 import { emptyTabs, newPane, tabsReducer, type TabsAction, type TabsState } from "@/features/workspace/tabs";
-import { restoreWorkspaceLayout, workspaceLayoutSetting } from "@/features/workspace/workspace-layout";
+import { restoreWorkspaceLayout, serializeWorkspaceLayout, workspaceLayoutSetting } from "@/features/workspace/workspace-layout";
 import i18n, { startI18n } from "@/i18n";
 import type { ConnectPrompt } from "@/lib/ipc/connect";
 import type { Listing } from "@/lib/ipc/files";
@@ -49,8 +49,13 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
       id?: string;
       shellId?: string;
       draft?: HostDraft;
+      onPrompt?: PromptChannel;
     }) => {
-      if (command === "remote_terminal_open") return ++nextTerminalId;
+      if (command === "remote_terminal_open") {
+        const connect = args?.hostId && remoteOpenFixtures.get(args.hostId);
+        if (connect) await connect(args.onPrompt!);
+        return ++nextTerminalId;
+      }
       if (command === "local_terminal_open") return {
         id: ++nextTerminalId,
         shellProgram: localShellPrograms.get(args?.shellId ?? "") ?? "zsh",
@@ -160,6 +165,8 @@ let initialHeld: string[] = [];
 let liveConnectionCount: number | undefined;
 let saveTemporaryError: { kind: string; message: string } | undefined;
 const panelListings = new Map<string, Listing>();
+type PromptChannel = { onmessage(message: ConnectPrompt): void };
+const remoteOpenFixtures = new Map<string, (channel: PromptChannel) => Promise<void>>();
 const localShellPrograms = new Map<string, string>();
 const remote = (id: string) => newPane({ kind: "remote-terminal", host }, id);
 const local = (id: string) => newPane({ kind: "local-terminal" }, id);
@@ -227,21 +234,25 @@ afterEach(async () => {
   vi.mocked(relaunch).mockReset();
   updatesStore.setState({ status: { type: "idle" } });
   panelListings.clear();
+  remoteOpenFixtures.clear();
   localShellPrograms.clear();
   clearMocks();
   vi.unstubAllGlobals();
 });
 
-async function render(initialTabs: TabsState) {
+async function render(initialTabs: TabsState, strict = false) {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
+  const Wrapper = strict ? StrictMode : Fragment;
   await act(async () => root!.render(
-    <ThemeProvider>
-      <TooltipProvider>
-        <App initialTabs={initialTabs} />
-      </TooltipProvider>
-    </ThemeProvider>,
+    <Wrapper>
+      <ThemeProvider>
+        <TooltipProvider>
+          <App initialTabs={initialTabs} />
+        </TooltipProvider>
+      </ThemeProvider>
+    </Wrapper>,
   ));
 }
 
@@ -262,6 +273,67 @@ const windowDestroys = () => desktopIPC.mock.calls.filter(([command]) => command
 const dialog = () => document.querySelector('[role="dialog"]');
 const terminalCloses = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === "terminal_close");
 const tabIds = () => [...document.querySelectorAll('[role="tab"]')].map((tab) => tab.id);
+const remoteOpenHostIds = () => vi.mocked(invoke).mock.calls
+  .filter(([command]) => command === "remote_terminal_open")
+  .map(([, args]) => (args as { hostId: string }).hostId);
+
+it("opens each startup Host once and leaves a restored split's Host disconnected in layout-only mode", async () => {
+  const restored = { ...host, openOnStartup: true };
+  const optedIn = { ...host, name: "Startup Host", id: "startup", openOnStartup: true };
+  const manual = { ...host, name: "Manual Host", id: "manual" };
+  savedHosts = [restored, optedIn, manual];
+  await hostsStore.getState().load();
+  const saved = serializeWorkspaceLayout(workspace(
+    { type: "open", tabId: "restored-tab", pane: local("restored-local") },
+    { type: "split", orientation: "horizontal", pane: remote("restored-remote") },
+  ));
+  await render(restoreWorkspaceLayout(saved, savedHosts, "layout"), true);
+
+  expect(tabIds()).toHaveLength(2);
+  expect(document.getElementById("tab-restored-tab")).not.toBeNull();
+  expect(document.getElementById("pane-restored-remote")?.textContent).toContain("Connect");
+  expect(document.querySelector('[role="tab"][aria-label="Startup Host (Connected)"]')).not.toBeNull();
+  expect(remoteOpenHostIds()).toEqual([optedIn.id]);
+});
+
+it("connects startup Hosts after restoring connections and continues after an ordinary connection failure", async () => {
+  const restored = { ...host, openOnStartup: true };
+  const broken = { ...host, name: "Offline Startup Host", id: "offline", openOnStartup: true };
+  const optedIn = { ...host, name: "Startup Host", id: "startup", openOnStartup: true };
+  const manual = { ...host, name: "Manual Host", id: "manual" };
+  savedHosts = [broken, optedIn, manual, restored];
+  let rejectLogin!: (error: unknown) => void;
+  const login = new Promise<void>((_resolve, reject) => { rejectLogin = reject; });
+  remoteOpenFixtures.set(broken.id, ({ onmessage }) => {
+    onmessage({ type: "password", id: 1, host: broken.name, user: broken.user, retry: false, canSave: false });
+    return login;
+  });
+  await hostsStore.getState().load();
+  const saved = serializeWorkspaceLayout(workspace({ type: "open", tabId: "restored-tab", pane: remote("restored-remote") }));
+  await render(restoreWorkspaceLayout(saved, savedHosts, "connect"), true);
+
+  expect(remoteOpenHostIds()).toEqual([restored.id, broken.id]);
+  expect(dialog()?.textContent).toContain(broken.name);
+  await search(dialog()!.querySelector<HTMLInputElement>('input[type="password"]')!, "fixture-password");
+  await clickButton("Connect", dialog()!);
+  expect(vi.mocked(invoke)).toHaveBeenCalledWith("prompt_answer", {
+    id: 1, answer: { type: "password", password: "fixture-password", save: false },
+  });
+  await act(async () => rejectLogin({ kind: "authenticationFailed", message: "All methods rejected" }));
+
+  expect(remoteOpenHostIds()).toEqual([restored.id, broken.id, optedIn.id]);
+  expect(tabIds()).toHaveLength(3);
+  const failedTab = document.querySelector<HTMLButtonElement>('[role="tab"][aria-label="Offline Startup Host (Disconnected)"]')!;
+  await act(async () => failedTab.click());
+  const failedPanel = document.getElementById(failedTab.getAttribute("aria-controls")!)!;
+  expect(failedPanel.hidden).toBe(false);
+  expect(failedPanel.textContent).toContain("All methods rejected");
+  expect(failedPanel.textContent).toContain("Retry");
+
+  await act(async () => hostsStore.getState().saveHost({ ...manual, openOnStartup: true }, manual.id));
+  expect(tabIds()).toHaveLength(3);
+  expect(remoteOpenHostIds()).toEqual([restored.id, broken.id, optedIn.id]);
+});
 
 async function sendTerminalMessage(message: TerminalMessage, openCommand = "remote_terminal_open", index = 0) {
   const openCall = vi.mocked(invoke).mock.calls.filter(([command]) => command === openCommand)[index];

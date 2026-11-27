@@ -65,12 +65,12 @@ pub fn forward_delete(
     id: ForwardId,
 ) -> CommandResult<()> {
     hosts.with(|store| Ok(store.delete_forward(&host_id, &id)?))?;
-    forwards.forwarder.stop(&id);
+    forwards.forwarder.forget(&id);
     Ok(())
 }
 
 /// Starts Host `host_id`'s rule `id`, connecting first (through its Jump
-/// hosts, also starting its auto-start rules) if needed; questions arrive on
+/// hosts, also starting or restoring its rules) if needed; questions arrive on
 /// `on_prompt` as for a Terminal.
 #[tauri::command]
 pub async fn forward_start(
@@ -82,14 +82,15 @@ pub async fn forward_start(
     id: ForwardId,
     on_prompt: Channel<PromptRequest>,
 ) -> CommandResult<()> {
-    let (mut hops, rule) = hosts.with(|store| {
+    let mut hops = hosts.with(|store| {
         let hops = store.jump_chain(&host_id)?;
-        let rule = hops
+        if !hops
             .last()
-            .and_then(|host| host.forwards.iter().find(|f| f.id == id))
-            .cloned()
-            .ok_or_else(|| sshastra_core::hosts::HostStoreError::ForwardNotFound(id.clone()))?;
-        Ok((hops, rule))
+            .is_some_and(|host| host.forwards.iter().any(|f| f.id == id))
+        {
+            return Err(sshastra_core::hosts::HostStoreError::ForwardNotFound(id.clone()).into());
+        }
+        Ok(hops)
     })?;
     let host = hops.pop().expect("a jump chain ends with the Host itself");
     let prompter = Arc::new(ChannelPrompter {
@@ -98,11 +99,14 @@ pub async fn forward_start(
     });
     let connection = connect_host(&app, &hops, &host, prompter).await?;
     schedule_os_detection(&app, &host.id, &connection);
-    forwards
-        .forwarder
-        .start(connection, &host.id, &rule)
-        .await
-        .map_err(CommandError::from)
+    let start = hosts.with(|store| {
+        let rule = store
+            .get(&host_id)
+            .and_then(|host| host.forwards.iter().find(|f| f.id == id))
+            .ok_or_else(|| sshastra_core::hosts::HostStoreError::ForwardNotFound(id.clone()))?;
+        Ok(forwards.forwarder.start(connection, &host_id, rule))
+    })?;
+    start.await.map_err(CommandError::from)
 }
 
 /// Stops rule `id` (and clears its error, if it failed).

@@ -62,6 +62,8 @@ export interface HostDraft {
   forwardAgent?: boolean;
   /** Offer legacy SSH algorithms as fallbacks. Off when absent. */
   allowLegacyAlgorithms?: boolean;
+  /** Open a Terminal on this saved Host when the app starts. Off when absent. */
+  openOnStartup?: boolean;
   /** Outbound proxy choice when this Host is the first hop. */
   proxy?: HostProxy;
   /** Seconds between keepalives; absent follows the global setting, 0 turns them off. */

@@ -50,6 +50,7 @@ async fn sftp(sshd: &Sshd) -> (SftpFs, tempfile::TempDir) {
         identities_only: false,
         forward_agent: false,
         allow_legacy_algorithms: false,
+        open_on_startup: false,
         proxy: Default::default(),
         keepalive_seconds: None,
         post_login_command: None,
