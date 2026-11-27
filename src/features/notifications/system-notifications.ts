@@ -7,7 +7,8 @@ import { shouldSendNotification } from "./notification-policy";
 import { notificationSetting, type NotificationCategory } from "./notification-settings";
 
 type NotificationSource =
-  | { category: Exclude<NotificationCategory, "terminal"> }
+  | { category: Exclude<NotificationCategory, "terminal" | "longCommand"> }
+  | { category: "longCommand"; durationMs: number }
   | { category: "terminal"; terminal: AbortSignal };
 
 const lastTerminalMessage = new WeakMap<AbortSignal, number>();
@@ -19,10 +20,14 @@ export function notifySystem(source: NotificationSource, message: (t: TFunction)
   const terminal = source.category === "terminal" ? source.terminal : undefined;
   if (terminal?.aborted) return;
   const now = performance.now();
+  const settings = getSetting(notificationSetting);
   if (!shouldSendNotification({
     foreground: document.hasFocus(),
-    enabled: getSetting(notificationSetting)[source.category],
+    enabled: settings[source.category],
     terminal: terminal && { now, lastSent: lastTerminalMessage.get(terminal) },
+    command: source.category === "longCommand"
+      ? { durationMs: source.durationMs, thresholdMs: settings.longCommandThresholdSeconds * 1_000 }
+      : undefined,
   })) return;
 
   if (terminal) lastTerminalMessage.set(terminal, now);
