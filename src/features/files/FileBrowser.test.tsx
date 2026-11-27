@@ -175,7 +175,11 @@ describe("FileBrowser", () => {
     await act(async () => bookmarkMenuItem("Edit Bookmarks")!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
     const submenu = [...document.querySelectorAll('[role="menu"]')].at(-1)!;
     await act(async () => submenu.querySelector<HTMLElement>('[role="menuitem"]')!.click());
-    await act(async () => { await vi.waitFor(() => expect(dialog()).not.toBeNull()); });
+    await act(async () => {
+      // Radix runs the close autofocus callback on the next timer tick.
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    });
+    expect(dialog()).not.toBeNull();
     const input = dialog()!.querySelector<HTMLInputElement>('input[aria-label="Name (optional)"]')!;
     expect(input.value).toBe("Backups");
     await act(async () => type(input, "Off-site"));

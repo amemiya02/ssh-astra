@@ -731,6 +731,15 @@
     "followSystemAction": "主题：跟随系统"
   },
   "terminal": {
+    "fileDrop": {
+      "destinationTitle": "选择上传目录",
+      "destinationBody": "{{host}} 上的终端尚未上报当前目录。要将文件上传到哪里？",
+      "filePanel": "文件面板目录",
+      "home": "主目录",
+      "cancel": "取消",
+      "uploadFailed": "无法开始向 {{host}} 上传文件。",
+      "pasteFailed": "无法将拖入的路径粘贴到此 shell。"
+    },
     "shellIntegration": {
       "disabled": "设置中已关闭 Shell 集成。",
       "unsupported": "当前 Shell 不支持集成。请使用启用了提示符展开的 bash 4.4 或更高版本，或使用 zsh。",

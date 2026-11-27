@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
+import { PhysicalPosition } from "@tauri-apps/api/dpi";
 import { emit, TauriEvent } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC, mockWindows } from "@tauri-apps/api/mocks";
+import type { DragDropEvent } from "@tauri-apps/api/webview";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -45,14 +47,23 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
       target?: QuickConnectTarget;
       hostId?: string;
       id?: string;
+      shellId?: string;
       draft?: HostDraft;
       onPrompt?: PromptChannel;
     }) => {
-      if (command === "remote_terminal_open" && args?.hostId) {
-        const connect = remoteOpenFixtures.get(args.hostId);
+      if (command === "remote_terminal_open") {
+        const connect = args?.hostId && remoteOpenFixtures.get(args.hostId);
         if (connect) await connect(args.onPrompt!);
+        return ++nextTerminalId;
       }
-      if (command === "remote_terminal_open" || command === "local_terminal_open") return ++nextTerminalId;
+      if (command === "local_terminal_open") return {
+        id: ++nextTerminalId,
+        shellProgram: localShellPrograms.get(args?.shellId ?? "") ?? "zsh",
+        wslDistribution: args?.shellId?.startsWith("wsl:") ? args.shellId.slice(4) : null,
+      };
+      if (command === "local_terminal_wsl_paths") return {
+        shellProgram: "fish", paths: ["/custom/c/some folder/it's.txt"],
+      };
       if (command === "local_terminal_shells") return [
         { id: "/bin/zsh", label: "/bin/zsh" },
         { id: "/bin/bash", label: "/bin/bash" },
@@ -76,7 +87,8 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
       if (command === "files_open" && args?.hostId && panelListings.has(args.hostId)) return args.hostId;
       if (command === "files_open" || command === "files_connect" || command === "files_local_open") return command;
       if (command === "files_list") return panelListings.get(args?.id ?? "") ?? { path: "/", entries: [] };
-      if (command === "transfers_copy_remote") return [1];
+      if (command === "files_remote_home") return "/home/deploy";
+      if (command === "transfers_upload" || command === "transfers_copy_remote") return [1];
       if (command === "transfers_watch") return initialTransfers;
       if (command === "snippets_list") return snippetLibrary;
       if (command === "forwards_watch") return initialForwards;
@@ -108,8 +120,15 @@ vi.mock("@tauri-apps/plugin-updater", async (importOriginal) => ({
 }));
 vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: vi.fn() }));
 
+const fileDragListeners = new Set<(event: { payload: DragDropEvent }) => void>();
 vi.mock("@tauri-apps/api/webview", () => ({
-  getCurrentWebview: () => ({ onDragDropEvent: async () => () => {}, setZoom: async () => {} }),
+  getCurrentWebview: () => ({
+    async onDragDropEvent(listener: (event: { payload: DragDropEvent }) => void) {
+      fileDragListeners.add(listener);
+      return () => { fileDragListeners.delete(listener); };
+    },
+    setZoom: async () => {},
+  }),
 }));
 
 // Exercise the real app and Terminal lifecycle without a renderer or native backend.
@@ -148,6 +167,7 @@ let saveTemporaryError: { kind: string; message: string } | undefined;
 const panelListings = new Map<string, Listing>();
 type PromptChannel = { onmessage(message: ConnectPrompt): void };
 const remoteOpenFixtures = new Map<string, (channel: PromptChannel) => Promise<void>>();
+const localShellPrograms = new Map<string, string>();
 const remote = (id: string) => newPane({ kind: "remote-terminal", host }, id);
 const local = (id: string) => newPane({ kind: "local-terminal" }, id);
 
@@ -215,6 +235,7 @@ afterEach(async () => {
   updatesStore.setState({ status: { type: "idle" } });
   panelListings.clear();
   remoteOpenFixtures.clear();
+  localShellPrograms.clear();
   clearMocks();
   vi.unstubAllGlobals();
 });
@@ -320,6 +341,116 @@ async function sendTerminalMessage(message: TerminalMessage, openCommand = "remo
   await act(async () => onEvent.onmessage(message));
 }
 
+async function dropFiles(selector: string, paths: string[]) {
+  const target = document.querySelector(selector);
+  expect(target).not.toBeNull();
+  const original = Object.getOwnPropertyDescriptor(document, "elementFromPoint");
+  Object.defineProperty(document, "elementFromPoint", {
+    configurable: true, value: (x: number, y: number) => x === 100 && y === 200 ? target : null,
+  });
+  const scale = window.devicePixelRatio || 1;
+  const position = new PhysicalPosition(100 * scale, 200 * scale);
+  try {
+    await act(async () => {
+      for (const listener of fileDragListeners) {
+        listener({ payload: { type: "drop", position, paths } });
+      }
+    });
+  } finally {
+    if (original) Object.defineProperty(document, "elementFromPoint", original);
+    else Reflect.deleteProperty(document, "elementFromPoint");
+  }
+}
+
+const uploads = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === "transfers_upload");
+
+it("uploads system files to the split Terminal under the pointer, using its reported directory", async () => {
+  vi.stubGlobal("devicePixelRatio", 2);
+  await render(workspace(
+    { type: "open", tabId: "drop-remote", pane: remote("drop-target") },
+    { type: "split", pane: remote("drop-focused"), orientation: "horizontal" },
+  ));
+  await sendTerminalMessage({ cwd: "/srv/target directory" });
+  await sendTerminalMessage({ cwd: "/srv/focused" }, "remote_terminal_open", 1);
+  const paths = ["/tmp/first file.txt", "/tmp/second.txt"];
+
+  await dropFiles("#pane-drop-target > div", paths);
+
+  expect(dialog()).toBeNull();
+  expect(uploads()).toEqual([["transfers_upload", {
+    host: { id: host.id, name: host.name }, paths, remoteDir: "/srv/target directory",
+  }]]);
+});
+
+it("asks where to upload when the Terminal has no directory report, and respects each answer", async () => {
+  panelListings.set(host.id, { path: "/srv/panel", entries: [] });
+  await render(workspace({ type: "open", tabId: "unknown-directory", pane: remote("unknown-directory") }));
+  const paths = ["/tmp/file.txt"];
+  const target = "#pane-unknown-directory > div";
+
+  await dropFiles(target, paths);
+  expect(dialog()?.querySelector("h2")?.textContent).toBe("Choose an upload folder");
+  expect(dialog()?.textContent).toContain("/srv/panel");
+  expect(uploads()).toEqual([]);
+  await clickButton("Cancel", dialog()!);
+  expect(uploads()).toEqual([]);
+
+  await dropFiles(target, paths);
+  await clickButton("File panel folder", dialog()!);
+  await dropFiles(target, paths);
+  await clickButton("Home folder", dialog()!);
+  expect(uploads().map(([, args]) => args)).toEqual([
+    { host: { id: host.id, name: host.name }, paths, remoteDir: "/srv/panel" },
+    { host: { id: host.id, name: host.name }, paths, remoteDir: "/home/deploy" },
+  ]);
+  expect(vi.mocked(invoke)).toHaveBeenCalledWith("files_remote_home", { hostId: host.id });
+});
+
+it("continues to upload system files dropped directly in the File panel", async () => {
+  panelListings.set(host.id, { path: "/srv/file-panel", entries: [] });
+  await render(workspace({ type: "open", tabId: "file-panel-drop", pane: remote("file-panel-drop") }));
+  const paths = ["/tmp/file.txt"];
+
+  await dropFiles('#files [role="grid"]', paths);
+
+  expect(dialog()).toBeNull();
+  expect(uploads()).toEqual([["transfers_upload", {
+    host: { id: host.id, name: host.name }, paths, remoteDir: "/srv/file-panel",
+  }]]);
+});
+
+it("offers only the Home folder when the Terminal has no File panel folder", async () => {
+  const other = { ...host, id: "drop-other-host", name: "Other Host" };
+  panelListings.set(other.id, { path: "/srv/other-host", entries: [] });
+  await render(workspace(
+    { type: "open", tabId: "drop-other-panel", pane: remote("drop-no-panel") },
+    { type: "split", pane: newPane({ kind: "remote-terminal", host: other }, "drop-other-panel"), orientation: "horizontal" },
+  ));
+  expect(document.querySelector('#files [role="grid"]')?.getAttribute("aria-label")).toBe("Files in /srv/other-host");
+
+  await dropFiles("#pane-drop-no-panel > div", ["/tmp/file.txt"]);
+
+  expect(dialog()?.textContent).toContain(host.name);
+  expect(dialog()?.textContent).not.toContain("/srv/other-host");
+  const options = [...dialog()!.querySelectorAll("button")];
+  expect(options.find((option) => option.textContent === "File panel folder")?.disabled).toBe(true);
+  expect(options.find((option) => option.textContent === "Home folder")?.disabled).toBe(false);
+});
+
+it("asks for a destination after reconnecting when the replacement shell has yet to report", async () => {
+  await render(workspace({ type: "open", tabId: "drop-reconnected", pane: remote("drop-reconnected") }));
+  await sendTerminalMessage({ cwd: "/srv/old-shell" });
+  await sendTerminalMessage({ connection: { state: "reconnecting", attempt: 1, attempts: 3 } });
+  await dropFiles("#pane-drop-reconnected > div", ["/tmp/file.txt"]);
+  expect(dialog()).toBeNull();
+  await sendTerminalMessage({ connection: { state: "connected" } });
+
+  await dropFiles("#pane-drop-reconnected > div", ["/tmp/file.txt"]);
+
+  expect(uploads()).toEqual([]);
+  expect(dialog()?.querySelector("h2")?.textContent).toBe("Choose an upload folder");
+});
+
 async function flushTerminalOutput() {
   await act(async () => {
     await Promise.all([...testTerminals].map((terminal) => new Promise<void>((resolve) => terminal.write("", resolve))));
@@ -397,7 +528,8 @@ function contextMenuItem(label: string) {
 async function openedTerminalId(command: "remote_terminal_open" | "local_terminal_open") {
   const ipc = vi.mocked(invoke);
   const opened = ipc.mock.calls.findIndex(([name]) => name === command);
-  return await ipc.mock.results[opened]?.value as number;
+  const result = await ipc.mock.results[opened]?.value as number | { id: number };
+  return typeof result === "number" ? result : result.id;
 }
 
 function openTerminalMenu(paneId: string) {
@@ -1016,6 +1148,35 @@ async function broadcastShortcut(inWindow = false) {
 }
 
 const broadcastMarks = () => [...document.querySelectorAll("[data-broadcast-recipient]")].map((mark) => mark.parentElement?.id);
+
+it("pastes a literal path only into the Local terminal under the pointer, even with Broadcast enabled", async () => {
+  localShellPrograms.set("/bin/bash", "fish");
+  await render(workspace(
+    { type: "open", tabId: "local-drop", pane: newPane({ kind: "local-terminal", shellId: "/bin/bash" }, "local-drop") },
+    { type: "split", pane: local("focused-local-drop"), orientation: "horizontal" },
+  ));
+  const id = await openedTerminalId("local_terminal_open");
+  await broadcastShortcut();
+  expect(broadcastMarks()).toEqual(["pane-local-drop", "pane-focused-local-drop"]);
+
+  await dropFiles("#pane-local-drop > div", ["/tmp/it's a file.txt"]);
+
+  expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === "terminal_write"))
+    .toEqual([["terminal_write", { id, data: "'/tmp/it\\'s a file.txt'" }]]);
+});
+
+it("uses the running WSL distribution's translated paths and shell", async () => {
+  const pane = newPane({ kind: "local-terminal", shellId: "wsl:Ubuntu" }, "wsl-drop");
+  await render(workspace({ type: "open", tabId: "wsl-drop", pane }));
+  const id = await openedTerminalId("local_terminal_open");
+  const paths = [String.raw`C:\some folder\it's.txt`];
+
+  await dropFiles("#pane-wsl-drop > div", paths);
+
+  expect(vi.mocked(invoke)).toHaveBeenCalledWith("local_terminal_wsl_paths", { distribution: "Ubuntu", paths });
+  expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === "terminal_write"))
+    .toEqual([["terminal_write", { id, data: "'/custom/c/some folder/it\\'s.txt'" }]]);
+});
 
 it("marks connected Terminals in the chosen Broadcast scope and lets the status bar turn it off", async () => {
   await render(workspace(

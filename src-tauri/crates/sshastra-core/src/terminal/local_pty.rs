@@ -1,6 +1,6 @@
 use std::ffi::OsString;
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -86,6 +86,7 @@ impl ShellCommand {
 /// shell produces it. On macOS and Linux the reader also reports changes to
 /// the shell process's working directory.
 pub struct LocalPty {
+    shell_program: String,
     writer: Box<dyn Write + Send>,
     /// Shared with the waiter thread, which drops it once the shell exits (on
     /// Windows the output pipe only reaches EOF after that).
@@ -101,10 +102,18 @@ impl LocalPty {
         let pair = native_pty_system()
             .openpty(pty_size(size))
             .map_err(spawn_err)?;
-        let mut child = pair
-            .slave
-            .spawn_command(command.to_builder())
-            .map_err(spawn_err)?;
+        let builder = command.to_builder();
+        let program = builder
+            .get_argv()
+            .first()
+            .cloned()
+            .unwrap_or_else(|| builder.get_shell().into());
+        let shell_program = Path::new(&program)
+            .file_name()
+            .unwrap_or(&program)
+            .to_string_lossy()
+            .into_owned();
+        let mut child = pair.slave.spawn_command(builder).map_err(spawn_err)?;
         // Only the child may hold the slave end, or the reader never sees EOF.
         drop(pair.slave);
 
@@ -142,10 +151,16 @@ impl LocalPty {
             .map_err(spawn_err)?;
 
         Ok(Self {
+            shell_program,
             writer,
             master,
             killer,
         })
+    }
+
+    /// The executable name selected by the command builder for this PTY.
+    pub fn shell_program(&self) -> &str {
+        &self.shell_program
     }
 }
 

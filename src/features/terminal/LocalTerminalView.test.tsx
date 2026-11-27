@@ -10,12 +10,13 @@ import { XtermView } from "./XtermView";
 vi.mock("./XtermView", () => ({ XtermView: vi.fn(() => null) }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("@/lib/ipc/terminal", () => ({
-  openLocalTerminal: vi.fn(), writeTerminal: vi.fn(), resizeTerminal: vi.fn(), closeTerminal: vi.fn(),
+  openLocalTerminal: vi.fn(), writeTerminal: vi.fn(), resizeTerminal: vi.fn(), closeTerminal: vi.fn(), resolveWslPaths: vi.fn(),
 }));
 
 it("forwards the early ConPTY cursor reply and typed input when the local terminal opens", async () => {
-  let finishOpening!: (id: number) => void;
-  const opening = new Promise<number>((resolve) => { finishOpening = resolve; });
+  type Opened = Awaited<ReturnType<typeof openLocalTerminal>>;
+  let finishOpening!: (terminal: Opened) => void;
+  const opening = new Promise<Opened>((resolve) => { finishOpening = resolve; });
   vi.mocked(openLocalTerminal).mockReturnValue(opening);
   const root = createRoot(document.createElement("div"));
   const terminal = new Terminal();
@@ -29,8 +30,10 @@ it("forwards the early ConPTY cursor reply and typed input when the local termin
     await new Promise<void>((done) => terminal.write("", done));
     terminal.input("dir\r");
     expect(writeTerminal).not.toHaveBeenCalled();
-    finishOpening(7);
-    await opening;
+    await act(async () => {
+      finishOpening({ id: 7, shellProgram: "cmd.exe", wslDistribution: null });
+      await opening;
+    });
     expect(vi.mocked(writeTerminal).mock.calls).toEqual([[7, "\x1b[1;1Rdir\r"]]);
   } finally {
     detach();
@@ -41,7 +44,7 @@ it("forwards the early ConPTY cursor reply and typed input when the local termin
 
 it("sends an explicit Snippet through the open local shell with its bracketed paste mode", async () => {
   vi.mocked(writeTerminal).mockClear();
-  vi.mocked(openLocalTerminal).mockClear().mockResolvedValue(8);
+  vi.mocked(openLocalTerminal).mockClear().mockResolvedValue({ id: 8, shellProgram: "bash", wslDistribution: null });
   const broadcast = createBroadcast();
   broadcast.updateWorkspace("pane", ["tab"], ["pane"]);
   const root = createRoot(document.createElement("div"));
@@ -54,7 +57,7 @@ it("sends an explicit Snippet through the open local shell with its bracketed pa
   ));
   const detach = vi.mocked(XtermView).mock.lastCall![0].attach(terminal);
   try {
-    await vi.mocked(openLocalTerminal).mock.results[0]!.value;
+    await act(async () => { await vi.mocked(openLocalTerminal).mock.results[0]!.value; });
     await new Promise<void>((resolve) => terminal.write("\x1b[?2004h", resolve));
     expect(writeTerminal).not.toHaveBeenCalled();
     await broadcast.captureInput("pane")!.send("echo one\necho two", false);

@@ -110,7 +110,8 @@ function SplitPanes({ broadcast, tab, active, nextConnection, onResizeSplit, ...
                 hostId: pane.kind === "remote-terminal" ? pane.host.id : undefined,
                 split: canSplit(tab, pane.id) ? (orientation) => callbacks.onSplitPane(pane.id, orientation) : undefined,
               }}>
-                <PaneContent pane={pane} active={active && focused} autoConnect={pane.id === nextConnection} {...callbacks} />
+                <PaneContent pane={pane} active={active && focused} visible={active && (!maximized || focused)}
+                  autoConnect={pane.id === nextConnection} {...callbacks} />
               </TerminalPaneMenuContext.Provider>
             </BroadcastPaneContext.Provider>
             {broadcast && <BroadcastMarker broadcast={broadcast} paneId={pane.id} />}
@@ -154,6 +155,7 @@ function paneStyle({ left, top, width, height }: PaneBounds): CSSProperties {
 function PaneContent({
   pane,
   active,
+  visible,
   autoConnect,
   onConnectRestoredPane,
   onTitleChange,
@@ -162,7 +164,7 @@ function PaneContent({
   onClosePane,
   onEditHost,
   renderHome,
-}: { pane: Pane; active: boolean; autoConnect: boolean } & PaneCallbacks) {
+}: { pane: Pane; active: boolean; visible: boolean; autoConnect: boolean } & PaneCallbacks) {
   if (pane.restoreConnection && !autoConnect && (pane.kind === "remote-terminal" || pane.kind === "sftp")) {
     return <RestoredConnection
       host={pane.host.name}
@@ -177,6 +179,7 @@ function PaneContent({
       return (
         <LocalTerminalView
           active={active}
+          visible={visible}
           initialCwd={pane.cwd}
           shellId={pane.shellId}
           onTitleChange={(title) => onTitleChange(pane.id, title)}
@@ -192,6 +195,7 @@ function PaneContent({
           onClose={() => onClosePane(pane.id)}
           onEditHost={() => onEditHost(pane.host)}
           active={active}
+          visible={visible}
           showPrompts={active || autoConnect}
           onTitleChange={(title) => onTitleChange(pane.id, title)}
           onStatusChange={(status, reconnecting) => onStatusChange(pane.id, status, reconnecting)}

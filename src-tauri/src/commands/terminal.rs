@@ -21,9 +21,9 @@ use serde::Serialize;
 use sshastra_core::hosts::HostId;
 use sshastra_core::ssh::{RemoteTerminal, RemoteTerminalOptions};
 use sshastra_core::terminal::{
-    local_shell_command, local_shells, ConnectionState, LocalPty, LocalShell, OutputKind,
-    OutputStatus, ShellCommand, ShellIntegrationEvent, TerminalEvent, TerminalId, TerminalOutput,
-    TerminalRegistry, TerminalSettings, TerminalSize, REPORT_CWD,
+    local_shell_command, local_shells, local_wsl_paths, ConnectionState, LocalPty, LocalShell,
+    OutputKind, OutputStatus, ShellCommand, ShellIntegrationEvent, TerminalEvent, TerminalId,
+    TerminalOutput, TerminalRegistry, TerminalSettings, TerminalSize, REPORT_CWD,
 };
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, State};
@@ -148,6 +148,14 @@ pub async fn local_terminal_shells() -> Vec<LocalShell> {
     local_shells().await
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenedLocalTerminal {
+    id: TerminalId,
+    shell_program: String,
+    wsl_distribution: Option<String>,
+}
+
 /// Opens a Local terminal with the selected shell or the user's system default.
 #[tauri::command]
 pub async fn local_terminal_open(
@@ -158,10 +166,10 @@ pub async fn local_terminal_open(
     on_event: Channel<InvokeResponseBody>,
     cwd: Option<PathBuf>,
     shell_id: Option<String>,
-) -> CommandResult<TerminalId> {
-    let command = match shell_id {
-        Some(id) => match local_shell_command(&id).await {
-            Some(command) => command,
+) -> CommandResult<OpenedLocalTerminal> {
+    let (command, wsl_distribution) = match shell_id.as_deref() {
+        Some(id) => match local_shell_command(id).await {
+            Some(command) => (command, id.strip_prefix("wsl:").map(str::to_owned)),
             None => {
                 send_json(
                     &on_event,
@@ -169,10 +177,10 @@ pub async fn local_terminal_open(
                         local_shell_fallback: true,
                     },
                 );
-                ShellCommand::default_shell()
+                (ShellCommand::default_shell(), None)
             }
         },
-        None => ShellCommand::default_shell(),
+        None => (ShellCommand::default_shell(), None),
     };
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     let command = match cwd {
@@ -190,7 +198,33 @@ pub async fn local_terminal_open(
         &on_event,
     );
     let pty = LocalPty::spawn(command, size, output.wrap(channel_sink(on_event, None)))?;
-    Ok(registry.insert_with_output(Box::new(pty), output))
+    let shell_program = pty.shell_program().to_owned();
+    let id = registry.insert_with_output(Box::new(pty), output);
+    Ok(OpenedLocalTerminal {
+        id,
+        shell_program,
+        wsl_distribution,
+    })
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalWslPaths {
+    shell_program: String,
+    paths: Vec<String>,
+}
+
+/// Translates dropped file paths using the running WSL distribution's mounts and login shell.
+#[tauri::command]
+pub async fn local_terminal_wsl_paths(
+    distribution: String,
+    paths: Vec<String>,
+) -> Option<LocalWslPaths> {
+    let (shell_program, paths) = local_wsl_paths(&distribution, &paths).await?;
+    Some(LocalWslPaths {
+        shell_program,
+        paths,
+    })
 }
 
 /// Opens a Terminal on a Host, connecting first (through its Jump

@@ -41,6 +41,22 @@ pub async fn local_shell_command(id: &str) -> Option<ShellCommand> {
         .map(|shell| shell.command)
 }
 
+/// Resolves Windows filesystem paths and the user's login shell inside a WSL distribution.
+pub async fn local_wsl_paths(
+    distribution: &str,
+    paths: &[String],
+) -> Option<(String, Vec<String>)> {
+    #[cfg(windows)]
+    {
+        windows::drop_paths(distribution, paths).await
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (distribution, paths);
+        None
+    }
+}
+
 #[cfg(unix)]
 async fn discover(_include_wsl: bool) -> Vec<LocalShell> {
     use std::fs::File;
@@ -186,6 +202,65 @@ mod windows {
         env::var_os(name)
             .map(PathBuf::from)
             .filter(|path| path.is_absolute())
+    }
+
+    pub(super) async fn drop_paths(
+        distribution: &str,
+        paths: &[String],
+    ) -> Option<(String, Vec<String>)> {
+        use std::process::Stdio;
+
+        if paths.is_empty()
+            || paths
+                .iter()
+                .any(|path| path.is_empty() || path.chars().any(char::is_control))
+        {
+            return None;
+        }
+        // Arguments arrive separately from the fixed script. Resolve each path in the same
+        // distribution, whose drive mount prefix and default user can be customized.
+        const SCRIPT: &str = r#"
+            user=$(getent passwd "$(id -u)") || exit 1
+            shell=${user##*:}
+            shell=${shell:-/bin/sh}
+            printf '%s\0' "${shell##*/}"
+            for path; do
+                translated=$(wslpath -u "$path") || exit 1
+                printf '%s\0' "$translated"
+            done
+        "#;
+        let wsl = env_path("SystemRoot")?.join("System32/wsl.exe");
+        let output = timeout(
+            Duration::from_secs(5),
+            Command::new(wsl)
+                .args([
+                    "--distribution",
+                    distribution,
+                    "--exec",
+                    "/bin/sh",
+                    "-c",
+                    SCRIPT,
+                    "sh",
+                ])
+                .args(paths)
+                .stdin(Stdio::null())
+                .stderr(Stdio::null())
+                .creation_flags(CREATE_NO_WINDOW)
+                .kill_on_drop(true)
+                .output(),
+        )
+        .await
+        .ok()?
+        .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let output = std::str::from_utf8(&output.stdout)
+            .ok()?
+            .strip_suffix('\0')?;
+        let (program, translated) = output.split_once('\0')?;
+        let translated: Vec<_> = translated.split('\0').map(str::to_owned).collect();
+        (translated.len() == paths.len()).then(|| (program.to_owned(), translated))
     }
 
     fn git_install_path(root: HKEY, registry_view: u32) -> Option<PathBuf> {
