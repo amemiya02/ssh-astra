@@ -259,6 +259,20 @@ impl SftpFs {
         }
     }
 
+    async fn posix_rename(&self, session: &RawSftpSession, from: &str, to: &str) -> FsResult<()> {
+        let payload =
+            russh_sftp::ser::to_bytes(&(from, to)).map_err(|e| FsError::Protocol(e.to_string()))?;
+        let response = session
+            .extended(POSIX_RENAME, payload.to_vec())
+            .await
+            .map_err(|e| self.error(to, e))?;
+        match response {
+            Packet::Status(status) if status.status_code == StatusCode::Ok => Ok(()),
+            Packet::Status(status) => Err(self.error(to, SftpError::Status(status))),
+            _ => Err(error(to, SftpError::UnexpectedPacket)),
+        }
+    }
+
     fn error(&self, path: &str, error: SftpError) -> FsError {
         connection_error(&self.connection, path, error)
     }
@@ -519,17 +533,35 @@ impl RemoteFs for SftpFs {
             else {
                 return publish_by_plain_rename(self, from, to, true).await;
             };
-            let payload = russh_sftp::ser::to_bytes(&(from, to))
-                .map_err(|e| FsError::Protocol(e.to_string()))?;
-            let response = session
-                .extended(POSIX_RENAME, payload.to_vec())
-                .await
-                .map_err(|e| self.error(to, e))?;
-            match response {
-                Packet::Status(status) if status.status_code == StatusCode::Ok => Ok(()),
-                Packet::Status(status) => Err(self.error(to, SftpError::Status(status))),
-                _ => Err(error(to, SftpError::UnexpectedPacket)),
+            self.posix_rename(session, from, to).await
+        })
+    }
+
+    fn publish_atomic<'a>(
+        &'a self,
+        from: &'a str,
+        to: &'a str,
+        overwrite: bool,
+        authorized: &'a (dyn Fn() -> bool + Sync),
+    ) -> BoxFuture<'a, FsResult<bool>> {
+        Box::pin(async move {
+            if !overwrite {
+                if !authorized() {
+                    return Ok(false);
+                }
+                return self.rename(from, to).await.map(|()| true);
             }
+            let Some(session) = self
+                .rename_session
+                .get_or_try_init(|| self.rename_session())
+                .await?
+            else {
+                return Err(FsError::AtomicReplacementUnavailable);
+            };
+            if !authorized() {
+                return Ok(false);
+            }
+            self.posix_rename(session, from, to).await.map(|()| true)
         })
     }
 

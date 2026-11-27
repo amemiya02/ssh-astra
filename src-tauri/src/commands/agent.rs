@@ -1,5 +1,5 @@
 //! Reads use a saved Host's existing Terminal and exact Connection.
-//! Screen and command review requests use that Terminal's own renderer.
+//! Screen requests and action reviews use that Terminal's own renderer.
 
 pub(crate) mod review;
 
@@ -11,10 +11,11 @@ use std::time::SystemTime;
 
 use serde::Serialize;
 use sshastra_core::agent::{
-    ActivityCursor, ActivityPage, AgentActivityLog, AgentBackend, DirectoryRead, OpenTerminal,
-    ReadError, ReadTarget, ReviewOutcome, TerminalScreen, SCREEN_BYTE_LIMIT,
+    ActivityCursor, ActivityPage, AgentActivityLog, AgentBackend, ApprovedFileWrite, DirectoryRead,
+    FileWritePublication, OpenTerminal, ReadError, ReadTarget, ReviewOutcome, TerminalScreen,
+    SCREEN_BYTE_LIMIT,
 };
-use sshastra_core::files::{FsError, FsResult, SftpFs};
+use sshastra_core::files::{FsError, FsResult, SftpFs, StagedRemoteWrite};
 use sshastra_core::ssh::{BoxFuture, Connection};
 use sshastra_core::terminal::{TerminalId, TerminalRegistry};
 use tauri::{
@@ -25,6 +26,7 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 use tokio::sync::{oneshot, Semaphore};
 use tokio::time::Instant;
 
+use crate::terminal_handoff::TerminalRoute;
 use crate::windows;
 
 use super::hosts::HostsState;
@@ -33,7 +35,7 @@ use crate::error::CommandResult;
 pub(crate) use review::PendingReviews;
 use review::{ReviewChoice, ReviewDetails};
 
-const MAX_PENDING_REMOTE_READS: usize = 8;
+const MAX_PENDING_REMOTE_IO: usize = 8;
 
 pub(crate) struct DesktopAgent {
     app: AppHandle,
@@ -48,7 +50,7 @@ impl DesktopAgent {
             app,
             hosts,
             registry,
-            remote_slots: Arc::new(Semaphore::new(MAX_PENDING_REMOTE_READS)),
+            remote_slots: Arc::new(Semaphore::new(MAX_PENDING_REMOTE_IO)),
         }
     }
 
@@ -63,6 +65,20 @@ impl DesktopAgent {
             return Err(ReadError::ConnectionUnavailable);
         }
         Ok(connection)
+    }
+
+    fn review_target_current(
+        &self,
+        target: &ReadTarget,
+        route: &Arc<TerminalRoute>,
+        enabled: &(dyn Fn() -> bool + Sync),
+    ) -> bool {
+        enabled()
+            && self.target(target.terminal).is_some_and(|current| {
+                current.same_authorization(target) && current.host_name == target.host_name
+            })
+            && windows::terminal_route(&self.app, target.terminal)
+                .is_some_and(|current| Arc::ptr_eq(&current, route))
     }
 
     async fn remote_read<T, F>(
@@ -89,6 +105,53 @@ impl DesktopAgent {
             Ok(Ok(Some(data))) => Ok(data),
             Ok(Err(FsError::NotConnected)) => Err(ReadError::ConnectionUnavailable),
             _ => Err(ReadError::PathUnavailable),
+        }
+    }
+
+    async fn write_approved_file(
+        &self,
+        connection: Arc<Connection>,
+        path: String,
+        bytes: Vec<u8>,
+        authorized: &(dyn Fn() -> bool + Sync),
+        publication: &FileWritePublication,
+    ) -> ReviewOutcome {
+        if !authorized() {
+            return ReviewOutcome::Unavailable;
+        }
+        let Ok(permit) = Arc::clone(&self.remote_slots).try_acquire_owned() else {
+            return ReviewOutcome::WriteFailed;
+        };
+        let (keep_staging, mut cancelled) = oneshot::channel::<()>();
+        // Wait for an opened SSH channel to be owned and closed even when the
+        // caller disconnects mid-open. This task can only stage and clean up.
+        let task = tauri::async_runtime::spawn(async move {
+            let fs = Arc::new(connection.open_sftp().await?);
+            tokio::select! {
+                biased;
+                _ = &mut cancelled => Ok(None),
+                stage = StagedRemoteWrite::prepare(fs, &path, &bytes) => {
+                    stage.map(|stage| Some((stage, permit)))
+                }
+            }
+        });
+        let prepared = task.await;
+        drop(keep_staging);
+        let Ok(Ok(Some((stage, _permit)))) = prepared else {
+            return ReviewOutcome::WriteFailed;
+        };
+        // Publication stays with the original MCP call.
+        let before_rename = || {
+            if !authorized() {
+                return false;
+            }
+            publication.start();
+            true
+        };
+        match stage.publish(&before_rename).await {
+            Ok(true) => ReviewOutcome::Written,
+            Ok(false) => ReviewOutcome::Unavailable,
+            Err(_) => publication.interrupted(ReviewOutcome::WriteFailed),
         }
     }
 }
@@ -138,14 +201,7 @@ impl AgentBackend for DesktopAgent {
             let Some(route) = windows::terminal_route(&self.app, target.terminal) else {
                 return unavailable;
             };
-            let current_target = || {
-                enabled()
-                    && self.target(target.terminal).is_some_and(|current| {
-                        current.same_authorization(target) && current.host_name == target.host_name
-                    })
-                    && windows::terminal_route(&self.app, target.terminal)
-                        .is_some_and(|current| Arc::ptr_eq(&current, &route))
-            };
+            let current_target = || self.review_target_current(target, &route, enabled);
             let Some((delivery, mut route_changes)) = route.lock().review_delivery() else {
                 return unavailable;
             };
@@ -183,7 +239,7 @@ impl AgentBackend for DesktopAgent {
             };
             let outcome = match answer.choice {
                 ReviewChoice::Reject => ReviewOutcome::Rejected,
-                ReviewChoice::Unavailable => unavailable,
+                ReviewChoice::Unavailable | ReviewChoice::Approve => unavailable,
                 ReviewChoice::Copy => {
                     // Drain previously queued user input and confirm that the
                     // very same prompt and renderer still own this choice.
@@ -207,6 +263,85 @@ impl AgentBackend for DesktopAgent {
             };
             let _ = answer.completed.send(outcome);
             outcome
+        })
+    }
+
+    fn request_file_write_approval<'a>(
+        &'a self,
+        target: &'a ReadTarget,
+        path: String,
+        byte_length: usize,
+        enabled: &'a (dyn Fn() -> bool + Sync),
+        deadline: Instant,
+    ) -> BoxFuture<'a, Result<ApprovedFileWrite<'a>, ReviewOutcome>> {
+        Box::pin(async move {
+            let unavailable = ReviewOutcome::Unavailable;
+            let mut permission = self
+                .hosts
+                .watch_agent_approval(&target.host)
+                .ok_or(unavailable)?;
+            let route = windows::terminal_route(&self.app, target.terminal).ok_or(unavailable)?;
+            let connection = self.connection(target).map_err(|_| unavailable)?;
+            let (delivery, mut route_changes) =
+                route.lock().review_delivery().ok_or(unavailable)?;
+            if !self.review_target_current(target, &route, enabled)
+                || !matches!(permission.has_changed(), Ok(false))
+                || !matches!(route_changes.has_changed(), Ok(false))
+            {
+                return Err(unavailable);
+            }
+            let details = ReviewDetails::FileWrite {
+                terminal_id: target.terminal,
+                host: &target.host_name,
+                path: &path,
+                byte_length,
+            };
+            let broker = self.app.state::<Arc<PendingReviews>>();
+            let mut review = broker
+                .inner()
+                .request(delivery, details)
+                .ok_or(unavailable)?;
+            let answer = tokio::select! {
+                biased;
+                _ = permission.changed() => return Err(unavailable),
+                _ = route_changes.changed() => return Err(unavailable),
+                answer = &mut review.answer => answer.map_err(|_| unavailable)?,
+            };
+            let refusal = match answer.choice {
+                ReviewChoice::Reject => Some(ReviewOutcome::Rejected),
+                ReviewChoice::Approve if Instant::now() >= deadline => {
+                    Some(ReviewOutcome::TimedOut)
+                }
+                ReviewChoice::Approve => None,
+                _ => Some(unavailable),
+            };
+            if let Some(outcome) = refusal {
+                let _ = answer.completed.send(outcome);
+                return Err(outcome);
+            }
+            let write: ApprovedFileWrite<'a> = Box::new(move |bytes, deadline, publication| {
+                Box::pin(async move {
+                    let _review = review;
+                    let mut host_changes = permission.clone();
+                    let mut terminal_changes = route_changes.clone();
+                    let authorized = || {
+                        Instant::now() < deadline
+                            && self.review_target_current(target, &route, enabled)
+                            && matches!(permission.has_changed(), Ok(false))
+                            && matches!(route_changes.has_changed(), Ok(false))
+                    };
+                    let outcome = tokio::select! {
+                        biased;
+                        _ = tokio::time::sleep_until(deadline) => publication.interrupted(ReviewOutcome::TimedOut),
+                        _ = host_changes.changed() => publication.interrupted(unavailable),
+                        _ = terminal_changes.changed() => publication.interrupted(unavailable),
+                        outcome = self.write_approved_file(connection, path, bytes, &authorized, &publication) => outcome,
+                    };
+                    let _ = answer.completed.send(outcome);
+                    outcome
+                })
+            });
+            Ok(write)
         })
     }
 

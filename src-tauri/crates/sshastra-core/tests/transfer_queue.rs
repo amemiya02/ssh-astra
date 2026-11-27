@@ -12,13 +12,66 @@ use std::time::Duration;
 
 use sshastra_core::files::{
     ConflictAnswer, FileEntry, FileKind, FileReader, FileStat, FileWriter, FsError, FsResult,
-    LocalFs, OpenRemote, RemoteFs, RemoteTransfer, Transfer, TransferDirection, TransferHost,
-    TransferQueue, TransferState,
+    LocalFs, OpenRemote, RemoteFs, RemoteTransfer, StagedRemoteWrite, Transfer, TransferDirection,
+    TransferHost, TransferQueue, TransferState,
 };
 use sshastra_core::hosts::HostId;
 use sshastra_core::ssh::BoxFuture;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::{futures::OwnedNotified, Notify, Semaphore};
+
+#[tokio::test]
+async fn a_failed_staged_write_preserves_the_original_and_removes_the_partial() {
+    let fs = MemoryFs::new();
+    fs.dir("/sample");
+    fs.file("/sample/file", b"original");
+    *fs.fail_write_after.lock().unwrap() = Some(3);
+    assert!(
+        StagedRemoteWrite::prepare(fs.clone(), "/sample/file", b"replacement")
+            .await
+            .is_err()
+    );
+    assert_eq!(fs.written_bytes.load(Ordering::SeqCst), 3);
+    assert_eq!(
+        fs.tree("/sample"),
+        vec![("file".into(), Node::File(b"original".to_vec(), 0o644))]
+    );
+}
+
+#[tokio::test]
+async fn an_unavailable_atomic_replacement_preserves_the_original() {
+    let fs = MemoryFs::new();
+    fs.dir("/sample");
+    fs.file("/sample/file", b"original");
+    let staged = StagedRemoteWrite::prepare(fs.clone(), "/sample/file", b"replacement")
+        .await
+        .unwrap();
+    assert!(staged.publish(&|| true).await.is_err());
+    assert_eq!(
+        fs.tree("/sample"),
+        vec![("file".into(), Node::File(b"original".to_vec(), 0o644))]
+    );
+}
+
+#[tokio::test]
+async fn a_staged_write_is_published_only_while_authorized() {
+    let fs = MemoryFs::new();
+    fs.dir("/sample");
+    let staged = StagedRemoteWrite::prepare(fs.clone(), "/sample/file", b"new file")
+        .await
+        .unwrap();
+    assert!(!staged.publish(&|| false).await.unwrap());
+    assert!(fs.tree("/sample").is_empty());
+
+    let staged = StagedRemoteWrite::prepare(fs.clone(), "/sample/file", b"new file")
+        .await
+        .unwrap();
+    assert!(staged.publish(&|| true).await.unwrap());
+    assert_eq!(
+        fs.read("/sample/file").as_deref(),
+        Some(b"new file".as_slice())
+    );
+}
 
 // ---------------------------------------------------------------------------
 // An in-memory file system, usable as either side.

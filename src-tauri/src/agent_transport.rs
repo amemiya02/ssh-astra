@@ -12,7 +12,8 @@ use std::time::{Duration, SystemTime};
 use serde_json::Value;
 use sshastra_core::agent::{
     dispatch_recording, rpc_error, ActivityCall, AgentActivityLog, AgentBackend,
-    COMMAND_REVIEW_TIMEOUT, COMMAND_REVIEW_TOOL,
+    COMMAND_REVIEW_TOOL, FILE_WRITE_TIMEOUT, REQUEST_FRAME_BYTE_LIMIT as MAX_REQUEST_BYTES,
+    REVIEW_TIMEOUT, WRITE_FILE_TOOL,
 };
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::runtime::{Builder, Runtime};
@@ -23,7 +24,6 @@ use tokio::time::{timeout_at, Instant};
 use crate::error::CommandResult;
 use platform::{Endpoint, Listener};
 
-const MAX_REQUEST_BYTES: usize = 64 * 1024;
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 const MAX_CLIENTS: usize = 8;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
@@ -211,11 +211,9 @@ async fn converse(
     else {
         return Ok(());
     };
-    let deadline = if is_command_review(&frame) {
-        Instant::now() + COMMAND_REVIEW_TIMEOUT + REQUEST_TIMEOUT
-    } else {
-        deadline
-    };
+    let deadline = review_duration(&frame).map_or(deadline, |duration| {
+        Instant::now() + duration + REQUEST_TIMEOUT
+    });
     let enabled = || active.load(Ordering::Acquire);
     let mut activity = InFlightActivity { log, call: None };
     let response = tokio::select! {
@@ -277,10 +275,16 @@ fn json_line(value: &Value) -> Vec<u8> {
     frame
 }
 
-fn is_command_review(frame: &[u8]) -> bool {
-    serde_json::from_slice::<Value>(frame).is_ok_and(|request| {
-        request["method"] == "tools/call" && request["params"]["name"] == COMMAND_REVIEW_TOOL
-    })
+fn review_duration(frame: &[u8]) -> Option<Duration> {
+    let request = serde_json::from_slice::<Value>(frame).ok()?;
+    if request["method"] != "tools/call" {
+        return None;
+    }
+    match request["params"]["name"].as_str()? {
+        COMMAND_REVIEW_TOOL => Some(REVIEW_TIMEOUT),
+        WRITE_FILE_TOOL => Some(REVIEW_TIMEOUT + FILE_WRITE_TIMEOUT),
+        _ => None,
+    }
 }
 
 async fn forward(endpoint: &Endpoint, frame: &[u8]) -> io::Result<Option<Vec<u8>>> {
@@ -289,11 +293,8 @@ async fn forward(endpoint: &Endpoint, frame: &[u8]) -> io::Result<Option<Vec<u8>
         stream.write_all(frame).await?;
         read_frame(stream, MAX_RESPONSE_BYTES).await
     };
-    let timeout = if is_command_review(frame) {
-        COMMAND_REVIEW_TIMEOUT + REQUEST_TIMEOUT * 2
-    } else {
-        REQUEST_TIMEOUT
-    };
+    let timeout =
+        review_duration(frame).map_or(REQUEST_TIMEOUT, |duration| duration + REQUEST_TIMEOUT * 2);
     tokio::time::timeout(timeout, request).await?
 }
 

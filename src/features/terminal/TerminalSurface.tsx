@@ -1,7 +1,7 @@
 import type { Terminal as XTerm } from "@xterm/xterm";
 import { useCallback, useContext, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { dismissCommandReview, invalidateCommandReview, openCommandReview } from "@/features/agent/command-review";
+import { dismissAgentReview, invalidateAgentReview, openAgentReview } from "@/features/agent/agent-review";
 import { notifySystem } from "@/features/notifications/system-notifications";
 import { BroadcastPaneContext } from "@/features/workspace/broadcast";
 import { TabActivityContext } from "@/features/workspace/tab-activity";
@@ -98,7 +98,7 @@ export function TerminalSurface({
     labelRef.current = label;
     hostRef.current = host;
     activeRef.current = active;
-    invalidateCommandReview(paneId);
+    invalidateAgentReview(paneId);
   });
 
   const attach = useCallback((xterm: XTerm) => {
@@ -147,7 +147,7 @@ export function TerminalSurface({
       unregisterWriter = undefined;
     };
     shellIntegration.open(paneId);
-    const stopReview = shellIntegration.store.subscribe(() => invalidateCommandReview(paneId));
+    const stopReview = shellIntegration.store.subscribe(() => invalidateAgentReview(paneId));
     const output = terminalOutputs.track(paneId);
     if (moved?.log) output.status("log", { state: "active" });
     if (moved?.recording) output.status("recording", { state: "active" });
@@ -172,7 +172,7 @@ export function TerminalSurface({
     void openSurface((event) => {
       if (lifetime.signal.aborted || exited) return;
       if (event.type === "moveFence") {
-        invalidateCommandReview(paneId, true);
+        invalidateAgentReview(paneId, true);
         receiveMoveFence(paneId, event.token);
         return;
       }
@@ -189,6 +189,7 @@ export function TerminalSurface({
       }
       if (event.type === "connection") {
         connected = event.state.state === "connected";
+        invalidateAgentReview(paneId, true);
         if (connected) {
           generation++;
           shellIntegration.open(paneId, id);
@@ -209,17 +210,19 @@ export function TerminalSurface({
       }
       if (event.type === "agentReview") {
         const request = event.request;
-        openCommandReview({
+        const requestedGeneration = generation;
+        openAgentReview({
           request,
           paneId,
           eligible: () => activeRef.current && connected && !exited && !lifetime.signal.aborted && id === request.terminalId
-            && xterm.buffer.active.type === "normal" && !movingSourcePane(paneId)
-            && shellIntegration.isEmptyPrompt(paneId, request.promptId),
+            && generation === requestedGeneration && !movingSourcePane(paneId)
+            && (request.kind === "fileWrite"
+              || (xterm.buffer.active.type === "normal" && shellIntegration.isEmptyPrompt(paneId, request.promptId))),
         });
         return;
       }
       if (event.type === "agentReviewClosed") {
-        dismissCommandReview(event.id);
+        dismissAgentReview(event.id);
         return;
       }
       if (event.type === "agentScreen") {
@@ -229,6 +232,7 @@ export function TerminalSurface({
       }
       if (event.type !== "exit") return;
       exited = true;
+      invalidateAgentReview(paneId, true);
       imagePasteRef.current = null;
       removeWriter();
       output.close();
@@ -302,7 +306,7 @@ export function TerminalSurface({
     return () => {
       lifetime.abort();
       stopReview();
-      invalidateCommandReview(paneId, true);
+      invalidateAgentReview(paneId, true);
       imagePasteRef.current = null;
       output.close();
       stopNotifications();
