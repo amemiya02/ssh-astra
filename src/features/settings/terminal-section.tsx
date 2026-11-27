@@ -13,7 +13,7 @@ import { settingRows } from "./setting-rows";
 import { TerminalHighlightingSettings } from "./terminal-highlighting-settings";
 import { TerminalSchemeSettings } from "./terminal-scheme-settings";
 
-type BooleanPref = "ligatures" | "cursorBlink" | "copyOnSelect" | "rightClickPaste" | "confirmMultilinePaste" | "shellIntegration" | "autoLog";
+type BooleanPref = "ligatures" | "cursorBlink" | "copyOnSelect" | "rightClickPaste" | "confirmMultilinePaste" | "shellIntegration" | "autoLog" | "inlineImages";
 
 export function TerminalSection() {
   const { t } = useTranslation();
@@ -164,6 +164,7 @@ export function TerminalSection() {
           )}
         </div>
       </SettingRow>
+      {toggle("inlineImages")}
       <TerminalHighlightingSettings config={prefs.highlighting} updatePrefs={updatePrefs} />
     </>
   );

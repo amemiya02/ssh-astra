@@ -31,6 +31,8 @@ export interface TerminalPrefs {
   colorScheme: TerminalColorScheme;
   importedSchemes: readonly ImportedTerminalScheme[];
   highlighting: TerminalHighlighting;
+  /** Render SIXEL and iTerm2 images emitted by terminal programs. */
+  inlineImages: boolean;
   /** Selecting text copies it to the clipboard. */
   copyOnSelect: boolean;
   /** Right-click pastes instead of opening the Terminal menu. */
@@ -76,6 +78,7 @@ export const defaultTerminalPrefs: TerminalPrefs = {
   colorScheme: "app",
   importedSchemes: [],
   highlighting: defaultTerminalHighlighting,
+  inlineImages: true,
   copyOnSelect: true,
   rightClickPaste: true,
   shellIntegration: true,
@@ -124,6 +127,7 @@ export function normalizeTerminalPrefs(raw: Partial<Record<keyof TerminalPrefs, 
     colorScheme: isTerminalColorScheme(raw.colorScheme, importedSchemes) ? raw.colorScheme : d.colorScheme,
     importedSchemes,
     highlighting: normalizeTerminalHighlighting(raw.highlighting),
+    inlineImages: bool(raw.inlineImages, d.inlineImages),
     copyOnSelect: bool(raw.copyOnSelect, d.copyOnSelect),
     rightClickPaste: bool(raw.rightClickPaste, d.rightClickPaste),
     shellIntegration: bool(raw.shellIntegration, d.shellIntegration),

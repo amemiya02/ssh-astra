@@ -1084,6 +1084,10 @@
           "sound": "聲音"
         }
       },
+      "inlineImages": {
+        "label": "行內圖片",
+        "description": "顯示終端機程式輸出的 SIXEL 和 iTerm2 圖片。關閉後會清除已顯示的圖片。"
+      },
       "highlighting": {
         "label": "關鍵字醒目提示",
         "builtIn": {

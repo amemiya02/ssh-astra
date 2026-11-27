@@ -1084,6 +1084,10 @@
           "sound": "Sound"
         }
       },
+      "inlineImages": {
+        "label": "Inline images",
+        "description": "Display SIXEL and iTerm2 images from Terminal programs. Turning this off clears displayed images."
+      },
       "highlighting": {
         "label": "Keyword highlighting",
         "builtIn": {
