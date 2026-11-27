@@ -11,7 +11,8 @@ export type TransferId = number;
 export type TransferState =
   | { type: "queued" }
   | { type: "running" }
-  /** Paused until `answerConflict`: `path` already exists at the destination. */
+  | { type: "paused" }
+  /** Waiting until `answerConflict`: `path` already exists at the destination. */
   | { type: "conflict"; path: string }
   | { type: "done" }
   | { type: "failed"; message: string }
@@ -73,6 +74,14 @@ export function copyRemoteFiles(
 
 export function cancelTransfer(id: TransferId): Promise<void> {
   return invoke("transfer_cancel", { id });
+}
+
+export function pauseTransfer(id: TransferId): Promise<void> {
+  return invoke("transfer_pause", { id });
+}
+
+export function resumeTransfer(id: TransferId): Promise<void> {
+  return invoke("transfer_resume", { id });
 }
 
 /** Queues a failed or cancelled transfer again; files it already copied are kept. */

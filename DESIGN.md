@@ -444,6 +444,11 @@ Settings lists every theme as a card (10px radius, 6px padding, auto-fill at min
 - The footer shows item and selected counts after filtering. When selected entries are hidden, show their count alongside the visible selection.
 - **Show another Host's File panel** opens a second File panel for a connected Host with an open Terminal. The panels stack in the right dock and sit side by side in the bottom dock. Drop selected entries into the other panel or onto a folder row there. Copy and Paste also work when switching Terminal tabs. Transfers shows both Host names, with both full paths in the row tooltip.
 
+### Transfer row
+
+- Queued and running rows offer Pause beside Cancel. Paused rows keep their progress bar, show Paused in the detail line, and offer Resume beside Cancel. Transfers waiting on a destination conflict can be paused from the conflict dialog.
+- A paused transfer frees its queue slot after the current write closes. Resume takes the next available slot in queue order and verifies any staged bytes before continuing. An overwrite that writes directly to the destination finishes its current file before pausing.
+
 ### Menus, tooltips, dialogs
 - **Menus:** `raised` fill, 1px border, 8px radius, 4px padding, `shadow-overlay`; items 6px radius, `accent` on focus, destructive items red.
 - **Tooltips:** inverted (foreground fill, ground text), `text-xs`, 8px radius.

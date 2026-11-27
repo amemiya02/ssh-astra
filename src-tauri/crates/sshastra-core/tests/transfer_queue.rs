@@ -46,6 +46,8 @@ struct MemoryFs {
     deny_creation: Mutex<HashSet<String>>,
     stage_open_gate: Mutex<Option<Arc<Semaphore>>>,
     stage_open_started: Notify,
+    stage_close_gate: Mutex<Option<Arc<Semaphore>>>,
+    stage_close_started: Arc<Notify>,
     pause_after_first: Mutex<Option<Arc<Notify>>>,
 }
 
@@ -54,6 +56,7 @@ struct MemoryFs {
 enum Break {
     /// Waits forever (until the transfer is cancelled).
     Stall,
+    StallAfter(u64),
     Fail,
 }
 
@@ -223,12 +226,20 @@ impl MemoryFs {
     }
 
     fn writer(&self, path: &str, offset: usize) -> FileWriter {
+        let closing = self.stage_close_gate.lock().unwrap().clone().map(|gate| {
+            let started = self.stage_close_started.clone();
+            Box::pin(async move {
+                started.notify_one();
+                gate.acquire().await.unwrap().forget();
+            }) as Pin<Box<dyn Future<Output = ()> + Send>>
+        });
         Box::new(MemoryWriter {
             nodes: Arc::clone(&self.nodes),
             path: path.to_owned(),
             offset,
             bytes: self.written_bytes.clone(),
             limit: *self.fail_write_after.lock().unwrap(),
+            closing,
         })
     }
 
@@ -348,6 +359,9 @@ impl AsyncRead for MemoryReader {
         }
         match self.stop {
             Some(Break::Stall) if self.data.position() > self.start => return Poll::Pending,
+            Some(Break::StallAfter(bytes)) if self.data.position() >= self.start + bytes => {
+                return Poll::Pending;
+            }
             Some(Break::Fail) if self.data.position() > self.start => {
                 return Poll::Ready(Err(io::Error::other("connection lost")));
             }
@@ -364,6 +378,7 @@ impl AsyncRead for MemoryReader {
 
 struct MemoryWriter {
     limit: Option<usize>,
+    closing: Option<Pin<Box<dyn Future<Output = ()> + Send>>>,
     nodes: Arc<Mutex<BTreeMap<String, Node>>>,
     path: String,
     offset: usize,
@@ -402,7 +417,11 @@ impl AsyncWrite for MemoryWriter {
         Poll::Ready(Ok(()))
     }
 
-    fn poll_shutdown(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        if let Some(closing) = &mut self.closing {
+            std::task::ready!(closing.as_mut().poll(cx));
+            self.closing = None;
+        }
         Poll::Ready(Ok(()))
     }
 }
@@ -1254,6 +1273,153 @@ async fn an_interrupted_overwrite_keeps_the_original_in_both_directions() {
         assert!(tree.iter().any(|(name, node)| name.starts_with('.')
             && matches!(node, Node::File(data, _) if data == &vec![7; 5000])));
     }
+}
+
+#[tokio::test]
+async fn paused_transfers_keep_their_staged_bytes_and_release_the_slot() {
+    for direction in [
+        TransferDirection::Upload,
+        TransferDirection::Download,
+        TransferDirection::Copy,
+    ] {
+        let h = Harness::new();
+        h.queue.set_concurrency(1);
+        let other_remote = MemoryFs::new();
+        let (source, target) = match direction {
+            TransferDirection::Upload => (&h.local, &h.remote),
+            TransferDirection::Download => (&h.remote, &h.local),
+            TransferDirection::Copy => (&other_remote, &h.remote),
+        };
+        let bytes: Vec<_> = (0..400_000).map(|i| (i % 251) as u8).collect();
+        let offset = 128 * 1024;
+        source.file("/big", bytes.clone());
+        source.break_reads("/big", Break::StallAfter(offset as u64));
+        target.dir("/to");
+        h.local.file("/next", "next");
+        let id = match direction {
+            TransferDirection::Upload => h.upload("/big", "/to"),
+            TransferDirection::Download => h.download("/big", "/to"),
+            TransferDirection::Copy => h.queue.copy_remote(
+                remote_endpoint(source, "source", "Web"),
+                "/big".into(),
+                remote_endpoint(target, "target", "Backup"),
+                "/to".into(),
+            ),
+        };
+        let next = h.upload("/next", "/");
+        h.until("a staged prefix", |_| {
+            target.written_bytes.load(Ordering::SeqCst) == offset
+        })
+        .await;
+        assert_eq!(h.transfer(next).state, TransferState::Queued);
+
+        h.queue.pause(id);
+        h.until_state(id, TransferState::Paused).await;
+        h.until_state(next, TransferState::Done).await;
+
+        assert_eq!(source.reading.load(Ordering::SeqCst), 0);
+        assert_eq!(h.remote.read("/next"), Some(b"next".to_vec()));
+        assert_eq!(h.transfer(id).bytes_done, offset as u64);
+        assert_eq!(target.read("/to/big"), None);
+        let entries = target.tree("/to");
+        assert_eq!(entries.len(), 1);
+        assert!(matches!(&entries[0].1, Node::File(data, _) if data == &bytes[..offset]));
+        assert_eq!(
+            source.read_bytes.load(Ordering::SeqCst),
+            offset
+                + if direction == TransferDirection::Upload {
+                    4
+                } else {
+                    0
+                }
+        );
+
+        source.break_reads.lock().unwrap().remove("/big");
+        let read_before = source.read_bytes.load(Ordering::SeqCst);
+        let written_before = target.written_bytes.load(Ordering::SeqCst);
+        h.queue.resume(id);
+        h.until_state(id, TransferState::Done).await;
+
+        assert_eq!(
+            target.written_bytes.load(Ordering::SeqCst) - written_before,
+            bytes.len() - offset
+        );
+        assert!(source.read_bytes.load(Ordering::SeqCst) - read_before < bytes.len());
+        assert_eq!(target.read("/to/big"), Some(bytes));
+        assert_eq!(target.tree("/to").len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn a_pausing_transfer_holds_its_slot_until_the_stage_closes() {
+    let h = Harness::new();
+    h.queue.set_concurrency(1);
+    h.local.file("/big", vec![3; 8192]);
+    h.local.break_reads("/big", Break::Stall);
+    h.local.file("/next", "next");
+    h.remote.dir("/to");
+    let gate = Arc::new(Semaphore::new(0));
+    *h.remote.stage_close_gate.lock().unwrap() = Some(gate.clone());
+    let first = h.upload("/big", "/to");
+    let next = h.upload("/next", "/");
+    h.until("the first chunk", |_| {
+        h.remote.written_bytes.load(Ordering::SeqCst) == 4096
+    })
+    .await;
+
+    h.queue.pause(first);
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        h.remote.stage_close_started.notified(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(h.transfer(first).state, TransferState::Running);
+    assert_eq!(h.transfer(next).state, TransferState::Queued);
+
+    h.queue.cancel(first);
+    *h.remote.stage_close_gate.lock().unwrap() = None;
+    gate.add_permits(1);
+    h.until_state(first, TransferState::Cancelled).await;
+    h.until_state(next, TransferState::Done).await;
+    assert!(h.remote.tree("/to").is_empty());
+}
+
+#[tokio::test]
+async fn another_transfer_can_publish_to_the_same_path_without_taking_the_paused_stage() {
+    let h = Harness::new();
+    let expected = vec![3; 300_000];
+    let prefix = 128 * 1024;
+    h.local.file("/file", expected.clone());
+    h.local
+        .break_reads("/file", Break::StallAfter(prefix as u64));
+    h.local.file("/other/file", "other");
+    h.remote.dir("/to");
+    let first = h.upload("/file", "/to");
+    h.until("the staged prefix", |_| {
+        h.remote.written_bytes.load(Ordering::SeqCst) == prefix
+    })
+    .await;
+    h.queue.pause(first);
+    h.until_state(first, TransferState::Paused).await;
+
+    let other = h.upload("/other/file", "/to");
+    h.until_state(other, TransferState::Done).await;
+    assert_eq!(h.remote.read("/to/file").as_deref(), Some(&b"other"[..]));
+
+    h.local.break_reads.lock().unwrap().remove("/file");
+    let written_before = h.remote.written_bytes.load(Ordering::SeqCst);
+    h.queue.resume(first);
+    assert_eq!(next_conflict(&h, first).await, "/to/file");
+    assert_eq!(h.remote.read("/to/file").as_deref(), Some(&b"other"[..]));
+    h.queue.answer(first, ConflictAnswer::Overwrite);
+    h.until_state(first, TransferState::Done).await;
+    assert_eq!(
+        h.remote.written_bytes.load(Ordering::SeqCst) - written_before,
+        expected.len() - prefix
+    );
+    assert_eq!(h.remote.read("/to/file"), Some(expected));
+    assert_eq!(h.remote.tree("/to").len(), 1);
 }
 
 #[tokio::test]
