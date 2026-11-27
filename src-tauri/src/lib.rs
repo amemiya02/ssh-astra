@@ -14,10 +14,10 @@ mod prompts;
 #[cfg(desktop)]
 mod quit;
 mod terminal_handoff;
-#[cfg(desktop)]
-mod tray;
 #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
 mod transfer_activity;
+#[cfg(desktop)]
+mod tray;
 #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
 mod wake;
 mod windows;
