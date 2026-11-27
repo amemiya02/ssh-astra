@@ -1,5 +1,5 @@
-import { Copy, Palette, Pencil, X } from "lucide-react";
-import { useState } from "react";
+import { BookmarkPlus, Copy, Palette, Pencil, X } from "lucide-react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,21 +15,28 @@ import {
 } from "@/components/ui/context-menu";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { isTemporaryHost, type TemporaryHost } from "@/lib/ipc/hosts";
 import { ansiHues } from "@/theme/monogram-ink";
-import { canDuplicateTab, tabId, tabPanes, type Tab, type TabMenuAction } from "./tabs";
+import { activePane, canDuplicateTab, tabId, tabPanes, type Tab, type TabMenuAction } from "./tabs";
 
-export function TabMenu({ tab, title, vertical, onAction }: {
+export function TabMenu({ tab, title, vertical, onAction, onSaveTemporaryHost }: {
   tab: Tab;
   title: string;
   vertical: boolean;
   onAction(action: TabMenuAction): void;
+  onSaveTemporaryHost?(host: TemporaryHost): void;
 }) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState<string | null>(null);
+  const openingHostEditor = useRef(false);
+  const [temporaryHost] = [activePane(tab), ...tabPanes(tab)].flatMap((pane) =>
+    "host" in pane && isTemporaryHost(pane.host) ? [pane.host] : [],
+  );
   return (
     <>
       <ContextMenuContent className="min-w-44" onCloseAutoFocus={(event) => {
-        if (draft !== null) event.preventDefault();
+        if (draft !== null || openingHostEditor.current) event.preventDefault();
+        openingHostEditor.current = false;
       }}>
         <ContextMenuItem onSelect={() => setDraft(title)}>
           <Pencil />
@@ -68,6 +75,15 @@ export function TabMenu({ tab, title, vertical, onAction }: {
           <Copy />
           {t("tabs.duplicate")}
         </ContextMenuItem>
+        {temporaryHost && onSaveTemporaryHost && (
+          <ContextMenuItem onSelect={() => {
+            openingHostEditor.current = true;
+            onSaveTemporaryHost(temporaryHost);
+          }}>
+            <BookmarkPlus />
+            {t("quickConnect.saveAsHost")}
+          </ContextMenuItem>
+        )}
         <ContextMenuSeparator />
         <ContextMenuItem disabled={tab.locked} onSelect={() => onAction({ type: "close", id: tab.id })}>
           <X />

@@ -992,6 +992,10 @@
     "action": "Quick connect",
     "connectTo": "Connect to {{target}}",
     "temporaryHost": "Temporary Host",
+    "saveAsHost": "Save as Host",
+    "saveAsHostDescription": "Name this Host to add it to your Host list. Open Terminals and File panels stay connected.",
+    "noLongerAvailable": "This Temporary Host is no longer available.",
+    "alreadySaved": "This Host is already saved.",
     "failed": "Could not open a Temporary Host."
   },
   "home": {
