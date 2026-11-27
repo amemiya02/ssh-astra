@@ -64,7 +64,7 @@ function SplitPanes({ tab, active, ...callbacks }: { tab: Tab; active: boolean }
               <div
                 role={split ? "group" : undefined}
                 aria-label={split ? t("tabs.pane", { index: index + 1, count: tab.panes.length }) : undefined}
-                className={cn("h-full transition-opacity", split && !focused && "opacity-70")}
+                className={cn("relative h-full transition-opacity", split && !focused && "opacity-70")}
                 onFocusCapture={() => {
                   if (!focused) callbacks.onFocusPane(pane.id);
                 }}
@@ -73,6 +73,10 @@ function SplitPanes({ tab, active, ...callbacks }: { tab: Tab; active: boolean }
                 }}
               >
                 <PaneContent pane={pane} active={active && focused} {...callbacks} />
+                {/* An overlay, not the pane's own ring: a Terminal's canvas paints over an inset shadow. The dim on the others is real but faint on a dark theme. */}
+                {split && focused && (
+                  <span aria-hidden data-pane-focus className="ring-primary/50 pointer-events-none absolute inset-0 z-10 ring-1 ring-inset" />
+                )}
               </div>
             </ResizablePanel>
           </Fragment>
