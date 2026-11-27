@@ -231,6 +231,7 @@ export function useHostsController(openers: HostOpeners): HostsController {
           <HostFormDialogContent
             host={editing === "new" ? undefined : editing}
             hosts={editing === "new" ? tree.hosts : tree.hosts.filter((h) => h.id !== editing.id)}
+            groupName={tree.groups.find((group) => group.id === (editing === "new" ? selectedGroupId : editing.groupId))?.name}
             save={save}
             onCancel={() => setEditing(null)}
             onSaved={(host) => {

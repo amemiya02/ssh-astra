@@ -11,6 +11,8 @@
   },
   "hosts": {
     "title": "Hosts",
+    "basicInfo": "Basic information",
+    "advanced": "Advanced",
     "emptyTitle": "No Hosts yet",
     "emptyBody": "Hosts you add appear here. Double-click one to open a Terminal.",
     "new": "New Host",
@@ -23,6 +25,7 @@
       "address": "Address",
       "port": "Port",
       "user": "User",
+      "group": "Group",
       "jumpHost": "Jump host",
       "auth": "Authentication",
       "identityFile": "Private key file",
