@@ -1,9 +1,10 @@
-import { ArrowDownUp, Settings, Waypoints } from "lucide-react";
+import { ArrowDownUp, Radio, Settings, Waypoints } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
 import { formatSize } from "@/features/files/fileList";
 import { UpdateNotice } from "@/features/updates/UpdateNotice";
+import type { BroadcastScope } from "@/features/workspace/broadcast";
 import type { ReconnectProgress } from "@/features/workspace/tabs";
 import type { Host } from "@/lib/ipc/hosts";
 import { cn } from "@/lib/utils";
@@ -23,6 +24,7 @@ export interface StatusInfo {
   transfers: { count: number; bytesPerSecond: number };
   /** The Host of the focused remote Terminal. */
   activeRemote: Host | null;
+  broadcast?: { scope: BroadcastScope; tabTitle?: string; stop(): void } | null;
 }
 
 const emptyStatus: StatusInfo = {
@@ -47,9 +49,24 @@ export function StatusBar({
   onOpenSettings(): void;
 }) {
   const { t } = useTranslation();
-  const { connected, reconnecting, forwards, transfers, activeRemote } = info;
+  const { connected, reconnecting, forwards, transfers, activeRemote, broadcast } = info;
+  const broadcastStatus = broadcast?.tabTitle
+    ? t("broadcast.namedTabStatus", { title: broadcast.tabTitle })
+    : t(broadcast?.scope === "tab" ? "broadcast.tabStatus" : "broadcast.windowStatus");
   return (
     <footer className="text-muted-foreground bg-background flex h-6 shrink-0 items-stretch border-t text-xs">
+      {broadcast && (
+        <Segment
+          as="button"
+          label={t("broadcast.turnOff")}
+          description={broadcastStatus}
+          title={t("broadcast.turnOff")}
+          onClick={broadcast.stop}
+        >
+          <Radio className="text-warning size-3 shrink-0" aria-hidden />
+          <span className="max-w-40 truncate">{broadcastStatus}</span>
+        </Segment>
+      )}
       <div role="status" className="flex min-w-0 flex-1 items-stretch overflow-hidden">
         {connected.length === 0 && reconnecting.length === 0 && <Segment>{t("status.noConnections")}</Segment>}
         {connected.map((host) => (
@@ -108,11 +125,15 @@ export function StatusBar({
 function Segment({
   as = "div",
   title,
+  label,
+  description,
   onClick,
   children,
 }: {
   as?: "div" | "button";
   title?: string;
+  label?: string;
+  description?: string;
   onClick?(): void;
   children: ReactNode;
 }) {
@@ -122,6 +143,8 @@ function Segment({
       <button
         type="button"
         title={title}
+        aria-label={label}
+        aria-description={description}
         className={cn(className, "hover:bg-accent hover:text-foreground active:bg-accent/70 focus-visible:ring-ring/50 outline-none focus-visible:ring-2 focus-visible:ring-inset")}
         onClick={onClick}
       >

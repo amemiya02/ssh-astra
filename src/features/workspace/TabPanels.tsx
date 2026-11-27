@@ -1,5 +1,6 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { useStore } from "zustand";
 import { Button } from "@/components/ui/button";
 import { PortForwardsPanel } from "@/features/forwards/PortForwardsPanel";
 import { SettingsPage } from "@/features/settings/SettingsPage";
@@ -9,11 +10,13 @@ import { terminalCwds } from "@/features/files/terminalCwds";
 import { RemoteTerminalView } from "@/features/terminal/RemoteTerminalView";
 import type { Host } from "@/lib/ipc/hosts";
 import { cn } from "@/lib/utils";
+import { BroadcastPaneContext, isBroadcastRecipient, type Broadcast } from "./broadcast";
 import { PaneDivider } from "./PaneDivider";
 import { positionPanes, resizePaneLayout, type PaneBounds, type SplitResize } from "./pane-layout";
 import { nextRestoreConnection, tabId, tabPanelId, type ConnectionStatus, type Pane, type ReconnectProgress, type Tab } from "./tabs";
 
 interface TabPanelsProps {
+  broadcast?: Broadcast;
   tabs: Tab[];
   activeId: string | null;
   /** Home, drawn for the Home tab (or when no tab is open). `active`: it is the pane shown. */
@@ -55,9 +58,9 @@ export function TabPanels({ tabs, activeId, ...paneProps }: TabPanelsProps) {
   });
 }
 
-type PaneCallbacks = Omit<TabPanelsProps, "tabs" | "activeId" | "onResizeSplit">;
+type PaneCallbacks = Omit<TabPanelsProps, "broadcast" | "tabs" | "activeId" | "onResizeSplit">;
 
-function SplitPanes({ tab, active, nextConnection, onResizeSplit, ...callbacks }: {
+function SplitPanes({ broadcast, tab, active, nextConnection, onResizeSplit, ...callbacks }: {
   tab: Tab;
   active: boolean;
   nextConnection: string | undefined;
@@ -94,7 +97,10 @@ function SplitPanes({ tab, active, nextConnection, onResizeSplit, ...callbacks }
               if (!focused && event.target instanceof Node && event.currentTarget.contains(event.target)) callbacks.onFocusPane(pane.id);
             }}
           >
-            <PaneContent pane={pane} active={active && focused} autoConnect={pane.id === nextConnection} {...callbacks} />
+            <BroadcastPaneContext.Provider value={broadcast && { broadcast, tabId: tab.id, paneId: pane.id }}>
+              <PaneContent pane={pane} active={active && focused} autoConnect={pane.id === nextConnection} {...callbacks} />
+            </BroadcastPaneContext.Provider>
+            {broadcast && <BroadcastMarker broadcast={broadcast} paneId={pane.id} />}
             {/* A Terminal canvas can paint over the pane's inset shadow. Draw the focus ring on top. */}
             {split && focused && !maximized && (
               <span aria-hidden data-pane-focus className="ring-primary/50 pointer-events-none absolute inset-0 z-10 ring-1 ring-inset" />
@@ -111,6 +117,20 @@ function SplitPanes({ tab, active, nextConnection, onResizeSplit, ...callbacks }
         />
       ))}
     </div>
+  );
+}
+
+function BroadcastMarker({ broadcast, paneId }: { broadcast: Broadcast; paneId: string }) {
+  const receives = useStore(broadcast.store, (snapshot) => isBroadcastRecipient(snapshot, paneId));
+  const { t } = useTranslation();
+  if (!receives) return null;
+  return (
+    <span
+      data-broadcast-recipient
+      className="border-warning pointer-events-none absolute inset-0.5 z-10 border border-dashed"
+    >
+      <span className="sr-only">{t("broadcast.recipient")}</span>
+    </span>
   );
 }
 

@@ -1,6 +1,7 @@
 import type { Terminal as XTerm } from "@xterm/xterm";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useContext, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { BroadcastPaneContext } from "@/features/workspace/broadcast";
 import {
   closeTerminal,
   openLocalTerminal,
@@ -26,6 +27,7 @@ interface LocalTerminalViewProps {
  */
 export function LocalTerminalView({ active = true, onTitleChange }: LocalTerminalViewProps) {
   const { t } = useTranslation();
+  const { broadcast, tabId, paneId } = useContext(BroadcastPaneContext) ?? {};
   // Read through refs so a language change or a new callback never recreates the Terminal.
   const tRef = useRef(t);
   const onTitleChangeRef = useRef(onTitleChange);
@@ -38,6 +40,7 @@ export function LocalTerminalView({ active = true, onTitleChange }: LocalTermina
   const attach = useCallback((xterm: XTerm) => {
     let id: TerminalId | undefined;
     let disposed = false;
+    let unregisterWriter: (() => void) | undefined;
     // ConPTY can ask xterm for its cursor position before the open call returns an id.
     let pendingInput = "";
     /** No shell attached: the next Enter starts one. */
@@ -45,6 +48,8 @@ export function LocalTerminalView({ active = true, onTitleChange }: LocalTermina
     const size = () => ({ cols: xterm.cols, rows: xterm.rows });
 
     const offerRestart = () => {
+      unregisterWriter?.();
+      unregisterWriter = undefined;
       id = undefined;
       pendingInput = "";
       waitingForRestart = true;
@@ -84,6 +89,11 @@ export function LocalTerminalView({ active = true, onTitleChange }: LocalTermina
             void writeTerminal(opened, pendingInput);
             pendingInput = "";
           }
+          if (broadcast && tabId !== undefined && paneId !== undefined) {
+            unregisterWriter = broadcast.register(tabId, paneId, (data) => {
+              void writeTerminal(opened, data).catch(() => undefined);
+            });
+          }
           // Catch up on any resize that happened while the shell was starting.
           void resizeTerminal(opened, size());
         },
@@ -113,12 +123,13 @@ export function LocalTerminalView({ active = true, onTitleChange }: LocalTermina
 
     return () => {
       disposed = true;
+      unregisterWriter?.();
       pendingInput = "";
       onData.dispose();
       onResize.dispose();
       if (id !== undefined) void closeTerminal(id);
     };
-  }, []);
+  }, [broadcast, paneId, tabId]);
 
   return <XtermView active={active} onTitleChange={onTitleChange} attach={attach} />;
 }
