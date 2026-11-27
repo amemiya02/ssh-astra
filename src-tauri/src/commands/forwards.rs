@@ -8,7 +8,7 @@ use super::watch::Watcher;
 use sshastra_core::forward::{ForwardDraft, ForwardEvent, ForwardId, PortForward, PortForwarder};
 use sshastra_core::hosts::HostId;
 use tauri::ipc::Channel;
-use tauri::{Manager, State, WebviewWindow};
+use tauri::{AppHandle, Manager, State, WebviewWindow};
 
 use super::connections::{connect_host, schedule_os_detection};
 use super::hosts::HostsState;
@@ -22,18 +22,20 @@ pub struct ForwardsState {
     watcher: Arc<Watcher<ForwardEvent>>,
 }
 
-impl Default for ForwardsState {
-    fn default() -> Self {
+impl ForwardsState {
+    pub(crate) fn new(_app: &AppHandle) -> Self {
         let watcher: Arc<Watcher<ForwardEvent>> = Arc::default();
         let sink = Arc::clone(&watcher);
+        #[cfg(desktop)]
+        let app = _app.clone();
         let forwarder = PortForwarder::with_listener(move |event| {
             sink.send(event);
+            #[cfg(desktop)]
+            crate::tray::forwards_changed(&app);
         });
         Self { forwarder, watcher }
     }
-}
 
-impl ForwardsState {
     pub(crate) fn unwatch(&self, label: &str) {
         self.watcher.unsubscribe(label);
     }

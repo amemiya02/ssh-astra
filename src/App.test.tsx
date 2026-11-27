@@ -1249,6 +1249,23 @@ it("saves a separate quit preference and applies it while a Connection is open",
   expect(appQuits()).toHaveLength(1);
 });
 
+it("defaults Close to tray off for existing profiles and remembers the selected preference", async () => {
+  enableDesktopWindow();
+  await render(emptyTabs);
+  await clickButton("Settings");
+
+  const setting = () => document.querySelector('[role="radiogroup"][aria-label="Close to tray"]')!;
+  expect(setting()?.querySelector('[aria-checked="true"]')?.textContent).toBe("Off");
+  await clickButton("On", setting());
+  expect(settingsFile.workspacePreferences).toMatchObject({ closeToTray: true });
+
+  await unmount();
+  await startSettings(settingsBackend);
+  await render(emptyTabs);
+  await clickButton("Settings");
+  expect(setting().querySelector('[aria-checked="true"]')?.textContent).toBe("On");
+});
+
 async function broadcastShortcut(inWindow = false) {
   const modifiers = currentPlatform() === "mac" ? { metaKey: true } : { ctrlKey: true };
   await act(async () => document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", {
