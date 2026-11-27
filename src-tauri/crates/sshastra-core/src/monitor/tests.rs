@@ -119,3 +119,21 @@ fn uses_no_rate_after_a_counter_resets_or_uptime_restarts() {
     assert_eq!(snapshot.network[0].receive_rate, None);
     assert_eq!(snapshot.cpu_percent, None);
 }
+
+#[tokio::test(start_paused = true)]
+async fn changing_the_interval_reschedules_from_the_previous_request() {
+    let (set_interval, mut interval) = watch::channel(ResourceInterval::default());
+    let started = Instant::now();
+    let next_sample = async {
+        wait_for_sample(started, &mut interval).await;
+        started.elapsed()
+    };
+    let updates = async {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        set_interval.send(ResourceInterval::FiveSeconds).unwrap();
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        set_interval.send(ResourceInterval::OneSecond).unwrap();
+    };
+    let (elapsed, ()) = tokio::join!(next_sample, updates);
+    assert_eq!(elapsed, Duration::from_millis(2500));
+}
