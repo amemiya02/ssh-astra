@@ -43,6 +43,7 @@ fn host(sshd: &Sshd) -> Host {
         name: "timeout".into(),
         tags: Vec::new(),
         icon: None,
+        color: None,
         address: sshd.host.clone(),
         port: sshd.port,
         user: sshd.user.into(),

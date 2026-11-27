@@ -38,6 +38,7 @@ fn endpoint(sshd: &Sshd, dir: &Path) -> (ConnectionManager, Host) {
         name: "transfer".into(),
         tags: Vec::new(),
         icon: None,
+        color: None,
         address: sshd.host.clone(),
         port: sshd.port,
         user: sshd.user.into(),

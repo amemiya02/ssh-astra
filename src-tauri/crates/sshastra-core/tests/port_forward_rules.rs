@@ -17,6 +17,7 @@ fn draft(name: &str) -> HostDraft {
         name: name.into(),
         tags: Vec::new(),
         icon: None,
+        color: None,
         address: "10.0.0.5".into(),
         port: 22,
         user: "deploy".into(),
@@ -212,7 +213,7 @@ fn hosts_saved_before_port_forwards_existed_have_none() {
     store.upsert(None, draft("new")).unwrap();
     let json: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(json["version"], 15);
+    assert_eq!(json["version"], 16);
     assert_eq!(json["hosts"][0]["forwards"], serde_json::json!([]));
 }
 
@@ -373,6 +374,6 @@ fn rules_saved_before_auto_start_existed_do_not_auto_start() {
     store.upsert(None, draft("new")).unwrap();
     let json: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(json["version"], 15);
+    assert_eq!(json["version"], 16);
     assert_eq!(json["hosts"][0]["forwards"][0]["autoStart"], false);
 }

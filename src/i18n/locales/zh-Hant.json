@@ -27,6 +27,7 @@
       "user": "使用者名稱",
       "group": "群組",
       "icon": "Host 圖示",
+      "color": "Host 顏色",
       "jumpHost": "跳板主機",
       "auth": "驗證方式",
       "identityFile": "私鑰檔案",
@@ -54,6 +55,15 @@
       "database": "資料庫",
       "cloud": "雲端",
       "router": "路由器"
+    },
+    "colors": {
+      "automatic": "自動",
+      "red": "紅色",
+      "green": "綠色",
+      "yellow": "黃色",
+      "blue": "藍色",
+      "magenta": "洋紅色",
+      "cyan": "青綠色"
     },
     "terminalSchemeInherit": "與其他終端機相同",
     "terminalSchemeHint": "為正式環境的 Host 設定專用配色，避免混淆。",
