@@ -72,6 +72,47 @@ describe("TabPanels", () => {
     expect(terminals().map((input) => input.value)).toEqual(["first pane's command", "second pane's command"]);
   });
 
+  it("maximizes the focused Terminal and restores its siblings with their input and proportions intact", () => {
+    const { container, send } = renderWorkspace();
+    send({ type: "split", orientation: "horizontal", pane: local("b") });
+    send({ type: "resizeSplit", tabId: "work", path: [], after: 0, fraction: 0.75 });
+    const first = container.querySelector<HTMLElement>("#pane-a")!;
+    const second = container.querySelector<HTMLElement>("#pane-b")!;
+    const input = first.querySelector("input")!;
+    input.value = "unfinished command";
+
+    send({ type: "toggleMaximizePane" });
+    expect(first.hidden).toBe(true);
+    expect(first.querySelector("input")).toBe(input);
+    expect(second.hidden).toBe(false);
+    expect(second.style.left).toBe("0%");
+    expect(second.style.width).toBe("100%");
+    expect(second.style.height).toBe("100%");
+    expect(container.querySelector('[role="separator"]')).toBeNull();
+
+    send({ type: "toggleMaximizePane" });
+    expect(first.hidden).toBe(false);
+    expect(first.querySelector("input")).toBe(input);
+    expect(input.value).toBe("unfinished command");
+    expect(second.style.left).toBe("75%");
+    expect(second.style.width).toBe("25%");
+    expect(container.querySelector('[role="separator"]')?.getAttribute("aria-valuenow")).toBe("75");
+  });
+
+  it("moves the same Terminal surfaces to each other's positions when swapping panes", () => {
+    const { container, send } = renderWorkspace();
+    send({ type: "split", orientation: "horizontal", pane: local("b") });
+    const first = container.querySelector("#pane-a input");
+    const second = container.querySelector("#pane-b input");
+
+    send({ type: "swapPane", direction: "left" });
+
+    expect(container.querySelector("#pane-a input")).toBe(first);
+    expect(container.querySelector("#pane-b input")).toBe(second);
+    expect(container.querySelector<HTMLElement>("#pane-a")?.style.left).toBe("50%");
+    expect(container.querySelector<HTMLElement>("#pane-b")?.style.left).toBe("0%");
+  });
+
   it("changes the proportion of a nested split while dragging and keeps it after release", () => {
     const { container, send } = renderWorkspace();
     send({ type: "split", orientation: "horizontal", pane: local("b") });

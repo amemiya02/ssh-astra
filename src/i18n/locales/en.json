@@ -149,6 +149,12 @@
     },
     "splitRight": "Split right",
     "splitDown": "Split down",
+    "maximizePane": "Maximize pane",
+    "restorePaneLayout": "Restore pane layout",
+    "swapPaneLeft": "Swap pane with left neighbor",
+    "swapPaneRight": "Swap pane with right neighbor",
+    "swapPaneUp": "Swap pane with the pane above",
+    "swapPaneDown": "Swap pane with the pane below",
     "resizePanes": "Resize panes",
     "pane": "Pane {{index}} of {{count}}",
     "status": {

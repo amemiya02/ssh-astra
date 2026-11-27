@@ -110,6 +110,13 @@ describe("workspace layout storage", () => {
     });
   });
 
+  it("preserves the saved split layout when a pane is maximized", () => {
+    const opened = tabsReducer(emptyTabs, { type: "open", tabId: "work", pane: local("a") });
+    const split = tabsReducer(opened, { type: "split", orientation: "horizontal", pane: local("b") });
+    const maximized = tabsReducer(split, { type: "toggleMaximizePane" });
+    expect(serializeWorkspaceLayout(maximized)).toStrictEqual(serializeWorkspaceLayout(split));
+  });
+
   it("records a remote pane's Host id without the Host or its live Terminal state", () => {
     const host: Host = {
       id: "remote",
