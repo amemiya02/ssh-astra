@@ -18,9 +18,10 @@ import { Input } from "@/components/ui/input";
 import { ansiHues } from "@/theme/monogram-ink";
 import { canDuplicateTab, tabId, tabPanes, type Tab, type TabMenuAction } from "./tabs";
 
-export function TabMenu({ tab, title, onAction }: {
+export function TabMenu({ tab, title, vertical, onAction }: {
   tab: Tab;
   title: string;
+  vertical: boolean;
   onAction(action: TabMenuAction): void;
 }) {
   const { t } = useTranslation();
@@ -76,7 +77,7 @@ export function TabMenu({ tab, title, onAction }: {
           {t("tabs.closeOthers")}
         </ContextMenuItem>
         <ContextMenuItem inset onSelect={() => onAction({ type: "closeRight", id: tab.id })}>
-          {t("tabs.closeRight")}
+          {t(vertical ? "tabs.closeBelow" : "tabs.closeRight")}
         </ContextMenuItem>
       </ContextMenuContent>
       <Dialog open={draft !== null} onOpenChange={(open) => !open && setDraft(null)}>
