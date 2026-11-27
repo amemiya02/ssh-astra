@@ -223,7 +223,7 @@ export function TabStrip({
     const TabIcon = tab.layout.type === "split"
       ? tab.layout.orientation === "horizontal" ? Columns2 : Rows2
       : kindIcons[pane.kind];
-    const hue = tabHue(tab);
+    const hue = tabHue(tab, host);
     return (
       <DraggableTab
         key={tab.id}

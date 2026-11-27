@@ -266,7 +266,7 @@ function HomeHost({
           {listView && (
             <span
               aria-hidden
-              className={cn("absolute inset-y-2 left-0 w-0.5 rounded-full", hueClasses[hostHue(host.id)].line)}
+              className={cn("absolute inset-y-2 left-0 w-0.5 rounded-full", hueClasses[hostHue(host)].line)}
             />
           )}
           <HostMonogram host={host} size={listView ? "sm" : "md"}>

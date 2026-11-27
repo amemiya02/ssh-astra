@@ -1046,7 +1046,7 @@ it("switches Home layouts with the keyboard and restores the choice after restar
 });
 
 it("shows Host details in Home list rows and opens the exact match from search", async () => {
-  const gateway: Host = { ...host, name: "Edge Gateway", icon: "ubuntu", port: 2222, tags: ["West Coast", "Production"] };
+  const gateway: Host = { ...host, name: "Edge Gateway", icon: "ubuntu", color: "magenta", port: 2222, tags: ["West Coast", "Production"] };
   const archive = { ...host, id: "archive", name: "Archive" };
   savedHosts = [gateway, archive];
   initialHeld = [gateway.id];
@@ -1067,6 +1067,7 @@ it("shows Host details in Home list rows and opens the exact match from search",
   for (const scope of [group, recent]) {
     const row = hostButton(scope, gateway.name);
     expect(row.querySelector('[data-host-icon="ubuntu"]')).not.toBeNull();
+    expect(row.querySelector(".bg-ansi-magenta")).not.toBeNull();
     expect(row.textContent).toContain("deploy@example.com:2222");
     expect(row.textContent).toContain("West Coast");
     expect(row.textContent).toContain("Production");
@@ -1083,8 +1084,8 @@ it("shows Host details in Home list rows and opens the exact match from search",
   expect(vi.mocked(invoke)).toHaveBeenCalledWith("remote_terminal_open", expect.objectContaining({ hostId: gateway.id }));
 });
 
-it("shows the same saved icon in the Host list, Home and an open Terminal tab", async () => {
-  savedHosts = [{ ...host, icon: "ubuntu" }];
+it("shows the same saved icon and colour in the Host list, Home and an open Terminal tab", async () => {
+  savedHosts = [{ ...host, icon: "ubuntu", color: "cyan" }];
   await hostsStore.getState().load();
   await render(workspace(
     { type: "open", tabId: "work", pane: remote("work") },
@@ -1097,11 +1098,16 @@ it("shows the same saved icon in the Host list, Home and an open Terminal tab", 
   ];
   const glyphs = () => surfaces.map((surface) => surface?.querySelector("[data-host-icon]"));
   expect(glyphs().map((glyph) => glyph?.getAttribute("data-host-icon"))).toEqual(["ubuntu", "ubuntu", "ubuntu"]);
+  expect(glyphs().every((glyph) => glyph?.classList.contains("bg-ansi-cyan/15"))).toBe(true);
+  const tabChrome = document.querySelector("#tab-work")!.parentElement!;
+  expect(tabChrome.querySelector(".bg-ansi-cyan")).not.toBeNull();
 
   const terminals = [...testTerminals];
-  await act(async () => { await hostsStore.getState().saveHost({ ...host, icon: "database" }, host.id); });
+  await act(async () => { await hostsStore.getState().saveHost({ ...host, icon: "database", color: "yellow" }, host.id); });
   expect(glyphs().map((glyph) => glyph?.getAttribute("data-host-icon"))).toEqual(["database", "database", "database"]);
   expect(glyphs().every((glyph) => glyph?.querySelector("svg"))).toBe(true);
+  expect(glyphs().every((glyph) => glyph?.classList.contains("bg-ansi-yellow/15"))).toBe(true);
+  expect(tabChrome.querySelector(".bg-ansi-yellow")).not.toBeNull();
 
   await act(async () => { await hostsStore.getState().saveHost(host, host.id); });
   expect(glyphs()).toEqual([null, null, null]);

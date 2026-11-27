@@ -32,7 +32,7 @@ export function HostMonogram({
   className,
   children,
 }: {
-  host: Pick<Host, "id" | "name" | "icon">;
+  host: Pick<Host, "id" | "name" | "icon" | "color">;
   /** The OS detection feature can supply this hint when no icon was selected. */
   detectedIcon?: HostIcon;
   size?: keyof typeof sizes;
@@ -49,7 +49,7 @@ export function HostMonogram({
       className={cn(
         "relative grid shrink-0 place-items-center leading-none font-semibold",
         sizes[size],
-        hueClasses[hostHue(host.id)].tile,
+        hueClasses[hostHue(host)].tile,
         className,
       )}
     >

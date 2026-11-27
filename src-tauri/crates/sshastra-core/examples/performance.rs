@@ -45,6 +45,7 @@ async fn connect(port: &str, scratch: &Path) -> Arc<dyn RemoteFs> {
         name: "Performance fixture".into(),
         tags: Vec::new(),
         icon: None,
+        color: None,
         address: "127.0.0.1".into(),
         port: port.parse().expect("a loopback fixture port"),
         user: "tester".into(),

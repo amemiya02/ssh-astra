@@ -210,6 +210,15 @@ describe("tabsReducer: tabs", () => {
     expect(tabHue(cleared.tabs[0]!)).toBe("green");
   });
 
+  it("takes the current saved Host hue, including when it is cleared", () => {
+    const web = host("web");
+    const webTab = tab("web", [remote("web.1", { ...web, color: "cyan" })]);
+    expect(tabHue(webTab)).toBe("cyan");
+    expect(tabHue(webTab, { ...web, color: "magenta" })).toBe("magenta");
+    expect(tabHue({ ...webTab, color: "red" }, web)).toBe("red");
+    expect(tabHue(webTab, web)).toBe("green");
+  });
+
   it("protects a locked tab from direct, keyboard and bulk closes until it is unlocked", () => {
     const state = tabsReducer(withTabs(["a", "b", "c", "d"], "b"), { type: "setTabLocked", id: "b", locked: true });
     expect(tabsReducer(state, { type: "close", id: "b" })).toBe(state);

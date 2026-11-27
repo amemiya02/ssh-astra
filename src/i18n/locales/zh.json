@@ -27,6 +27,7 @@
       "user": "用户名",
       "group": "分组",
       "icon": "Host 图标",
+      "color": "Host 颜色",
       "jumpHost": "跳板机",
       "auth": "认证方式",
       "identityFile": "私钥文件",
@@ -54,6 +55,15 @@
       "database": "数据库",
       "cloud": "云",
       "router": "路由器"
+    },
+    "colors": {
+      "automatic": "自动",
+      "red": "红色",
+      "green": "绿色",
+      "yellow": "黄色",
+      "blue": "蓝色",
+      "magenta": "品红色",
+      "cyan": "青色"
     },
     "terminalSchemeInherit": "与其他终端相同",
     "terminalSchemeHint": "给生产环境的 Host 单独配色，避免认错。",
