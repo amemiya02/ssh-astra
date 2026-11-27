@@ -168,6 +168,8 @@ describe("SSH Astra Windows", function () {
     await expect(activeTab()).toHaveAttribute("id", movedTab);
     await expect(shownPanes()).toBeElementsArrayOfSize(2);
     await browser.waitUntil(async () => (await identities()).join(",") === shells.join(","));
+    await browser.waitUntil(() => browser.execute(() =>
+      !document.querySelector('[role="tabpanel"]:not([hidden])')?.closest("[inert]")));
     expect(await liveConnections()).toBe(1);
     for (const pane of [0, 1]) {
       await typeCommand(`printf 'after-%s:%s\\n' "$ASTRA_PANE" "$$"`, pane);
