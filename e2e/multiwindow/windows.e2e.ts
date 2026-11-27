@@ -81,13 +81,13 @@ describe("SSH Astra Windows", function () {
     const main = await browser.getWindowHandle();
     await selectWindow(main);
     await expect(activeTab()).toHaveText("Home");
-    await measureWindowRss(1);
 
     // Open via the workspace shortcut. The palette advertises the same action.
     await shortcut("KeyK");
     await $('[role="combobox"]').setValue("New Window");
     await expect($('[role="option"]')).toHaveText(expect.stringContaining("New Window"));
     await browser.keys("Escape");
+    await measureWindowRss(1);
     await shortcut("KeyN", true);
     let handles: string[] = [];
     await browser.waitUntil(async () => (handles = await browser.getWindowHandles()).length === 2);
@@ -104,7 +104,7 @@ describe("SSH Astra Windows", function () {
     const selectedId = initialTheme === "dark" ? "light" : "dark";
     await shortcut("KeyK");
     await $('[role="combobox"]').setValue(selectedTheme);
-    await $(`[role="option"]=Theme: ${selectedTheme}`).click();
+    await $(`//*[@role='option' and contains(., 'Theme: ${selectedTheme}')]`).click();
     await browser.waitUntil(async () => await theme() === selectedId);
 
     await $("button=New Host").click();

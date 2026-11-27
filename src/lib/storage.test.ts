@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { defineSection, openSettings, type KeyValueStore, type SettingsBackend } from "./storage";
+import { defineSection, openSettings, type KeyValueStore, type SettingsBackend, type SettingsChange } from "./storage";
 
 /** A settings file in memory: what `load` returns is what was last saved. */
 function memoryBackend(initial: Record<string, unknown> = {}): SettingsBackend & { file: Record<string, unknown> } {
@@ -45,6 +45,27 @@ describe("settings", () => {
     update({ section: fontSize.key, value: { size: 20 }, revision: 2 });
     expect(listener).toHaveBeenCalledOnce();
     expect(settings.get(fontSize)).toEqual({ size: 20 });
+  });
+
+  it("keeps the latest committed value when another Window updates a pending setting", async () => {
+    const backend = memoryBackend();
+    let receive: (event: SettingsChange) => void = () => {};
+    let finish!: (event: SettingsChange) => void;
+    const settings = await openSettings({
+      ...backend,
+      watch: async (listener) => {
+        receive = listener;
+        return backend.load();
+      },
+      save: () => new Promise((resolve) => { finish = resolve; }),
+    });
+
+    settings.set(fontSize, { size: 16 });
+    receive({ section: fontSize.key, value: { size: 21 }, revision: 2 });
+    expect(settings.get(fontSize)).toEqual({ size: 16 });
+    finish({ section: fontSize.key, value: { size: 16 }, revision: 1 });
+    await settings.flush();
+    expect(settings.get(fontSize)).toEqual({ size: 21 });
   });
 
   it("gives a section's defaults when the file has nothing for it", async () => {
