@@ -38,6 +38,7 @@ use tauri_plugin_window_state::StateFlags;
 pub use agent_transport::run_stdio as run_agent_stdio;
 use agent_transport::AgentService;
 
+use commands::agent::{DesktopAgent, PendingScreens};
 use commands::clipboard::ClipboardImages;
 use commands::connections::{ConnectionsState, TemporaryHosts};
 use commands::credentials::Vault;
@@ -156,9 +157,10 @@ pub fn run() {
             #[cfg(feature = "e2e")]
             let vault: Arc<dyn credentials::CredentialVault> = Arc::new(credentials::NoVault);
             let hosts = HostsState::new(hosts);
-            let agent_service = AgentService::new(
-                hosts.agent_terminals(app.state::<TerminalRegistry>().inner().clone()),
-            );
+            let agent_service = AgentService::new(DesktopAgent::new(
+                hosts.clone(),
+                app.state::<TerminalRegistry>().inner().clone(),
+            ));
             if let Ok(store) = &settings {
                 let agent: AgentSettings = store.section(AgentSettings::SECTION);
                 if agent.enabled && agent_service.apply(true, || Ok(())).is_err() {
@@ -193,6 +195,7 @@ pub fn run() {
         .manage(FsRegistry::default())
         .manage(TransfersState::default())
         .manage(Arc::new(PendingPrompts::default()))
+        .manage(Arc::new(PendingScreens::default()))
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Focused(true) = event {
                 window.state::<TerminalRegistry>().reconnect_disconnected();
@@ -262,6 +265,7 @@ pub fn run() {
             commands::terminal::terminal_resize,
             commands::terminal::terminal_close,
             commands::terminal::terminal_set_title,
+            commands::agent::terminal_agent_screen,
             commands::terminal::terminal_log_start,
             commands::terminal::terminal_log_stop,
             commands::terminal::terminal_recording_start,

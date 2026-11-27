@@ -4,13 +4,13 @@
   },
   "agentAccess": {
     "title": "代理访问",
-    "description": "通过 MCP 向本机客户端共享已授权的远程终端信息。请将客户端配置为运行 SSH Astra 可执行文件，并传入 mcp 参数。",
+    "description": "通过 MCP 向本机客户端共享已授权的远程终端画面和文件。请将客户端配置为运行 SSH Astra 可执行文件，并传入 mcp 参数。",
     "permission": {
       "off": "关闭",
       "read": "只读",
       "approval": "需要批准"
     },
-    "hostHint": "两种访问级别目前均共享终端信息。此权限仅保存在本机。",
+    "hostHint": "两种访问级别目前均允许代理读取此 Host 已打开的终端和文件。此权限仅保存在本机。",
     "enabled": "代理访问已开启",
     "turnOff": "关闭代理访问",
     "sharedTerminal": "终端已向代理开放",

@@ -7,6 +7,7 @@ import { TabActivityContext } from "@/features/workspace/tab-activity";
 import { e2eHooks } from "@/lib/e2e";
 import type { HostId } from "@/lib/ipc/hosts";
 import {
+  answerAgentScreen,
   closeTerminal,
   resizeTerminal,
   saveClipboardImage,
@@ -16,6 +17,7 @@ import {
   type TerminalSize,
 } from "@/lib/ipc/terminal";
 import type { TransferHost } from "@/lib/ipc/transfers";
+import { readAgentScreen } from "./agent-screen";
 import { quoteDroppedPaths } from "./dropped-paths";
 import { terminalPasteInput } from "./terminal-input";
 import { XtermView } from "./XtermView";
@@ -171,6 +173,11 @@ export function TerminalSurface({
         }
         if (event.type === "terminalLog" || event.type === "recording") {
           output.status(event.type === "terminalLog" ? "log" : "recording", event.status);
+          return;
+        }
+        if (event.type === "agentScreen") {
+          const { requestId, scrollbackLines } = event.request;
+          void answerAgentScreen(requestId, readAgentScreen(xterm, scrollbackLines)).catch(() => undefined);
           return;
         }
         if (event.type !== "exit") return;

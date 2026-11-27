@@ -44,6 +44,42 @@ beforeAll(() => {
 
 beforeEach(() => vi.clearAllMocks());
 
+it("returns the rendered viewport and recent scrollback through its own Terminal channel", async () => {
+  const root = createRoot(document.createElement("div"));
+  const terminal = new Terminal({ cols: 28, rows: 2, allowProposedApi: true });
+  const ipc = vi.mocked(invoke);
+  ipc.mockImplementation(async (command) => command === "remote_terminal_open" ? { id: 7, savedHost: true } : undefined);
+  act(() => root.render(
+    <RemoteTerminalView paneId="agent-pane" host={host} onEditHost={() => {}} onClose={() => {}} />,
+  ));
+  let detach: (() => void) | undefined;
+  try {
+    await act(async () => { detach = vi.mocked(XtermView).mock.lastCall![0].attach(terminal); });
+    const { onEvent } = ipc.mock.calls.find(([command]) => command === "remote_terminal_open")![1] as {
+      onEvent: { onmessage: (message: TerminalMessage) => void };
+    };
+    await new Promise<void>((resolve) => terminal.write(
+      "older\r\nrecent\r\nold\x1b[2K\r\x1b[31mvisible\x1b[0m\r\nlast", resolve,
+    ));
+    act(() => onEvent.onmessage({ agentScreen: { requestId: 31, scrollbackLines: 1 } }));
+    expect(ipc).toHaveBeenCalledWith("terminal_agent_screen", {
+      requestId: 31, snapshot: { screen: "visible\nlast", scrollback: "recent", truncated: false },
+    });
+    terminal.scrollLines(-1);
+    act(() => onEvent.onmessage({ agentScreen: { requestId: 32, scrollbackLines: 1 } }));
+    expect(ipc).toHaveBeenCalledWith("terminal_agent_screen", {
+      requestId: 32, snapshot: { screen: "recent\nvisible", scrollback: "older", truncated: false },
+    });
+    expect(ipc.mock.calls.filter(([command]) => command === "terminal_write")).toEqual([]);
+  } finally {
+    act(() => {
+      detach?.();
+      terminal.dispose();
+      root.unmount();
+    });
+  }
+});
+
 it("pastes an uploaded image only into the initiating Host and exact shell", async () => {
   const paneId = "image-pane";
   const root = createRoot(document.createElement("div"));

@@ -4,13 +4,13 @@
   },
   "agentAccess": {
     "title": "Agent access",
-    "description": "Share metadata for opted-in remote Terminals with local MCP clients. Configure your client to run the SSH Astra executable with the mcp argument.",
+    "description": "Share opted-in Terminal screens and remote files with local MCP clients. Configure your client to run the SSH Astra executable with the mcp argument.",
     "permission": {
       "off": "Off",
       "read": "Read only",
       "approval": "Approval required"
     },
-    "hostHint": "Both access levels currently share Terminal metadata. This permission stays on this device.",
+    "hostHint": "Both access levels currently let agents read open Terminals and files on this Host. This permission stays on this device.",
     "enabled": "Agent access on",
     "turnOff": "Turn off Agent access",
     "sharedTerminal": "Terminal shared with agents",

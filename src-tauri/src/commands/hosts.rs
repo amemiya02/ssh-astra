@@ -22,9 +22,10 @@ use crate::error::{CommandError, CommandResult};
 
 /// The HostStore, or why it could not be loaded at startup (e.g. a damaged
 /// file, which is left untouched rather than overwritten).
+#[derive(Clone)]
 pub struct HostsState {
     store: Arc<Mutex<Result<HostStore, CommandError>>>,
-    os_changes: Watcher<HostOsChange>,
+    os_changes: Arc<Watcher<HostOsChange>>,
 }
 
 #[derive(Serialize)]
@@ -38,7 +39,7 @@ impl HostsState {
     pub fn new(store: Result<HostStore, CommandError>) -> Self {
         Self {
             store: Arc::new(Mutex::new(store)),
-            os_changes: Watcher::default(),
+            os_changes: Arc::default(),
         }
     }
 
@@ -50,17 +51,9 @@ impl HostsState {
         }
     }
 
-    pub(crate) fn agent_terminals(
-        &self,
-        registry: TerminalRegistry,
-    ) -> impl Fn() -> Vec<OpenTerminal> + Send + Sync + 'static {
-        let hosts = Arc::clone(&self.store);
-        move || {
-            let guard = hosts.lock().unwrap_or_else(|p| p.into_inner());
-            let Ok(store) = guard.as_ref() else {
-                return Vec::new();
-            };
-            registry
+    pub(crate) fn agent_terminals(&self, registry: &TerminalRegistry) -> Vec<OpenTerminal> {
+        self.with(|store| {
+            Ok(registry
                 .saved_terminals()
                 .into_iter()
                 .filter_map(|(id, metadata)| {
@@ -80,8 +73,9 @@ impl HostsState {
                         status: state.status?,
                     })
                 })
-                .collect()
-        }
+                .collect())
+        })
+        .unwrap_or_default()
     }
 
     pub(super) fn publish_os_change(&self, host_id: HostId, detected_os: Option<DetectedOs>) {

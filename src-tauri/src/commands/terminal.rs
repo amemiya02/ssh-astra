@@ -27,8 +27,9 @@ use sshastra_core::terminal::{
     REPORT_CWD,
 };
 use tauri::ipc::{Channel, InvokeResponseBody};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, State, Webview};
 
+use super::agent::PendingScreens;
 use super::command_history;
 use super::connections::{detect_os_on_current_connection, HostRoute};
 use super::settings::SettingsState;
@@ -246,9 +247,11 @@ pub struct OpenedRemoteTerminal {
 #[allow(clippy::too_many_arguments)] // Tauri injects each managed state as an argument.
 pub async fn remote_terminal_open(
     app: AppHandle,
+    webview: Webview,
     registry: State<'_, TerminalRegistry>,
     settings: State<'_, SettingsState>,
     pending: State<'_, Arc<PendingPrompts>>,
+    pending_screens: State<'_, Arc<PendingScreens>>,
     output_directory: State<'_, TerminalOutputDirectory>,
     host_id: HostId,
     size: TerminalSize,
@@ -258,7 +261,10 @@ pub async fn remote_terminal_open(
 ) -> CommandResult<OpenedRemoteTerminal> {
     let route = Arc::new(HostRoute::lookup(&app, &host_id)?);
     let saved_host = matches!(route.as_ref(), HostRoute::Saved(_));
-    let metadata = saved_host.then(|| Arc::new(SavedTerminalMetadata::new(host_id.clone())));
+    let metadata = saved_host.then(|| {
+        let screen = pending_screens.reader(webview.label().to_owned(), on_event.clone());
+        Arc::new(SavedTerminalMetadata::new(host_id.clone()).with_screen_reader(screen))
+    });
     let observed = metadata.clone();
     let host = route.host().clone();
     let prompter = Arc::new(ChannelPrompter {
