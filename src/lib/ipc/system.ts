@@ -14,7 +14,7 @@ export function writeClipboardText(text: string): Promise<void> {
   return writeText(text);
 }
 
-/** Opens a web link in the user's browser. Only http(s) is allowed (see capabilities). */
+/** Opens an HTTP(S) or mailto link in the system's default app (see capabilities). */
 export function openExternalUrl(url: string): Promise<void> {
   return openUrl(url);
 }

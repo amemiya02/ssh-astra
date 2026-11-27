@@ -13,6 +13,7 @@ import { PasteConfirmDialog } from "./PasteConfirmDialog";
 import { TerminalSearchBar, type SearchDirection, type SearchResults } from "./TerminalSearchBar";
 import { currentPlatform, matchTerminalShortcut } from "@/features/workspace/shortcuts";
 import { planPaste, type PendingPaste } from "./terminal-input";
+import { terminalLinkDestination } from "./terminal-links";
 import { useTerminalPrefs } from "./terminal-prefs-context";
 
 export const scrollbackLines = 10_000;
@@ -53,6 +54,7 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<SearchResults | null>(null);
   const [pendingPaste, setPendingPaste] = useState<PendingPaste | null>(null);
+  const [linkDestination, setLinkDestination] = useState<string | null>(null);
 
   useEffect(() => {
     prefsRef.current = prefs;
@@ -73,6 +75,12 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
     const container = containerRef.current;
     if (!container) return;
     const initial = prefsRef.current;
+    const activateLink = (event: MouseEvent, uri: string) => {
+      const destination = terminalLinkDestination(uri);
+      if (!destination) return;
+      event.preventDefault();
+      void openExternalUrl(destination).catch(() => undefined);
+    };
 
     const xterm = new XTerm({
       allowProposedApi: true, // search highlights use decorations
@@ -80,6 +88,13 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
       fontFamily: initial.fontFamily,
       fontSize: initial.fontSize,
       lineHeight: 1.2,
+      linkHandler: {
+        // xterm's default permits only HTTP(S). Both callbacks enforce our allowlist.
+        allowNonHttpProtocols: true,
+        activate: activateLink,
+        hover: (_event, uri) => setLinkDestination(terminalLinkDestination(uri)),
+        leave: () => setLinkDestination(null),
+      },
       scrollback: scrollbackLines,
       theme: themeRef.current,
     });
@@ -87,12 +102,7 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
     const search = new SearchAddon();
     xterm.loadAddon(fit);
     xterm.loadAddon(search);
-    xterm.loadAddon(
-      new WebLinksAddon((event, uri) => {
-        event.preventDefault();
-        void openExternalUrl(uri).catch(() => undefined);
-      }),
-    );
+    xterm.loadAddon(new WebLinksAddon(activateLink));
     xterm.open(container);
     xtermRef.current = xterm;
     fitRef.current = fit;
@@ -213,6 +223,15 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full py-2 pr-1 pl-3" aria-label={label} />
+      {linkDestination && (
+        <div
+          role="tooltip"
+          dir="ltr"
+          className="pointer-events-none absolute inset-x-3 bottom-2 z-10 w-fit max-w-full wrap-anywhere rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-sm"
+        >
+          {linkDestination}
+        </div>
+      )}
       {searching && <TerminalSearchBar results={results} onFind={find} onClose={closeSearch} />}
       <PasteConfirmDialog
         paste={pendingPaste}
