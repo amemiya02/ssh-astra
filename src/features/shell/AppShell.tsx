@@ -58,8 +58,22 @@ export function AppShell({ sidebar, nav, tabs, workspace, filePanel, fullWorkspa
   const filesRef = usePanelRef();
   const workspaceRef = useGroupRef();
 
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
-    isPanelCollapsed(layout.groups[shellGroup], "sidebar"),
+  // On Home the Host list repeats Home's own cards, so the column is closed while Home is the
+  // focused tab and the sidebar shows Hosts. That is a display rule, not the user's collapse: it
+  // saves nothing, and leaving Home reopens the column as it was. `autoHidden` says the rule
+  // closed it; `peek` is the Hosts rail button opening it for this visit.
+  const [peek, setPeek] = useState(false);
+  const homeHosts = nav.activeKind === "home" && sidebarView === "hosts";
+  if (peek && !homeHosts) setPeek(false);
+  const hideList = homeHosts && !peek;
+  // Opened on Home, the column starts closed (no flash of it) unless the user had it closed.
+  const [startsHidden] = useState(() => hideList && !isPanelCollapsed(layout.groups[shellGroup], "sidebar"));
+  const autoHidden = useRef(startsHidden);
+  const [shellLayout] = useState(() =>
+    startsHidden ? { ...layout.groups[shellGroup], sidebar: 0, main: 100 } : layout.groups[shellGroup],
+  );
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => hideList || isPanelCollapsed(layout.groups[shellGroup], "sidebar"),
   );
   const [filesCollapsed, setFilesCollapsed] = useState(() =>
     isPanelCollapsed(layout.groups[workspaceGroup(dock)], "files"),
@@ -116,15 +130,39 @@ export function AppShell({ sidebar, nav, tabs, workspace, filePanel, fullWorkspa
     ),
   );
 
+  // The display rule closes and reopens the column; the effect only reacts to the rule changing.
+  useEffect(() => {
+    const panel = sidebarRef.current;
+    if (!panel) return;
+    if (hideList) {
+      if (!panel.isCollapsed()) {
+        autoHidden.current = true;
+        panel.collapse();
+      }
+    } else if (autoHidden.current) {
+      autoHidden.current = false;
+      toggle(sidebarRef, true, sidebarSize);
+    }
+    // `toggle` only reads refs and its arguments.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hideList]);
+
   /** Shows `view` in the sidebar, opening the column if it is collapsed. */
   const showSidebarView = (view: SidebarView) => {
     setSidebarView(view);
-    if (sidebarCollapsed) toggle(sidebarRef, true, sidebarSize);
+    if (!sidebarCollapsed) return;
+    if (autoHidden.current && view === "hosts") setPeek(true);
+    autoHidden.current = false;
+    toggle(sidebarRef, true, sidebarSize);
   };
-  /** The rail's behaviour: the open view's button collapses the column, any other shows its view. */
+  /**
+   * The rail's behaviour: the open view's button collapses the column, any other shows its view.
+   * On Home the Hosts button only opens and closes the column for this visit.
+   */
   const pickSidebarView = (view: SidebarView) => {
-    if (!sidebarCollapsed && sidebarView === view) toggle(sidebarRef, false);
-    else showSidebarView(view);
+    if (sidebarCollapsed || sidebarView !== view) showSidebarView(view);
+    else if (peek) setPeek(false);
+    else toggle(sidebarRef, false);
   };
   const showSidebarViewRef = useRef(showSidebarView);
   useEffect(() => {
@@ -154,9 +192,11 @@ export function AppShell({ sidebar, nav, tabs, workspace, filePanel, fullWorkspa
           id={shellGroup}
           orientation="horizontal"
           className="min-h-0 flex-1"
-          defaultLayout={layout.groups[shellGroup]}
+          defaultLayout={shellLayout}
           onLayoutChange={(next) => setSidebarCollapsed(isPanelCollapsed(next, "sidebar"))}
-          onLayoutChanged={(next, meta) => saveGroup(shellGroup, meta.requestedLayout ?? next)}
+          onLayoutChanged={(next, meta) => {
+            if (!autoHidden.current) saveGroup(shellGroup, meta.requestedLayout ?? next);
+          }}
         >
           <ResizablePanel
             id="sidebar"

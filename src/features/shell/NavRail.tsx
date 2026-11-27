@@ -40,7 +40,7 @@ export function NavRail({
       {/* Clear of the macOS traffic lights; also the window's drag handle. */}
       <div data-tauri-drag-region className="h-8.5 w-full shrink-0" />
       <AppMark />
-      <div className="mt-2 flex flex-col items-center gap-1">
+      <div className="mt-2 flex w-full flex-col items-center gap-1">
         <RailButton label={t("rail.home")} active={activeKind === "home"} onClick={onHome}>
           <House />
         </RailButton>
@@ -62,7 +62,7 @@ export function NavRail({
           <ArrowRightLeft />
         </RailButton>
       </div>
-      <div className="mt-auto flex flex-col items-center gap-1">
+      <div className="mt-auto flex w-full flex-col items-center gap-1">
         <RailButton
           label={t("tabs.newLocalTerminal")}
           shortcut={shortcutLabel("newTab", platform)}
@@ -85,8 +85,10 @@ export function NavRail({
 }
 
 /**
- * One rail item. A sidebar view is a toggle (`pressed`); the others take you to a tab and are
- * marked (`active`) while that tab is focused.
+ * One rail item, in one of two ways. A destination (`active`) takes you to a tab and gets the
+ * selected tile while that tab is focused. A sidebar view is a toggle (`pressed`): while it is shown
+ * its icon turns to the foreground colour and a 2px primary bar marks the rail's left edge, never
+ * the tile, so the focused tab and the shown column never read as one state.
  */
 function RailButton({
   label,
@@ -103,22 +105,26 @@ function RailButton({
   onClick(): void;
   children: ReactNode;
 }) {
-  const marked = active || pressed;
   return (
-    <IconButton
-      label={label}
-      shortcut={shortcut}
-      tooltipSide="right"
-      aria-pressed={pressed}
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        "size-9 rounded-lg [&_svg:not([class*='size-'])]:size-[18px]",
-        marked ? "bg-selected text-primary hover:bg-selected hover:text-primary" : "hover:bg-accent active:bg-accent/70",
-      )}
-      onClick={onClick}
-    >
-      {children}
-    </IconButton>
+    <div className="relative flex w-full justify-center">
+      {pressed && <span aria-hidden data-rail-indicator className="bg-primary absolute top-2 bottom-2 left-0 w-0.5 rounded-r-full" />}
+      <IconButton
+        label={label}
+        shortcut={shortcut}
+        tooltipSide="right"
+        aria-pressed={pressed}
+        aria-current={active ? "page" : undefined}
+        className={cn(
+          "size-9 rounded-lg [&_svg:not([class*='size-'])]:size-[18px]",
+          active
+            ? "bg-selected text-primary hover:bg-selected hover:text-primary"
+            : cn("hover:bg-accent active:bg-accent/70", pressed && "text-foreground hover:text-foreground"),
+        )}
+        onClick={onClick}
+      >
+        {children}
+      </IconButton>
+    </div>
   );
 }
 
