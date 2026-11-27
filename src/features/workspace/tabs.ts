@@ -15,7 +15,7 @@ export type PaneKind =
   /** The Host vault: search, recent and every Host as a card. One per window. */
   | { kind: "home" }
   | { kind: "local-terminal"; cwd?: string }
-  | { kind: "remote-terminal"; host: Host }
+  | { kind: "remote-terminal"; host: Host; initialCwd?: string }
   | { kind: "sftp"; host: Host }
   | { kind: "settings" }
   /** A Host's Port forward rules; the panel reads the live Host by `host.id`. */

@@ -66,6 +66,7 @@ impl Shell {
             post_login_command,
             None,
             None,
+            None,
         )
         .await
     }
@@ -77,6 +78,7 @@ impl Shell {
         post_login_command: Option<&str>,
         terminal_charset: Option<TerminalCharset>,
         terminal_backspace: Option<TerminalBackspace>,
+        initial_cwd: Option<&str>,
     ) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let manager = Arc::new(ConnectionManager::new(KnownHosts::new(
@@ -101,7 +103,8 @@ impl Shell {
             default_directory: None,
             forwards: Vec::new(),
         };
-        let options = RemoteTerminalOptions::for_host(&host, shell_integration);
+        let mut options = RemoteTerminalOptions::for_host(&host, shell_integration);
+        options.initial_cwd = initial_cwd.map(str::to_owned);
         let connect = move || {
             let (manager, host) = (manager.clone(), host.clone());
             async move { manager.connect(&host, Arc::new(TrustingPrompter)).await }
@@ -430,6 +433,89 @@ async fn runs_post_login_command_with_shell_integration_disabled() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn split_shell_inherits_directory_after_login_command_and_before_queued_input() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let login = r#"read -r reply # use input from the user
+printf 'login:%s\n' "$reply"
+cd /srv/files
+(exit 7)"#;
+    let mut shell = Shell::open_with_terminal_settings(
+        &sshd,
+        support::USER,
+        true,
+        Some(login),
+        None,
+        None,
+        Some("/srv/files/docs"),
+    )
+    .await;
+    shell.type_line("answer");
+    shell.type_line(r#"printf 'split:%s:%s\n' "$PWD" "$?""#);
+    let directories = shell.settle().await;
+
+    assert!(directories.iter().any(|path| path == "/srv/files/docs"));
+    let rows = shell.rows();
+    assert!(rows.iter().any(|row| row == "login:answer"), "{rows:?}");
+    assert!(
+        rows.iter().any(|row| row == "split:/srv/files/docs:7"),
+        "{rows:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn zsh_split_accepts_literal_shell_metacharacters_and_trailing_newlines_in_a_directory() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let cwd = "/tmp/sshastra split '\"\\; $(id) ! 日本\n";
+    let mut original = Shell::open(&sshd, support::ZSH_USER, true).await;
+    original.next_cwd().await;
+    original.type_line(
+        r#"path=$(printf '/tmp/sshastra split \047\042\134\073 $(id) ! \346\227\245\346\234\254\n/.'); mkdir -p "$path" && cd "$path""#,
+    );
+    assert_eq!(original.next_cwd().await, cwd);
+
+    let mut split = Shell::open_with_terminal_settings(
+        &sshd,
+        support::ZSH_USER,
+        true,
+        None,
+        None,
+        None,
+        Some(cwd),
+    )
+    .await;
+    let directories = split.settle().await;
+    assert_eq!(directories.last().map(String::as_str), Some(cwd));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn split_shell_changes_to_the_reported_directory_with_integration_disabled() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let mut shell = Shell::open_with_terminal_settings(
+        &sshd,
+        support::USER,
+        false,
+        None,
+        None,
+        None,
+        Some("/srv/files/docs"),
+    )
+    .await;
+    shell.type_line(r#"printf 'split:%s\n' "$PWD""#);
+    assert!(shell.settle().await.is_empty());
+    let rows = shell.rows();
+    assert!(
+        rows.iter().any(|row| row == "split:/srv/files/docs"),
+        "{rows:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn runs_post_login_command_again_in_the_reconnected_shell() {
     let Some(sshd) = support::sshd(Service::Flaky) else {
         return;
@@ -441,9 +527,14 @@ async fn runs_post_login_command_again_in_the_reconnected_shell() {
         Some(POST_LOGIN_COMMAND),
         Some(TerminalCharset::Gbk),
         None,
+        Some("/srv/files/docs"),
     )
     .await;
-    shell.settle().await;
+    let directories = shell.settle().await;
+    assert_eq!(
+        directories.last().map(String::as_str),
+        Some("/srv/files/docs")
+    );
     assert_post_login_runs(&shell, 1);
 
     // Leave the old shell's GBK decoder waiting for a trail byte.
@@ -462,7 +553,8 @@ async fn runs_post_login_command_again_in_the_reconnected_shell() {
         })
         .await;
     assert_eq!(shell.connection, Some(ConnectionState::Connected));
-    shell.settle().await;
+    let directories = shell.settle().await;
+    assert_eq!(directories.last().map(String::as_str), Some("/home/tester"));
 
     assert!(shell.text().contains("before-disconnect:\u{fffd}"));
     assert_post_login_runs(&shell, 2);
@@ -480,6 +572,7 @@ async fn gbk_terminal_shows_split_output_and_sends_gbk_input_and_ctrl_h() {
         Some("printf '%s\\n' 登录 | od -An -tx1"),
         Some(TerminalCharset::Gbk),
         Some(TerminalBackspace::CtrlH),
+        None,
     )
     .await;
     shell.settle().await;
@@ -547,6 +640,7 @@ async fn big5_and_latin1_terminals_round_trip_their_bytes() {
             false,
             None,
             Some(charset),
+            None,
             None,
         )
         .await;

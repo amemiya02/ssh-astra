@@ -7,6 +7,7 @@ import { connectionsStore, useConnections } from "@/features/connect/connections
 import { hostConnections } from "@/features/connect/hostConnection";
 import { CommandDialog, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { FilePanelContent, type FilePanelPane } from "@/features/files/FilePanelContent";
+import { terminalCwds } from "@/features/files/terminalCwds";
 import { useRetainRemoteFilePanels } from "@/features/files/use-retain-remote-file-panels";
 import { fileBrowsers } from "@/features/files/fileBrowsers";
 import { forwardsStore, runningForwards, useForwards } from "@/features/forwards/forwardsStore";
@@ -175,13 +176,17 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
   );
 
   /**
-   * A new pane beside the focused one, running the same kind of Terminal (the same Host's shares its
-   * Connection); beside Settings, a Local terminal.
+   * A new pane beside the focused one, using the same Host and working directory when known.
+   * Non-Terminal panes that can split open a Local terminal beside them.
    */
   const split = (orientation: SplitOrientation) => {
     if (!canSplitFocused) return;
     const pane = activePane(focused);
-    const kind: PaneKind = pane.kind === "remote-terminal" ? { kind: pane.kind, host: pane.host } : localTerminal;
+    const kind: PaneKind = pane.kind === "remote-terminal"
+      ? { kind: pane.kind, host: pane.host, initialCwd: terminalCwds.lastReported(pane.id) }
+      : pane.kind === "local-terminal"
+        ? { kind: pane.kind, cwd: pane.cwd }
+        : localTerminal;
     dispatch({ type: "split", orientation, pane: newPane(kind) });
   };
 
