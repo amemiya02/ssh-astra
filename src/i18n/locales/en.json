@@ -617,7 +617,27 @@
       "gruvboxDark": "Gruvbox Dark",
       "solarizedDark": "Solarized Dark",
       "githubDark": "GitHub Dark",
-      "ember": "Ember (for production)"
+      "ember": "Ember (for production)",
+      "carbonfox": "Carbonfox",
+      "catppuccinFrappe": "Catppuccin Frappé",
+      "catppuccinMacchiato": "Catppuccin Macchiato",
+      "dawnfox": "Dawnfox",
+      "dayfox": "Dayfox",
+      "duskfox": "Duskfox",
+      "everforestDarkHard": "Everforest Dark Hard",
+      "everforestLightMed": "Everforest Light Medium",
+      "flexokiDark": "Flexoki Dark",
+      "flexokiLight": "Flexoki Light",
+      "kanagawaDragon": "Kanagawa Dragon",
+      "kanagawaWave": "Kanagawa Wave",
+      "melangeDark": "Melange Dark",
+      "melangeLight": "Melange Light",
+      "nightfox": "Nightfox",
+      "nordfox": "Nordfox",
+      "rosePine": "Rosé Pine",
+      "rosePineDawn": "Rosé Pine Dawn",
+      "rosePineMoon": "Rosé Pine Moon",
+      "terafox": "Terafox"
     }
   },
   "connect": {
@@ -813,6 +833,17 @@
       "colorScheme": {
         "label": "Colour scheme",
         "description": "Used by every Terminal unless its Host sets its own."
+      },
+      "importedSchemes": {
+        "label": "Imported colour schemes",
+        "description": "Add an iTerm2 colour scheme for any Terminal or Host.",
+        "import": "Import .itermcolors",
+        "remove": "Remove {{name}}",
+        "unnamed": "Imported scheme",
+        "imported": "Colour scheme imported.",
+        "invalid": "This file is missing a valid iTerm2 colour palette.",
+        "tooLarge": "Choose an .itermcolors file no larger than {{max}} KiB.",
+        "unreadable": "Could not read this colour scheme file."
       },
       "cursorStyle": {
         "label": "Cursor shape",

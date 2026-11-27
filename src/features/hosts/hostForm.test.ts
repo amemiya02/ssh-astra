@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import sample from "@/theme/fixtures/sample.itermcolors?raw";
+import { parseItermColors } from "@/theme/iterm-colors";
 import { emptyHostForm, hostFormFrom, parseHostForm } from "./hostForm";
 
 const valid = {
@@ -136,6 +138,17 @@ describe("hostFormFrom", () => {
   it("drops a scheme this build does not know, so the Host follows the global scheme", () => {
     const host = { id: "1", name: "a", address: "b", port: 22, user: "c", auth: { type: "password" as const }, jumpHost: null, groupId: null, forwards: [] };
     expect(hostFormFrom({ ...host, terminalScheme: "retired" }).terminalScheme).toBeUndefined();
+  });
+
+  it("round-trips a Host's imported scheme while the palette is available", () => {
+    const terminalScheme = "imported:sample";
+    const host = {
+      id: "1", name: "prod", address: "prod.local", port: 22, user: "root",
+      auth: { type: "password" as const }, jumpHost: null, groupId: null, forwards: [], terminalScheme,
+    };
+    const imported = [{ id: terminalScheme, name: "Sample", palette: parseItermColors(sample)! }] as const;
+    expect(parseHostForm(hostFormFrom(host, imported))).toMatchObject({ ok: true, draft: { terminalScheme } });
+    expect(hostFormFrom(host).terminalScheme).toBeUndefined();
   });
 
   it("starts new Hosts on port 22", () => {

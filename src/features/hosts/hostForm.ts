@@ -1,5 +1,5 @@
 import type { Host, HostAuth, HostDraft, TerminalBackspace, TerminalCharset } from "@/lib/ipc/hosts";
-import { isTerminalColorScheme, type TerminalColorScheme } from "@/theme/terminal-themes";
+import { isTerminalColorScheme, type ImportedTerminalScheme, type TerminalColorScheme } from "@/theme/terminal-themes";
 
 /** The Host form's raw input values. */
 export interface HostFormValues {
@@ -53,7 +53,7 @@ export const emptyHostForm: HostFormValues = {
   terminalBackspace: "del",
 };
 
-export function hostFormFrom(host: Host): HostFormValues {
+export function hostFormFrom(host: Host, importedSchemes: readonly ImportedTerminalScheme[] = []): HostFormValues {
   const form: HostFormValues = {
     name: host.name,
     address: host.address,
@@ -67,7 +67,7 @@ export function hostFormFrom(host: Host): HostFormValues {
     terminalCharset: host.terminalCharset ?? emptyHostForm.terminalCharset,
     terminalBackspace: host.terminalBackspace ?? emptyHostForm.terminalBackspace,
   };
-  if (isTerminalColorScheme(host.terminalScheme)) form.terminalScheme = host.terminalScheme;
+  if (isTerminalColorScheme(host.terminalScheme, importedSchemes)) form.terminalScheme = host.terminalScheme;
   if (host.defaultDirectory) form.defaultDirectory = host.defaultDirectory;
   if (host.keepaliveSeconds !== undefined) form.keepaliveSeconds = String(host.keepaliveSeconds);
   if (host.postLoginCommand) form.postLoginCommand = host.postLoginCommand;

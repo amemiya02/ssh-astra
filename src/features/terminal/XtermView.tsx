@@ -8,7 +8,7 @@ import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { exposeTerminal } from "@/lib/e2e";
 import { openExternalUrl, readClipboardText, writeClipboardText } from "@/lib/ipc/system";
 import { useTheme } from "@/theme/theme-context";
-import { resolveTerminalTheme, terminalSearchDecorations, type TerminalColorScheme } from "@/theme/terminal-themes";
+import { resolveTerminalTheme, terminalSearchDecorations } from "@/theme/terminal-themes";
 import { PasteConfirmDialog } from "./PasteConfirmDialog";
 import { TerminalSearchBar, type SearchDirection, type SearchResults } from "./TerminalSearchBar";
 import { BroadcastPaneContext, type Broadcast } from "@/features/workspace/broadcast";
@@ -28,7 +28,7 @@ interface XtermViewProps {
   /** Whether its tab is shown; becoming active refits and focuses the Terminal. */
   active: boolean;
   /** The Host's own colour scheme, overriding the global one. */
-  colorScheme?: TerminalColorScheme;
+  colorScheme?: string | null;
   /** A program set a window title (OSC 0/2); an empty string clears it. */
   onTitleChange?(title: string): void;
   /**
@@ -60,7 +60,7 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
   const searchRef = useRef<SearchAddon | null>(null);
   const rendererRef = useRef<Renderer | null>(null);
   const prefsRef = useRef(prefs);
-  const xtermTheme = resolveTerminalTheme(prefs.colorScheme, colorScheme, theme);
+  const xtermTheme = resolveTerminalTheme(prefs.colorScheme, colorScheme, theme, prefs.importedSchemes);
   const themeRef = useRef(xtermTheme);
   const attachRef = useRef(attach);
   const onTitleChangeRef = useRef(onTitleChange);

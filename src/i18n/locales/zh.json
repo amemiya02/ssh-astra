@@ -617,7 +617,27 @@
       "gruvboxDark": "Gruvbox Dark",
       "solarizedDark": "Solarized Dark",
       "githubDark": "GitHub Dark",
-      "ember": "Ember（用于生产环境）"
+      "ember": "Ember（用于生产环境）",
+      "carbonfox": "Carbonfox",
+      "catppuccinFrappe": "Catppuccin Frappé",
+      "catppuccinMacchiato": "Catppuccin Macchiato",
+      "dawnfox": "Dawnfox",
+      "dayfox": "Dayfox",
+      "duskfox": "Duskfox",
+      "everforestDarkHard": "Everforest 深色（高对比度）",
+      "everforestLightMed": "Everforest 浅色（中对比度）",
+      "flexokiDark": "Flexoki 深色",
+      "flexokiLight": "Flexoki 浅色",
+      "kanagawaDragon": "神奈川龙",
+      "kanagawaWave": "神奈川海浪",
+      "melangeDark": "Melange 深色",
+      "melangeLight": "Melange 浅色",
+      "nightfox": "Nightfox",
+      "nordfox": "Nordfox",
+      "rosePine": "Rosé Pine",
+      "rosePineDawn": "Rosé Pine 黎明",
+      "rosePineMoon": "Rosé Pine 月色",
+      "terafox": "Terafox"
     }
   },
   "connect": {
@@ -813,6 +833,17 @@
       "colorScheme": {
         "label": "配色",
         "description": "所有终端都使用此配色，除非其 Host 单独设置了配色。"
+      },
+      "importedSchemes": {
+        "label": "已导入的配色",
+        "description": "添加 iTerm2 配色，供终端或 Host 使用。",
+        "import": "导入 .itermcolors",
+        "remove": "删除 {{name}}",
+        "unnamed": "导入的配色",
+        "imported": "已导入配色。",
+        "invalid": "此文件中没有有效的 iTerm2 配色。",
+        "tooLarge": "请选择不超过 {{max}} KiB 的 .itermcolors 文件。",
+        "unreadable": "无法读取此配色文件。"
       },
       "cursorStyle": {
         "label": "光标样式",

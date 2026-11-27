@@ -228,7 +228,7 @@ components:
 
 SSH Astra plays the category standard straight: the Termius / Warp / WindTerm workstation. A 48px nav rail on the far left, a Host vault (a 248px Host list column, and Home's grid of Host cards), compact pill tabs, Terminals that fill the stage with the File panel docked beside them, and a dense 24px status bar. Nothing about the layout tries to be novel; the craft is in density, alignment and state.
 
-The identity is the theme model. Thirteen whole-window themes ship, and a theme is never just a Terminal scheme: it names the ground, sidebar, surface, raised layer, text, muted text, border, accent and state colours of the chrome *and* the Terminal's 16-colour palette, and every other token derives from those. Switching theme recolours the window and every open Terminal in one frame; hovering a theme in the gallery previews it live across the whole window before a click commits. Host monograms and tab marks take their colour from the active theme's ANSI hues, so each Host keeps a stable identity that still belongs to whatever theme is painted.
+The identity is the theme model. Thirteen whole-window themes ship, and a theme is never just a Terminal scheme: it names the ground, sidebar, surface, raised layer, text, muted text, border, accent and state colours of the chrome *and* the Terminal's 16-colour palette, and every other token derives from those. Switching theme recolours the window and the open Terminals that follow it in one frame; hovering a theme in the gallery previews it live across the whole window before a click commits. Host monograms and tab marks take their colour from the active theme's ANSI hues, so each Host keeps a stable identity that still belongs to whatever theme is painted.
 
 Density is desktop density: 13px body, 26px icon buttons, 28px tabs, 30px Host rows, 24px status bar. Light and dark are equal citizens; the default follows the OS appearance, with a separately chosen light theme and dark theme. The world replaces the earlier "lit sheet on a tinted desk" system: there is no grey desk with floating white sheets any more, and no single fixed palette.
 
@@ -257,7 +257,9 @@ The twelve `ui` roles:
 - **Primary** and **Primary foreground** (`primary`, `primaryForeground`): the accent. Primary buttons, the focus ring (`ring`), the app mark, folder icons, the rail's pressed-view bar, the checked theme card.
 - **Success**, **Warning**, **Destructive** (`success`, `warning`, `destructive`): Connection state and destructive actions only.
 
-The `terminal` palette: `background`, `foreground`, `cursor`, `cursorAccent`, `selectionBackground` and all 16 ANSI colours, as `#rrggbb` (xterm parses hex, not oklch). `src/theme/terminal-themes.ts` re-exports every theme's palette as a Terminal colour scheme (plus `ember`, a deep red sheet for production Hosts) so a Host can pin its own scheme.
+The `terminal` palette has background, foreground, cursor, cursor text, selection and all 16 ANSI colours. xterm uses hex values, with optional alpha on the selection background. `src/theme/terminal-themes.ts` lists the app themes' Terminal palettes, Ember, and 20 additional palettes from iTerm2-Color-Schemes. The global colour scheme applies to every Terminal that follows it. Hosts can pin a scheme in the advanced options. “Match app theme” uses the Terminal palette from the current app theme, including gallery previews.
+
+Settings → Terminal imports XML and binary `.itermcolors` files through the system file picker. The imported palette uses the exported colours from iTerm2's active mode as a single choice. Imported palettes are stored with Terminal settings and appear in both the global and Host pickers. Removing a selected palette returns the global choice to “Match app theme” and any Host using it to the global choice. Terminal colour schemes affect the Terminal surface, and the app theme controls the chrome and Host colours. The collection, palette authors and parser notices ship in `terminal-palette-notices.txt`.
 
 ### Derived tokens
 Computed in `src/index.css` with `color-mix(in oklab, ...)`; never stored in a theme:
@@ -275,9 +277,9 @@ Dark: **Astra Dark** (blue-black ink, the Terminal a step deeper than the ground
 Pickers list light themes first, then dark, Astra's own at the head of each (`appThemeList`).
 
 ### Named Rules
-**The Twelve Roles Rule.** A theme is exactly the twelve `ThemeUi` roles plus a complete Terminal palette, all `#rrggbb`. A new colour need is a role derived in `src/index.css` from those variables, never a literal in a component and never a thirteenth role added to one theme only. Literal hex lives only in `src/theme/themes.ts` and `src/theme/terminal-themes.ts`.
+**The Twelve Roles Rule.** A theme is exactly the twelve `ThemeUi` roles plus a complete Terminal palette, all `#rrggbb`. A new colour need is a role derived in `src/index.css` from those variables, never a literal in a component and never a thirteenth role added to one theme only. Literal hex lives in the theme and Terminal palette definitions under `src/theme`.
 
-**The AA Rule.** Every theme passes WCAG AA (4.5:1), enforced per theme by `src/theme/themes.test.ts`: foreground on ground, surface and raised; muted foreground on surface and ground; primary foreground on primary; Terminal foreground on Terminal background. A theme port that fails is adjusted until it passes, not exempted. Monogram ink is held to 4.6:1 on every tile backing.
+**The AA Rule.** Every app theme passes WCAG AA (4.5:1), enforced per theme by `src/theme/themes.test.ts`: foreground on ground, surface and raised; muted foreground on surface and ground; primary foreground on primary; Terminal foreground on Terminal background. A theme port that fails is adjusted until it passes, not exempted. Monogram ink is held to 4.6:1 on every tile backing.
 
 **The One Accent Rule.** Primary marks what is primary, current, checked or focused. It is not decoration, not a heading colour and not a state colour.
 
@@ -475,7 +477,7 @@ If the Connection drops, a scrollable overlay covers the Terminal and shows the 
 - **Do** capitalise GLOSSARY.md terms in English copy (Host, Group, Jump host, Connection, Known host, Terminal, Local terminal, File panel, Port forward), write everything else in sentence case, and put all copy behind i18n keys in both locales.
 
 ### Don't:
-- **Don't** put literal colours, Tailwind palette colours or arbitrary colour values in components; literal hex belongs only in `themes.ts` and `terminal-themes.ts`.
+- **Don't** put literal colours, Tailwind palette colours or arbitrary colour values in components; literal hex belongs in the theme and Terminal palette definitions under `src/theme`.
 - **Don't** give a theme a colour the Terminal and chrome don't share, or recolour the Terminal without the chrome: one theme paints the whole window.
 - **Don't** use primary for decoration, a Host hue for state, or a state colour for identity.
 - **Don't** float work panels on shadows, or use shadows other than `shadow-panel` and `shadow-overlay`.

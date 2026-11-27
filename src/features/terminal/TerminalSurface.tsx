@@ -12,7 +12,6 @@ import {
   type TerminalId,
   type TerminalSize,
 } from "@/lib/ipc/terminal";
-import type { TerminalColorScheme } from "@/theme/terminal-themes";
 import { XtermView } from "./XtermView";
 import { shellIntegration, useShellIntegration } from "./shellIntegration";
 
@@ -36,7 +35,7 @@ interface Props {
   /** Whether its tab is shown; becoming active refits and focuses the Terminal. */
   active?: boolean;
   /** The Host's own colour scheme, overriding the global one. */
-  colorScheme?: TerminalColorScheme;
+  colorScheme?: string | null;
   /** The program set a window title (OSC 0/2); an empty string clears it. */
   onTitleChange?(title: string): void;
 }

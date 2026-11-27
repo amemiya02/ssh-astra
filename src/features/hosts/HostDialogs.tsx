@@ -20,6 +20,8 @@ import type { testHostConnection } from "@/lib/ipc/connections";
 import { isTemporaryHost, type Group, type Host, type HostDraft, type HostId, type TerminalBackspace, type TerminalCharset } from "@/lib/ipc/hosts";
 import { cn } from "@/lib/utils";
 import { TerminalSchemeSelect } from "@/features/terminal/TerminalSchemeSelect";
+import { useTerminalPrefs } from "@/features/terminal/terminal-prefs-context";
+import { isTerminalColorScheme } from "@/theme/terminal-themes";
 import { ClearCredentialsButton } from "./ClearCredentialsButton";
 import { emptyHostForm, hostFormFrom, parseHostForm, type HostFormField, type HostFormResult, type HostFormValues } from "./hostForm";
 
@@ -98,10 +100,11 @@ export function HostFormDialogContent({
   onCancel: () => void;
 }) {
   const { t } = useTranslation();
+  const { prefs: { importedSchemes } } = useTerminalPrefs();
   const temporary = host !== undefined && isTemporaryHost(host);
   const [values, setValues] = useState<HostFormValues>(() => {
     if (!host) return emptyHostForm;
-    const initial = hostFormFrom(host);
+    const initial = hostFormFrom(host, importedSchemes);
     return temporary ? { ...initial, name: "" } : initial;
   });
   const [errors, setErrors] = useState<Extract<HostFormResult, { ok: false }>["errors"]>({});
@@ -132,7 +135,11 @@ export function HostFormDialogContent({
   );
 
   const validate = (purpose: "save" | "test") => {
-    const result = parseHostForm(values, purpose);
+    const { terminalScheme } = values;
+    const result = parseHostForm({
+      ...values,
+      terminalScheme: isTerminalColorScheme(terminalScheme, importedSchemes) ? terminalScheme : undefined,
+    }, purpose);
     setErrors(result.ok ? {} : result.errors);
     if (result.ok) return result.draft;
     if (result.errors.keepaliveSeconds) setAdvancedOpen(true);
@@ -388,6 +395,7 @@ export function HostFormDialogContent({
                   aria-invalid={schemeError || undefined}
                   aria-describedby={schemeError ? "host-form-terminal-scheme-hint host-form-save-error" : "host-form-terminal-scheme-hint"}
                   value={values.terminalScheme}
+                  importedSchemes={importedSchemes}
                   inheritLabel={t("hosts.terminalSchemeInherit")}
                   onValueChange={(terminalScheme) => setValues((v) => ({ ...v, terminalScheme }))}
                 />
