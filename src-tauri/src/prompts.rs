@@ -9,8 +9,8 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use sshastra_core::ssh::{
-    BoxFuture, ConnectProgress, HostKeyPrompt, KeyboardInteractivePrompt, PassphrasePrompt,
-    PasswordPrompt, Prompter, Secret,
+    BoxFuture, ConnectProgress, HostKeyDecision, HostKeyPrompt, KeyboardInteractivePrompt,
+    PassphrasePrompt, PasswordPrompt, Prompter, Secret,
 };
 use sshastra_core::terminal::ConnectionState;
 use tauri::ipc::Channel;
@@ -74,7 +74,7 @@ pub struct KeyboardInteractiveField {
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum PromptAnswer {
     HostKey {
-        trust: bool,
+        decision: HostKeyDecision,
     },
     Password {
         password: Option<String>,
@@ -145,7 +145,7 @@ impl Prompter for ChannelPrompter {
         let _ = self.channel.send(PromptRequest::Progress { progress });
     }
 
-    fn confirm_host_key(&self, prompt: HostKeyPrompt) -> BoxFuture<'_, bool> {
+    fn confirm_host_key(&self, prompt: HostKeyPrompt) -> BoxFuture<'_, HostKeyDecision> {
         Box::pin(async move {
             let answer = self
                 .ask(|id| PromptRequest::HostKey {
@@ -156,7 +156,10 @@ impl Prompter for ChannelPrompter {
                     fingerprint: prompt.fingerprint,
                 })
                 .await;
-            matches!(answer, Some(PromptAnswer::HostKey { trust: true }))
+            match answer {
+                Some(PromptAnswer::HostKey { decision }) => decision,
+                _ => HostKeyDecision::Reject,
+            }
         })
     }
 
@@ -230,5 +233,26 @@ impl Prompter for ChannelPrompter {
                 _ => None,
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn host_key_answers_decode_all_three_frontend_choices() {
+        for (wire, expected) in [
+            ("saveAndTrust", HostKeyDecision::SaveAndTrust),
+            ("trustForRun", HostKeyDecision::TrustForRun),
+            ("reject", HostKeyDecision::Reject),
+        ] {
+            let answer = serde_json::from_value(serde_json::json!({
+                "type": "hostKey",
+                "decision": wire,
+            }))
+            .unwrap();
+            assert!(matches!(answer, PromptAnswer::HostKey { decision } if decision == expected));
+        }
     }
 }

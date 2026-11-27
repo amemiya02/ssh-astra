@@ -45,7 +45,7 @@ interface ConnectUpdates {
  * password or passphrase in the system keychain once it proves right.
  */
 export type PromptAnswer =
-  | { type: "hostKey"; trust: boolean }
+  | { type: "hostKey"; decision: "saveAndTrust" | "trustForRun" | "reject" }
   | { type: "password"; password: string | null; save?: boolean }
   | { type: "passphrase"; passphrase: string | null; save?: boolean }
   | { type: "keyboardInteractive"; answers: string[] | null };
@@ -69,7 +69,7 @@ export function readCommandError(error: unknown): CommandError {
 export function refusal(prompt: ConnectPrompt): PromptAnswer {
   switch (prompt.type) {
     case "hostKey":
-      return { type: "hostKey", trust: false };
+      return { type: "hostKey", decision: "reject" };
     case "password":
       return { type: "password", password: null };
     case "passphrase":

@@ -632,10 +632,12 @@
     "cancel": "Cancel",
     "hostKey": {
       "title": "Unknown host key",
-      "body": "This is the first Connection to {{host}}. Check that this fingerprint is the server's before trusting it.",
+      "body": "Check that this fingerprint belongs to {{host}} before trusting it.",
       "fingerprintLabel": "{{algorithm}} key fingerprint",
-      "hint": "Trusting adds the key to ~/.ssh/known_hosts, shared with the ssh command.",
-      "trust": "Trust and connect"
+      "hint": "Saving adds the key to ~/.ssh/known_hosts, shared with the ssh command. Temporary trust lasts until you quit SSH Astra.",
+      "reject": "Reject",
+      "trustForRun": "Trust for this run",
+      "saveAndTrust": "Save and trust"
     },
     "password": {
       "title": "Password for {{user}}@{{host}}",
@@ -649,7 +651,9 @@
       "body": "{{host}} presented a different key than the one recorded. Someone may be intercepting the Connection, or the server was reinstalled.",
       "presented": "Received",
       "recorded": "Expected (known_hosts, line {{line}})",
-      "fix": "If you are sure the change is legitimate, remove line {{line}} of {{path}} yourself, then connect again."
+      "recordedForRun": "Expected (trusted for this run)",
+      "fix": "If you are sure the change is legitimate, remove line {{line}} of {{path}} yourself, then connect again.",
+      "fixForRun": "If you verify the change is legitimate, restart SSH Astra and check the new fingerprint before trusting it."
     },
     "errors": {
       "unreachable": "Could not reach the Host.",

@@ -10,7 +10,7 @@ use sshastra_core::files::{DiskFs, FileKind, OpenRemote, RemoteFs, TransferQueue
 use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::{HostKey, KnownHosts};
 use sshastra_core::ssh::{
-    BoxFuture, ConnectionManager, HostKeyPrompt, PasswordPrompt, Prompter, Secret,
+    BoxFuture, ConnectionManager, HostKeyDecision, HostKeyPrompt, PasswordPrompt, Prompter, Secret,
 };
 use tokio::sync::mpsc;
 
@@ -21,8 +21,14 @@ const SMALL_FILES: usize = 1000;
 struct FixtureLogin(String);
 
 impl Prompter for FixtureLogin {
-    fn confirm_host_key(&self, prompt: HostKeyPrompt) -> BoxFuture<'_, bool> {
-        Box::pin(async move { prompt.fingerprint == self.0 })
+    fn confirm_host_key(&self, prompt: HostKeyPrompt) -> BoxFuture<'_, HostKeyDecision> {
+        Box::pin(async move {
+            if prompt.fingerprint == self.0 {
+                HostKeyDecision::SaveAndTrust
+            } else {
+                HostKeyDecision::Reject
+            }
+        })
     }
 
     fn password(&self, _: PasswordPrompt) -> BoxFuture<'_, Option<Secret>> {

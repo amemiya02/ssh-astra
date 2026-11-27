@@ -17,8 +17,8 @@ use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::ssh::{
     BoxFuture, ConnectError, ConnectProgress, ConnectStage, ConnectionManager, HeldConnections,
-    HostKeyPrompt, PasswordPrompt, ProgressStatus, Prompter, ReconnectPolicy, RemoteTerminal,
-    RemoteTerminalOptions, Secret,
+    HostKeyDecision, HostKeyPrompt, PasswordPrompt, ProgressStatus, Prompter, ReconnectPolicy,
+    RemoteTerminal, RemoteTerminalOptions, Secret,
 };
 use sshastra_core::terminal::{
     ConnectionState, ShellIntegrationEvent, Terminal, TerminalEvent, TerminalSize,
@@ -43,6 +43,7 @@ const POLICY: ReconnectPolicy = ReconnectPolicy {
 #[derive(Default)]
 struct TrustingPrompter {
     progress: StdMutex<Vec<ConnectProgress>>,
+    key_prompts: AtomicUsize,
 }
 
 impl Prompter for TrustingPrompter {
@@ -50,8 +51,9 @@ impl Prompter for TrustingPrompter {
         self.progress.lock().unwrap().push(progress);
     }
 
-    fn confirm_host_key(&self, _: HostKeyPrompt) -> BoxFuture<'_, bool> {
-        Box::pin(async { true })
+    fn confirm_host_key(&self, _: HostKeyPrompt) -> BoxFuture<'_, HostKeyDecision> {
+        self.key_prompts.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async { HostKeyDecision::TrustForRun })
     }
 
     fn password(&self, _: PasswordPrompt) -> BoxFuture<'_, Option<Secret>> {
@@ -262,6 +264,8 @@ async fn a_dropped_connection_reconnects_and_the_terminal_gets_a_new_shell() {
     );
     let after = events.shell_pid(&mut terminal).await;
     assert_ne!(before, after, "the Terminal runs a new shell");
+    assert_eq!(fx.prompts.key_prompts.load(Ordering::SeqCst), 1);
+    assert!(!fx._known_hosts.path().join("known_hosts").exists());
 }
 
 #[tokio::test(flavor = "multi_thread")]
