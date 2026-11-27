@@ -22,7 +22,7 @@ export function AgentReviewDialog() {
   const decline = () => answerCommandReview(review, "reject");
   return (
     <Dialog key={request.id} open onOpenChange={(open) => !open && decline()}>
-      <DialogContent showCloseButton={false} onOpenAutoFocus={(event) => {
+      <DialogContent showCloseButton={false} className="max-h-[calc(100vh-2rem)] overflow-y-auto" onOpenAutoFocus={(event) => {
         event.preventDefault();
         if (document.hasFocus()) reject.current?.focus();
       }}>

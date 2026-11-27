@@ -45,7 +45,8 @@ pub async fn notification_request_attention(window: WebviewWindow) {
     if cfg!(feature = "e2e") || !matches!(window.is_focused(), Ok(false)) {
         return;
     }
-    if let Err(error) = window.request_user_attention(Some(tauri::UserAttentionType::Informational)) {
+    if let Err(error) = window.request_user_attention(Some(tauri::UserAttentionType::Informational))
+    {
         log::debug!("could not request Window attention: {error}");
     }
 }

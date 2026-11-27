@@ -515,7 +515,9 @@ async fn review(
         enabled()
             .then(|| backend.target(id))
             .flatten()
-            .filter(|target| target.permission == AgentPermission::Approval && target.terminal == id)
+            .filter(|target| {
+                target.permission == AgentPermission::Approval && target.terminal == id
+            })
     };
     let Some(authorized) = target() else {
         return review_result(ReviewOutcome::Unavailable);

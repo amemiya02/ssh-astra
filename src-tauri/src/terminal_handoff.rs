@@ -96,6 +96,7 @@ impl Route {
         if !self.running || self.pending.is_some() {
             return false;
         }
+        self.invalidate_reviews();
         let fence = json!({ "moveFence": token }).to_string();
         if self
             .delivery
@@ -105,7 +106,6 @@ impl Route {
         {
             return false;
         }
-        self.invalidate_reviews();
         self.pending = Some(PendingOutput {
             token: token.into(),
             result: result.clone(),

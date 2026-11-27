@@ -86,6 +86,7 @@ export function TerminalSurface({
   const onExitRef = useRef(onExit);
   const onTitleChangeRef = useRef(onTitleChange);
   const labelRef = useRef(label);
+  const activeRef = useRef(active);
   const tRef = useRef(t);
 
   useEffect(() => {
@@ -96,6 +97,8 @@ export function TerminalSurface({
     onTitleChangeRef.current = onTitleChange;
     labelRef.current = label;
     hostRef.current = host;
+    activeRef.current = active;
+    invalidateCommandReview(paneId);
   });
 
   const attach = useCallback((xterm: XTerm) => {
@@ -209,7 +212,7 @@ export function TerminalSurface({
         openCommandReview({
           request,
           paneId,
-          eligible: () => connected && !exited && !lifetime.signal.aborted && id === request.terminalId
+          eligible: () => activeRef.current && connected && !exited && !lifetime.signal.aborted && id === request.terminalId
             && xterm.buffer.active.type === "normal" && !movingSourcePane(paneId)
             && shellIntegration.isEmptyPrompt(paneId, request.promptId),
         });

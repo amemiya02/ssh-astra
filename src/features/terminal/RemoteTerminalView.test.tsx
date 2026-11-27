@@ -89,7 +89,11 @@ it("reviews the exact pending command with a separate clipboard choice", async (
   const root = createRoot(container);
   const terminal = new Terminal({ allowProposedApi: true });
   const ipc = vi.mocked(invoke);
-  ipc.mockImplementation(async (command) => command === "remote_terminal_open" ? { id: 7, savedHost: true } : undefined);
+  ipc.mockImplementation(async (command, args) => {
+    if (command === "remote_terminal_open") return { id: 7, savedHost: true };
+    if (command === "terminal_agent_review_answer" && (args as { choice: string }).choice === "copy") return "copied";
+  });
+  const focus = vi.spyOn(document, "hasFocus").mockReturnValue(false);
   setSetting(agentAccessSetting, { enabled: true });
   act(() => root.render(<>
     <AgentReviewDialog />
@@ -101,7 +105,7 @@ it("reviews the exact pending command with a separate clipboard choice", async (
     const { onEvent } = ipc.mock.calls.find(([command]) => command === "remote_terminal_open")![1] as {
       onEvent: { onmessage: (message: TerminalMessage) => void };
     };
-    const request = { id: 31, terminalId: 7, host: "Production", promptId: 2, command: "  printf '%s' 'hello there'  " };
+    const request = { kind: "command" as const, id: 31, terminalId: 7, host: "Production", promptId: 2, command: "  printf '%s' 'hello there'  " };
     act(() => onEvent.onmessage({ agentReview: request }));
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
     expect(ipc).toHaveBeenCalledWith("terminal_agent_review_answer", { id: 31, choice: "unavailable" });
@@ -110,6 +114,11 @@ it("reviews the exact pending command with a separate clipboard choice", async (
       onEvent.onmessage({ shellIntegration: { type: "availability", status: "available" } });
       onEvent.onmessage({ shellIntegration: { type: "promptStart", promptId: 2 } });
       onEvent.onmessage({ agentReview: { ...request, id: 32 } });
+    });
+    expect(ipc).toHaveBeenCalledWith("notification_request_attention");
+    expect(ipc).toHaveBeenCalledWith("notification_show", {
+      title: "Review an agent command",
+      body: "Open SSH Astra to review a command proposal.",
     });
     const dialog = document.body.querySelector('[role="dialog"]');
     expect(dialog?.textContent).toContain("Production");
@@ -126,12 +135,27 @@ it("reviews the exact pending command with a separate clipboard choice", async (
       onEvent.onmessage({ shellIntegration: { type: "promptStart", promptId: 3 } });
     });
     expect(ipc).toHaveBeenCalledWith("terminal_agent_review_answer", { id: 33, choice: "unavailable" });
+
+    act(() => onEvent.onmessage({ agentReview: { ...request, id: 34, promptId: 3 } }));
+    const reject = Array.from(document.body.querySelectorAll('[role="dialog"] button'))
+      .find((button): button is HTMLButtonElement => button instanceof HTMLButtonElement && button.textContent === "Reject");
+    expect(reject).toBeDefined();
+    act(() => reject?.click());
+    expect(ipc).toHaveBeenCalledWith("terminal_agent_review_answer", { id: 34, choice: "reject" });
+
+    act(() => {
+      onEvent.onmessage({ agentReview: { ...request, id: 35, promptId: 3 } });
+      onEvent.onmessage({ agentReviewClosed: 35 });
+    });
+    expect(ipc.mock.calls.filter(([command, args]) =>
+      command === "terminal_agent_review_answer" && (args as { id: number }).id === 35)).toEqual([]);
   } finally {
     act(() => {
       detach?.();
       terminal.dispose();
       root.unmount();
     });
+    focus.mockRestore();
     container.remove();
     setSetting(agentAccessSetting, { enabled: false });
   }

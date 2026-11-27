@@ -75,8 +75,10 @@ impl HostsState {
                 .lock()
                 .unwrap_or_else(|p| p.into_inner())
                 .retain(|id, pending| {
-                    pending.receiver_count() != 0 && store.get(id)
-                        .is_some_and(|host| host.agent_access == AgentPermission::Approval)
+                    pending.receiver_count() != 0
+                        && store
+                            .get(id)
+                            .is_some_and(|host| host.agent_access == AgentPermission::Approval)
                 });
             self.changes.send(HostTreeChange { tree: store.tree() });
             Ok(result)
@@ -86,13 +88,23 @@ impl HostsState {
     /// A revocation closes the receiver even if permission is then granted again.
     pub(super) fn watch_agent_approval(&self, id: &HostId) -> Option<watch::Receiver<()>> {
         self.with(|store| {
-            if !store.get(id).is_some_and(|host| host.agent_access == AgentPermission::Approval) {
+            if !store
+                .get(id)
+                .is_some_and(|host| host.agent_access == AgentPermission::Approval)
+            {
                 return Ok(None);
             }
             let mut pending = self.approvals.lock().unwrap_or_else(|p| p.into_inner());
             pending.retain(|_, watch| watch.receiver_count() != 0);
-            Ok(Some(pending.entry(id.clone()).or_insert_with(|| watch::Sender::new(())).subscribe()))
-        }).ok().flatten()
+            Ok(Some(
+                pending
+                    .entry(id.clone())
+                    .or_insert_with(|| watch::Sender::new(()))
+                    .subscribe(),
+            ))
+        })
+        .ok()
+        .flatten()
     }
 
     pub(crate) fn unwatch(&self, label: &str) {

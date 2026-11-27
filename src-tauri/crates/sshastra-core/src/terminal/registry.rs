@@ -11,8 +11,8 @@ use crate::hosts::HostId;
 use crate::ssh::BoxFuture;
 
 use super::{
-    ConnectionState, IdlePrompt, OutputKind, Result, Terminal, TerminalError, TerminalEvent, TerminalOutput,
-    TerminalSize,
+    ConnectionState, IdlePrompt, OutputKind, Result, Terminal, TerminalError, TerminalEvent,
+    TerminalOutput, TerminalSize,
 };
 
 /// Identifies an open Terminal across the IPC boundary.
@@ -217,7 +217,9 @@ impl TerminalRegistry {
     }
 
     pub async fn observe_idle_prompt(&self, id: TerminalId) -> Option<IdlePrompt> {
-        let observation = self.with(id, |terminal| Ok(terminal.observe_idle_prompt())).ok()?;
+        let observation = self
+            .with(id, |terminal| Ok(terminal.observe_idle_prompt()))
+            .ok()?;
         observation.await
     }
 

@@ -27,12 +27,14 @@ use tokio::sync::{mpsc, oneshot, watch};
 
 use super::progress::HopProgress;
 use super::shell::ShellEvent;
-use super::{shell_quote, BoxFuture, ConnectError, ConnectStage, Connection, Prompter, RemoteShell};
+use super::{
+    shell_quote, BoxFuture, ConnectError, ConnectStage, Connection, Prompter, RemoteShell,
+};
 use crate::hosts::Host;
 use crate::terminal::{
-    ConnectionState, IdlePrompt, OutputDecoder, Result, ShellIntegrationEvent, ShellIntegrationStatus,
-    ShellOutput, Terminal, TerminalBackspace, TerminalCharset, TerminalError, TerminalEvent,
-    TerminalSize, INJECTION,
+    ConnectionState, IdlePrompt, OutputDecoder, Result, ShellIntegrationEvent,
+    ShellIntegrationStatus, ShellOutput, Terminal, TerminalBackspace, TerminalCharset,
+    TerminalError, TerminalEvent, TerminalSize, INJECTION,
 };
 
 /// How a [`RemoteTerminal`] retries a dropped Connection.
@@ -808,9 +810,10 @@ impl Runner {
                 self.size = size;
                 Ok(false)
             }
-            Command::Data(_) | Command::ConnectionData { .. } | Command::FollowDirectory { .. } => {
-                Ok(false)
-            }
+            Command::Data(_)
+            | Command::ConnectionData { .. }
+            | Command::FollowDirectory { .. }
+            | Command::ObserveIdlePrompt(_) => Ok(false),
         }
     }
 

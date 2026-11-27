@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { TerminalId } from "./terminal";
 
 export interface AgentReviewRequest {
+  kind: "command";
   id: number;
   terminalId: TerminalId;
   host: string;
@@ -12,6 +13,6 @@ export interface AgentReviewRequest {
 export type AgentReviewChoice = "copy" | "reject" | "unavailable";
 export type AgentReviewOutcome = "copied" | "rejected" | "unavailable" | "timedOut" | "clipboardUnavailable";
 
-export function answerAgentReview(id: number, choice: AgentReviewChoice): Promise<AgentReviewOutcome | null> {
+export function answerAgentReview(id: number, choice: AgentReviewChoice): Promise<AgentReviewOutcome> {
   return invoke("terminal_agent_review_answer", { id, choice });
 }

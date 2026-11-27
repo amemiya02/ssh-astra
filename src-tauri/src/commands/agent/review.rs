@@ -5,14 +5,37 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sshastra_core::agent::ReviewOutcome;
-use tauri::{State, Webview};
+use sshastra_core::{agent::ReviewOutcome, terminal::TerminalId};
 use tauri::ipc::{Channel, InvokeResponseBody};
+use tauri::{State, Webview};
 use tokio::sync::oneshot;
 
+use crate::error::CommandResult;
 use crate::terminal_handoff::TerminalDelivery;
+
+#[derive(Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub(super) enum ReviewDetails<'a> {
+    Command {
+        terminal_id: TerminalId,
+        host: String,
+        prompt_id: u64,
+        command: &'a str,
+    },
+}
+
+#[derive(Serialize)]
+struct ReviewRequest<'a> {
+    id: u64,
+    #[serde(flatten)]
+    details: ReviewDetails<'a>,
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,7 +72,10 @@ pub(super) struct ReviewWait {
 impl Drop for ReviewWait {
     fn drop(&mut self) {
         let mut windows = self.broker.lock();
-        if windows.get(&self.webview).is_some_and(|pending| pending.id == self.id) {
+        if windows
+            .get(&self.webview)
+            .is_some_and(|pending| pending.id == self.id)
+        {
             windows.remove(&self.webview);
         }
         // Keep the dismiss ordered before a replacement proposal to this Window.
@@ -65,18 +91,23 @@ impl PendingReviews {
     pub(super) fn request(
         self: &Arc<Self>,
         delivery: TerminalDelivery,
-        details: Value,
+        details: ReviewDetails<'_>,
     ) -> Option<ReviewWait> {
         let mut windows = self.lock();
         if windows.contains_key(&delivery.webview) {
             return None;
         }
         let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
-        let mut message = json!({"agentReview":details});
-        message["agentReview"]["id"] = json!(id);
+        let message = json!({"agentReview":ReviewRequest { id, details }});
         send(&delivery.events, message).ok()?;
         let (answer, receive) = oneshot::channel();
-        windows.insert(delivery.webview.clone(), PendingReview { id, answer: Some(answer) });
+        windows.insert(
+            delivery.webview.clone(),
+            PendingReview {
+                id,
+                answer: Some(answer),
+            },
+        );
         Some(ReviewWait {
             broker: self.clone(),
             webview: delivery.webview,
@@ -93,7 +124,9 @@ impl PendingReviews {
         choice: ReviewChoice,
     ) -> Option<oneshot::Receiver<ReviewOutcome>> {
         let mut windows = self.lock();
-        let pending = windows.get_mut(webview).filter(|pending| pending.id == id)?;
+        let pending = windows
+            .get_mut(webview)
+            .filter(|pending| pending.id == id)?;
         // Keep the slot reserved through final validation, while consuming the
         // sender so a duplicate decision cannot win.
         let answer = pending.answer.take()?;
@@ -113,8 +146,11 @@ pub(crate) async fn terminal_agent_review_answer(
     pending: State<'_, Arc<PendingReviews>>,
     id: u64,
     choice: ReviewChoice,
-) -> Option<ReviewOutcome> {
-    pending.decide(webview.label(), id, choice)?.await.ok()
+) -> CommandResult<ReviewOutcome> {
+    let Some(response) = pending.decide(webview.label(), id, choice) else {
+        return Ok(ReviewOutcome::Unavailable);
+    };
+    Ok(response.await.unwrap_or(ReviewOutcome::Unavailable))
 }
 
 #[cfg(test)]
@@ -128,19 +164,32 @@ mod tests {
         let (messages, mut events) = mpsc::unbounded_channel();
         let delivery = TerminalDelivery {
             webview: "origin".into(),
-            events: Channel::new(move |event| { messages.send(event).unwrap(); Ok(()) }),
+            events: Channel::new(move |event| {
+                messages.send(event).unwrap();
+                Ok(())
+            }),
             prompts: None,
         };
-        let mut review = broker.request(delivery.clone(), json!({"command":"pwd"})).unwrap();
+        let details = |command| ReviewDetails::Command {
+            terminal_id: 7.into(),
+            host: "Work".into(),
+            prompt_id: 1,
+            command,
+        };
+        let mut review = broker.request(delivery.clone(), details("pwd")).unwrap();
         let InvokeResponseBody::Json(message) = events.recv().await.unwrap() else {
             panic!("expected a proposal");
         };
         let message: Value = serde_json::from_str(&message).unwrap();
         let id = message["agentReview"]["id"].as_u64().unwrap();
         assert_eq!(message["agentReview"]["command"], "pwd");
-        assert!(broker.request(delivery.clone(), json!({"command":"whoami"})).is_none());
+        assert!(broker
+            .request(delivery.clone(), details("whoami"))
+            .is_none());
         assert!(broker.decide("other", id, ReviewChoice::Copy).is_none());
-        assert!(broker.decide("origin", id + 1, ReviewChoice::Copy).is_none());
+        assert!(broker
+            .decide("origin", id + 1, ReviewChoice::Copy)
+            .is_none());
         let reply = broker.decide("origin", id, ReviewChoice::Reject).unwrap();
         assert!(broker.decide("origin", id, ReviewChoice::Copy).is_none());
         let answer = (&mut review.answer).await.unwrap();
@@ -151,8 +200,11 @@ mod tests {
         let InvokeResponseBody::Json(message) = events.recv().await.unwrap() else {
             panic!("expected a dismissal");
         };
-        assert_eq!(serde_json::from_str::<Value>(&message).unwrap(), json!({"agentReviewClosed":id}));
-        let next = broker.request(delivery, json!({"command":"pwd"})).unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&message).unwrap(),
+            json!({"agentReviewClosed":id})
+        );
+        let next = broker.request(delivery, details("pwd")).unwrap();
         assert!(broker.decide("origin", id, ReviewChoice::Copy).is_none());
         drop(next);
     }
