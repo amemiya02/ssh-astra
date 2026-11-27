@@ -5,7 +5,7 @@
 //! registered with `connections_watch`.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use super::watch::Watcher;
 use sshastra_core::hosts::{Host, HostDraft, HostId};
@@ -19,7 +19,7 @@ use tauri::{AppHandle, Manager, State};
 use super::forwards::ForwardsState;
 use super::hosts::HostsState;
 use super::settings::SettingsState;
-use crate::error::CommandResult;
+use crate::error::{CommandError, CommandResult};
 use crate::prompts::{ChannelPrompter, PendingPrompts, PromptRequest};
 
 /// Connects to `host` through its Jump hosts `hops` (outermost first), with
@@ -60,10 +60,17 @@ fn configured_connections(app: &AppHandle) -> State<'_, ConnectionManager> {
 }
 
 #[derive(Default)]
-pub struct TemporaryHosts(Mutex<HashMap<HostId, Arc<TemporaryHost>>>);
+pub struct TemporaryHosts(Mutex<HashMap<HostId, Arc<TemporaryRoute>>>);
+
+pub(crate) struct TemporaryRoute {
+    host: TemporaryHost,
+    // An open Terminal retains this route. A later reconnect can then use
+    // the saved settings even after the entry leaves the temporary registry.
+    saved: OnceLock<Vec<Host>>,
+}
 
 impl TemporaryHosts {
-    fn with<T>(&self, f: impl FnOnce(&mut HashMap<HostId, Arc<TemporaryHost>>) -> T) -> T {
+    fn with<T>(&self, f: impl FnOnce(&mut HashMap<HostId, Arc<TemporaryRoute>>) -> T) -> T {
         f(&mut self.0.lock().unwrap_or_else(|p| p.into_inner()))
     }
 }
@@ -81,8 +88,37 @@ pub fn temporary_host_create(
     };
     let entry = connections.temporary_host(target, &local_user)?;
     let host = entry.host().clone();
-    temporary.with(|entries| entries.insert(host.id.clone(), Arc::new(entry)));
+    let route = TemporaryRoute {
+        host: entry,
+        saved: OnceLock::new(),
+    };
+    temporary.with(|entries| entries.insert(host.id.clone(), Arc::new(route)));
     Ok(host)
+}
+
+/// Saves a Temporary Host while preserving its live Connection and run-only trust.
+#[tauri::command]
+pub fn temporary_host_save(
+    hosts: State<'_, HostsState>,
+    connections: State<'_, ConnectionManager>,
+    temporary: State<'_, TemporaryHosts>,
+    host_id: HostId,
+    draft: HostDraft,
+) -> CommandResult<Host> {
+    temporary.with(|entries| {
+        let route = entries
+            .get(&host_id)
+            .ok_or_else(CommandError::temporary_host_unavailable)?;
+        let saved = hosts.with(|store| {
+            let hops = store.draft_jump_chain(Some(host_id.clone()), draft.clone())?;
+            let saved = store.insert(host_id.clone(), draft)?;
+            connections.preserve_temporary_host_trust(&route.host);
+            route.saved.get_or_init(|| hops);
+            Ok(saved)
+        })?;
+        entries.remove(&host_id);
+        Ok(saved)
+    })
 }
 
 #[tauri::command]
@@ -91,10 +127,10 @@ pub fn temporary_host_forget(temporary: State<'_, TemporaryHosts>, host_id: Host
 }
 
 /// A Terminal or standalone File panel can open either a saved route or a Temporary Host.
-pub enum HostRoute {
+pub(crate) enum HostRoute {
     /// The target is last, following any Jump hosts.
     Saved(Vec<Host>),
-    Temporary(Arc<TemporaryHost>),
+    Temporary(Arc<TemporaryRoute>),
 }
 
 impl HostRoute {
@@ -112,7 +148,7 @@ impl HostRoute {
     pub fn host(&self) -> &Host {
         match self {
             Self::Saved(hops) => hops.last().expect("a saved route has a target"),
-            Self::Temporary(entry) => entry.host(),
+            Self::Temporary(entry) => entry.host.host(),
         }
     }
 
@@ -121,17 +157,19 @@ impl HostRoute {
         app: &AppHandle,
         prompter: Arc<dyn Prompter>,
     ) -> Result<Arc<Connection>, ConnectError> {
-        match self {
-            Self::Saved(hops) => {
-                let (host, jumps) = hops.split_last().expect("a saved route has a target");
-                connect_host(app, jumps, host, prompter).await
-            }
-            Self::Temporary(entry) => {
-                configured_connections(app)
-                    .connect_temporary(entry, prompter)
-                    .await
-            }
-        }
+        let hops = match self {
+            Self::Saved(hops) => hops,
+            Self::Temporary(entry) => match entry.saved.get() {
+                Some(hops) => hops,
+                None => {
+                    return configured_connections(app)
+                        .connect_temporary(&entry.host, prompter)
+                        .await
+                }
+            },
+        };
+        let (host, jumps) = hops.split_last().expect("a saved route has a target");
+        connect_host(app, jumps, host, prompter).await
     }
 }
 

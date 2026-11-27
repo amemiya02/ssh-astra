@@ -14,6 +14,7 @@ export type HostsApi = Pick<
   typeof ipc,
   | "loadHostTree"
   | "saveHost"
+  | "saveTemporaryHost"
   | "deleteHost"
   | "duplicateHost"
   | "moveHost"
@@ -36,6 +37,7 @@ export interface HostsState {
   load(): Promise<void>;
   /** Adds a Host (no `id`) at the top level, or saves edits to the Host with `id`. */
   saveHost(draft: HostDraft, id?: HostId): Promise<Host>;
+  saveTemporaryHost(id: HostId, draft: HostDraft): Promise<Host>;
   deleteHost(id: HostId): Promise<void>;
   /** Saves a copy as `name` right after the original. */
   duplicateHost(id: HostId, name: string): Promise<Host>;
@@ -65,6 +67,15 @@ export interface HostsState {
 export function createHostsStore(api: HostsApi): StoreApi<HostsState> {
   return createStore<HostsState>()((set, get) => {
     const update = (change: (tree: HostTree) => HostTree) => set({ tree: change(get().tree) });
+    const publishHost = (saved: Host) => {
+      update((tree) => ({
+        ...tree,
+        hosts: tree.hosts.some((h) => h.id === saved.id)
+          ? tree.hosts.map((h) => (h.id === saved.id ? saved : h))
+          : [...tree.hosts, saved],
+      }));
+      return saved;
+    };
     const updateForwards = (hostId: HostId, change: (forwards: PortForward[]) => PortForward[]) =>
       update((tree) => ({
         ...tree,
@@ -84,14 +95,11 @@ export function createHostsStore(api: HostsApi): StoreApi<HostsState> {
       },
 
       async saveHost(draft, id) {
-        const saved = await api.saveHost(draft, id);
-        update((tree) => ({
-          ...tree,
-          hosts: tree.hosts.some((h) => h.id === saved.id)
-            ? tree.hosts.map((h) => (h.id === saved.id ? saved : h))
-            : [...tree.hosts, saved],
-        }));
-        return saved;
+        return publishHost(await api.saveHost(draft, id));
+      },
+
+      async saveTemporaryHost(id, draft) {
+        return publishHost(await api.saveTemporaryHost(id, draft));
       },
 
       async deleteHost(id) {

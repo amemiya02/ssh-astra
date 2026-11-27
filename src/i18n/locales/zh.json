@@ -995,6 +995,10 @@
     "action": "快速连接",
     "connectTo": "连接到 {{target}}",
     "temporaryHost": "临时主机",
+    "saveAsHost": "保存为主机",
+    "saveAsHostDescription": "为这台主机命名并添加到主机列表。已打开的终端和文件面板会保持连接。",
+    "noLongerAvailable": "这台临时主机已不可用。",
+    "alreadySaved": "这台主机已保存。",
     "failed": "无法打开临时主机。"
   },
   "home": {

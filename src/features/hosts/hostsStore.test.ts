@@ -20,6 +20,7 @@ function fakeApi(initial: HostTree, overrides: Partial<HostsApi> = {}): HostsApi
   return {
     loadHostTree: vi.fn(() => Promise.resolve(initial)),
     saveHost: vi.fn((d: HostDraft, id?: string) => Promise.resolve({ ...d, id: id ?? "new", groupId: null, forwards: [] })),
+    saveTemporaryHost: vi.fn((id: string, d: HostDraft) => Promise.resolve({ ...d, id, groupId: null, forwards: [] })),
     deleteHost: vi.fn(() => Promise.resolve()),
     duplicateHost: vi.fn((id: string, name: string) =>
       Promise.resolve({ ...initial.hosts.find((h) => h.id === id)!, id: "copy", name }),

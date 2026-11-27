@@ -1,6 +1,6 @@
 import { hostHue } from "@/features/hosts/hostHue";
 import type { TerminalTitleSource } from "@/features/terminal/terminal-prefs";
-import type { Host } from "@/lib/ipc/hosts";
+import { isTemporaryHost, type Host } from "@/lib/ipc/hosts";
 import type { AnsiHue } from "@/theme/monogram-ink";
 import { paneNeighbors, resizePaneLayout, type PaneDirection, type SplitResize } from "./pane-layout";
 import { workspaceHostName } from "./privacy-mode";
@@ -98,6 +98,7 @@ export type TabMenuAction =
 
 export type TabsAction =
   | TabMenuAction
+  | { type: "saveTemporaryHost"; host: Host }
   | { type: "open"; tabId: string; pane: Pane }
   | { type: "activate"; id: string }
   | { type: "cycle"; step: 1 | -1 }
@@ -248,6 +249,18 @@ export function tabTitle(
 
 export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
   switch (action.type) {
+    case "saveTemporaryHost": {
+      const { host } = action;
+      const tabs = state.tabs.map((tab) => {
+        const layout = mapLeaves(tab.layout, (leaf) => {
+          const { pane } = leaf;
+          if (!("host" in pane) || pane.host.id !== host.id || !isTemporaryHost(pane.host)) return leaf;
+          return { ...leaf, pane: { ...pane, host } };
+        })!;
+        return layout === tab.layout ? tab : { ...tab, layout };
+      });
+      return { ...state, tabs };
+    }
     case "open": {
       const key = singletonKey(action.pane);
       if (key) {

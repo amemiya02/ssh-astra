@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 
-use sshastra_core::hosts::{Host, HostAuth, HostDraft, HostStore, HostStoreError};
+use sshastra_core::hosts::{Host, HostAuth, HostDraft, HostId, HostStore, HostStoreError};
 
 fn draft(name: &str) -> HostDraft {
     HostDraft {
@@ -149,6 +149,24 @@ fn starts_empty_when_there_is_no_file_yet() {
     let (_dir, path) = store_path();
     let store = HostStore::open(&path).unwrap();
     assert!(store.list().is_empty());
+}
+
+#[test]
+fn creates_a_host_with_the_requested_id_and_rejects_reusing_it() {
+    let (_dir, path) = store_path();
+    let mut store = HostStore::open(&path).unwrap();
+    let id = HostId::from("quick-connect-id".to_owned());
+
+    let saved = store.insert(id.clone(), draft("lab")).unwrap();
+    assert_eq!(saved.id, id);
+    assert!(matches!(
+        store.insert(id.clone(), draft("replacement")),
+        Err(HostStoreError::DuplicateId(duplicate)) if duplicate == id
+    ));
+
+    let reopened = HostStore::open(&path).unwrap();
+    assert_eq!(store.list(), std::slice::from_ref(&saved));
+    assert_eq!(reopened.list(), &[saved]);
 }
 
 #[test]
