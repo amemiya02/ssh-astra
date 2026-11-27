@@ -484,6 +484,12 @@ async fn shell_integration_goes_into_the_new_shell_after_a_reconnect() {
     assert_eq!(events.cwd(EVENT_WAIT).await, "/home/tester");
     terminal.write(b"cd /srv/files\r").unwrap();
     assert_eq!(events.cwd(EVENT_WAIT).await, "/srv/files");
+    let ShellIntegrationEvent::PromptStart {
+        prompt_id: before_reconnect,
+    } = events.marker().await
+    else {
+        panic!("expected a prompt before losing the Connection");
+    };
 
     fx.sshd.drop_connections();
     assert!(matches!(
@@ -494,7 +500,16 @@ async fn shell_integration_goes_into_the_new_shell_after_a_reconnect() {
 
     // The new shell starts at home and resumes directory and command reports.
     assert_eq!(events.cwd(EVENT_WAIT).await, "/home/tester");
-    assert_eq!(events.marker().await, ShellIntegrationEvent::PromptStart);
+    let ShellIntegrationEvent::PromptStart {
+        prompt_id: after_reconnect,
+    } = events.marker().await
+    else {
+        panic!("expected a prompt from the replacement shell");
+    };
+    assert!(after_reconnect > before_reconnect);
+    terminal
+        .follow_file_directory(before_reconnect, "/tmp")
+        .unwrap();
     let line = "cd /srv/files/docs";
     terminal.write(format!("{line}\r").as_bytes()).unwrap();
     assert_eq!(
@@ -508,7 +523,11 @@ async fn shell_integration_goes_into_the_new_shell_after_a_reconnect() {
         ShellIntegrationEvent::CommandEnd { exit_code: 0 }
     );
     assert_eq!(events.cwd(EVENT_WAIT).await, "/srv/files/docs");
-    assert_eq!(events.marker().await, ShellIntegrationEvent::PromptStart);
+    let ShellIntegrationEvent::PromptStart { prompt_id } = events.marker().await else {
+        panic!("expected a prompt after changing the directory");
+    };
+    terminal.follow_file_directory(prompt_id, "/tmp").unwrap();
+    assert_eq!(events.cwd(EVENT_WAIT).await, "/tmp");
 }
 
 #[tokio::test(flavor = "multi_thread")]

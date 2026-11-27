@@ -1204,7 +1204,12 @@
     },
     "files": {
       "showModified": "Show modified column",
-      "showPermissions": "Show permissions column"
+      "showPermissions": "Show permissions column",
+      "terminalFollowsFilePanel": {
+        "label": "Terminal follows File panel",
+        "description": "Change the paired Terminal’s directory when its prompt is idle and empty. Requires working Shell integration in remote zsh or bash 4.4+ with prompt expansion enabled.",
+        "shellIntegrationOff": "Shell integration is off. Turn it on in Terminal settings, then open a new remote Terminal."
+      }
     },
     "connection": {
       "osDetection": {

@@ -131,7 +131,7 @@ export function TerminalSurface({
         if (event.type === "connection") {
           connected = event.state.state === "connected";
           if (connected) {
-            shellIntegration.open(paneId);
+            shellIntegration.open(paneId, id);
             if (id !== undefined) registerWriter(id);
           } else {
             removeWriter();
@@ -166,6 +166,7 @@ export function TerminalSurface({
             return;
           }
           id = opened;
+          shellIntegration.attach(paneId, opened);
           output.attach(opened);
           if (connected) registerWriter(opened);
           onOpenedRef.current?.(opened);

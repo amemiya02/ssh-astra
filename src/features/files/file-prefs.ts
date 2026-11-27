@@ -1,13 +1,14 @@
 import { defineSection } from "@/lib/storage";
 import type { FileSort, SortKey } from "./fileList";
 
-/** How every File panel lists files. */
+/** How File panels display files and interact with Terminals. */
 export interface FilesPrefs {
   /** Show dotfiles. */
   showHidden: boolean;
   sort: FileSort;
   showModified: boolean;
   showPermissions: boolean;
+  terminalFollowsFilePanel: boolean;
 }
 
 export const defaultFilesPrefs: FilesPrefs = {
@@ -15,6 +16,7 @@ export const defaultFilesPrefs: FilesPrefs = {
   sort: { key: "name", direction: "asc" },
   showModified: true,
   showPermissions: false,
+  terminalFollowsFilePanel: false,
 };
 
 const sortKeys: readonly SortKey[] = ["name", "size", "modified", "permissions"];
@@ -31,5 +33,7 @@ export const filesSetting = defineSection<FilesPrefs>("files", defaultFilesPrefs
     },
     showModified: typeof value.showModified === "boolean" ? value.showModified : defaultFilesPrefs.showModified,
     showPermissions: typeof value.showPermissions === "boolean" ? value.showPermissions : defaultFilesPrefs.showPermissions,
+    terminalFollowsFilePanel: typeof value.terminalFollowsFilePanel === "boolean"
+      ? value.terminalFollowsFilePanel : defaultFilesPrefs.terminalFollowsFilePanel,
   };
 });

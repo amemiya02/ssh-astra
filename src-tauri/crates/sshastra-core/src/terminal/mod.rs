@@ -97,7 +97,10 @@ pub enum ShellIntegrationEvent {
     Availability {
         status: ShellIntegrationStatus,
     },
-    PromptStart,
+    PromptStart {
+        /// Identifies one prompt in this Terminal, even across reconnections.
+        prompt_id: u64,
+    },
     /// The command line can be unavailable when the shell omits it from history.
     CommandStart {
         command_line: Option<String>,
@@ -149,6 +152,10 @@ pub type Result<T, E = TerminalError> = std::result::Result<T, E>;
 pub trait Terminal: Send {
     /// Sends keystrokes / pasted bytes to the shell.
     fn write(&mut self, data: &[u8]) -> Result<()>;
+    /// Follows a File panel only while the observed remote prompt is still idle.
+    fn follow_file_directory(&mut self, _prompt_id: u64, _path: &str) -> Result<()> {
+        Ok(())
+    }
     /// Tells the shell the grid size changed so programs (vim, htop) reflow.
     fn resize(&mut self, size: TerminalSize) -> Result<()>;
     /// Ends the shell. An `Exit` event still follows.
