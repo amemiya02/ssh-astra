@@ -281,6 +281,7 @@ it("applies the live bell choice to running Terminals and limits repeated sound"
   expect(play).not.toHaveBeenCalled();
 
   await clickButton("Settings");
+  await clickButton("Terminal", document.querySelector('[aria-label="Settings categories"]')!);
   const setting = document.querySelector('[role="radiogroup"][aria-label="Terminal bell"]')!;
   expect(setting.querySelector('[aria-checked="true"]')?.textContent).toBe("None");
   await clickButton("Flash tab", setting);
