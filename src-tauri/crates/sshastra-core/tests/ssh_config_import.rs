@@ -264,6 +264,7 @@ fn a_host_with_a_taken_name_is_skipped_and_its_namesake_used_as_jump_host() {
                 identities_only: false,
                 forward_agent: false,
                 keepalive_seconds: None,
+                post_login_command: None,
                 default_directory: None,
             },
         )

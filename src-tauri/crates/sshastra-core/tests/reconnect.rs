@@ -87,6 +87,7 @@ impl Fixture {
             identities_only: false,
             forward_agent: false,
             keepalive_seconds: None,
+            post_login_command: None,
             default_directory: None,
             forwards: Vec::new(),
         };
@@ -130,6 +131,7 @@ impl Fixture {
         let options = RemoteTerminalOptions {
             reconnect: POLICY,
             shell_integration,
+            ..RemoteTerminalOptions::default()
         };
         let terminal = RemoteTerminal::open_with_progress(
             connect,

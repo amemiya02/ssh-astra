@@ -349,6 +349,24 @@ export function HostFormDialogContent({
                 </p>
                 {directoryError && saveErrorMessage}
               </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="host-form-post-login-command" className="text-xs">
+                  {t("hosts.fields.postLoginCommand")}
+                </Label>
+                <Input
+                  id="host-form-post-login-command"
+                  className="h-8 font-mono"
+                  value={values.postLoginCommand ?? ""}
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  aria-describedby="host-form-post-login-command-hint"
+                  onChange={(event) => setValues((v) => ({ ...v, postLoginCommand: event.target.value }))}
+                />
+                <p id="host-form-post-login-command-hint" className="text-muted-foreground text-xs">
+                  {t("hosts.postLoginCommandHint")}
+                </p>
+              </div>
               {host && <ClearCredentialsButton hostId={host.id} />}
             </div>
           </div>

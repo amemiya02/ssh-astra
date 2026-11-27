@@ -141,6 +141,7 @@ pub async fn remote_terminal_open(
     let options = RemoteTerminalOptions {
         reconnect: ReconnectPolicy::default(),
         shell_integration,
+        post_login_command: host.post_login_command.clone(),
     };
     let terminal = RemoteTerminal::open_with_progress(
         connect,

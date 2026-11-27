@@ -44,6 +44,7 @@ async fn sftp(sshd: &Sshd) -> (SftpFs, tempfile::TempDir) {
         identities_only: false,
         forward_agent: false,
         keepalive_seconds: None,
+        post_login_command: None,
         default_directory: None,
         forwards: Vec::new(),
     };

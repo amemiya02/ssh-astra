@@ -32,6 +32,7 @@
       "identitiesOnly": "Identities only",
       "forwardAgent": "Agent forwarding",
       "keepaliveSeconds": "Keepalive interval (seconds)",
+      "postLoginCommand": "Post-login command",
       "terminalScheme": "Terminal colours",
       "defaultDirectory": "File panel folder"
     },
@@ -42,6 +43,7 @@
     "identitiesOnlyHint": "When a key file is selected, offer only its matching key from ssh-agent and skip default key files.",
     "forwardAgentHint": "While connected, the remote host can use your SSH keys through your local agent. Reconnect to apply changes.",
     "keepaliveHint": "Leave blank to follow the global setting. Enter 0 to turn keepalives off. Reconnect to apply changes.",
+    "postLoginCommandHint": "Runs once when each new shell is ready, including after reconnecting.",
     "errors": {
       "required": "Required",
       "port": "Enter a port from 1 to 65535",

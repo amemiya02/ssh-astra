@@ -14,8 +14,8 @@ use sshastra_core::ssh::{
     RemoteTerminalOptions, Secret,
 };
 use sshastra_core::terminal::{
-    ShellIntegrationEvent, ShellIntegrationStatus, Terminal, TerminalEvent, TerminalSize,
-    REPORT_CWD,
+    ConnectionState, ShellIntegrationEvent, ShellIntegrationStatus, Terminal, TerminalEvent,
+    TerminalSize, REPORT_CWD,
 };
 use support::{Service, Sshd};
 use tokio::sync::mpsc;
@@ -44,11 +44,21 @@ struct Shell {
     screen: vt100::Parser,
     output: Vec<u8>,
     integration: Vec<ShellIntegrationEvent>,
+    connection: Option<ConnectionState>,
     _known_hosts: tempfile::TempDir,
 }
 
 impl Shell {
     async fn open(sshd: &Sshd, user: &str, shell_integration: bool) -> Self {
+        Self::open_with_command(sshd, user, shell_integration, None).await
+    }
+
+    async fn open_with_command(
+        sshd: &Sshd,
+        user: &str,
+        shell_integration: bool,
+        post_login_command: Option<&str>,
+    ) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let manager = Arc::new(ConnectionManager::new(KnownHosts::new(
             dir.path().join("known_hosts"),
@@ -66,18 +76,20 @@ impl Shell {
             identities_only: false,
             forward_agent: false,
             keepalive_seconds: None,
+            post_login_command: post_login_command.map(str::to_owned),
             default_directory: None,
             forwards: Vec::new(),
+        };
+        let options = RemoteTerminalOptions {
+            shell_integration,
+            post_login_command: host.post_login_command.clone(),
+            ..RemoteTerminalOptions::default()
         };
         let connect = move || {
             let (manager, host) = (manager.clone(), host.clone());
             async move { manager.connect(&host, Arc::new(TrustingPrompter)).await }
         };
         let (tx, rx) = mpsc::unbounded_channel();
-        let options = RemoteTerminalOptions {
-            shell_integration,
-            ..RemoteTerminalOptions::default()
-        };
         let terminal = RemoteTerminal::open_with(connect, options, SIZE, move |e| {
             let _ = tx.send(e);
         })
@@ -89,6 +101,7 @@ impl Shell {
             screen: vt100::Parser::new(SIZE.rows, SIZE.cols, 0),
             output: Vec::new(),
             integration: Vec::new(),
+            connection: None,
             _known_hosts: dir,
         }
     }
@@ -112,6 +125,7 @@ impl Shell {
                 }
                 Ok(Some(TerminalEvent::Cwd(path))) => cwds.push(path),
                 Ok(Some(TerminalEvent::ShellIntegration(event))) => self.integration.push(event),
+                Ok(Some(TerminalEvent::Connection(state))) => self.connection = Some(state),
                 Ok(other) => panic!("unexpected {other:?}; output so far: {}", self.text()),
             }
         }
@@ -336,4 +350,86 @@ async fn an_unsupported_shell_reports_why_integration_is_unavailable() {
         }]
     );
     assert!(shell.rows().last().is_some_and(|line| line == "$"));
+}
+
+const POST_LOGIN_COMMAND: &str = r#"printf 'startup:%s\n' 'finished'"#;
+const POST_LOGIN_OUTPUT: &str = "startup:finished";
+
+/// Counts exact output rows; the echoed command cannot match its formatted output.
+fn assert_post_login_runs(shell: &Shell, expected: usize) {
+    let rows = shell.rows();
+    let count = rows.iter().filter(|row| *row == POST_LOGIN_OUTPUT).count();
+    assert_eq!(count, expected, "terminal rows: {rows:#?}");
+}
+
+async fn runs_post_login_command_with_shell_integration(user: &str) {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let mut shell = Shell::open_with_command(&sshd, user, true, Some(POST_LOGIN_COMMAND)).await;
+    shell.settle().await;
+
+    assert_post_login_runs(&shell, 1);
+    assert!(
+        shell
+            .integration
+            .contains(&ShellIntegrationEvent::CommandStart {
+                command_line: Some(POST_LOGIN_COMMAND.into()),
+            }),
+        "the installed hook should report the post-login command: {:?}",
+        shell.integration,
+    );
+
+    shell.type_line("true");
+    shell.settle().await;
+    assert_post_login_runs(&shell, 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn bash_runs_post_login_command_once_after_integration_setup() {
+    runs_post_login_command_with_shell_integration(support::USER).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn zsh_runs_post_login_command_once_after_integration_setup() {
+    runs_post_login_command_with_shell_integration(support::ZSH_USER).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn runs_post_login_command_with_shell_integration_disabled() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let mut shell =
+        Shell::open_with_command(&sshd, support::USER, false, Some(POST_LOGIN_COMMAND)).await;
+    assert!(shell.settle().await.is_empty());
+    assert_eq!(
+        shell.integration,
+        [ShellIntegrationEvent::Availability {
+            status: ShellIntegrationStatus::Disabled,
+        }]
+    );
+    assert_post_login_runs(&shell, 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn runs_post_login_command_again_in_the_reconnected_shell() {
+    let Some(sshd) = support::sshd(Service::Flaky) else {
+        return;
+    };
+    let mut shell =
+        Shell::open_with_command(&sshd, support::USER, true, Some(POST_LOGIN_COMMAND)).await;
+    shell.settle().await;
+    assert_post_login_runs(&shell, 1);
+
+    sshd.drop_connections();
+    shell
+        .run(Duration::from_secs(30), |shell, _| {
+            shell.connection == Some(ConnectionState::Connected)
+        })
+        .await;
+    assert_eq!(shell.connection, Some(ConnectionState::Connected));
+    shell.settle().await;
+
+    assert_post_login_runs(&shell, 2);
 }
