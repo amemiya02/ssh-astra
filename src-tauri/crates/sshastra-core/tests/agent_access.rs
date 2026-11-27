@@ -1,10 +1,12 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::{Duration, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 use sshastra_core::agent::{
     dispatch, AgentBackend, AgentPermission, DirectoryRead, OpenTerminal, ReadError, ReadTarget,
     TerminalOrigin, TerminalScreen, TerminalStatus,
 };
+use sshastra_core::agent::{dispatch_recording, AgentActivityLog};
 use sshastra_core::files::{FileEntry, FileKind};
 use sshastra_core::ssh::BoxFuture;
 use sshastra_core::terminal::TerminalId;
@@ -36,6 +38,7 @@ impl<F: Fn() -> Vec<OpenTerminal> + Send + Sync> AgentBackend for TestBackend<F>
         (self.host_is_shared.load(Ordering::Relaxed) && id == 4.into()).then(|| ReadTarget {
             terminal: id,
             host: String::from("build").into(),
+            host_name: "Build".into(),
             permission: AgentPermission::Read,
             status: TerminalStatus::Connected,
             generation: Some(self.generation.load(Ordering::Relaxed)),
@@ -110,6 +113,7 @@ impl<F: Fn() -> Vec<OpenTerminal> + Send + Sync> AgentBackend for TestBackend<F>
                 "/sample" => Ok(b"synthetic file\n".to_vec()),
                 "/binary" => Ok(vec![0xff, 0xfe, 97]),
                 "/oversize" => Ok(vec![b'x'; 65_537]),
+                "/unavailable" => Err(ReadError::PathUnavailable),
                 "/moving" => {
                     tokio::task::yield_now().await;
                     self.generation.fetch_add(1, Ordering::Relaxed);
@@ -226,6 +230,190 @@ async fn call(backend: &dyn AgentBackend, tool: &str, arguments: Value) -> Value
     dispatch(request.to_string().as_bytes(), || true, backend)
         .await
         .unwrap()
+}
+
+#[tokio::test]
+async fn more_than_five_hundred_unexpired_calls_are_available_across_pages_after_restart() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("agent-activity");
+    let log = AgentActivityLog::new(path.clone());
+    let now = UNIX_EPOCH + Duration::from_secs(1_790_000_000);
+    let backend = TestBackend::new(Vec::new);
+    let request =
+        br#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_terminals"}}"#;
+    for milliseconds in 0..517 {
+        let mut activity = None;
+        dispatch_recording(request, || true, &backend, &mut activity).await;
+        log.record(activity.unwrap(), now + Duration::from_millis(milliseconds))
+            .unwrap();
+    }
+    drop(log);
+    let log = AgentActivityLog::new(path);
+    let now = now + Duration::from_secs(1);
+    let mut page = log.list(now, None).unwrap();
+    assert!(page.next_before.is_some());
+    assert!(page.records.len() < 517);
+    let mut activity = None;
+    dispatch_recording(request, || true, &backend, &mut activity).await;
+    log.record(activity.unwrap(), now).unwrap();
+    let mut records = Vec::new();
+    loop {
+        records.extend(page.records);
+        let Some(before) = page.next_before else {
+            break;
+        };
+        page = log.list(now, Some(before)).unwrap();
+    }
+    let timestamps: Vec<u64> = records
+        .into_iter()
+        .map(|record| {
+            serde_json::to_value(record).unwrap()["timestamp"]
+                .as_u64()
+                .unwrap()
+        })
+        .collect();
+    assert_eq!(
+        timestamps,
+        (1_790_000_000_000..1_790_000_000_517)
+            .rev()
+            .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn records_the_authorized_target_without_capturing_protocol_or_tool_output() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("agent-activity");
+    let log = AgentActivityLog::new(path.clone());
+    let now = UNIX_EPOCH + Duration::from_secs(1_790_000_000);
+    let backend = TestBackend::new(Vec::new);
+    let request = br#"{"jsonrpc":"2.0","id":"private-request-id","method":"tools/call","params":{"name":"read_file","arguments":{"terminalId":4,"path":"/sample"}}}"#;
+    let mut activity = None;
+    let response = dispatch_recording(request, || true, &backend, &mut activity)
+        .await
+        .unwrap();
+    assert_eq!(response_data(&response)["data"], "synthetic file\n");
+    log.record(activity.unwrap(), now).unwrap();
+    let shard = std::fs::read_dir(path.join("records"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let saved = std::fs::read_to_string(&shard).unwrap();
+    assert!(!saved.contains("private-request-id"));
+    assert!(!saved.contains("synthetic file"));
+    assert_eq!(
+        serde_json::from_str::<Value>(&saved).unwrap(),
+        json!([{"timestamp":1_790_000_000_000_u64,"tool":"read_file","host":"Build",
+                "path":"/sample","outcome":"allowed"}])
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(&shard).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+    }
+}
+
+#[tokio::test]
+async fn activity_prunes_on_read_and_write_and_can_be_cleared() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("agent-activity");
+    let log = AgentActivityLog::new(path.clone());
+    let first = UNIX_EPOCH + Duration::from_secs(1_790_000_000);
+    let day = Duration::from_secs(24 * 60 * 60);
+    let second = first + Duration::from_secs(1);
+    let boundary = first + 30 * day;
+    let past_boundary = boundary + Duration::from_millis(1);
+    let backend = TestBackend::new(Vec::new);
+    let request =
+        br#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_terminals"}}"#;
+    for time in [first - day, first, second] {
+        let mut activity = None;
+        dispatch_recording(request, || true, &backend, &mut activity).await;
+        log.record(activity.unwrap(), time).unwrap();
+    }
+    drop(log);
+    let log = AgentActivityLog::new(path.clone());
+    // Startup expires whole days. Reading a page then prunes the cutoff day precisely.
+    log.prune(boundary).unwrap();
+    assert_eq!(log.list(boundary, None).unwrap().records.len(), 2);
+    assert_eq!(log.list(past_boundary, None).unwrap().records.len(), 1);
+    let disk = || {
+        std::fs::read_dir(path.join("records"))
+            .unwrap()
+            .map(|entry| {
+                let file = std::fs::read(entry.unwrap().path()).unwrap();
+                serde_json::from_slice::<Vec<Value>>(&file).unwrap()
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(disk().iter().map(Vec::len).collect::<Vec<_>>(), [1]);
+
+    let mut activity = None;
+    dispatch_recording(request, || true, &backend, &mut activity).await;
+    log.record(activity.unwrap(), past_boundary + day).unwrap();
+    let persisted = disk();
+    assert_eq!(persisted.iter().map(Vec::len).collect::<Vec<_>>(), [1]);
+    assert_eq!(persisted[0][0]["tool"], "list_terminals");
+    assert_eq!(persisted[0][0]["outcome"], "allowed");
+
+    log.clear().unwrap();
+    log.clear().unwrap();
+    assert!(log
+        .list(past_boundary + day, None)
+        .unwrap()
+        .records
+        .is_empty());
+    assert!(!path.join("records").exists());
+    assert!(!path.join("cleared").exists());
+}
+
+#[tokio::test]
+async fn activity_omits_unapproved_targets_and_unknown_tool_names() {
+    let directory = tempfile::tempdir().unwrap();
+    let log = AgentActivityLog::new(directory.path().join("agent-activity"));
+    let now = UNIX_EPOCH + Duration::from_secs(1_790_000_000);
+    let backend = TestBackend::new(Vec::new);
+    for (tool, arguments) in [
+        ("read_file", json!({"terminalId":19, "path":"/unapproved"})),
+        (
+            "list_directory",
+            json!({"terminalId":4, "path":"not-absolute"}),
+        ),
+        (
+            "arbitrary-client-supplied-name",
+            json!({"extra":"private-payload"}),
+        ),
+        ("read_file", json!({"terminalId":4, "path":"/unavailable"})),
+    ] {
+        let request = json!({"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":tool,"arguments":arguments}});
+        let mut activity = None;
+        dispatch_recording(
+            request.to_string().as_bytes(),
+            || true,
+            &backend,
+            &mut activity,
+        )
+        .await;
+        log.record(activity.unwrap(), now).unwrap();
+    }
+    assert_eq!(
+        serde_json::to_value(log.list(now, None).unwrap().records).unwrap(),
+        json!([
+            {"timestamp":1_790_000_000_000_u64,"tool":"read_file","host":"Build","path":"/unavailable","outcome":"failed"},
+            {"timestamp":1_790_000_000_000_u64,"tool":"unknown","outcome":"failed"},
+            {"timestamp":1_790_000_000_000_u64,"tool":"list_directory","outcome":"failed"},
+            {"timestamp":1_790_000_000_000_u64,"tool":"read_file","outcome":"denied"}
+        ])
+    );
 }
 
 #[tokio::test]

@@ -15,7 +15,25 @@
     "turnOff": "關閉代理存取",
     "sharedTerminal": "終端機已向代理開放",
     "startFailed": "無法開啟代理存取。",
-    "saveFailed": "本次執行的代理存取已關閉，但無法儲存設定。"
+    "saveFailed": "本次執行的代理存取已關閉，但無法儲存設定。",
+    "activity": {
+      "title": "近期代理活動",
+      "description": "本機保留最近 30 天的工具呼叫，記錄工具名稱、已授權的 Host 和路徑以及結果。",
+      "refresh": "重新整理",
+      "clear": "清除活動記錄",
+      "loadOlder": "載入更早的活動記錄",
+      "loading": "正在載入代理活動記錄…",
+      "loadFailed": "無法載入代理活動記錄。",
+      "clearFailed": "無法清除代理活動記錄。",
+      "empty": "近期沒有代理活動。",
+      "unknownTool": "未知工具",
+      "outcome": {
+        "allowed": "允許",
+        "denied": "拒絕",
+        "timedOut": "逾時",
+        "failed": "失敗"
+      }
+    }
   },
   "shell": {
     "workspace": "終端機",
