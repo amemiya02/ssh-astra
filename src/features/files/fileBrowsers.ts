@@ -23,13 +23,18 @@ export interface FileBrowsers {
 }
 
 export function createFileBrowsers(api: FilesApi, editsForPanel = createSharedRemoteEdits(api)): FileBrowsers {
-  const panes = new Map<string, { store: FileBrowserStore; status?: ConnectionStatus }>();
+  const panes = new Map<string, { hostId: HostId; store: FileBrowserStore; status?: ConnectionStatus }>();
   let visible: string | null = null;
   return {
     get(paneId, hostId, startPath) {
       let pane = panes.get(paneId);
       if (!pane) {
-        pane = { store: createFileBrowserStore(api, hostId, startPath, undefined, editsForPanel) };
+        const refreshHostAfterMove = async (directories: readonly string[]) => {
+          await Promise.all([...panes.values()]
+            .filter((other) => other.hostId === hostId)
+            .map((other) => other.store.getState().refreshAfterMove(directories)));
+        };
+        pane = { hostId, store: createFileBrowserStore(api, hostId, startPath, undefined, editsForPanel, refreshHostAfterMove) };
         panes.set(paneId, pane);
       }
       return pane.store;

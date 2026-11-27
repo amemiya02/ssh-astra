@@ -36,6 +36,8 @@ export function operationErrorText(t: TFunction, error: CommandError): string {
       return t("sftp.invalidName");
     case "alreadyExists":
       return t("files.operationErrors.alreadyExists", { path });
+    case "moveIntoSelf":
+      return t("files.operationErrors.moveIntoSelf");
     case "notConnected":
     case "notOpen":
       return t("files.operationErrors.notOpen");
