@@ -157,7 +157,9 @@ export function TabStrip({
             const status = tabStatus(tab);
             const label = status ? `${title} (${t(`tabs.status.${status}`)})` : title;
             const pane = activePane(tab);
-            const TabIcon = tab.panes.length > 1 ? (tab.orientation === "horizontal" ? Columns2 : Rows2) : kindIcons[kind];
+            const TabIcon = tab.layout.type === "split"
+              ? tab.layout.orientation === "horizontal" ? Columns2 : Rows2
+              : kindIcons[kind];
             const hue = "host" in pane ? hueClasses[hostHue(pane.host.id)].line : null;
             return (
               <DraggableTab
@@ -236,7 +238,7 @@ export function TabStrip({
         <Plus />
       </IconButton>
       <div data-tauri-drag-region className="h-full min-w-4 flex-1" />
-      {selected && canSplit(activePane(selected)) && (
+      {selected && canSplit(selected) && (
         <>
           <IconButton
             label={t("tabs.splitRight")}

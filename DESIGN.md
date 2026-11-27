@@ -317,6 +317,8 @@ Pickers list light themes first, then dark, Astra's own at the head of each (`ap
 
 **Workspace.** Below the tab strip, the Terminal panel and the File panel (docked right, default 340px, min 240px; or bottom, min 140px; keeping its pixel size as the window resizes) are separated by a 6px gutter, with 6px of ground at the sides and bottom of the main column. Home, Settings and Port forwards are tabs that fill the workspace in a `surface` panel.
 
+Within a tab, the focused pane splits to the right or down. Nested panes share a 1px divider with an 8px drag target. Dividers can also be moved with the arrow keys when focused. The focused pane keeps the primary inset ring, and other panes are dimmed.
+
 **Gutters are the handles.** The 6px gap is the resize handle itself: a 2px by 28px grip in `border` at rest, `muted-foreground/40` on hover, `ring` while focused or dragging.
 
 **Home.** A centred column (max 72rem, 24px side and 20px top padding): a 36px search field with the New Host, Local terminal and Import buttons beside it, then Recent and each Group as a section of 56px Host cards in an auto-fill grid (min 15rem per card, 8px gaps), 20px between sections.

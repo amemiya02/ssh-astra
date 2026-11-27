@@ -1,0 +1,126 @@
+import { defineSection } from "@/lib/storage";
+import { layoutPanes, maxPanesPerTab, type Pane, type PaneLayout, type TabsState } from "./tabs";
+
+type HostedPaneKind = Extract<Pane, { host: unknown }>["kind"];
+
+export type SavedPane = { id: string } & (
+  | { kind: Exclude<Pane["kind"], HostedPaneKind> }
+  | { kind: HostedPaneKind; hostId: string }
+);
+
+export interface WorkspaceLayout {
+  tabs: { id: string; layout: PaneLayout<SavedPane>; activePaneId: string }[];
+  activeId: string | null;
+}
+
+/** Persists layout and pane identities without saving live Connection or shell state. */
+export function serializeWorkspaceLayout(state: TabsState): WorkspaceLayout {
+  return {
+    activeId: state.activeId,
+    tabs: state.tabs.map(({ id, activePaneId, layout }) => ({ id, activePaneId, layout: serializeLayout(layout) })),
+  };
+}
+
+function serializeLayout(layout: PaneLayout): PaneLayout<SavedPane> {
+  if (layout.type === "split") {
+    return { ...layout, children: layout.children.map(({ ratio, layout }) => ({ ratio, layout: serializeLayout(layout) })) };
+  }
+  const { pane } = layout;
+  const { id } = pane;
+  return { type: "pane", pane: "host" in pane ? { id, kind: pane.kind, hostId: pane.host.id } : { id, kind: pane.kind } };
+}
+
+export const workspaceLayoutSetting = defineSection<WorkspaceLayout>("workspace", { tabs: [], activeId: null }, (raw) => {
+  if (!isRecord(raw) || !Array.isArray(raw.tabs)) return { tabs: [], activeId: null };
+
+  const tabs: WorkspaceLayout["tabs"] = [];
+  const tabIds = new Set<string>();
+  const paneIds = new Set<string>();
+  for (const tab of raw.tabs) {
+    if (!isRecord(tab) || !isId(tab.id) || tabIds.has(tab.id)) continue;
+    let remaining = maxPanesPerTab;
+    const readPane = (raw: unknown) => {
+      const pane = parsePane(raw);
+      if (!pane || remaining === 0 || paneIds.has(pane.id)) return undefined;
+      remaining--;
+      paneIds.add(pane.id);
+      return { type: "pane" as const, pane };
+    };
+    const layout = parseLayout(tab.layout, readPane, 0) ?? parseFlatLayout(tab, readPane);
+    if (!layout) continue;
+
+    const panes = layoutPanes(layout);
+    const activePaneId = panes.find((pane) => pane.id === tab.activePaneId)?.id ?? panes[0]!.id;
+    tabs.push({ id: tab.id, activePaneId, layout });
+    tabIds.add(tab.id);
+  }
+  const activeId = isId(raw.activeId) && tabIds.has(raw.activeId) ? raw.activeId : tabs[0]?.id ?? null;
+  return { tabs, activeId };
+});
+
+type ReadPane = (raw: unknown) => PaneLayout<SavedPane> | undefined;
+type SavedChild = { layout: PaneLayout<SavedPane>; ratio: number };
+
+function parsePane(raw: unknown): SavedPane | undefined {
+  if (!isRecord(raw) || !isId(raw.id)) return undefined;
+  const { id, kind } = raw;
+  switch (kind) {
+    case "home":
+    case "local-terminal":
+    case "settings":
+      return { id, kind };
+    case "remote-terminal":
+    case "sftp":
+    case "port-forwards": {
+      const hostId = isId(raw.hostId) ? raw.hostId : isRecord(raw.host) ? raw.host.id : undefined;
+      if (isId(hostId)) return { id, kind, hostId };
+    }
+  }
+}
+
+function parseLayout(raw: unknown, readPane: ReadPane, depth: number): PaneLayout<SavedPane> | undefined {
+  if (!isRecord(raw) || depth > maxPanesPerTab) return undefined;
+  if (raw.type === "pane") return readPane(raw.pane);
+  if (raw.type !== "split" || !Array.isArray(raw.children)) return undefined;
+
+  const children = raw.children.flatMap((child): SavedChild[] => {
+    if (!isRecord(child)) return [];
+    const layout = parseLayout(child.layout, readPane, depth + 1);
+    return layout ? [{ layout, ratio: positiveRatio(child.ratio) }] : [];
+  });
+  return repairSplit(raw.orientation, children);
+}
+
+function parseFlatLayout(tab: Record<string, unknown>, readPane: ReadPane): PaneLayout<SavedPane> | undefined {
+  if (!Array.isArray(tab.panes)) return undefined;
+  const ratios: unknown[] = Array.isArray(tab.ratios) ? tab.ratios : [];
+  const children = tab.panes.flatMap((pane, index): SavedChild[] => {
+    const layout = readPane(pane);
+    return layout ? [{ layout, ratio: positiveRatio(ratios[index]) }] : [];
+  });
+  return repairSplit(tab.orientation, children);
+}
+
+/** Empty branches are dropped, single children are promoted, and unusable sizes become equal. */
+function repairSplit(orientation: unknown, children: SavedChild[]): PaneLayout<SavedPane> | undefined {
+  if (children.length < 2) return children[0]?.layout;
+  const total = children.reduce((sum, child) => sum + child.ratio, 0);
+  const valid = Number.isFinite(total) && children.every((child) => child.ratio / total > 0);
+  return {
+    type: "split",
+    orientation: orientation === "vertical" ? "vertical" : "horizontal",
+    children: children.map((child) => ({ ...child, ratio: valid ? child.ratio / total : 1 / children.length })),
+  };
+}
+
+function positiveRatio(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function isId(value: unknown): value is string {
+  return typeof value === "string" && /^\S+$/.test(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
