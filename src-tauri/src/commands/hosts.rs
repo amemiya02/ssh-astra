@@ -109,7 +109,7 @@ pub fn host_delete(
     id: HostId,
 ) -> CommandResult<()> {
     hosts.with(|store| Ok(store.delete(&id)?))?;
-    forwards.forwarder.stop_host(&id);
+    forwards.forwarder.forget_host(&id);
     connections.release(&id);
     let vault = Vault::clone(&vault);
     // Best effort: an entry left behind is unreachable, never shown again.

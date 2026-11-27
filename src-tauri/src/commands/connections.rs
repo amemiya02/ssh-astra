@@ -1,7 +1,7 @@
 //! Connecting to a Host: every connect (Terminal, Port forward, "connect
-//! only") goes through [`connect_host`], which also starts the Host's
-//! auto-start Port forwards. "Connect only" keeps a Connection open with no
-//! Terminal (`HeldConnections`); holds are pushed to the single channel
+//! only") goes through [`connect_host`], which starts the Host's auto-start
+//! and interrupted Port forwards. "Connect only" keeps a Connection open
+//! with no Terminal (`HeldConnections`); holds are pushed to the channel
 //! registered with `connections_watch`.
 
 use std::collections::HashMap;
@@ -23,8 +23,8 @@ use crate::error::{CommandError, CommandResult};
 use crate::prompts::{ChannelPrompter, PendingPrompts, PromptRequest};
 
 /// Connects to `host` through its Jump hosts `hops` (outermost first), with
-/// the global connection settings, then starts the Host's auto-start Port
-/// forwards (as saved now). Rules that fail to start are reported through
+/// the global connection settings, then starts or restores the Host's saved
+/// Port forwards. Rules that fail to start are reported through
 /// the forwards channel; they never fail the connect.
 pub async fn connect_host(
     app: &AppHandle,
@@ -34,16 +34,16 @@ pub async fn connect_host(
 ) -> Result<Arc<Connection>, ConnectError> {
     let connections = configured_connections(app);
     let connection = connections.connect_through(hops, host, prompter).await?;
-    let saved = app
-        .state::<HostsState>()
-        .with(|store| Ok(store.get(&host.id).cloned()))
-        .ok()
-        .flatten();
-    if let Some(saved) = saved {
-        app.state::<ForwardsState>()
-            .forwarder
-            .start_auto(Arc::clone(&connection), &saved)
-            .await;
+    let forwards = app.state::<ForwardsState>();
+    let starts = app.state::<HostsState>().with(|store| {
+        Ok(store.get(&host.id).map(|saved| {
+            forwards
+                .forwarder
+                .start_auto(Arc::clone(&connection), saved)
+        }))
+    });
+    if let Ok(Some(starts)) = starts {
+        starts.await;
     }
     Ok(connection)
 }
