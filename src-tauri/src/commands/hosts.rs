@@ -342,18 +342,27 @@ pub async fn hosts_import_source(
         .map_err(std::io::Error::other)?
 }
 
-fn import_source(hosts: &HostsState, source: HostImportSource) -> CommandResult<SourceImportResult> {
+fn import_source(
+    hosts: &HostsState,
+    source: HostImportSource,
+) -> CommandResult<SourceImportResult> {
     if matches!(source, HostImportSource::SshConfig) {
         let config = hosts.open_ssh().read_user_config()?;
         return hosts.edit(|store| {
             let report = store.import_open_ssh(config)?;
-            Ok(SourceImportResult { tree: store.tree(), report })
+            Ok(SourceImportResult {
+                tree: store.tree(),
+                report,
+            })
         });
     }
     let parsed = read_import_source(source)?;
     hosts.edit(|store| {
         let report = store.import_config(parsed)?;
-        Ok(SourceImportResult { tree: store.tree(), report })
+        Ok(SourceImportResult {
+            tree: store.tree(),
+            report,
+        })
     })
 }
 

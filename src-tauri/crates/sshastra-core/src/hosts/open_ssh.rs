@@ -6,7 +6,10 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use super::{chain, Host, HostAuth, HostId, HostStore, HostStoreError, ImportReport, ImportedProxyCommand, Library};
+use super::{
+    chain, Host, HostAuth, HostId, HostStore, HostStoreError, ImportReport, ImportedProxyCommand,
+    Library,
+};
 use crate::forward::{ForwardId, PortForward};
 use crate::host_import::{ConfigHost, ImportIssue, ImportProblem, ParsedConfig};
 use crate::proxy::HostProxy;
@@ -45,17 +48,26 @@ fn key(alias: &str) -> String {
 }
 
 pub(super) fn source_ids(hosts: &[Host]) -> HashMap<String, HostId> {
-    hosts.iter().filter_map(|host| {
-        Some((key(&host.open_ssh_source.as_ref()?.alias), host.id.clone()))
-    }).collect()
+    hosts
+        .iter()
+        .filter_map(|host| Some((key(&host.open_ssh_source.as_ref()?.alias), host.id.clone())))
+        .collect()
 }
 
 fn entries(user: &UserConfig) -> HashMap<String, &ConfigHost> {
-    user.parsed.hosts.iter().map(|entry| (key(&entry.name), entry)).collect()
+    user.parsed
+        .hosts
+        .iter()
+        .map(|entry| (key(&entry.name), entry))
+        .collect()
 }
 
 fn complete(user: &UserConfig) -> bool {
-    !user.parsed.issues.iter().any(|issue| matches!(issue.problem, ImportProblem::IncludeFailed { .. }))
+    !user
+        .parsed
+        .issues
+        .iter()
+        .any(|issue| matches!(issue.problem, ImportProblem::IncludeFailed { .. }))
 }
 
 /// Compares a complete parsed snapshot to each Host's last seen source values.
@@ -82,12 +94,26 @@ pub fn diff_open_ssh(hosts: &[Host], user: &UserConfig) -> OpenSshDiff {
         declared.insert(identity);
     }
     // A parsed hop with an invalid directive can appear only in an issue.
-    let dropped: HashSet<_> = user.parsed.issues.iter().filter(|issue| issue.dropped).map(|issue| key(&issue.entry)).collect();
-    for source in hosts.iter().filter_map(|host| host.open_ssh_source.as_ref()) {
+    let dropped: HashSet<_> = user
+        .parsed
+        .issues
+        .iter()
+        .filter(|issue| issue.dropped)
+        .map(|issue| key(&issue.entry))
+        .collect();
+    for source in hosts
+        .iter()
+        .filter_map(|host| host.open_ssh_source.as_ref())
+    {
         let identity = key(&source.alias);
         match entries.get(&identity) {
-            Some(entry) if source.missing || &source.previous != *entry => diff.changed.push(source.alias.clone()),
-            None if !source.missing && !declared.contains(&identity) && !dropped.contains(&identity) => {
+            Some(entry) if source.missing || &source.previous != *entry => {
+                diff.changed.push(source.alias.clone())
+            }
+            None if !source.missing
+                && !declared.contains(&identity)
+                && !dropped.contains(&identity) =>
+            {
                 diff.deleted.push(source.alias.clone());
             }
             _ => {}
@@ -121,7 +147,10 @@ impl HostStore {
     }
 
     /// Updates existing linked Hosts and marks missing sources without removing them.
-    pub fn sync_open_ssh(&mut self, user: &UserConfig) -> Result<OpenSshReadReport, HostStoreError> {
+    pub fn sync_open_ssh(
+        &mut self,
+        user: &UserConfig,
+    ) -> Result<OpenSshReadReport, HostStoreError> {
         let (library, report) = self.plan_open_ssh(user, None)?;
         if library.hosts != self.library.hosts {
             self.save(library)?;
@@ -160,35 +189,64 @@ impl HostStore {
         let offered = offered_config(&library, user, &diff);
         let mut report = OpenSshReadReport {
             available: diff.new.clone(),
-            dependencies: offered.iter().filter(|entry| !diff.new.contains(&entry.name)).map(|entry| entry.name.clone()).collect(),
+            dependencies: offered
+                .iter()
+                .filter(|entry| !diff.new.contains(&entry.name))
+                .map(|entry| entry.name.clone())
+                .collect(),
             issues: user.parsed.issues.clone(),
             ..OpenSshReadReport::default()
         };
-        report.proxy_commands = offered.iter().filter_map(|entry| {
-            Some(ImportedProxyCommand { host: entry.name.clone(), command: entry.proxy_command.clone()? })
-        }).collect();
+        report.proxy_commands = offered
+            .iter()
+            .filter_map(|entry| {
+                Some(ImportedProxyCommand {
+                    host: entry.name.clone(),
+                    command: entry.proxy_command.clone()?,
+                })
+            })
+            .collect();
 
         if let Some(reviewed) = reviewed {
-            if report.available != reviewed.available || report.dependencies != reviewed.dependencies {
+            if report.available != reviewed.available
+                || report.dependencies != reviewed.dependencies
+            {
                 return Ok((library, report));
             }
             if !offered.is_empty() {
-                report.imported = Self::add_config(&mut library, ParsedConfig { hosts: offered, issues: Vec::new() }, true)?.imported;
+                report.imported = Self::add_config(
+                    &mut library,
+                    ParsedConfig {
+                        hosts: offered,
+                        issues: Vec::new(),
+                    },
+                    true,
+                )?
+                .imported;
             }
         }
 
         let entries = entries(user);
         let sources = source_ids(&library.hosts);
-        let names: HashMap<_, _> = library.hosts.iter().map(|host| (host.name.clone(), host.id.clone())).collect();
+        let names: HashMap<_, _> = library
+            .hosts
+            .iter()
+            .map(|host| (host.name.clone(), host.id.clone()))
+            .collect();
         let mut updated = Vec::new();
         for host in &mut library.hosts {
-            let Some(mut source) = host.open_ssh_source.take() else { continue };
+            let Some(mut source) = host.open_ssh_source.take() else {
+                continue;
+            };
             if diff.deleted.contains(&source.alias) {
                 source.missing = true;
             }
             if diff.changed.contains(&source.alias) {
                 let entry = entries[&key(&source.alias)];
-                let jump = entry.jump_host.as_ref().and_then(|name| sources.get(&key(name)).or_else(|| names.get(name)));
+                let jump = entry
+                    .jump_host
+                    .as_ref()
+                    .and_then(|name| sources.get(&key(name)).or_else(|| names.get(name)));
                 if entry.jump_host.is_some() && jump.is_none() {
                     report.awaiting_jump.push(source.alias.clone());
                 } else {
@@ -213,7 +271,11 @@ impl HostStore {
 /// offer a new implicit hop needed by an already linked alias.
 fn offered_config(library: &Library, user: &UserConfig, diff: &OpenSshDiff) -> Vec<ConfigHost> {
     let sources = source_ids(&library.hosts);
-    let names: HashSet<_> = library.hosts.iter().map(|host| host.name.as_str()).collect();
+    let names: HashSet<_> = library
+        .hosts
+        .iter()
+        .map(|host| host.name.as_str())
+        .collect();
     let entries = entries(user);
     let mut offered = HashSet::new();
     for alias in &diff.new {
@@ -224,7 +286,12 @@ fn offered_config(library: &Library, user: &UserConfig, diff: &OpenSshDiff) -> V
             collect_dependencies(jump, &entries, &sources, &names, &mut offered);
         }
     }
-    user.parsed.hosts.iter().filter(|entry| offered.contains(&key(&entry.name))).cloned().collect()
+    user.parsed
+        .hosts
+        .iter()
+        .filter(|entry| offered.contains(&key(&entry.name)))
+        .cloned()
+        .collect()
 }
 
 fn collect_dependencies(
@@ -237,10 +304,16 @@ fn collect_dependencies(
     let mut entry = entries.get(&key(alias));
     while let Some(current) = entry {
         let identity = key(&current.name);
-        if sources.contains_key(&identity) || names.contains(current.name.as_str()) || !offered.insert(identity) {
+        if sources.contains_key(&identity)
+            || names.contains(current.name.as_str())
+            || !offered.insert(identity)
+        {
             break;
         }
-        entry = current.jump_host.as_ref().and_then(|jump| entries.get(&key(jump)));
+        entry = current
+            .jump_host
+            .as_ref()
+            .and_then(|jump| entries.get(&key(jump)));
     }
 }
 
@@ -286,7 +359,11 @@ fn update_config(
         host.keepalive_seconds = config.keepalive_seconds;
     }
     if previous.proxy_command != config.proxy_command {
-        host.proxy = config.proxy_command.clone().map(HostProxy::ProxyCommand).unwrap_or_default();
+        host.proxy = config
+            .proxy_command
+            .clone()
+            .map(HostProxy::ProxyCommand)
+            .unwrap_or_default();
     }
     if previous.jump_host != config.jump_host {
         host.jump_host = jump;
@@ -296,20 +373,31 @@ fn update_config(
         let mut retained = HashSet::new();
         let mut added = Vec::new();
         for draft in &config.forwards {
-            let same = previous.forwards.iter().zip(&source.forward_ids).find_map(|(old, id)| {
-                (old == draft && retained.insert(id.clone())).then(|| id.clone())
-            });
+            let same = previous
+                .forwards
+                .iter()
+                .zip(&source.forward_ids)
+                .find_map(|(old, id)| {
+                    (old == draft && retained.insert(id.clone())).then(|| id.clone())
+                });
             let id = match same {
                 Some(id) => id,
                 None => {
                     let id = ForwardId::generate();
-                    added.push(draft.clone().into_forward(id.clone()).map_err(HostStoreError::Invalid)?);
+                    added.push(
+                        draft
+                            .clone()
+                            .into_forward(id.clone())
+                            .map_err(HostStoreError::Invalid)?,
+                    );
                     id
                 }
             };
             ids.push(id);
         }
-        host.forwards.retain(|forward| !source.forward_ids.contains(&forward.id) || retained.contains(&forward.id));
+        host.forwards.retain(|forward| {
+            !source.forward_ids.contains(&forward.id) || retained.contains(&forward.id)
+        });
         host.forwards.extend(added);
         source.forward_ids = ids;
     }

@@ -867,7 +867,10 @@ fn a_version_22_file_keeps_existing_hosts_without_linking_an_open_ssh_source() {
     fs::write(&path, fixture).unwrap();
 
     let mut store = HostStore::open(&path).unwrap();
-    assert!(store.list().iter().all(|host| host.open_ssh_source.is_none()));
+    assert!(store
+        .list()
+        .iter()
+        .all(|host| host.open_ssh_source.is_none()));
     let web = id("h-web");
     let draft = serde_json::from_value(expected["hosts"][1].clone()).unwrap();
     store.upsert(Some(web), draft).unwrap();

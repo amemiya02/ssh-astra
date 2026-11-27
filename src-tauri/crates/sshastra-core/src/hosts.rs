@@ -800,7 +800,9 @@ impl HostStore {
         let mut added = Vec::new();
         for entry in parsed.hosts {
             if ids.contains_key(&entry.name)
-                || source_ids.as_ref().is_some_and(|ids| ids.contains_key(&entry.name.to_ascii_lowercase()))
+                || source_ids
+                    .as_ref()
+                    .is_some_and(|ids| ids.contains_key(&entry.name.to_ascii_lowercase()))
             {
                 report.skipped.push(entry.name);
                 continue;
@@ -814,7 +816,9 @@ impl HostStore {
         }
         for (id, entry) in added {
             let jump_host = entry.jump_host.as_ref().and_then(|name| {
-                source_ids.as_ref().and_then(|sources| sources.get(&name.to_ascii_lowercase()))
+                source_ids
+                    .as_ref()
+                    .and_then(|sources| sources.get(&name.to_ascii_lowercase()))
                     .or_else(|| ids.get(name))
                     .cloned()
             });

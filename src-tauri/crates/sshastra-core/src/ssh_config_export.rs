@@ -27,7 +27,10 @@ impl UserAliases {
     }
 
     fn has_literal(&self, alias: &str) -> bool {
-        self.0.iter().flatten().any(|pattern| pattern.eq_ignore_ascii_case(alias))
+        self.0
+            .iter()
+            .flatten()
+            .any(|pattern| pattern.eq_ignore_ascii_case(alias))
     }
 
     fn contains(&self, alias: &str) -> bool {
@@ -150,14 +153,20 @@ pub fn generate(
         }
     }
 
-    let user_jumps: HashMap<_, _> = hosts.iter().filter_map(|host| {
-        let source = host.open_ssh_source.as_ref()?;
-        let name = source.alias.as_str();
-        let safe = !name.is_empty() && !name.starts_with('-')
-            && !name.eq_ignore_ascii_case("none")
-            && name.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'));
-        (safe && !source.missing && user_aliases.has_literal(name)).then_some((&host.id, name))
-    }).collect();
+    let user_jumps: HashMap<_, _> = hosts
+        .iter()
+        .filter_map(|host| {
+            let source = host.open_ssh_source.as_ref()?;
+            let name = source.alias.as_str();
+            let safe = !name.is_empty()
+                && !name.starts_with('-')
+                && !name.eq_ignore_ascii_case("none")
+                && name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'));
+            (safe && !source.missing && user_aliases.has_literal(name)).then_some((&host.id, name))
+        })
+        .collect();
 
     let mut text = HEADER.to_owned();
     for (alias, host) in &named {
@@ -186,7 +195,10 @@ pub fn generate(
 
         text.push_str(entry);
         if let Some(jump) = host.jump_host.as_ref() {
-            let alias = user_jumps.get(jump).copied().unwrap_or_else(|| entries[jump].0);
+            let alias = user_jumps
+                .get(jump)
+                .copied()
+                .unwrap_or_else(|| entries[jump].0);
             let _ = writeln!(text, "    ProxyJump {alias}");
         }
         for forward in &host.forwards {

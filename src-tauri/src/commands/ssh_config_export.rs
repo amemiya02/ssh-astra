@@ -159,7 +159,7 @@ impl OpenSshSync {
             enabled: true,
             report,
             include_line: Some(INCLUDE_LINE),
-            ..Default::default(),
+            ..Default::default()
         };
         Ok(self.publish(&runtime.status))
     }
@@ -231,20 +231,28 @@ impl OpenSshSync {
     }
 
     pub(super) fn read_user_config(&self) -> CommandResult<UserConfig> {
-        let home = self.home.as_deref().ok_or_else(CommandError::open_ssh_home_unavailable)?;
-        Ok(read_user_config(home, &ParseContext { local_user: local_username() })?)
+        let home = self
+            .home
+            .as_deref()
+            .ok_or_else(CommandError::open_ssh_home_unavailable)?;
+        Ok(read_user_config(
+            home,
+            &ParseContext {
+                local_user: local_username(),
+            },
+        )?)
     }
 
-    fn read_back(
-        hosts: &HostsState,
-        startup: bool,
-        approval: Option<u64>,
-    ) -> CommandResult<()> {
+    fn read_back(hosts: &HostsState, startup: bool, approval: Option<u64>) -> CommandResult<()> {
         let sync = hosts.open_ssh();
         let request = {
             let mut runtime = sync.runtime.lock().unwrap_or_else(|p| p.into_inner());
             if !runtime.status.enabled {
-                return if approval.is_some() { Err(CommandError::open_ssh_read_changed()) } else { Ok(()) };
+                return if approval.is_some() {
+                    Err(CommandError::open_ssh_read_changed())
+                } else {
+                    Ok(())
+                };
             }
             runtime.read_request += 1;
             runtime.read_request
@@ -265,7 +273,11 @@ impl OpenSshSync {
     ) -> CommandResult<()> {
         let mut runtime = self.runtime.lock().unwrap_or_else(|p| p.into_inner());
         if !runtime.status.enabled || runtime.read_request != request {
-            return if approval.is_some() { Err(CommandError::open_ssh_read_changed()) } else { Ok(()) };
+            return if approval.is_some() {
+                Err(CommandError::open_ssh_read_changed())
+            } else {
+                Ok(())
+            };
         }
         if let Some(approval) = approval {
             if runtime.status.read_approval != Some(approval)
@@ -276,7 +288,8 @@ impl OpenSshSync {
         }
         let result = user.as_ref().map_err(Clone::clone).and_then(|user| {
             if let Some(reviewed) = runtime.status.read.as_ref().filter(|_| approval.is_some()) {
-                store.import_open_ssh_offered(user, reviewed)?
+                store
+                    .import_open_ssh_offered(user, reviewed)?
                     .ok_or_else(CommandError::open_ssh_read_changed)
             } else {
                 Ok(store.sync_open_ssh(user)?)
@@ -287,7 +300,9 @@ impl OpenSshSync {
             Err(error) if approval.is_some() => return Err(error),
             Err(_) => (None, true),
         };
-        let offered = report.as_ref().is_some_and(|report| !report.available.is_empty() || !report.dependencies.is_empty());
+        let offered = report
+            .as_ref()
+            .is_some_and(|report| !report.available.is_empty() || !report.dependencies.is_empty());
         runtime.status.read = report;
         runtime.status.read_problem = read_problem;
         runtime.status.read_approval = offered.then_some(request);
@@ -358,11 +373,16 @@ pub async fn ssh_config_export_refresh(hosts: State<'_, HostsState>) -> CommandR
 }
 
 #[tauri::command]
-pub async fn ssh_config_sync_import(hosts: State<'_, HostsState>, approval: u64) -> CommandResult<()> {
+pub async fn ssh_config_sync_import(
+    hosts: State<'_, HostsState>,
+    approval: u64,
+) -> CommandResult<()> {
     let hosts = hosts.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || OpenSshSync::read_back(&hosts, false, Some(approval)))
-        .await
-        .map_err(std::io::Error::other)?
+    tauri::async_runtime::spawn_blocking(move || {
+        OpenSshSync::read_back(&hosts, false, Some(approval))
+    })
+    .await
+    .map_err(std::io::Error::other)?
 }
 
 #[cfg(test)]
@@ -393,7 +413,8 @@ mod tests {
         sync.with_status(|status| assert!(status.read.is_none()));
 
         let preview = sync.preview("test").unwrap();
-        sync.enable("test", preview.approval, &[], &mut settings).unwrap();
+        sync.enable("test", preview.approval, &[], &mut settings)
+            .unwrap();
         OpenSshSync::read_back(&hosts, true, None).unwrap();
         let token = sync.with_status(|status| {
             assert!(status.startup_offer);
@@ -413,7 +434,10 @@ mod tests {
         OpenSshSync::read_back(&hosts, false, Some(token)).unwrap();
         assert_eq!(HostStore::open(&path).unwrap().list()[0].name, "second");
         assert!(OpenSshSync::read_back(&hosts, false, Some(token)).is_err());
-        assert_eq!(fs::read_to_string(config).unwrap(), format!("{INCLUDE_LINE}\nHost second\n"));
+        assert_eq!(
+            fs::read_to_string(config).unwrap(),
+            format!("{INCLUDE_LINE}\nHost second\n")
+        );
     }
 
     #[test]

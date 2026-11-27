@@ -964,13 +964,18 @@ impl FsIncludes {
         } else {
             vec![path]
         };
-        *remaining_files = remaining_files.checked_sub(paths.len()).ok_or("too many OpenSSH Includes")?;
+        *remaining_files = remaining_files
+            .checked_sub(paths.len())
+            .ok_or("too many OpenSSH Includes")?;
         paths.sort();
         let mut files = Vec::new();
         for path in paths {
             match read_config_file(&path, remaining_bytes, omit_managed) {
                 Ok(Some(text)) => {
-                    files.push(IncludedFile { name: path.display().to_string(), text });
+                    files.push(IncludedFile {
+                        name: path.display().to_string(),
+                        text,
+                    });
                 }
                 Ok(None) => {}
                 Err(error) => return Err(format!("{}: {error}", path.display())),
@@ -1006,8 +1011,11 @@ fn read_config_file(
         return Ok(None);
     }
     let mut text = String::new();
-    reader.take(*remaining_bytes + 1).read_to_string(&mut text)?;
-    *remaining_bytes = remaining_bytes.checked_sub(text.len() as u64)
+    reader
+        .take(*remaining_bytes + 1)
+        .read_to_string(&mut text)?;
+    *remaining_bytes = remaining_bytes
+        .checked_sub(text.len() as u64)
         .ok_or_else(|| io::Error::other("OpenSSH config exceeds the size limit"))?;
     Ok(Some(text))
 }
@@ -1024,7 +1032,9 @@ pub fn read_user_config(home: &Path, ctx: &ParseContext) -> std::io::Result<User
     let mut remaining_bytes = MAX_CONFIG_BYTES;
     let mut remaining_files = MAX_INCLUDE_FILES;
     let text = read_config_file(&path, &mut remaining_bytes, true)?.unwrap_or_default();
-    let includes = FsIncludes { home: home.to_path_buf() };
+    let includes = FsIncludes {
+        home: home.to_path_buf(),
+    };
     Ok(parse_config(&text, ctx, &mut |pattern| {
         includes.resolve_files(pattern, true, &mut remaining_files, &mut remaining_bytes)
     }))
