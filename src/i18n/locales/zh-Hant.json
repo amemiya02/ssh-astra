@@ -339,6 +339,17 @@
     "editPath": "編輯路徑",
     "path": "路徑",
     "copyPath": "複製路徑",
+    "bookmarks": {
+      "star": "收藏此目錄",
+      "menu": "書籤",
+      "empty": "此 Host 暫無書籤",
+      "manage": "編輯書籤",
+      "edit": "編輯書籤",
+      "name": "名稱（選填）",
+      "remove": "移除書籤",
+      "save": "儲存",
+      "saveFailed": "無法儲存書籤變更。"
+    },
     "showHidden": "顯示隱藏檔案",
     "open": "開啟",
     "listLabel": "{{path}} 中的檔案",

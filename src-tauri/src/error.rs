@@ -91,7 +91,10 @@ impl From<HostStoreError> for CommandError {
                 let field = *field;
                 Self::new("invalid", &err).with_details(json!({ "field": field }))
             }
-            NotFound(_) | GroupNotFound(_) | ForwardNotFound(_) => Self::new("notFound", &err),
+            NotFound(_) | GroupNotFound(_) | ForwardNotFound(_) | BookmarkNotFound => {
+                Self::new("notFound", &err)
+            }
+            InvalidBookmarkPath => Self::new("invalid", &err),
             DuplicateId(_) => Self::new("duplicateHostId", &err),
             InvalidMove => Self::new("invalidMove", &err),
             JumpHostCycle(names) => {

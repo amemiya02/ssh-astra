@@ -16,7 +16,7 @@ import type { ConnectionStatus } from "@/features/workspace/tabs";
 import { readCommandError, refusal, type ConnectPrompt, type PromptAnswer } from "@/lib/ipc/connect";
 import * as edit from "@/lib/ipc/edit";
 import * as files from "@/lib/ipc/files";
-import { isTemporaryHost, type Host } from "@/lib/ipc/hosts";
+import { isTemporaryHost, type Host, type HostId } from "@/lib/ipc/hosts";
 import { transferHost } from "@/lib/ipc/transfers";
 import { useSetting } from "@/lib/storage";
 import { cn } from "@/lib/utils";
@@ -170,7 +170,7 @@ export function SftpWorkspace({ id, host, active, showPrompts = active, onStatus
             <ResizablePanel id="remote" minSize="32%">
               <div ref={remoteDrop} className="h-full">
                 <WorkspaceColumn store={remote} side="remote" name={workspaceHostName(host, t, privacyMode)} copy={copyRemote}
-                  dragSide={dragSide} osOver={osDrop.over && remoteReady} reconnect={reconnect}
+                  dragSide={dragSide} osOver={osDrop.over && remoteReady} reconnect={reconnect} bookmarkHostId={host.id}
                   connectionError={connectionError} />
               </div>
             </ResizablePanel>
@@ -190,7 +190,7 @@ export function SftpWorkspace({ id, host, active, showPrompts = active, onStatus
   );
 }
 
-function WorkspaceColumn({ store, side, name, copy, dragSide, osOver, reconnect, connectionError }: {
+function WorkspaceColumn({ store, side, name, copy, dragSide, osOver, reconnect, connectionError, bookmarkHostId }: {
   store: FileBrowserStore;
   side: Side;
   name: string;
@@ -199,6 +199,7 @@ function WorkspaceColumn({ store, side, name, copy, dragSide, osOver, reconnect,
   osOver?: boolean;
   reconnect?(): void;
   connectionError?: boolean;
+  bookmarkHostId?: HostId;
 }) {
   const { t } = useTranslation();
   const phase = useStore(store, (s) => s.phase);
@@ -220,7 +221,7 @@ function WorkspaceColumn({ store, side, name, copy, dragSide, osOver, reconnect,
 
   let body: ReactNode;
   if (ready) {
-    body = <FileBrowser store={store} hostName={name} exchange={{ side, copy }} />;
+    body = <FileBrowser store={store} hostName={name} exchange={{ side, copy }} bookmarkHostId={bookmarkHostId} />;
   } else if (error && (phase !== "opening" || connectionError)) {
     body = (
       <div className="flex flex-col items-center">

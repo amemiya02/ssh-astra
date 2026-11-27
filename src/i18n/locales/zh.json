@@ -339,6 +339,17 @@
     "editPath": "编辑路径",
     "path": "路径",
     "copyPath": "复制路径",
+    "bookmarks": {
+      "star": "收藏此目录",
+      "menu": "书签",
+      "empty": "此 Host 暂无书签",
+      "manage": "编辑书签",
+      "edit": "编辑书签",
+      "name": "名称（可选）",
+      "remove": "移除书签",
+      "save": "保存",
+      "saveFailed": "无法保存书签更改。"
+    },
     "showHidden": "显示隐藏文件",
     "open": "打开",
     "listLabel": "{{path}} 中的文件",

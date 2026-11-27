@@ -16,13 +16,15 @@ use crate::proxy::HostProxy;
 use crate::ssh_config::{ImportIssue, ParsedConfig};
 use crate::terminal::{TerminalBackspace, TerminalCharset};
 
+mod bookmarks;
 mod transfer;
+pub use bookmarks::Bookmark;
 pub use transfer::{ImportSummary, EXPORT_FORMAT};
 
 /// The file format version this build writes, to the store and to export
 /// files. Bump it together with a migration step in [`migrate`], which reads
 /// both.
-const CURRENT_VERSION: u32 = 18;
+const CURRENT_VERSION: u32 = 19;
 
 const MAX_HOST_TAGS: usize = 10;
 const MAX_TAG_LENGTH: usize = 32;
@@ -216,6 +218,9 @@ pub struct Host {
     /// never by the Host form.
     #[serde(default)]
     pub forwards: Vec<PortForward>,
+    /// Saved directories, in the order added. Edited separately from HostDraft.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bookmarks: Vec<Bookmark>,
 }
 
 /// A Host's editable fields, as entered in the Host form.
@@ -321,6 +326,7 @@ impl HostDraft {
                 .filter(|s| !s.is_empty()),
             group_id: None,
             forwards: Vec::new(),
+            bookmarks: Vec::new(),
         })
     }
 }
@@ -362,6 +368,10 @@ pub enum HostStoreError {
     GroupNotFound(GroupId),
     #[error("no such Port forward: {0}")]
     ForwardNotFound(ForwardId),
+    #[error("no such Bookmark")]
+    BookmarkNotFound,
+    #[error("a Bookmark requires a valid remote path")]
+    InvalidBookmarkPath,
     #[error("a group cannot move into itself or a group inside it")]
     InvalidMove,
     /// Following the Jump hosts leads back to where it started; the names
@@ -640,6 +650,7 @@ impl HostStore {
         let host = Host {
             group_id: slot.group_id.clone(),
             forwards: std::mem::take(&mut slot.forwards),
+            bookmarks: std::mem::take(&mut slot.bookmarks),
             detected_os: slot.detected_os,
             ..draft.into_host(id)?
         };
@@ -1011,8 +1022,10 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
         // adds Tags; older Hosts default to an empty list. v15 adds an
         // optional icon; older Hosts use the automatic icon via serde default.
         // v16 adds an optional ANSI hue with the same automatic default.
-        // v17 stores the detected OS and v18 adds legacy algorithm opt-in.
-        2 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | CURRENT_VERSION => {
+        // v17 stores the detected OS, v18 adds legacy algorithm opt-in, and
+        // v19 adds Bookmarks. Older Hosts default to an empty Bookmark list.
+        2 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18
+        | CURRENT_VERSION => {
             let FileV2 { groups, hosts } = serde_json::from_str(text).map_err(corrupt)?;
             Ok(Library { groups, hosts })
         }
@@ -1044,6 +1057,7 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
             host.allow_legacy_algorithms = false;
         }
         host.tags = normalize_tags(&host.tags);
+        bookmarks::retain_valid(&mut host.bookmarks);
     }
     Ok(library)
 }

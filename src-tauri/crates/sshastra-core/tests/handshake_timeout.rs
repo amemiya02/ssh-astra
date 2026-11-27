@@ -62,6 +62,7 @@ fn host(sshd: &Sshd) -> Host {
         terminal_backspace: None,
         default_directory: None,
         forwards: Vec::new(),
+        bookmarks: Vec::new(),
     }
 }
 

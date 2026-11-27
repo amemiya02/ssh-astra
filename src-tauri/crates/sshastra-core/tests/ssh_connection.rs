@@ -188,6 +188,7 @@ fn host_at(address: &str, port: u16, user: &str) -> Host {
         terminal_backspace: None,
         default_directory: None,
         forwards: Vec::new(),
+        bookmarks: Vec::new(),
         group_id: None,
     }
 }
@@ -590,6 +591,7 @@ async fn an_unreachable_address_is_reported() {
         terminal_backspace: None,
         default_directory: None,
         forwards: Vec::new(),
+        bookmarks: Vec::new(),
         group_id: None,
     };
     let prompter = ScriptedPrompter::new(HostKeyDecision::SaveAndTrust, &[]);
@@ -1157,6 +1159,7 @@ fn behind(name: &str, jump: &Host) -> Host {
         terminal_backspace: None,
         default_directory: None,
         forwards: Vec::new(),
+        bookmarks: Vec::new(),
         group_id: None,
     }
 }

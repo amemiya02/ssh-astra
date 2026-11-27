@@ -6,7 +6,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 
-use sshastra_core::hosts::{Host, HostAuth, HostDraft, HostId, HostStore, HostStoreError};
+use sshastra_core::hosts::{
+    Bookmark, Host, HostAuth, HostDraft, HostId, HostStore, HostStoreError,
+};
 
 fn draft(name: &str) -> HostDraft {
     HostDraft {
@@ -37,6 +39,44 @@ fn via(name: &str, jump: &Host) -> HostDraft {
         jump_host: Some(jump.id.clone()),
         ..draft(name)
     }
+}
+
+#[test]
+fn bookmark_edits_survive_restart_host_edits_and_duplication() {
+    let (_dir, path) = store_path();
+    let mut store = HostStore::open(&path).unwrap();
+    let host = store.upsert(None, draft("web")).unwrap();
+    let folder = "/srv/work 臨時 ";
+    assert_eq!(store.add_bookmark(&host.id, folder).unwrap().path, folder);
+    store.rename_bookmark(&host.id, folder, "  Work  ").unwrap();
+    store.add_bookmark(&host.id, "/elsewhere").unwrap();
+    store.add_bookmark(&host.id, folder).unwrap();
+    store.delete_bookmark(&host.id, "/elsewhere").unwrap();
+    store
+        .upsert(Some(host.id.clone()), draft("new name"))
+        .unwrap();
+    let copy = store.duplicate_host(&host.id, "copy").unwrap();
+
+    let mut reopened = HostStore::open(&path).unwrap();
+    let expected = [Bookmark {
+        path: folder.into(),
+        name: Some("Work".into()),
+    }];
+    assert_eq!(reopened.get(&host.id).unwrap().name, "new name");
+    assert_eq!(reopened.get(&host.id).unwrap().bookmarks, expected);
+    assert_eq!(reopened.get(&copy.id).unwrap().bookmarks, expected);
+
+    reopened.rename_bookmark(&copy.id, folder, "  ").unwrap();
+    reopened.delete_bookmark(&host.id, folder).unwrap();
+    let reopened = HostStore::open(&path).unwrap();
+    assert!(reopened.get(&host.id).unwrap().bookmarks.is_empty());
+    assert_eq!(
+        reopened.get(&copy.id).unwrap().bookmarks,
+        [Bookmark {
+            path: folder.into(),
+            name: None
+        }]
+    );
 }
 
 #[test]
@@ -152,7 +192,7 @@ fn a_version_4_file_is_migrated_with_no_default_directories() {
     store.upsert(None, draft("new")).unwrap();
     let json: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(json["version"], 18);
+    assert_eq!(json["version"], 19);
 }
 
 #[test]
@@ -335,7 +375,7 @@ fn the_file_is_versioned_json() {
 
     let json: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(json["version"], 18);
+    assert_eq!(json["version"], 19);
     assert_eq!(json["hosts"][0]["name"], "web");
     assert_eq!(json["hosts"][0]["auth"]["type"], "password");
 }

@@ -21,6 +21,9 @@ function fakeApi(initial: HostTree, overrides: Partial<HostsApi> = {}): HostsApi
     loadHostTree: vi.fn(() => Promise.resolve(initial)),
     saveHost: vi.fn((d: HostDraft, id?: string) => Promise.resolve({ ...d, id: id ?? "new", groupId: null, forwards: [] })),
     saveTemporaryHost: vi.fn((id: string, d: HostDraft) => Promise.resolve({ ...d, id, groupId: null, forwards: [] })),
+    addBookmark: vi.fn((_hostId: string, path: string) => Promise.resolve({ path })),
+    renameBookmark: vi.fn((_hostId: string, path: string, name: string) => Promise.resolve({ path, name })),
+    deleteBookmark: vi.fn(() => Promise.resolve()),
     deleteHost: vi.fn(() => Promise.resolve()),
     duplicateHost: vi.fn((id: string, name: string) =>
       Promise.resolve({ ...initial.hosts.find((h) => h.id === id)!, id: "copy", name }),
@@ -87,6 +90,20 @@ describe("hosts store", () => {
 
     expect(api.saveHost).toHaveBeenLastCalledWith(draft("a2"), "a");
     expect(ids(store.getState().tree).hosts).toEqual(["a2", "b", "c"]);
+  });
+
+  it("keeps a Bookmark when an earlier Host save reply arrives after it", async () => {
+    const original = host("a");
+    let finishHostSave!: (saved: Host) => void;
+    const { store } = await loaded({ groups: [], hosts: [original] }, {
+      saveHost: () => new Promise((resolve) => { finishHostSave = resolve; }),
+    });
+    const actions = store.getState();
+    const saving = actions.saveHost(draft("Updated"), original.id);
+    await actions.addBookmark(original.id, "/srv");
+    finishHostSave({ ...original, name: "Updated" });
+    await saving;
+    expect(store.getState().tree.hosts[0]).toMatchObject({ name: "Updated", bookmarks: [{ path: "/srv" }] });
   });
 
   it("removes a deleted Host", async () => {

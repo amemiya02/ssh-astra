@@ -2,14 +2,23 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { hostsStore } from "@/features/hosts/hostsStore";
 import { settingsPageSections } from "@/features/settings/sections";
 import { startI18n } from "@/i18n";
 import type { FileEntry, Listing } from "@/lib/ipc/files";
+import * as hostsIpc from "@/lib/ipc/hosts";
 import { localStorageBackend, openSettings, setSetting, startSettings } from "@/lib/storage";
 import { FileBrowser, type FileExchange } from "./FileBrowser";
 import { PermissionsDialog } from "./FileOperationDialogs";
 import { createFileBrowserStore, type FilesApi } from "./fileBrowserStore";
 import { filesSetting } from "./file-prefs";
+
+vi.mock("@/lib/ipc/hosts", async (original) => ({
+  ...(await original<typeof import("@/lib/ipc/hosts")>()),
+  addBookmark: vi.fn((_hostId: string, path: string) => Promise.resolve({ path })),
+  deleteBookmark: vi.fn(() => Promise.resolve()),
+  renameBookmark: vi.fn((_hostId: string, path: string, name: string) => Promise.resolve({ path, name })),
+}));
 
 const entry = (name: string, kind: FileEntry["kind"] = "file"): FileEntry => ({
   name,
@@ -73,16 +82,19 @@ afterEach(() => {
   vi.clearAllMocks();
   act(() => root?.unmount());
   setSetting(filesSetting, filesSetting.defaults);
+  hostsStore.setState({ tree: { groups: [], hosts: [] } });
   container.remove();
 });
 
-async function render({ showSettings, exchange, startPath, enableMove }: {
+async function render({ showSettings, exchange, startPath, enableMove, bookmarkHostId, onNavigate }: {
   showSettings?: boolean;
   exchange?: FileExchange;
   startPath?: string;
   enableMove?: boolean;
+  bookmarkHostId?: string;
+  onNavigate?(path: string): void;
 } = {}) {
-  const store = createFileBrowserStore(api, "host", startPath);
+  const store = createFileBrowserStore(api, "host", startPath, undefined, undefined, undefined, onNavigate);
   const FilesSection = settingsPageSections.find((section) => section.id === "files")?.Component;
   await store.getState().connect();
   container = document.createElement("div");
@@ -91,7 +103,7 @@ async function render({ showSettings, exchange, startPath, enableMove }: {
   await act(async () =>
     root!.render(
       <TooltipProvider>
-        <FileBrowser store={store} hostName="web-1" exchange={exchange} enableMove={enableMove} />
+        <FileBrowser store={store} hostName="web-1" exchange={exchange} enableMove={enableMove} bookmarkHostId={bookmarkHostId} />
         {showSettings && FilesSection && <FilesSection />}
       </TooltipProvider>,
     ),
@@ -116,7 +128,72 @@ const pathButton = (label: string) =>
   container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
 const pathInput = () => container.querySelector<HTMLInputElement>('input[aria-label="Path"]')!;
 
+function seedBookmarkHost() {
+  hostsStore.setState({ tree: { groups: [], hosts: [{
+    id: "host", name: "web-1", address: "host.test", user: "dev", port: 22,
+    auth: { type: "auto" }, groupId: null, jumpHost: null, forwards: [],
+    bookmarks: [{ path: "/archive", name: "Backups" }],
+  }] } });
+}
+
+const bookmarkMenuItem = (label: string) => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+  .find((item) => item.textContent?.includes(label));
+const openBookmarks = () => act(async () => pathButton("Bookmarks").dispatchEvent(
+  new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+));
+
 describe("FileBrowser", () => {
+  it("stars the current directory and jumps to another Bookmark through history", async () => {
+    seedBookmarkHost();
+    const onNavigate = vi.fn();
+    const { store } = await render({ bookmarkHostId: "host", onNavigate });
+    expect(pathButton("Bookmark this folder")?.getAttribute("aria-pressed")).toBe("false");
+    await act(async () => pathButton("Bookmark this folder").click());
+    expect(hostsIpc.addBookmark).toHaveBeenCalledWith("host", "/big");
+    expect(pathButton("Bookmark this folder").getAttribute("aria-pressed")).toBe("true");
+
+    await openBookmarks();
+    const target = bookmarkMenuItem("Backups");
+    expect(target).toBeDefined();
+    await act(async () => target!.click());
+    await act(async () => { await vi.waitFor(() => expect(onNavigate).toHaveBeenCalledWith("/archive")); });
+    expect(store.getState().path).toBe("/archive");
+    expect(document.activeElement).toBe(container.firstElementChild);
+    expect(pathButton("Bookmark this folder").getAttribute("aria-pressed")).toBe("true");
+
+    await act(async () => pathButton("Back").click());
+    expect(store.getState().path).toBe("/big");
+    await act(async () => pathButton("Bookmark this folder").click());
+    expect(hostsIpc.deleteBookmark).toHaveBeenCalledWith("host", "/big");
+    expect(pathButton("Bookmark this folder").getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("renames a Bookmark from another directory", async () => {
+    seedBookmarkHost();
+    await render({ bookmarkHostId: "host" });
+    await openBookmarks();
+    await act(async () => bookmarkMenuItem("Edit Bookmarks")!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
+    const submenu = [...document.querySelectorAll('[role="menu"]')].at(-1)!;
+    await act(async () => submenu.querySelector<HTMLElement>('[role="menuitem"]')!.click());
+    await act(async () => { await vi.waitFor(() => expect(dialog()).not.toBeNull()); });
+    const input = dialog()!.querySelector<HTMLInputElement>('input[aria-label="Name (optional)"]')!;
+    expect(input.value).toBe("Backups");
+    await act(async () => type(input, "Off-site"));
+    await act(async () => button("Save").click());
+    expect(hostsIpc.renameBookmark).toHaveBeenCalledWith("host", "/archive", "Off-site");
+    await openBookmarks();
+    const renamed = bookmarkMenuItem("Off-site");
+    expect(renamed?.textContent).toBe("Off-site/archive");
+    await act(async () => renamed!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  });
+
+  it("keeps Bookmark controls out of a browser whose Host has not been saved", async () => {
+    seedBookmarkHost();
+    await render({ bookmarkHostId: "temporary-host" });
+    expect(pathButton("Bookmark this folder")).toBeNull();
+    expect(pathButton("Bookmarks")).toBeNull();
+  });
+
   it("compresses the selection and reports a missing extraction tool in the operation dialog", async () => {
     vi.mocked(api.extractArchive).mockRejectedValueOnce({
       kind: "archiveToolMissing", message: "missing unzip", details: { tool: "unzip" },

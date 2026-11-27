@@ -57,6 +57,7 @@ async fn sftp(sshd: &Sshd) -> (SftpFs, tempfile::TempDir) {
         terminal_backspace: None,
         default_directory: None,
         forwards: Vec::new(),
+        bookmarks: Vec::new(),
     };
     let connection = manager
         .connect(&host, Arc::new(Trusting(sshd.password)))
