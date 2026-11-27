@@ -128,16 +128,18 @@ export function createSharedRemoteEdits(api: EditCommands, onUploadFailed?: (nam
       try {
         if (action === "overwrite") await api.overwriteRemoteEdit(id, conflictId);
         else {
-          let copy: SharedEdit | undefined;
           const earlyEvents: EditEvent[] = [];
+          let handleCopyEvent = (event: EditEvent) => {
+            earlyEvents.push(event);
+          };
           const copyId = await api.openRemoteEditConflictCopy(id, conflictId, (event) => {
-            if (copy) onEditEvent(copy, event);
-            else earlyEvents.push(event);
+            handleCopyEvent(event);
           });
-          copy = {
+          const copy: SharedEdit = {
             item: { ...edit.item, key: copyId, id: copyId, status: "editing", conflictId: null, error: null },
             panels: new Set(edit.panels),
           };
+          handleCopyEvent = (event) => onEditEvent(copy, event);
           const copyKey = keyFor(copyId);
           edits.set(copyKey, copy);
           publish(edit, { status: "conflictPaused" });
