@@ -137,6 +137,11 @@ pub type FileWriter = Box<dyn AsyncWrite + Send + Unpin>;
 /// A Host's file system as the File panel sees it. Object safe, so callers
 /// hold an `Arc<dyn RemoteFs>` and tests can pass a fake.
 pub trait RemoteFs: Send + Sync {
+    /// Identifies a remote filesystem across Connections for transfer staging.
+    fn transfer_namespace(&self) -> Option<&str> {
+        None
+    }
+
     /// The directory a new File panel opens in: the user's home directory.
     fn home(&self) -> BoxFuture<'_, FsResult<String>>;
     /// `path` made absolute (relative to the home directory), with `.`, `..`
@@ -164,7 +169,23 @@ pub trait RemoteFs: Send + Sync {
     // Contents, streamed (transfers); `read_file` / `write_file` wrap them.
 
     /// Opens the file `path` to read it from the start.
-    fn open_read<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileReader>>;
+    fn open_read<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileReader>> {
+        self.open_read_at(path, 0)
+    }
+    /// Opens a file to read from the given byte offset.
+    fn open_read_at<'a>(
+        &'a self,
+        path: &'a str,
+        offset: u64,
+    ) -> BoxFuture<'a, FsResult<FileReader>>;
+    /// Opens an existing regular file to write from the given offset without
+    /// truncating it. For a staging file, the caller also checks `lstat`.
+    fn open_write_at<'a>(
+        &'a self,
+        path: &'a str,
+        offset: u64,
+    ) -> BoxFuture<'a, FsResult<FileWriter>>;
+
     /// Creates the file `path`, or empties it if it exists (keeping its
     /// permissions), to write it. Finish with `shutdown().await`.
     fn create_write<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileWriter>>;

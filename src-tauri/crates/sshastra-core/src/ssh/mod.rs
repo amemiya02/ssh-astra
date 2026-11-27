@@ -597,9 +597,19 @@ impl ConnectionManager {
         .await;
         log_hop(&host.id, "authentication", &authenticated);
         authenticated?;
+        // Different Jump routes and accounts may expose different files
+        // at the same SFTP path, including when the server uses chroots.
+        let file_namespace = format!(
+            "{}{:?}@{:?}:{};",
+            via.as_ref().map_or("", |jump| jump.file_namespace()),
+            host.user,
+            host.address,
+            host.port,
+        );
         Ok(Connection {
             handle,
             routes,
+            file_namespace,
             _via: via,
         })
     }
@@ -620,6 +630,7 @@ async fn open_tcp(host: &Host) -> Result<TcpStream, ConnectError> {
 /// One live, authenticated SSH transport to a Host.
 pub struct Connection {
     handle: Handle<ClientHandler>,
+    file_namespace: String,
     /// Ports the server listens on for us, and who gets their connections.
     routes: Routes,
     /// The Jump host's Connection this one is tunnelled through, kept open
@@ -636,6 +647,10 @@ impl std::fmt::Debug for Connection {
 }
 
 impl Connection {
+    pub(crate) fn file_namespace(&self) -> &str {
+        &self.file_namespace
+    }
+
     /// A byte stream to `host`'s SSH port, opened by this Connection's server
     /// (a `direct-tcpip` channel, like `ssh -J`).
     async fn open_tunnel(

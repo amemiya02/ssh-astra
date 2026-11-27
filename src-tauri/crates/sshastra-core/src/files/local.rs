@@ -1,9 +1,10 @@
 //! The user's own file system, as transfers see it: [`LocalFs`] is the seam,
 //! [`DiskFs`] the real disk, and tests swap in an in-memory fake.
 
-use std::io;
+use std::io::{self, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
+use tokio::io::AsyncSeekExt;
 
 use super::{FileEntry, FileKind, FileReader, FileStat, FileWriter, FsError, FsResult, RemoteFs};
 use crate::ssh::BoxFuture;
@@ -13,10 +14,29 @@ use crate::ssh::BoxFuture;
 pub trait LocalFs: Send + Sync {
     /// The metadata of `path`, following symlinks.
     fn stat<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<FileStat>>;
+    /// The metadata of the path itself, without following a symlink.
+    fn lstat<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<FileStat>>;
+    /// An absolute path with symlinks resolved.
+    fn canonicalize<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<PathBuf>>;
+
     /// The entries of the directory `path`; a symlink is listed as such, with
     /// its target's kind in `link_target`.
     fn list_dir<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<Vec<FileEntry>>>;
-    fn open_read<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<FileReader>>;
+    fn open_read<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<FileReader>> {
+        self.open_read_at(path, 0)
+    }
+    fn open_read_at<'a>(
+        &'a self,
+        path: &'a Path,
+        offset: u64,
+    ) -> BoxFuture<'a, FsResult<FileReader>>;
+    /// Opens an existing regular file for writing without truncating it.
+    fn open_write_at<'a>(
+        &'a self,
+        path: &'a Path,
+        offset: u64,
+    ) -> BoxFuture<'a, FsResult<FileWriter>>;
+
     /// Creates the file `path`, or empties it if it exists.
     fn create_write<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<FileWriter>>;
     /// Exclusively creates a transfer's staging file, optionally with mode `0o600`.
@@ -35,7 +55,7 @@ pub trait LocalFs: Send + Sync {
     fn set_permissions<'a>(&'a self, path: &'a Path, mode: u32) -> BoxFuture<'a, FsResult<()>>;
     /// Creates the directory `path`; its parent must exist.
     fn create_dir<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<()>>;
-    /// Deletes the file `path` (a cancelled or failed transfer's partial copy).
+    /// Deletes a file or symlink without following it.
     fn remove_file<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<()>>;
 }
 
@@ -50,6 +70,23 @@ impl LocalFs for DiskFs {
                 .await
                 .map_err(|e| error(path, e))?;
             Ok(stat(&meta))
+        })
+    }
+
+    fn lstat<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<FileStat>> {
+        Box::pin(async move {
+            let meta = tokio::fs::symlink_metadata(path)
+                .await
+                .map_err(|e| error(path, e))?;
+            Ok(stat(&meta))
+        })
+    }
+
+    fn canonicalize<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<PathBuf>> {
+        Box::pin(async move {
+            tokio::fs::canonicalize(path)
+                .await
+                .map_err(|e| error(path, e))
         })
     }
 
@@ -93,12 +130,49 @@ impl LocalFs for DiskFs {
         })
     }
 
-    fn open_read<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<FileReader>> {
+    fn open_read_at<'a>(
+        &'a self,
+        path: &'a Path,
+        offset: u64,
+    ) -> BoxFuture<'a, FsResult<FileReader>> {
         Box::pin(async move {
-            let file = tokio::fs::File::open(path)
+            let mut file = tokio::fs::File::open(path)
                 .await
                 .map_err(|e| error(path, e))?;
+            if offset != 0 {
+                file.seek(SeekFrom::Start(offset))
+                    .await
+                    .map_err(|e| error(path, e))?;
+            }
             Ok(Box::new(file) as FileReader)
+        })
+    }
+
+    fn open_write_at<'a>(
+        &'a self,
+        path: &'a Path,
+        offset: u64,
+    ) -> BoxFuture<'a, FsResult<FileWriter>> {
+        Box::pin(async move {
+            let mut options = tokio::fs::OpenOptions::new();
+            options.write(true);
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            options.custom_flags(
+                (rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK).bits() as i32,
+            );
+            #[cfg(windows)]
+            options.custom_flags(
+                windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT,
+            );
+            let mut file = options.open(path).await.map_err(|e| error(path, e))?;
+            let metadata = file.metadata().await.map_err(|e| error(path, e))?;
+            if !metadata.is_file() {
+                return Err(FsError::AlreadyExists(path.display().to_string()));
+            }
+            file.seek(SeekFrom::Start(offset))
+                .await
+                .map_err(|e| error(path, e))?;
+            Ok(Box::new(file) as FileWriter)
         })
     }
 
@@ -384,8 +458,20 @@ impl RemoteFs for DiskBrowser {
         })
     }
 
-    fn open_read<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileReader>> {
-        Box::pin(async move { DiskFs.open_read(&native_path(path)).await })
+    fn open_read_at<'a>(
+        &'a self,
+        path: &'a str,
+        offset: u64,
+    ) -> BoxFuture<'a, FsResult<FileReader>> {
+        Box::pin(async move { DiskFs.open_read_at(&native_path(path), offset).await })
+    }
+
+    fn open_write_at<'a>(
+        &'a self,
+        path: &'a str,
+        offset: u64,
+    ) -> BoxFuture<'a, FsResult<FileWriter>> {
+        Box::pin(async move { DiskFs.open_write_at(&native_path(path), offset).await })
     }
 
     fn create_write<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileWriter>> {

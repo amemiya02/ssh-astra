@@ -90,7 +90,11 @@ impl RemoteFs for FakeFs {
         })
     }
 
-    fn open_read<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileReader>> {
+    fn open_read_at<'a>(
+        &'a self,
+        path: &'a str,
+        offset: u64,
+    ) -> BoxFuture<'a, FsResult<FileReader>> {
         Box::pin(async move {
             let data = self
                 .files
@@ -99,8 +103,14 @@ impl RemoteFs for FakeFs {
                 .get(path)
                 .cloned()
                 .ok_or_else(|| FsError::NotFound(path.into()))?;
-            Ok(Box::new(io::Cursor::new(data)) as FileReader)
+            let mut cursor = io::Cursor::new(data);
+            cursor.set_position(offset);
+            Ok(Box::new(cursor) as FileReader)
         })
+    }
+
+    fn open_write_at<'a>(&'a self, _: &'a str, _: u64) -> BoxFuture<'a, FsResult<FileWriter>> {
+        unimplemented!("Remote edit does not resume staged writes")
     }
 
     fn create_new<'a>(&'a self, _: &'a str, _: bool) -> BoxFuture<'a, FsResult<FileWriter>> {

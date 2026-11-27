@@ -5,7 +5,7 @@ use std::future::Future;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -34,6 +34,8 @@ struct MemoryFs {
     gate: Option<Arc<Semaphore>>,
     reading: Arc<AtomicUsize>,
     max_reading: Arc<AtomicUsize>,
+    read_bytes: Arc<AtomicUsize>,
+    written_bytes: Arc<AtomicUsize>,
     fail_next_read: Mutex<HashSet<String>>,
     /// Reads of these files stop after their first chunk.
     break_reads: Mutex<HashMap<String, Break>>,
@@ -153,7 +155,7 @@ impl MemoryFs {
             .collect())
     }
 
-    async fn open_read_path(&self, path: &str) -> FsResult<FileReader> {
+    async fn open_read_path(&self, path: &str, offset: u64) -> FsResult<FileReader> {
         if self.fail_next_read.lock().unwrap().remove(path) {
             return Err(FsError::Protocol("read failed".into()));
         }
@@ -168,8 +170,12 @@ impl MemoryFs {
         if let Some(gate) = &self.gate {
             gate.acquire().await.unwrap().forget();
         }
+        let mut data = io::Cursor::new(data);
+        data.set_position(offset);
         Ok(Box::new(MemoryReader {
-            data: io::Cursor::new(data),
+            data,
+            start: offset,
+            bytes: self.read_bytes.clone(),
             stop: self.break_reads.lock().unwrap().get(path).copied(),
             pause: self
                 .pause_after_first
@@ -199,11 +205,25 @@ impl MemoryFs {
             _ => 0o644,
         };
         nodes.insert(path.to_owned(), Node::File(Vec::new(), mode));
-        Ok(Box::new(MemoryWriter {
+        Ok(self.writer(path, 0))
+    }
+
+    fn open_write_path(&self, path: &str, offset: u64) -> FsResult<FileWriter> {
+        let nodes = self.nodes.lock().unwrap();
+        if !matches!(nodes.get(path), Some(Node::File(..))) {
+            return Err(FsError::NotFound(path.into()));
+        }
+        Ok(self.writer(path, offset as usize))
+    }
+
+    fn writer(&self, path: &str, offset: usize) -> FileWriter {
+        Box::new(MemoryWriter {
             nodes: Arc::clone(&self.nodes),
             path: path.to_owned(),
+            offset,
+            bytes: self.written_bytes.clone(),
             limit: *self.fail_write_after.lock().unwrap(),
-        }))
+        })
     }
 
     fn set_mode(&self, path: &str, mode: u32) -> FsResult<()> {
@@ -286,6 +306,8 @@ impl Drop for Reading {
 
 struct MemoryReader {
     data: io::Cursor<Vec<u8>>,
+    start: u64,
+    bytes: Arc<AtomicUsize>,
     stop: Option<Break>,
     pause: Option<Pin<Box<OwnedNotified>>>,
     _guard: Reading,
@@ -297,7 +319,7 @@ impl AsyncRead for MemoryReader {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        if self.data.position() > 0 {
+        if self.data.position() > self.start {
             if let Some(pause) = &mut self.pause {
                 if pause.as_mut().poll(cx).is_pending() {
                     return Poll::Pending;
@@ -306,8 +328,8 @@ impl AsyncRead for MemoryReader {
             }
         }
         match self.stop {
-            Some(Break::Stall) if self.data.position() > 0 => return Poll::Pending,
-            Some(Break::Fail) if self.data.position() > 0 => {
+            Some(Break::Stall) if self.data.position() > self.start => return Poll::Pending,
+            Some(Break::Fail) if self.data.position() > self.start => {
                 return Poll::Ready(Err(io::Error::other("connection lost")));
             }
             _ => {}
@@ -315,6 +337,7 @@ impl AsyncRead for MemoryReader {
         // A small chunk at a time, like a network read.
         let mut chunk = [0u8; 4096];
         let n = std::io::Read::read(&mut self.data, &mut chunk[..buf.remaining().min(4096)])?;
+        self.bytes.fetch_add(n, Ordering::SeqCst);
         buf.put_slice(&chunk[..n]);
         Poll::Ready(Ok(()))
     }
@@ -324,11 +347,13 @@ struct MemoryWriter {
     limit: Option<usize>,
     nodes: Arc<Mutex<BTreeMap<String, Node>>>,
     path: String,
+    offset: usize,
+    bytes: Arc<AtomicUsize>,
 }
 
 impl AsyncWrite for MemoryWriter {
     fn poll_write(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         _: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
@@ -336,13 +361,21 @@ impl AsyncWrite for MemoryWriter {
         let Some(Node::File(data, _)) = nodes.get_mut(&self.path) else {
             return Poll::Ready(Err(io::Error::other("file disappeared")));
         };
+        let offset = self.offset;
         let len = self.limit.map_or(buf.len(), |limit| {
-            buf.len().min(limit.saturating_sub(data.len()))
+            buf.len().min(limit.saturating_sub(offset))
         });
         if len == 0 && !buf.is_empty() {
             return Poll::Ready(Err(io::Error::other("write failed")));
         }
-        data.extend_from_slice(&buf[..len]);
+        let end = offset + len;
+        if data.len() < end {
+            data.resize(end, 0);
+        }
+        data[offset..end].copy_from_slice(&buf[..len]);
+        drop(nodes);
+        self.offset = end;
+        self.bytes.fetch_add(len, Ordering::SeqCst);
         Poll::Ready(Ok(len))
     }
 
@@ -363,11 +396,28 @@ impl LocalFs for MemoryFs {
     fn stat<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<FileStat>> {
         Box::pin(async move { self.stat_path(&local_str(path)) })
     }
+    fn lstat<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<FileStat>> {
+        LocalFs::stat(self, path)
+    }
+    fn canonicalize<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<PathBuf>> {
+        Box::pin(async move { Ok(path.to_path_buf()) })
+    }
     fn list_dir<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<Vec<FileEntry>>> {
         Box::pin(async move { self.list_path(&local_str(path)) })
     }
-    fn open_read<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<FileReader>> {
-        Box::pin(async move { self.open_read_path(&local_str(path)).await })
+    fn open_read_at<'a>(
+        &'a self,
+        path: &'a Path,
+        offset: u64,
+    ) -> BoxFuture<'a, FsResult<FileReader>> {
+        Box::pin(async move { self.open_read_path(&local_str(path), offset).await })
+    }
+    fn open_write_at<'a>(
+        &'a self,
+        path: &'a Path,
+        offset: u64,
+    ) -> BoxFuture<'a, FsResult<FileWriter>> {
+        Box::pin(async move { self.open_write_path(&local_str(path), offset) })
     }
     fn create_write<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<FileWriter>> {
         Box::pin(async move { self.create_write_path(&local_str(path), false) })
@@ -407,8 +457,19 @@ impl RemoteFs for MemoryFs {
     fn stat<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileStat>> {
         Box::pin(async move { self.stat_path(path) })
     }
-    fn open_read<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileReader>> {
-        Box::pin(self.open_read_path(path))
+    fn open_read_at<'a>(
+        &'a self,
+        path: &'a str,
+        offset: u64,
+    ) -> BoxFuture<'a, FsResult<FileReader>> {
+        Box::pin(self.open_read_path(path, offset))
+    }
+    fn open_write_at<'a>(
+        &'a self,
+        path: &'a str,
+        offset: u64,
+    ) -> BoxFuture<'a, FsResult<FileWriter>> {
+        Box::pin(async move { self.open_write_path(path, offset) })
     }
     fn create_write<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileWriter>> {
         Box::pin(async move { self.create_write_path(path, false) })
@@ -865,11 +926,18 @@ async fn a_new_download_leaves_a_file_created_at_its_final_name_during_copy() {
 
     assert!(matches!(h.transfer(id).state, TransferState::Failed { .. }));
     assert_eq!(
-        h.local.tree("/down"),
-        [(
-            "download".into(),
-            Node::File(b"created during copy".to_vec(), 0o644)
-        )]
+        h.local.read("/down/download").as_deref(),
+        Some(&b"created during copy"[..])
+    );
+    assert_eq!(h.local.tree("/down").len(), 2);
+    h.queue.retry(id);
+    next_conflict(&h, id).await;
+    h.queue.answer(id, ConflictAnswer::Skip);
+    h.until_state(id, TransferState::Done).await;
+    assert_eq!(h.local.tree("/down").len(), 1);
+    assert_eq!(
+        h.local.read("/down/download").as_deref(),
+        Some(&b"created during copy"[..])
     );
 }
 
@@ -944,28 +1012,299 @@ async fn an_interrupted_overwrite_keeps_the_original_in_both_directions() {
         h.remote.read("/remote/upload").as_deref(),
         Some(&b"old upload"[..])
     );
-    assert_eq!(h.remote.tree("/remote").len(), 2);
     assert_eq!(
-        h.local.tree("/down"),
-        [(
-            "download".into(),
-            Node::File(b"old download".to_vec(), 0o644)
-        )]
+        h.local.read("/down/download").as_deref(),
+        Some(&b"old download"[..])
     );
+    for (fs, dir, files) in [(&h.local, "/down", 2), (&h.remote, "/remote", 3)] {
+        let tree = fs.tree(dir);
+        assert_eq!(tree.len(), files);
+        assert!(tree.iter().any(|(name, node)| name.starts_with('.')
+            && matches!(node, Node::File(data, _) if data == &vec![7; 5000])));
+    }
 }
 
 #[tokio::test]
-async fn a_failed_download_deletes_its_partial_local_copy() {
+async fn an_interrupted_upload_and_download_resume_from_their_staged_bytes() {
+    for direction in [TransferDirection::Upload, TransferDirection::Download] {
+        let h = Harness::new();
+        let (source, target) = match direction {
+            TransferDirection::Upload => (&h.local, &h.remote),
+            TransferDirection::Download => (&h.remote, &h.local),
+        };
+        let bytes: Vec<_> = (0..400_000).map(|i| (i % 251) as u8).collect();
+        source.file("/big", bytes.clone());
+        target.dir("/to");
+        *target.fail_write_after.lock().unwrap() = Some(300_000);
+        let id = match direction {
+            TransferDirection::Upload => h.upload("/big", "/to"),
+            TransferDirection::Download => h.download("/big", "/to"),
+        };
+        h.until_settled().await;
+        assert!(matches!(h.transfer(id).state, TransferState::Failed { .. }));
+        assert_eq!(target.read("/to/big"), None);
+        let entries = target.tree("/to");
+        assert_eq!(entries.len(), 1);
+        assert!(matches!(&entries[0].1, Node::File(data, _) if data == &bytes[..300_000]));
+
+        *target.fail_write_after.lock().unwrap() = None;
+        let attempt = h.events_for(id).len();
+        let read_before = source.read_bytes.load(Ordering::SeqCst);
+        let written_before = target.written_bytes.load(Ordering::SeqCst);
+        h.queue.retry(id);
+        h.until_state(id, TransferState::Done).await;
+        assert_eq!(
+            target.written_bytes.load(Ordering::SeqCst) - written_before,
+            100_000
+        );
+        assert!(source.read_bytes.load(Ordering::SeqCst) - read_before < bytes.len());
+        assert_eq!(target.read("/to/big"), Some(bytes));
+        let events = h.events_for(id);
+        assert!(events[attempt..]
+            .iter()
+            .any(|t| t.state == TransferState::Running && t.bytes_done == 300_000));
+        assert_eq!(h.transfer(id).bytes_done, 400_000);
+        assert_eq!(target.tree("/to").len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn a_retry_copies_the_new_source_when_the_old_prefix_is_invalid() {
+    // Same size with different contents, then a source shorter than the partial.
+    for new_size in [160_000, 40_000] {
+        let h = Harness::new();
+        h.local.file("/file", vec![1; 160_000]);
+        *h.remote.fail_write_after.lock().unwrap() = Some(80_000);
+        let id = h.upload("/file", "/");
+        h.until_settled().await;
+        assert!(matches!(h.transfer(id).state, TransferState::Failed { .. }));
+
+        let new_contents = vec![2; new_size];
+        h.local.file("/file", new_contents.clone());
+        *h.remote.fail_write_after.lock().unwrap() = None;
+        let written = h.remote.written_bytes.load(Ordering::SeqCst);
+
+        h.queue.retry(id);
+        h.until_state(id, TransferState::Done).await;
+        assert_eq!(h.remote.read("/file"), Some(new_contents));
+        assert_eq!(
+            h.remote.written_bytes.load(Ordering::SeqCst) - written,
+            new_size
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_new_queue_can_adopt_or_replace_an_abandoned_stage() {
+    for source_changed in [false, true] {
+        let old = Harness::new();
+        let size = 10_000;
+        old.local.file("/file", vec![1; size]);
+        old.local.break_reads("/file", Break::Fail);
+        let id = old.upload("/file", "/");
+        old.until_settled().await;
+        assert!(matches!(
+            old.transfer(id).state,
+            TransferState::Failed { .. }
+        ));
+        assert_eq!(old.remote.written_bytes.load(Ordering::SeqCst), 4096);
+        let h = Harness::with(old.local.clone(), old.remote.clone());
+        drop(old);
+        h.local.break_reads.lock().unwrap().clear();
+        let bytes = vec![if source_changed { 2 } else { 1 }; size];
+        h.local.file("/file", bytes.clone());
+
+        let id = h.upload("/file", "/");
+        h.until_state(id, TransferState::Done).await;
+        assert_eq!(h.remote.read("/file"), Some(bytes));
+        let written = h.remote.written_bytes.load(Ordering::SeqCst) - 4096;
+        assert_eq!(written, if source_changed { size } else { size - 4096 });
+    }
+}
+
+#[tokio::test]
+async fn removing_a_failed_download_deletes_its_staging_file() {
     let h = Harness::new();
-    h.remote.file("/big", vec![7u8; 10_000]);
-    h.remote.break_reads("/big", Break::Fail);
+    h.remote.file("/file", vec![1; 20_000]);
     h.local.dir("/down");
-
-    let id = h.download("/big", "/down");
+    *h.local.fail_write_after.lock().unwrap() = Some(5000);
+    let id = h.download("/file", "/down");
     h.until_settled().await;
-
     assert!(matches!(h.transfer(id).state, TransferState::Failed { .. }));
-    assert_eq!(h.local.read("/down/big"), None);
+    assert_eq!(h.local.tree("/down").len(), 1);
+
+    h.queue.remove(&[id]);
+
+    h.until("the abandoned download to be deleted", |all| {
+        all.is_empty() && h.local.tree("/down").is_empty()
+    })
+    .await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_download_replaces_a_staging_symlink_without_writing_through_it() {
+    use sshastra_core::files::DiskFs;
+    use std::os::unix::fs::symlink;
+
+    let h = Harness::new();
+    let bytes = vec![9; 20_000];
+    h.remote.file("/file", bytes.clone());
+    h.remote.break_reads("/file", Break::Fail);
+    let scratch = tempfile::tempdir().unwrap();
+    let target = scratch.path().join("downloads");
+    std::fs::create_dir(&target).unwrap();
+    let queue = TransferQueue::new(Arc::new(DiskFs), |_| {});
+    let id = queue.download(h.opener(), "/file".into(), target.clone());
+    let wait = |condition: fn(&TransferState) -> bool| {
+        let queue = &queue;
+        async move {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    if condition(&queue.list()[0].state) {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(2)).await;
+                }
+            })
+            .await
+            .unwrap();
+        }
+    };
+    wait(|state| matches!(state, TransferState::Failed { .. })).await;
+    let stage = std::fs::read_dir(&target)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    assert_eq!(std::fs::read(&stage).unwrap(), &bytes[..4096]);
+    std::fs::remove_file(&stage).unwrap();
+    let other = scratch.path().join("other");
+    std::fs::write(&other, &bytes[..4096]).unwrap();
+    symlink(&other, &stage).unwrap();
+
+    h.remote.break_reads.lock().unwrap().clear();
+    queue.retry(id);
+    wait(|state| *state == TransferState::Done).await;
+
+    assert_eq!(std::fs::read(other).unwrap(), &bytes[..4096]);
+    let file = target.join("file");
+    assert!(std::fs::symlink_metadata(&file)
+        .unwrap()
+        .file_type()
+        .is_file());
+    assert_eq!(std::fs::read(file).unwrap(), bytes);
+    assert!(!stage.exists());
+}
+
+#[tokio::test]
+async fn a_failed_upload_removed_offline_is_cleaned_up_after_reconnect() {
+    let h = Harness::new();
+    h.local.file("/file", vec![1; 20_000]);
+    h.remote.dir("/to");
+    *h.remote.fail_write_after.lock().unwrap() = Some(5000);
+    let connected = Arc::new(AtomicBool::new(true));
+    let opens = Arc::new(AtomicUsize::new(0));
+    let open: OpenRemote = {
+        let connected = connected.clone();
+        let opens = opens.clone();
+        let remote = h.remote.clone();
+        Arc::new(move || {
+            let live = connected.load(Ordering::SeqCst);
+            opens.fetch_add(1, Ordering::SeqCst);
+            let remote: Arc<dyn RemoteFs> = remote.clone();
+            Box::pin(async move {
+                if live {
+                    Ok(remote)
+                } else {
+                    Err(FsError::NotConnected)
+                }
+            })
+        })
+    };
+    let id = h.queue.upload(open, PathBuf::from("/file"), "/to".into());
+    h.until_settled().await;
+    assert!(matches!(h.transfer(id).state, TransferState::Failed { .. }));
+    assert_eq!(h.remote.tree("/to").len(), 1);
+
+    connected.store(false, Ordering::SeqCst);
+    h.queue.remove(&[id]);
+    h.until("an offline cleanup attempt", |_| {
+        opens.load(Ordering::SeqCst) == 2
+    })
+    .await;
+    assert_eq!(h.remote.tree("/to").len(), 1);
+
+    connected.store(true, Ordering::SeqCst);
+    h.until("the orphaned upload to be deleted", |_| {
+        h.remote.tree("/to").is_empty()
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn removing_a_failed_transfer_leaves_a_newer_transfers_stage_available() {
+    let h = Harness::new();
+    h.local.dir("/first");
+    h.local.dir("/second");
+    h.remote.dir("/to");
+    h.local.file("/first/file", vec![1; 130_000]);
+    h.local.file("/second/file", vec![2; 140_000]);
+    *h.remote.fail_write_after.lock().unwrap() = Some(65_000);
+    let first = h.upload("/first/file", "/to");
+    h.until_settled().await;
+    *h.remote.fail_write_after.lock().unwrap() = Some(75_000);
+    let second = h.upload("/second/file", "/to");
+    h.until_settled().await;
+    assert!(matches!(
+        h.transfer(second).state,
+        TransferState::Failed { .. }
+    ));
+    assert!(matches!(&h.remote.tree("/to")[0].1, Node::File(data, _) if data == &vec![2; 75_000]));
+
+    h.queue.remove(&[first]);
+    tokio::task::yield_now().await;
+    *h.remote.fail_write_after.lock().unwrap() = None;
+    let written = h.remote.written_bytes.load(Ordering::SeqCst);
+    h.queue.retry(second);
+    h.until_state(second, TransferState::Done).await;
+    assert_eq!(
+        h.remote.written_bytes.load(Ordering::SeqCst) - written,
+        65_000
+    );
+    assert_eq!(h.remote.read("/to/file"), Some(vec![2; 140_000]));
+}
+
+#[tokio::test]
+async fn two_transfers_to_one_destination_can_finish_in_order() {
+    let h = Harness::new();
+    h.local.dir("/first");
+    h.local.dir("/second");
+    h.remote.dir("/to");
+    h.local.file("/first/file", vec![1; 10_000]);
+    h.local.file("/second/file", vec![2; 10_000]);
+    let gate = Arc::new(Notify::new());
+    *h.local.pause_after_first.lock().unwrap() = Some(gate.clone());
+    let first = h.upload("/first/file", "/to");
+    h.until("the first transfer to stage its bytes", |all| {
+        all[0].bytes_done > 0
+    })
+    .await;
+    *h.local.pause_after_first.lock().unwrap() = None;
+
+    let second = h.upload("/second/file", "/to");
+    tokio::task::yield_now().await;
+    gate.notify_one();
+
+    h.until_state(first, TransferState::Done).await;
+    next_conflict(&h, second).await;
+    h.queue.answer(second, ConflictAnswer::Overwrite);
+    h.until_state(second, TransferState::Done).await;
+    assert_eq!(
+        h.remote.tree("/to"),
+        [("file".into(), Node::File(vec![2; 10_000], 0o644))]
+    );
 }
 
 #[tokio::test]

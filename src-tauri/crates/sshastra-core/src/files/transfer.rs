@@ -7,7 +7,7 @@
 //! Every change goes to the listener as a whole [`Transfer`]; byte progress
 //! is throttled to one update per transfer every [`PROGRESS_INTERVAL`].
 
-use std::collections::{BTreeMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{oneshot, watch};
 
-use super::staged_write::{Side, StagedWrite};
+use super::staged_write::{Partial, Side, StageLease, StageSlots, StagedWrite};
 use super::{join, FileKind, FileStat, FsError, FsResult, LocalFs, RemoteFs};
 use crate::ssh::BoxFuture;
 
@@ -138,6 +138,7 @@ struct Inner {
     state: Mutex<State>,
     /// Held while a conflict question is open, so the user gets one at a time.
     asking: tokio::sync::Mutex<()>,
+    stages: StageSlots,
     /// The runtime of the latest upload/download call.
     runtime: Mutex<Option<tokio::runtime::Handle>>,
 }
@@ -157,6 +158,7 @@ struct Entry {
     job: Job,
     /// Files (relative paths) finished in earlier attempts; a retry skips them.
     done: HashSet<String>,
+    partials: Vec<StageLease>,
     cancel: Option<watch::Sender<bool>>,
     answer: Option<oneshot::Sender<ConflictAnswer>>,
     last_progress: Option<Instant>,
@@ -193,6 +195,7 @@ impl TransferQueue {
                     answer_all: None,
                 }),
                 asking: tokio::sync::Mutex::new(()),
+                stages: StageSlots::default(),
                 runtime: Mutex::new(None),
             }),
         }
@@ -240,18 +243,21 @@ impl TransferQueue {
         })
     }
 
-    /// Stops a waiting or running transfer. What it already copied stays.
+    /// Cancels the transfer and discards its incomplete staging files.
+    /// What it already copied stays.
     pub fn cancel(&self, id: TransferId) {
         let mut st = self.inner.lock();
         let Some(entry) = st.entries.get_mut(&id) else {
             return;
         };
         match entry.info.state {
-            TransferState::Queued => {
+            TransferState::Queued | TransferState::Failed { .. } => {
                 entry.info.state = TransferState::Cancelled;
                 let snapshot = entry.info.clone();
+                let partials = std::mem::take(&mut entry.partials);
                 st.pending.retain(|p| *p != id);
                 drop(st);
+                self.inner.schedule_cleanup(partials);
                 self.inner.emit(&snapshot);
             }
             TransferState::Running | TransferState::Conflict { .. } => {
@@ -307,18 +313,26 @@ impl TransferQueue {
         self.inner.emit(&snapshot);
     }
 
-    /// Forgets finished transfers among `ids`; others are left alone.
+    /// Forgets finished transfers among `ids` and schedules cleanup of
+    /// their incomplete staging files. Active transfers are left alone.
     pub fn remove(&self, ids: &[TransferId]) {
         let mut st = self.inner.lock();
+        let mut partials = Vec::new();
         for id in ids {
             if st
                 .entries
                 .get(id)
                 .is_some_and(|e| e.info.state.is_finished())
             {
-                st.entries.remove(id);
+                let entry = st
+                    .entries
+                    .remove(id)
+                    .expect("a finished transfer is listed");
+                partials.extend(entry.partials);
             }
         }
+        drop(st);
+        self.inner.schedule_cleanup(partials);
     }
 
     /// Every transfer, oldest first.
@@ -360,6 +374,7 @@ impl TransferQueue {
                 info: info.clone(),
                 job,
                 done: HashSet::new(),
+                partials: Vec::new(),
                 cancel: None,
                 answer: None,
                 last_progress: None,
@@ -436,16 +451,83 @@ impl Inner {
             );
             self.emit(&snapshot);
             let inner = Arc::clone(self);
-            let runtime = self
-                .runtime
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .clone()
-                .expect("a transfer was queued on a runtime");
-            runtime.spawn(async move {
-                let result = inner.attempt(id, &job, cancelled).await;
-                inner.finish(id, result);
+            self.runtime().spawn(async move {
+                inner.run(id, &job, cancelled).await;
             });
+        }
+    }
+
+    async fn run(
+        self: &Arc<Self>,
+        id: TransferId,
+        job: &Job,
+        mut cancelled: watch::Receiver<bool>,
+    ) {
+        let remote = cancellable(&mut cancelled, async {
+            if job.direction == TransferDirection::Download {
+                check_download_name(&job.name)?;
+            }
+            (job.open)().await
+        })
+        .await;
+        let (remote, mut result) = match remote {
+            Ok(remote) => {
+                let result = self.attempt(id, job, remote.clone(), &mut cancelled).await;
+                (Some(remote), result)
+            }
+            Err(e) => (None, Err(e)),
+        };
+        if result.is_err() && *cancelled.borrow() {
+            result = Err(Stop::Cancelled);
+        }
+        if matches!(result, Ok(()) | Err(Stop::Cancelled)) {
+            let partials = {
+                let mut st = self.lock();
+                let entry = st
+                    .entries
+                    .get_mut(&id)
+                    .expect("a running transfer is listed");
+                std::mem::take(&mut entry.partials)
+            };
+            self.cleanup(partials, remote.as_deref()).await;
+        }
+        self.finish(id, result);
+    }
+
+    fn runtime(&self) -> tokio::runtime::Handle {
+        self.runtime
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+            .expect("a transfer was queued on a runtime")
+    }
+
+    fn schedule_cleanup(self: &Arc<Self>, partials: Vec<StageLease>) {
+        if !partials.is_empty() {
+            let inner = self.clone();
+            self.runtime().spawn(async move {
+                inner.cleanup(partials, None).await;
+            });
+        }
+    }
+
+    async fn cleanup(self: &Arc<Self>, partials: Vec<StageLease>, live: Option<&dyn RemoteFs>) {
+        for lease in partials {
+            if lease.discard(live).await {
+                let inner = Arc::downgrade(self);
+                self.runtime().spawn(async move {
+                    // A Connection must already exist. Retry in the
+                    // background without holding a transfer slot or dialing.
+                    let mut delay = Duration::from_secs(1);
+                    loop {
+                        tokio::time::sleep(delay).await;
+                        if inner.strong_count() == 0 || !lease.discard(None).await {
+                            break;
+                        }
+                        delay = (delay * 2).min(Duration::from_secs(30));
+                    }
+                });
+            }
         }
     }
 
@@ -490,65 +572,99 @@ impl Inner {
         &self,
         id: TransferId,
         job: &Job,
-        mut cancelled: watch::Receiver<bool>,
+        remote: Arc<dyn RemoteFs>,
+        cancelled: &mut watch::Receiver<bool>,
     ) -> Result<(), Stop> {
         let downloading = job.direction == TransferDirection::Download;
-        if downloading {
-            check_download_name(&job.name)?;
-        }
-        let remote = Side::Remote(
-            cancellable(&mut cancelled, (job.open)()).await?,
-            job.remote.clone(),
-        );
+        let remote = Side::Remote(remote, job.remote.clone());
         let local = Side::Local(Arc::clone(&self.local), job.local.clone());
         let (source, target) = match job.direction {
             TransferDirection::Upload => (local, remote),
             TransferDirection::Download => (remote, local),
         };
-        let items = cancellable(&mut cancelled, walk(&source, downloading)).await?;
+        let items = cancellable(cancelled, walk(&source, downloading)).await?;
 
         self.update(id, |entry| {
-            let files = items.iter().filter(|i| !i.is_dir);
+            let files = items
+                .iter()
+                .filter_map(|i| Some((&i.rel, i.stat.as_ref()?.size)));
             let info = &mut entry.info;
             info.files_total = files.clone().count() as u64;
-            info.bytes_total = files.clone().map(|i| i.size).sum();
-            let done = files.filter(|i| entry.done.contains(&i.rel));
+            info.bytes_total = files.clone().map(|(_, size)| size).sum();
+            let done = files.filter(|(rel, _)| entry.done.contains(*rel));
             info.files_done = done.clone().count() as u64;
-            info.bytes_done = done.map(|i| i.size).sum();
+            info.bytes_done = done.map(|(_, size)| size).sum();
         });
 
+        let mut directories = HashMap::new();
         for item in &items {
-            let file = target.at(&item.rel);
-            if item.is_dir {
-                cancellable(&mut cancelled, ensure_dir(&file)).await?;
+            let destination = target.at(&item.rel);
+            let Some(source_stat) = &item.stat else {
+                let directory = cancellable(cancelled, async {
+                    ensure_dir(&destination).await?;
+                    destination.canonicalize().await
+                })
+                .await?;
+                directories.insert(item.rel.as_str(), directory);
                 continue;
-            }
+            };
             if self.lock().entries[&id].done.contains(&item.rel) {
                 continue;
             }
-            let (original, copy) = cancellable(&mut cancelled, async {
+            let file = if item.rel.is_empty() {
+                cancellable(cancelled, destination.canonicalize_parent()).await?
+            } else {
+                let (parent, name) = item.rel.rsplit_once('/').unwrap_or(("", &item.rel));
+                directories[parent].at(name)
+            };
+            let temp = file.sibling()?;
+            let slot = self.stages.for_path(&temp);
+            let mut partial =
+                cancellable(cancelled, async { Ok::<_, FsError>(slot.lock().await) }).await?;
+            let (original, copy) = cancellable(cancelled, async {
                 match file.stat().await {
                     Ok(stat) if stat.kind == FileKind::Dir => {
-                        Err(FsError::NotADirectory(file.display()).into())
+                        Err(FsError::NotADirectory(destination.display()).into())
                     }
-                    Ok(stat) => Ok((Some(stat), self.overwrite(id, file.display()).await?)),
+                    Ok(stat) => Ok((Some(stat), self.overwrite(id, destination.display()).await?)),
                     Err(FsError::NotFound(_)) => Ok((None, true)),
                     Err(e) => Err(Stop::from(e)),
                 }
             })
             .await?;
             if copy {
-                self.copy(
-                    id,
-                    &source.at(&item.rel),
-                    &file,
-                    original,
-                    &job.open,
-                    &mut cancelled,
-                )
-                .await?;
+                let source = source.at(&item.rel);
+                let mut stage = StagedWrite::new(&file, temp, original);
+                let result = self
+                    .copy(
+                        id,
+                        &source,
+                        source_stat,
+                        &mut stage,
+                        partial.as_deref(),
+                        cancelled,
+                    )
+                    .await;
+                if result.is_ok() || stage.unprotected() {
+                    *partial = None;
+                } else if let Some(retained) = stage.partial(&source, source_stat, &job.open) {
+                    let retained = Arc::new(retained);
+                    *partial = Some(retained.clone());
+                    let mut st = self.lock();
+                    let leases = &mut st
+                        .entries
+                        .get_mut(&id)
+                        .expect("a running transfer is listed")
+                        .partials;
+                    leases.retain(|lease| !Arc::ptr_eq(&lease.slot, &slot));
+                    leases.push(StageLease {
+                        slot: slot.clone(),
+                        partial: retained,
+                    });
+                }
+                result?;
             } else {
-                self.progress(id, item.size);
+                self.progress(id, source_stat.size);
             }
             self.file_done(id, &item.rel);
         }
@@ -581,17 +697,17 @@ impl Inner {
         &self,
         id: TransferId,
         source: &Side,
-        target: &Side,
-        original: Option<FileStat>,
-        open: &OpenRemote,
+        source_stat: &FileStat,
+        stage: &mut StagedWrite<'_>,
+        previous: Option<&Partial>,
         cancelled: &mut watch::Receiver<bool>,
     ) -> Result<(), Stop> {
-        let mut reader = cancellable(cancelled, source.open_read()).await?;
+        let plan = cancellable(cancelled, stage.plan(source, source_stat, previous)).await?;
         // Allow open to finish even if cancellation comes in: the server may
         // have created the file before its reply reaches us.
-        let (stage, mut writer, offset) = StagedWrite::begin(target, original).await?;
+        let (mut reader, mut writer, offset) = stage.begin(source, plan).await?;
         if offset > 0 {
-            self.progress(id, offset);
+            self.resume_progress(id, offset);
         }
         if stage.unprotected() && !self.lock().entries[&id].info.unprotected {
             self.update(id, |entry| entry.info.unprotected = true);
@@ -609,15 +725,20 @@ impl Inner {
                 writer
                     .write_all(&buf[..n])
                     .await
-                    .map_err(|e| io_error(&target.display(), e))?;
+                    .map_err(|e| io_error(&stage.target().display(), e))?;
                 self.progress(id, n as u64);
             }
             writer
                 .shutdown()
                 .await
-                .map_err(|e| io_error(&target.display(), e))
+                .map_err(|e| io_error(&stage.target().display(), e))
         })
         .await;
+        if copied.is_err() && matches!(stage.target(), Side::Local(..)) {
+            // A local write may still be running in Tokio's blocking pool.
+            // Settle it before cleanup or another copy can use the same path.
+            let _ = writer.shutdown().await;
+        }
         drop(writer);
 
         let result = async {
@@ -632,10 +753,17 @@ impl Inner {
             Ok(())
         }
         .await;
-        if result.is_err() {
-            stage.discard(open).await;
+        if result.is_err() && stage.unprotected() {
+            stage.discard_unprotected().await;
         }
         result
+    }
+
+    fn resume_progress(&self, id: TransferId, offset: u64) {
+        self.update(id, |entry| {
+            entry.info.bytes_done += offset;
+            entry.last_progress = Some(Instant::now());
+        });
     }
 
     /// Counts `bytes` more done; tells the listener at most every
@@ -690,8 +818,8 @@ fn io_error(path: &str, e: std::io::Error) -> FsError {
 /// One thing to create at the destination.
 struct Item {
     rel: String,
-    is_dir: bool,
-    size: u64,
+    /// Source metadata for a file. A directory has no bytes to copy.
+    stat: Option<FileStat>,
 }
 
 /// Accepts only a single filename representable on the receiving filesystem.
@@ -735,8 +863,7 @@ async fn walk(source: &Side, downloading: bool) -> FsResult<Vec<Item>> {
         FileKind::File => {
             return Ok(vec![Item {
                 rel: String::new(),
-                is_dir: false,
-                size: root.size,
+                stat: Some(root),
             }])
         }
         FileKind::Dir => {}
@@ -754,8 +881,7 @@ async fn walk(source: &Side, downloading: bool) -> FsResult<Vec<Item>> {
         entries.sort_by(|a, b| a.name.cmp(&b.name));
         items.push(Item {
             rel: dir.clone(),
-            is_dir: true,
-            size: 0,
+            stat: None,
         });
         for entry in entries {
             if downloading {
@@ -770,15 +896,18 @@ async fn walk(source: &Side, downloading: bool) -> FsResult<Vec<Item>> {
                 (FileKind::Dir, _) => dirs.push(rel),
                 (FileKind::File, _) => items.push(Item {
                     rel,
-                    is_dir: false,
-                    size: entry.size,
+                    stat: Some(FileStat {
+                        kind: FileKind::File,
+                        size: entry.size,
+                        modified: entry.modified,
+                        permissions: entry.permissions,
+                    }),
                 }),
                 (FileKind::Symlink, Some(FileKind::File)) => {
-                    let size = source.at(&rel).stat().await?.size;
+                    let stat = source.at(&rel).stat().await?;
                     items.push(Item {
                         rel,
-                        is_dir: false,
-                        size,
+                        stat: Some(stat),
                     });
                 }
                 _ => {}
