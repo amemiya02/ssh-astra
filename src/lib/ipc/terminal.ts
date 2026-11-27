@@ -45,6 +45,17 @@ export type ShellIntegrationEvent =
 
 export type TerminalOutputKind = "log" | "recording";
 
+interface AgentScreenRequest {
+  requestId: number;
+  scrollbackLines: number;
+}
+
+export interface AgentScreenSnapshot {
+  screen: string;
+  scrollback: string;
+  truncated: boolean;
+}
+
 export type TerminalOutputStatus =
   | { state: "active" }
   | { state: "stopped" }
@@ -58,6 +69,7 @@ export type TerminalEvent =
   | { type: "cwd"; path: string }
   | { type: "shellIntegration"; event: ShellIntegrationEvent }
   | { type: "terminalLog" | "recording"; status: TerminalOutputStatus }
+  | { type: "agentScreen"; request: AgentScreenRequest }
   | { type: "localShellFallback" }
   | { type: "exit"; code: number | null };
 
@@ -70,6 +82,7 @@ export type TerminalMessage =
   | { shellIntegration: ShellIntegrationEvent }
   | { terminalLog: TerminalOutputStatus }
   | { recording: TerminalOutputStatus }
+  | { agentScreen: AgentScreenRequest }
   | { localShellFallback: true }
   | { exitCode: number | null };
 
@@ -81,6 +94,7 @@ export function decodeTerminalMessage(message: TerminalMessage): TerminalEvent {
   if ("shellIntegration" in message) return { type: "shellIntegration", event: message.shellIntegration };
   if ("terminalLog" in message) return { type: "terminalLog", status: message.terminalLog };
   if ("recording" in message) return { type: "recording", status: message.recording };
+  if ("agentScreen" in message) return { type: "agentScreen", request: message.agentScreen };
   if ("localShellFallback" in message) return { type: "localShellFallback" };
   return { type: "exit", code: message.exitCode };
 }
@@ -132,6 +146,10 @@ export function reportTerminalCwd(id: TerminalId): Promise<void> {
 
 export function setTerminalTitle(id: TerminalId, title: string): Promise<void> {
   return invoke("terminal_set_title", { id, title });
+}
+
+export function answerAgentScreen(requestId: number, snapshot: AgentScreenSnapshot): Promise<void> {
+  return invoke("terminal_agent_screen", { requestId, snapshot });
 }
 
 export function closeTerminal(id: TerminalId): Promise<void> {
