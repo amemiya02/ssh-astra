@@ -5514,6 +5514,7 @@ dependencies = [
  "dunce",
  "encoding_rs",
  "hmac",
+ "httparse",
  "keyring",
  "libc",
  "log",

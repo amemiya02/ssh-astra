@@ -3,8 +3,8 @@ import { forwardKind } from "./kinds";
 
 /**
  * The Port forward form's raw input values. `targetHost`/`targetPort` are where a connection
- * goes: as the server sees it for a local forward, from this machine for a remote one; a dynamic
- * forward has none.
+ * goes: as the server sees it for a local forward, from this machine for a remote one. Proxy
+ * clients choose their own targets.
  */
 export interface ForwardFormValues {
   type: ForwardType;
@@ -78,7 +78,7 @@ const hostPort = (host: string, port: number) => (host.includes(":") ? `[${host}
 
 /**
  * The two ends of a rule, as `host:port` text: where it listens (on the server for a remote
- * forward) and where connections go (`null` for a dynamic forward, whose clients choose).
+ * forward) and where connections go (`null` for proxies, whose clients choose).
  */
 export function describeForward(rule: ForwardDraft): { from: string; to: string | null } {
   const bind = rule.bindAddress === "127.0.0.1" ? "localhost" : rule.bindAddress;

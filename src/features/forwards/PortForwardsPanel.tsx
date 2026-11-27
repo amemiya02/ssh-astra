@@ -11,7 +11,7 @@ import { ConnectPromptDialog } from "@/features/connect/ConnectPromptDialog";
 import { RowContextMenu, RowMoreMenu, type MenuEntry } from "@/features/hosts/RowMenu";
 import { useHosts, hostsStore } from "@/features/hosts/hostsStore";
 import { readCommandError, refusal, type CommandError, type ConnectPrompt, type PromptAnswer } from "@/lib/ipc/connect";
-import type { ForwardId, ForwardStatus, ForwardType, PortForward } from "@/lib/ipc/forwards";
+import type { ForwardId, ForwardStatus, PortForward } from "@/lib/ipc/forwards";
 import type { Host } from "@/lib/ipc/hosts";
 import { cn } from "@/lib/utils";
 import {
@@ -26,6 +26,7 @@ import {
   type ForwardFormValues,
 } from "./forwardForm";
 import { forwardsStore, statusOf, useForwards } from "./forwardsStore";
+import { forwardKind, forwardTypes } from "./kinds";
 
 interface PendingPrompt {
   prompt: ConnectPrompt;
@@ -303,34 +304,7 @@ function without<V>(record: Record<string, V>, key: string): Record<string, V> {
   return rest;
 }
 
-const typeOptions: readonly ForwardType[] = ["local", "remote", "dynamic"];
-
-type TextField = "label" | "bindPort" | "targetHost" | "targetPort" | "bindAddress";
-
-/** The form's text fields for each kind, in order, with their copy; a dynamic forward has no target. */
-const layouts = {
-  local: [
-    { field: "label", label: "forwards.fields.label" },
-    { field: "bindPort", label: "forwards.fieldsByType.local.bindPort" },
-    { field: "targetHost", label: "forwards.fieldsByType.local.targetHost", hint: "forwards.hints.local.targetHost" },
-    { field: "targetPort", label: "forwards.fieldsByType.local.targetPort" },
-    { field: "bindAddress", label: "forwards.fieldsByType.local.bindAddress", hint: "forwards.hints.local.bindAddress" },
-  ],
-  remote: [
-    { field: "label", label: "forwards.fields.label" },
-    { field: "bindPort", label: "forwards.fieldsByType.remote.bindPort" },
-    { field: "targetHost", label: "forwards.fieldsByType.remote.targetHost", hint: "forwards.hints.remote.targetHost" },
-    { field: "targetPort", label: "forwards.fieldsByType.remote.targetPort" },
-    { field: "bindAddress", label: "forwards.fieldsByType.remote.bindAddress", hint: "forwards.hints.remote.bindAddress" },
-  ],
-  dynamic: [
-    { field: "label", label: "forwards.fields.label" },
-    { field: "bindPort", label: "forwards.fieldsByType.dynamic.bindPort" },
-    { field: "bindAddress", label: "forwards.fieldsByType.dynamic.bindAddress", hint: "forwards.hints.dynamic.bindAddress" },
-  ],
-} as const satisfies Record<ForwardType, readonly { field: TextField; label: string; hint?: string }[]>;
-
-const numeric = new Set<TextField>(["bindPort", "targetPort"]);
+const numeric = new Set(["bindPort", "targetPort"]);
 
 interface ForwardFormProps {
   initial: ForwardFormValues;
@@ -379,7 +353,7 @@ function ForwardForm({ initial, isNew = false, running = false, onSave, onCancel
           <SegmentedControl
             label={t("forwards.fields.type")}
             value={type}
-            options={typeOptions.map((value) => ({ value, label: t(`forwards.kinds.${value}`) }))}
+            options={forwardTypes.map((value) => ({ value, label: t(`forwards.kinds.${value}`) }))}
             onChange={(next) => {
               setErrors({});
               setValues((v) => ({ ...v, type: next }));
@@ -389,16 +363,14 @@ function ForwardForm({ initial, isNew = false, running = false, onSave, onCancel
         </div>
       )}
       <div className="grid grid-cols-2 gap-3">
-        {layouts[type].map((layout) => {
-          const field: TextField = layout.field;
+        {forwardKind(type).layout.map(({ field, label, hint: hintKey }) => {
           const id = `forward-form-${field}`;
           const error = field === "label" || field === "bindAddress" ? undefined : errors[field];
-          const hint = "hint" in layout ? t(layout.hint) : null;
-          const label = t(layout.label);
+          const hint = hintKey ? t(hintKey) : null;
           return (
             <div key={field} className={cn("grid content-start gap-1.5", (field === "label" || hint) && "col-span-2")}>
               <Label htmlFor={id} className="text-xs">
-                {label}
+                {t(label)}
               </Label>
               <Input
                 id={id}

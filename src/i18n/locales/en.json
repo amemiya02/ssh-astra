@@ -575,9 +575,9 @@
   },
   "forwards": {
     "title": "Port forwards",
-    "lead": "Forward traffic through {{host}}'s Connection: reach its network from here, expose a port of this machine on it, or use it as a SOCKS proxy. A running Port forward keeps the Connection open, even with no Terminal.",
+    "lead": "Forward traffic through {{host}}'s Connection: reach its network from here, expose a port of this machine on it, or use it as a SOCKS or HTTP proxy. A running Port forward keeps the Connection open, even with no Terminal.",
     "emptyTitle": "No Port forwards yet",
-    "emptyBody": "Add a Port forward to reach a service behind this Host (such as a database), expose a local port on it, or browse through it as a SOCKS proxy.",
+    "emptyBody": "Add a Port forward to reach a service behind this Host (such as a database), expose a local port on it, or use it as a SOCKS or HTTP proxy.",
     "add": "Add Port forward",
     "newTitle": "New Port forward",
     "editTitle": "Edit Port forward",
@@ -627,7 +627,7 @@
         "targetPort": "Local port",
         "bindAddress": "Listen address on the Host"
       },
-      "dynamic": {
+      "proxy": {
         "bindPort": "Local port",
         "bindAddress": "Listen address"
       }
@@ -641,24 +641,27 @@
         "targetHost": "As this machine sees it, for example 127.0.0.1.",
         "bindAddress": "Leave blank to accept connections from the Host itself only (localhost)."
       },
-      "dynamic": {
+      "proxy": {
         "bindAddress": "Leave blank to accept connections from this machine only (127.0.0.1)."
       }
     },
     "kinds": {
       "local": "Local",
       "remote": "Remote",
-      "dynamic": "SOCKS"
+      "dynamic": "SOCKS",
+      "http": "HTTP"
     },
     "kindHints": {
       "local": "A port on this machine that reaches an address on the Host's side (ssh -L).",
       "remote": "A port on the Host that reaches an address on this machine's side (ssh -R).",
-      "dynamic": "A SOCKS5 proxy on this machine; the Host opens each connection (ssh -D)."
+      "dynamic": "A SOCKS5 proxy on this machine; the Host opens each connection (ssh -D).",
+      "http": "An HTTP CONNECT proxy on this machine. The Host opens the destination requested by each client."
     },
     "ends": {
       "local": "Local",
       "remote": "Host",
-      "dynamic": "SOCKS5"
+      "dynamic": "SOCKS5",
+      "http": "HTTP CONNECT"
     },
     "autoStartHint": "Runs whenever this Host connects: opening a Terminal, starting another Port forward, or Connect only.",
     "autoStartBadge": "Auto",
@@ -719,6 +722,7 @@
     "forwardsLocal": "{{from}} → {{to}}",
     "forwardsRemote": "on the Host {{from}} → {{to}}",
     "forwardsDynamic": "SOCKS {{from}}",
+    "forwardsHttp": "HTTP CONNECT {{from}}",
     "transfers": "Transfers: {{count}}",
     "transfersSpeed": "Transfers: {{count}} · {{speed}}/s"
   },

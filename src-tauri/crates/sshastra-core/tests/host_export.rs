@@ -180,6 +180,50 @@ fn exports_and_imports_bookmarks_with_each_host() {
 }
 
 #[test]
+fn exports_and_imports_an_http_forward_with_its_listening_end_and_auto_start() {
+    let (source_dir, mut source) = store();
+    let web = source.upsert(None, draft("web")).unwrap();
+    let saved = source
+        .save_forward(
+            &web.id,
+            None,
+            ForwardDraft {
+                label: " web proxy ".into(),
+                auto_start: true,
+                kind: ForwardKind::Http {
+                    bind_address: " ".into(),
+                    bind_port: 8080,
+                },
+            },
+        )
+        .unwrap();
+    let file = source_dir.path().join("export.json");
+    source.export_to(&file).unwrap();
+    let exported: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    assert_eq!(
+        exported["hosts"][0]["forwards"][0],
+        serde_json::json!({
+            "id": saved.id,
+            "type": "http",
+            "label": "web proxy",
+            "autoStart": true,
+            "bindAddress": "127.0.0.1",
+            "bindPort": 8080
+        })
+    );
+
+    let (target_dir, mut target) = store();
+    target.import_from(&file).unwrap();
+    let reopened = HostStore::open(target_dir.path().join("hosts.json")).unwrap();
+    let imported = &reopened.list()[0].forwards[0];
+    assert_ne!(imported.id, saved.id);
+    assert_eq!(imported.label, saved.label);
+    assert_eq!(imported.auto_start, saved.auto_start);
+    assert_eq!(imported.kind, saved.kind);
+}
+
+#[test]
 fn exporting_then_importing_into_an_empty_store_gives_the_same_host_list() {
     let (_a, source) = populated();
     let file = source.export();
@@ -209,7 +253,7 @@ fn exporting_then_importing_into_an_empty_store_gives_the_same_host_list() {
         exported_web["tags"],
         serde_json::json!(["Production", "East Coast"])
     );
-    assert_eq!(exported["version"], 20);
+    assert_eq!(exported["version"], 21);
     assert_eq!(exported_web["icon"], "server");
     assert_eq!(exported_web["color"], "magenta");
     assert_eq!(renamed(&source.tree(), &imported), imported);

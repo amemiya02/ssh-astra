@@ -1,6 +1,5 @@
-//! PortForwarder: local, remote and dynamic (SOCKS5) forwards carry real
-//! data through a Connection (to the echo server in Docker, or to one on this
-//! machine), and report their state.
+//! PortForwarder: each kind carries real data through a Connection (to the
+//! echo server in Docker, or to one on this machine) and reports its state.
 
 mod support;
 
@@ -18,7 +17,7 @@ use sshastra_core::ssh::{
     Prompter, Secret,
 };
 use support::{Service, Sshd};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 
 // Dropping a Connection on `flaky` also drops any others using that service.
@@ -399,6 +398,124 @@ fn dynamic(id: &str, bind_port: u16) -> PortForward {
             bind_port,
         },
     }
+}
+
+fn http(bind_port: u16) -> PortForward {
+    PortForward {
+        id: ForwardId::from("http".to_owned()),
+        label: String::new(),
+        auto_start: false,
+        kind: ForwardKind::Http {
+            bind_address: "127.0.0.1".into(),
+            bind_port,
+        },
+    }
+}
+
+async fn http_reply(socket: &mut BufReader<TcpStream>) -> String {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let mut head = String::new();
+        loop {
+            let mut line = String::new();
+            assert_ne!(socket.read_line(&mut line).await.unwrap(), 0);
+            head.push_str(&line);
+            if line == "\r\n" {
+                return head;
+            }
+        }
+    })
+    .await
+    .expect("the proxy replied in time")
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_http_forward_connects_to_the_echo_service_and_preserves_tunnel_bytes() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let (host, connection, _dir) = connect(&sshd).await;
+    let forwarder = PortForwarder::new();
+    let port = free_port();
+    let rule = http(port);
+    forwarder.start(connection, &host.id, &rule).await.unwrap();
+    assert_eq!(forwarder.status(&rule.id), ForwardStatus::Running);
+
+    let (echo_host, echo_port) = support::ECHO;
+    let mut socket = BufReader::new(TcpStream::connect(("127.0.0.1", port)).await.unwrap());
+    let mut request = format!(
+        "CONNECT {echo_host}:{echo_port} HTTP/1.1\r\nHost: {echo_host}:{echo_port}\r\n\r\n"
+    )
+    .into_bytes();
+    let first = b"\x00\xffearly data\r\n";
+    request.extend_from_slice(first);
+    socket.write_all(&request).await.unwrap();
+    assert!(http_reply(&mut socket).await.starts_with("HTTP/1.1 200 "));
+    let second = b"more data";
+    socket.write_all(second).await.unwrap();
+    let mut back = vec![0; first.len() + second.len()];
+    tokio::time::timeout(Duration::from_secs(10), socket.read_exact(&mut back))
+        .await
+        .expect("the echo came back in time")
+        .unwrap();
+    assert_eq!(back, [first.as_slice(), second.as_slice()].concat());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_http_forward_rejects_other_methods_and_invalid_connect_requests() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let (host, connection, _dir) = connect(&sshd).await;
+    let forwarder = PortForwarder::new();
+    let port = free_port();
+    let rule = http(port);
+    forwarder.start(connection, &host.id, &rule).await.unwrap();
+
+    let (echo_host, echo_port) = support::ECHO;
+    let get = format!(
+        "GET http://{echo_host}:{echo_port}/ HTTP/1.1\r\nHost: {echo_host}:{echo_port}\r\n\r\n"
+    );
+    let body = format!("CONNECT {echo_host}:{echo_port} HTTP/1.1\r\nContent-Length: 1\r\n\r\nx");
+    let oversized = format!(
+        "CONNECT {echo_host}:{echo_port} HTTP/1.1\r\nX-Long: {}\r\n\r\n",
+        "x".repeat(16_384)
+    );
+    for (request, code) in [(get, "405"), (body, "400"), (oversized, "431")] {
+        let mut socket = BufReader::new(TcpStream::connect(("127.0.0.1", port)).await.unwrap());
+        socket.write_all(request.as_bytes()).await.unwrap();
+        let reply = http_reply(&mut socket).await;
+        assert!(reply.starts_with(&format!("HTTP/1.1 {code} ")), "{reply}");
+        if code == "405" {
+            assert!(reply.contains("\r\nAllow: CONNECT\r\n"));
+        }
+    }
+
+    for target in [
+        "echo",
+        "echo:0",
+        "echo:65536",
+        "echo:+7777",
+        "echo:7777/path",
+        "http://echo:7777",
+        "user@echo:7777",
+        "echo:7777?extra",
+        "[echo]:7777",
+        "::1:7777",
+    ] {
+        let mut socket = BufReader::new(TcpStream::connect(("127.0.0.1", port)).await.unwrap());
+        let request = format!("CONNECT {target} HTTP/1.1\r\nHost: {echo_host}:{echo_port}\r\n\r\n");
+        socket.write_all(request.as_bytes()).await.unwrap();
+        let reply = http_reply(&mut socket).await;
+        assert!(reply.starts_with("HTTP/1.1 400 "), "{target}: {reply}");
+    }
+
+    let mut socket = BufReader::new(TcpStream::connect(("127.0.0.1", port)).await.unwrap());
+    socket
+        .write_all(b"CONNECT 127.0.0.1:1 HTTP/1.0\r\n\r\n")
+        .await
+        .unwrap();
+    assert!(http_reply(&mut socket).await.starts_with("HTTP/1.1 502 "));
+    assert_eq!(forwarder.status(&rule.id), ForwardStatus::Running);
 }
 
 /// Where a SOCKS5 CONNECT goes, as the client names it.

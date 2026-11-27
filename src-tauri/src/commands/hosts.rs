@@ -145,7 +145,10 @@ pub fn host_delete(
     hosts.with(|store| {
         store.delete(&id)?;
         if let Err(error) = history.clear(&id) {
-            log::warn!("Could not remove Command history for a deleted Host: {:?}", error.kind());
+            log::warn!(
+                "Could not remove Command history for a deleted Host: {:?}",
+                error.kind()
+            );
         }
         Ok(())
     })?;
