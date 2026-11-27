@@ -2,10 +2,11 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { settingsPageSections } from "@/features/settings/sections";
 import { startI18n } from "@/i18n";
 import type { FileEntry, Listing } from "@/lib/ipc/files";
-import { setSetting } from "@/lib/storage";
-import { FileBrowser } from "./FileBrowser";
+import { localStorageBackend, openSettings, setSetting, startSettings } from "@/lib/storage";
+import { FileBrowser, type FileExchange } from "./FileBrowser";
 import { PermissionsDialog } from "./FileOperationDialogs";
 import { createFileBrowserStore, type FilesApi } from "./fileBrowserStore";
 import { filesSetting } from "./file-prefs";
@@ -26,6 +27,7 @@ const listings: Record<string, Listing> = {
     entries: [entry("sub", "dir"), ...Array.from({ length: 10_000 }, (_, i) => entry(`f${String(i).padStart(5, "0")}`))],
   },
   "/big/sub": { path: "/big/sub", entries: [entry("inner.txt")] },
+  "/counts": { path: "/counts", entries: [entry(".env"), entry("a.txt"), entry("b.txt")] },
 };
 
 const api: FilesApi = {
@@ -60,13 +62,18 @@ beforeAll(() => {
 
 afterEach(() => {
   vi.clearAllMocks();
-  setSetting(filesSetting, filesSetting.defaults);
   act(() => root?.unmount());
+  setSetting(filesSetting, filesSetting.defaults);
   container.remove();
 });
 
-async function render() {
-  const store = createFileBrowserStore(api, "host");
+async function render({ showSettings, exchange, startPath }: {
+  showSettings?: boolean;
+  exchange?: FileExchange;
+  startPath?: string;
+} = {}) {
+  const store = createFileBrowserStore(api, "host", startPath);
+  const FilesSection = settingsPageSections.find((section) => section.id === "files")?.Component;
   await store.getState().connect();
   container = document.createElement("div");
   document.body.append(container);
@@ -74,7 +81,8 @@ async function render() {
   await act(async () =>
     root!.render(
       <TooltipProvider>
-        <FileBrowser store={store} hostName="web-1" />
+        <FileBrowser store={store} hostName="web-1" exchange={exchange} />
+        {showSettings && FilesSection && <FilesSection />}
       </TooltipProvider>,
     ),
   );
@@ -108,6 +116,7 @@ describe("FileBrowser", () => {
     expect(rows()[0]!.textContent).toContain("sub");
     expect(rows()[1]!.textContent).toContain("f00000");
     expect(rows()[1]!.textContent).toContain("2 KB");
+    expect(container.querySelector('[role="status"]')!.textContent).toContain("10,001 items");
   });
 
   it("selects on click and opens a folder on double-click", async () => {
@@ -247,6 +256,60 @@ describe("FileBrowser", () => {
 
     expect(nameHeader.parentElement!.getAttribute("aria-sort")).toBe("descending");
     expect(rows()[1]!.textContent).toContain("f09999");
+  });
+
+  it("updates both optional columns from Settings and restores their saved visibility", async () => {
+    const backend = localStorageBackend(window.localStorage, "test.files.settings");
+    await backend.save("files", { showHidden: true, sort: { key: "permissions", direction: "desc" } });
+    await startSettings(backend);
+    const { rows } = await render({ showSettings: true });
+    const headers = () => [...container.querySelectorAll('[role="columnheader"]')].map((cell) => cell.textContent);
+    const choose = (label: string, option: string) => [...container.querySelectorAll<HTMLButtonElement>(
+      `[role="radiogroup"][aria-label="${label}"] [role="radio"]`,
+    )].find((button) => button.textContent === option)!.click();
+
+    expect(headers()).toEqual(["Name", "Size", "Modified"]);
+    expect(container.querySelector('[role="columnheader"][aria-sort="ascending"]')?.textContent).toBe("Name");
+    act(() => choose("Show permissions column", "On"));
+    expect(headers()).toEqual(["Name", "Size", "Modified", "Permissions"]);
+    expect(container.querySelector('[role="columnheader"][aria-sort="descending"]')?.textContent).toBe("Permissions");
+    expect(rows()[1]!.textContent).toContain("-rw-r--r--");
+    await act(async () => choose("Show modified column", "Off"));
+    expect(headers()).toEqual(["Name", "Size", "Permissions"]);
+    expect(rows()[1]!.querySelectorAll('[role="gridcell"]')).toHaveLength(3);
+
+    const reopened = await openSettings(backend);
+    expect(reopened.get(filesSetting)).toEqual({
+      showHidden: true,
+      sort: { key: "permissions", direction: "desc" },
+      showModified: false,
+      showPermissions: true,
+    });
+  });
+
+  it("counts the displayed entries and visible selection through filtering", async () => {
+    const { rows } = await render({ exchange: { side: "local" }, startPath: "/counts" });
+    const counts = () => [...container.querySelectorAll('[role="status"] span')].map((span) => span.textContent);
+    const select = (name: string, ctrlKey = false) => act(() => rows()
+      .find((row) => row.querySelector('[role="gridcell"]')?.textContent === name)!
+      .dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey })));
+    const filter = container.querySelector<HTMLInputElement>('input[type="search"]')!;
+    const showHidden = (value: boolean) => act(() => setSetting(filesSetting, { ...filesSetting.defaults, showHidden: value }));
+
+    expect(counts()).toEqual(["2 items", "0 selected"]);
+    showHidden(true);
+    expect(counts()).toEqual(["3 items", "0 selected"]);
+    select(".env");
+    select("a.txt", true);
+    expect(counts()).toEqual(["3 items", "2 selected"]);
+    showHidden(false);
+    expect(counts()).toEqual(["2 items", "1 selected", "1 hidden selection"]);
+    act(() => type(filter, "b.txt"));
+    expect(counts()).toEqual(["1 item", "0 selected", "2 hidden selections"]);
+    select("b.txt");
+    expect(counts()).toEqual(["1 item", "1 selected"]);
+    act(() => type(filter, "missing"));
+    expect(counts()).toEqual(["0 items", "0 selected", "1 hidden selection"]);
   });
 });
 

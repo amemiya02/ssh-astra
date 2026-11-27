@@ -2,6 +2,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import type { ComponentType } from "react";
 import { ConnectionSection } from "./connection-section";
 import { DiagnosticsSection } from "./diagnostics-section";
+import { FilesSection } from "./files-section";
 import { AppearanceSection, LanguageSection } from "./general-sections";
 import { TerminalSection } from "./terminal-section";
 import { TransfersSection } from "./transfers-section";
@@ -12,7 +13,7 @@ import { WorkspaceSection } from "./workspace-section";
 export interface SettingsPageSection {
   id: string;
   /** i18n key of the section heading, under `settings.sections`. */
-  title: "appearance" | "workspace" | "language" | "terminal" | "connection" | "transfers" | "updates" | "diagnostics";
+  title: "appearance" | "workspace" | "language" | "terminal" | "files" | "connection" | "transfers" | "updates" | "diagnostics";
   /** Renders the section's `SettingRow`s; reads and writes its settings with `useSetting`. */
   Component: ComponentType;
 }
@@ -27,6 +28,7 @@ export const settingsPageSections: readonly SettingsPageSection[] = [
   { id: "appearance", title: "appearance", Component: AppearanceSection },
   { id: "workspace", title: "workspace", Component: WorkspaceSection },
   { id: "terminal", title: "terminal", Component: TerminalSection },
+  { id: "files", title: "files", Component: FilesSection },
   { id: "connection", title: "connection", Component: ConnectionSection },
   { id: "transfers", title: "transfers", Component: TransfersSection },
   { id: "language", title: "language", Component: LanguageSection },

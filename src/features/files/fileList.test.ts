@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { FileEntry } from "@/lib/ipc/files";
 import {
   childPath,
+  fileIconKind,
   formatPermissions,
   formatSize,
   isDirLike,
@@ -86,6 +87,46 @@ describe("shownEntries", () => {
     ]);
     const modes = [file("x", { permissions: 0o600 }), file("y", { permissions: 0o777 })];
     expect(names(shownEntries(modes, { key: "permissions", direction: "desc" }, false))).toEqual(["y", "x"]);
+  });
+
+  it.each(["modified", "permissions"] as const)("orders %s numerically in either direction", (key) => {
+    const rows = [
+      file("tie10", { [key]: 8 }),
+      file("unknown", { [key]: null }),
+      file("largest", { [key]: 70 }),
+      dir("folder", { [key]: null }),
+      file("tie2", { [key]: 8 }),
+    ];
+    expect(names(shownEntries(rows, { key, direction: "asc" }, false))).toEqual([
+      "folder", "unknown", "tie2", "tie10", "largest",
+    ]);
+    expect(names(shownEntries(rows, { key, direction: "desc" }, false))).toEqual([
+      "folder", "largest", "tie2", "tie10", "unknown",
+    ]);
+  });
+});
+
+describe("fileIconKind", () => {
+  it("uses the entry kind before the filename extension", () => {
+    expect(fileIconKind(dir("folder.png"))).toBe("folder");
+    expect(fileIconKind(file("alias.png", { kind: "symlink", linkTarget: "dir" }))).toBe("folderLink");
+    expect(fileIconKind(file("alias.png", { kind: "symlink", linkTarget: "file" }))).toBe("fileLink");
+    expect(fileIconKind(file("dangling.zip", { kind: "symlink" }))).toBe("fileLink");
+    expect(fileIconKind(file("socket.js", { kind: "other" }))).toBe("file");
+  });
+
+  it.each([
+    ["backup.TAR.GZ", "archive"],
+    [".preview.PnG", "image"],
+    ["run.sh", "code"],
+    ["report.md", "document"],
+    ["recording.mp4", "media"],
+    ["audio.FLAC", "media"],
+    ["file.unknown", "file"],
+    ["README", "file"],
+    [".zip", "file"],
+  ])("maps %s to %s", (name, icon) => {
+    expect(fileIconKind(file(name))).toBe(icon);
   });
 });
 

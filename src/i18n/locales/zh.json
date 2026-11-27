@@ -207,6 +207,11 @@
       "permissions": "权限"
     },
     "emptyFolder": "这个文件夹是空的。",
+    "entryCount_one": "{{count, number}} 项",
+    "entryCount_other": "{{count, number}} 项",
+    "selectedCount": "已选 {{count, number}} 项",
+    "hiddenSelectedCount_one": "{{count, number}} 项选中内容已隐藏",
+    "hiddenSelectedCount_other": "{{count, number}} 项选中内容已隐藏",
     "connecting": "正在连接…",
     "disconnected": "与 {{host}} 的连接已断开。",
     "retry": "重试",
@@ -596,6 +601,7 @@
       "workspace": "工作区",
       "appearance": "外观",
       "terminal": "终端",
+      "files": "文件",
       "connection": "连接",
       "language": "语言",
       "transfers": "传输",
@@ -665,6 +671,10 @@
         "label": "Shell 集成",
         "description": "此后新开的远程 bash、zsh 终端在你 cd 时通知文件面板，让它跟着切换目录。关闭后所有文件面板立即停止跟随，也不会向新的 shell 输入任何内容；「同步到终端目录」仍然可用。"
       }
+    },
+    "files": {
+      "showModified": "显示修改时间列",
+      "showPermissions": "显示权限列"
     },
     "connection": {
       "keepalive": {
