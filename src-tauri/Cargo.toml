@@ -43,6 +43,8 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 arboard = "3.7"
+cap-fs-ext = "=4.0.3"
+cap-std = "=4.0.3"
 chrono = { version = "0.4", default-features = false, features = ["now"] }
 log = { workspace = true, features = ["std"] }
 png = "0.18"
@@ -67,6 +69,7 @@ whoami = { version = "2", default-features = false, features = ["std"] }
 tauri-plugin-wdio-webdriver = { version = "=1.5.1", optional = true }
 
 [target.'cfg(any(windows, target_os = "macos", target_os = "linux"))'.dependencies]
+percent-encoding = "2"
 tauri-plugin-notification = "=2.8.0"
 tauri-plugin-single-instance = "2.5.5"
 

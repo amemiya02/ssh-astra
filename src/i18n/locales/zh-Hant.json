@@ -223,7 +223,7 @@
     "connectFailed": "無法連線到 {{name}}：{{message}}",
     "import": {
       "action": "匯入 Host…",
-      "keywords": "ssh config openssh csv 匯入 putty mobaxterm mxtsessions",
+      "keywords": "ssh config openssh csv 匯入 putty mobaxterm mxtsessions xshell xsh",
       "pickerTitle": "匯入 Host",
       "chooseSource": "選擇要從哪裡匯入 Host。",
       "sshConfig": {
@@ -240,6 +240,14 @@
         "title": "CSV 匯入結果",
         "nothing": "CSV 檔案中沒有可匯入的 Host。",
         "error": "無法匯入 CSV 檔案：{{message}}"
+      },
+      "xshell": {
+        "action": "Xshell 工作階段資料夾…",
+        "help": "選擇包含 .xsh 檔案的資料夾。子資料夾將匯入為群組。",
+        "chooseFolder": "選擇 Xshell 工作階段資料夾",
+        "title": "Xshell 匯入結果",
+        "nothing": "Xshell 資料夾中沒有可匯入的 Host。",
+        "error": "無法匯入 Xshell 資料夾：{{message}}"
       },
       "mobaxterm": {
         "action": "MobaXterm 工作階段…",
@@ -295,7 +303,17 @@
         "mobaxtermInvalidGateway": "MobaXterm SSH 跳板主機設定無效。",
         "mobaxtermDefaultUser": "MobaXterm 未為此 Host 或其跳板主機儲存使用者名稱，已使用本機使用者名稱。",
         "mobaxtermKeyPath": "MobaXterm 的一個私密金鑰路徑無法匯入。",
-        "mobaxtermUnsupportedSettings": "部分 MobaXterm 設定無法匯入。"
+        "mobaxtermUnsupportedSettings": "部分 MobaXterm 設定無法匯入。",
+        "xshellCredentials": "已略過儲存的憑證。",
+        "xshellFile": "無法讀取此 Xshell 工作階段，或其連線資訊無效。",
+        "xshellFolderLimit": "Xshell 資料夾超過匯入大小或巢狀深度限制。",
+        "xshellInvalidPort": "連接埠必須是 1 到 65535 之間的整數。",
+        "xshellUnsupportedSession": "此 Xshell 工作階段使用的通訊協定並非 SSH 或 SFTP。",
+        "xshellDefaultUser": "Xshell 未儲存使用者名稱，已使用本機使用者名稱。",
+        "xshellKeyPath": "請在 Host 編輯器中選擇可存取的私密金鑰。",
+        "xshellUnsupportedSettings": "部分 Xshell 設定無法匯入。",
+        "xshellUnsupportedProxy": "無法匯入此 Xshell 工作階段的代理伺服器。",
+        "xshellInvalidJumpHost": "Xshell 跳板主機設定不完整或無效。"
       }
     },
     "transfer": {
@@ -1034,6 +1052,7 @@
       "hostKeyDeclined": "未信任主機金鑰，已取消連線。",
       "hostKeyRevoked": "主機金鑰已撤銷，連線已封鎖。",
       "authenticationFailed": "身分驗證失敗。",
+      "sshLinkTargetChanged": "確認 SSH 連結後，已儲存的主機已變更。請重新開啟連結並確認目標。",
       "proxyInvalidConfiguration": "請檢查對外代理設定",
       "proxyInvalidTarget": "此代理不支援該主機位址",
       "proxyUnreachable": "無法連線到對外代理",
@@ -1532,6 +1551,12 @@
     "home": "首頁",
     "hosts": "Host 清單",
     "forwards": "連接埠轉送"
+  },
+  "sshLink": {
+    "title": "開啟 SSH 連結？",
+    "savedHost": "使用已儲存的主機「{{name}}」連線？",
+    "quickConnect": "使用快速連線？",
+    "connect": "連線"
   },
   "quickConnect": {
     "action": "快速連線",

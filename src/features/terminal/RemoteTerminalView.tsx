@@ -22,6 +22,7 @@ import {
 } from "@/lib/ipc/connect";
 import { remoteHomeDirectory } from "@/lib/ipc/files";
 import { isTemporaryHost, type Host } from "@/lib/ipc/hosts";
+import type { SshLinkTarget } from "@/lib/ipc/ssh-links";
 import { reconnectTerminal, setTerminalTitle, type ConnectionState, type TerminalId } from "@/lib/ipc/terminal";
 import { transferHost } from "@/lib/ipc/transfers";
 import { useSetting } from "@/lib/storage";
@@ -56,6 +57,7 @@ interface RemoteTerminalViewProps {
   paneId: string;
   host: Host;
   initialCwd?: string;
+  expectedTarget?: SshLinkTarget;
   /** Whether this is the focused pane of the shown tab. */
   active?: boolean;
   /** Non-focused splits in the shown tab can also receive dropped files. */
@@ -84,6 +86,7 @@ export function RemoteTerminalView({
   paneId,
   host,
   initialCwd,
+  expectedTarget,
   active = true,
   visible = active,
   onEditHost,
@@ -210,13 +213,14 @@ export function RemoteTerminalView({
           },
         },
         initialCwd,
+        expectedTarget,
       ).finally(() => {
         opening = false;
       });
       onSavedHost.current = registered.savedHost;
       return registered.id;
     },
-    [host.id, initialCwd, paneId],
+    [host.id, initialCwd, expectedTarget, paneId],
   );
   const reconnect = useCallback(() => {
     if (terminalId.current !== null) void reconnectTerminal(terminalId.current);

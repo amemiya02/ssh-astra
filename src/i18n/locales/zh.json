@@ -223,7 +223,7 @@
     "connectFailed": "无法连接到 {{name}}：{{message}}",
     "import": {
       "action": "导入 Host…",
-      "keywords": "ssh config openssh csv 导入 putty mobaxterm mxtsessions",
+      "keywords": "ssh config openssh csv 导入 putty mobaxterm mxtsessions xshell xsh",
       "pickerTitle": "导入 Host",
       "chooseSource": "选择要从哪里导入 Host。",
       "sshConfig": {
@@ -240,6 +240,14 @@
         "title": "CSV 导入结果",
         "nothing": "CSV 文件中没有可导入的 Host。",
         "error": "无法导入 CSV 文件：{{message}}"
+      },
+      "xshell": {
+        "action": "Xshell 会话文件夹…",
+        "help": "选择包含 .xsh 文件的文件夹。子文件夹将导入为分组。",
+        "chooseFolder": "选择 Xshell 会话文件夹",
+        "title": "Xshell 导入结果",
+        "nothing": "Xshell 文件夹中没有可导入的主机。",
+        "error": "无法导入 Xshell 文件夹：{{message}}"
       },
       "mobaxterm": {
         "action": "MobaXterm 会话…",
@@ -295,7 +303,17 @@
         "mobaxtermInvalidGateway": "MobaXterm SSH 跳板机设置无效。",
         "mobaxtermDefaultUser": "MobaXterm 未为此 Host 或其跳板机保存用户名，已使用本机用户名。",
         "mobaxtermKeyPath": "MobaXterm 的一个私钥路径无法导入。",
-        "mobaxtermUnsupportedSettings": "部分 MobaXterm 设置无法导入。"
+        "mobaxtermUnsupportedSettings": "部分 MobaXterm 设置无法导入。",
+        "xshellCredentials": "已略过保存的凭据。",
+        "xshellFile": "无法读取此 Xshell 会话，或其连接信息无效。",
+        "xshellFolderLimit": "Xshell 文件夹超过导入大小或嵌套深度限制。",
+        "xshellInvalidPort": "端口必须是 1 到 65535 之间的整数。",
+        "xshellUnsupportedSession": "此 Xshell 会话使用的协议不是 SSH 或 SFTP。",
+        "xshellDefaultUser": "Xshell 未保存用户名，已使用本地用户名。",
+        "xshellKeyPath": "请在主机编辑器中选择可访问的私钥。",
+        "xshellUnsupportedSettings": "部分 Xshell 设置无法导入。",
+        "xshellUnsupportedProxy": "无法导入此 Xshell 会话的代理。",
+        "xshellInvalidJumpHost": "Xshell 跳板机设置不完整或无效。"
       }
     },
     "transfer": {
@@ -1034,6 +1052,7 @@
       "hostKeyDeclined": "未信任主机密钥，已取消连接。",
       "hostKeyRevoked": "主机密钥已被吊销，连接已阻断。",
       "authenticationFailed": "认证失败。",
+      "sshLinkTargetChanged": "确认 SSH 链接后，已保存的主机发生了变更。请重新打开链接并确认目标。",
       "proxyInvalidConfiguration": "请检查出站代理设置",
       "proxyInvalidTarget": "此代理不支持该主机地址",
       "proxyUnreachable": "无法连接到出站代理",
@@ -1532,6 +1551,12 @@
     "home": "主页",
     "hosts": "Host 列表",
     "forwards": "端口转发"
+  },
+  "sshLink": {
+    "title": "打开 SSH 链接？",
+    "savedHost": "使用已保存的主机「{{name}}」连接？",
+    "quickConnect": "使用快速连接？",
+    "connect": "连接"
   },
   "quickConnect": {
     "action": "快速连接",

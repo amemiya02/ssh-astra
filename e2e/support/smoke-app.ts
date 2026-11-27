@@ -10,10 +10,10 @@ export const smokeBinary = resolve(
 );
 export const smokeLogs = resolve(import.meta.dirname, "../artifacts/logs");
 
-export async function relaunchSmokeApp(): Promise<void> {
+export async function relaunchSmokeApp(args = ["--single-instance-check", "argument with spaces"]): Promise<void> {
   const home = process.env.SSHASTRA_E2E_HOME;
   if (!home) throw new Error("The SSH Astra smoke test sandbox is missing.");
-  await promisify(execFile)(smokeBinary, ["--single-instance-check", "argument with spaces"], {
+  await promisify(execFile)(smokeBinary, args, {
     cwd: home,
     env: { ...process.env, ...appEnv(home) },
     timeout: 10_000,
@@ -46,6 +46,7 @@ export async function restartSmokeApp(
   browser: WebdriverIO.Browser,
   confirmQuit: () => Promise<void>,
   requestAppQuit?: () => Promise<void>,
+  startupArgs: string[] = [],
 ): Promise<void> {
   const home = process.env.SSHASTRA_E2E_HOME;
   if (!home) throw new Error("The SSH Astra smoke test sandbox is missing.");
@@ -84,7 +85,7 @@ export async function restartSmokeApp(
   const fd = openSync(log, "w");
   let exitReason: string | undefined;
   try {
-    const child = spawn(smokeBinary, [], {
+    const child = spawn(smokeBinary, startupArgs, {
       env: {
         ...process.env,
         ...appEnv(home),

@@ -21,9 +21,10 @@ const sources: ImportOption[] = [
   fileSource("csv", ["csv"]),
   fileSource("putty", ["reg"]),
   fileSource("mobaxterm", ["mxtsessions", "moba"]),
+  folderSource("xshell"),
 ];
 
-function fileSource(kind: Exclude<HostImportSource["kind"], "sshConfig">, extensions: string[]): ImportOption {
+function fileSource(kind: "csv" | "putty" | "mobaxterm", extensions: string[]): ImportOption {
   return {
     kind,
     description: (t) => t(`hosts.import.${kind}.help`),
@@ -32,6 +33,17 @@ function fileSource(kind: Exclude<HostImportSource["kind"], "sshConfig">, extens
         title: t(`hosts.import.${kind}.chooseFile`),
         filters: [{ name: t(`hosts.import.${kind}.fileType`), extensions }],
       });
+      return path ? { kind, path } : null;
+    },
+  };
+}
+
+function folderSource(kind: "xshell"): ImportOption {
+  return {
+    kind,
+    description: (t) => t(`hosts.import.${kind}.help`),
+    async choose(t) {
+      const path = await pickOpenPath({ title: t(`hosts.import.${kind}.chooseFolder`), directory: true });
       return path ? { kind, path } : null;
     },
   };
@@ -61,7 +73,7 @@ export function HostImportDialogContent({ onImport, onClose }: {
   return (
     <DialogContent
       showCloseButton={false}
-      className="max-w-[calc(100%-2rem)] p-5 sm:max-w-120"
+      className="max-h-[calc(100vh-2rem)] max-w-[calc(100%-2rem)] overflow-y-auto p-5 sm:max-w-120"
       onEscapeKeyDown={(event) => { if (busy) event.preventDefault(); }}
       onPointerDownOutside={(event) => { if (busy) event.preventDefault(); }}
     >

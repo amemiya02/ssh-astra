@@ -1,12 +1,52 @@
-//! Brings the running desktop instance forward and retains its forwarded argv.
+//! Brings the running desktop instance forward and retains confirmed-safe destination fields.
 
 mod pending;
+mod ssh_link;
 
-pub(super) use pending::PendingLaunches;
-use tauri::{AppHandle, Manager};
+use pending::PendingLaunches;
+use ssh_link::SshLinkTarget;
+use std::ffi::OsStr;
+use tauri::{AppHandle, Emitter, EventTarget, Manager, State, WebviewWindow};
 
-pub(super) fn forward(app: &AppHandle, argv: Vec<String>, cwd: String) {
-    if app.state::<PendingLaunches>().forward(argv, cwd) {
+/// Start with the desktop URI supplied as argv on Linux and Windows.
+pub(super) fn startup() -> PendingLaunches {
+    let launches = PendingLaunches::default();
+    if let Some(link) = cli_link(std::env::args_os()) {
+        launches.forward([link]);
+    }
+    launches
+}
+
+pub(super) fn forward(app: &AppHandle, argv: Vec<String>, _cwd: String) {
+    if app.state::<PendingLaunches>().forward(cli_link(argv)) {
+        schedule_activation(app);
+    }
+}
+
+fn cli_link(args: impl IntoIterator<Item = impl AsRef<OsStr>>) -> Option<SshLinkTarget> {
+    let mut args = args.into_iter().skip(1);
+    let candidate = args.next()?;
+    if args.next().is_some() {
+        return None;
+    }
+    parse_link(candidate.as_ref().to_str()?)
+}
+
+fn parse_link(candidate: &str) -> Option<SshLinkTarget> {
+    let local_user = (!candidate.contains('@'))
+        .then(|| whoami::username().ok())
+        .flatten();
+    ssh_link::parse(candidate, local_user.as_deref())
+}
+
+#[cfg(target_os = "macos")]
+pub(super) fn opened(app: &AppHandle, urls: Vec<tauri::Url>) {
+    let links = urls
+        .iter()
+        .take(pending::MAX_PENDING_LAUNCHES)
+        .filter_map(|url| parse_link(url.as_str()))
+        .collect::<Vec<_>>();
+    if !links.is_empty() && app.state::<PendingLaunches>().forward(links) {
         schedule_activation(app);
     }
 }
@@ -20,7 +60,7 @@ pub(super) fn ready(app: &AppHandle) {
 #[cfg(target_os = "macos")]
 pub(super) fn reopen(app: &AppHandle) {
     // Finder and the Dock can reopen the app without starting another process.
-    if app.state::<PendingLaunches>().reopen() {
+    if app.state::<PendingLaunches>().forward([]) {
         schedule_activation(app);
     }
 }
@@ -59,6 +99,31 @@ fn activate_window(app: &AppHandle) {
     })();
     if let Err(error) = result {
         log::debug!("could not activate the existing window: {error}");
+    }
+    let label = window.label();
+    if app.state::<PendingLaunches>().target_for_activation(label) {
+        let _ = app.emit_to(EventTarget::webview_window(label), "ssh-link-pending", ());
+    }
+}
+
+#[tauri::command]
+pub(crate) fn take_ssh_links(
+    window: WebviewWindow,
+    pending: State<'_, PendingLaunches>,
+) -> Vec<SshLinkTarget> {
+    pending.take_links(window.label())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cli_link;
+
+    #[test]
+    fn only_a_single_ssh_url_argument_is_a_desktop_link() {
+        assert!(cli_link(["sshastra", "ssh://deploy@example.test"]).is_some());
+        assert!(cli_link(["sshastra"]).is_none());
+        assert!(cli_link(["sshastra", "--other", "ssh://deploy@example.test"]).is_none());
+        assert!(cli_link(["sshastra", "https://example.test"]).is_none());
     }
 }
 
