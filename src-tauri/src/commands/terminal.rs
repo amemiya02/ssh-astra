@@ -27,7 +27,7 @@ use sshastra_core::terminal::{
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, State};
 
-use super::connections::HostRoute;
+use super::connections::{detect_os_on_current_connection, HostRoute};
 use super::settings::SettingsState;
 use crate::error::CommandResult;
 use crate::prompts::{ChannelPrompter, PendingPrompts, PromptAnswer, PromptRequest};
@@ -193,23 +193,35 @@ pub async fn remote_terminal_open(
         channel: on_prompt.clone(),
     });
     let prompts = prompter.clone();
+    let connect_app = app.clone();
     let connect = move || {
-        let (app, route, prompter) = (app.clone(), Arc::clone(&route), prompts.clone());
+        let (app, route, prompter) = (connect_app.clone(), Arc::clone(&route), prompts.clone());
         async move { route.connect(&app, prompter).await }
     };
     let settings = terminal_settings(&settings);
     let output = terminal_output(&host.name, size, &settings, &output_directory, &on_event);
     let mut options = RemoteTerminalOptions::for_host(&host, settings.shell_integration);
     options.initial_cwd = cwd;
+    let (reconnect_app, reconnect_host_id) = (app.clone(), host_id.clone());
+    let mut sink = channel_sink(on_event, Some(on_prompt));
     let terminal = RemoteTerminal::open_with_progress(
         connect,
         options,
         size,
-        output.wrap(channel_sink(on_event, Some(on_prompt))),
+        output.wrap(move |event| {
+            let reconnected =
+                matches!(event, TerminalEvent::Connection(ConnectionState::Connected));
+            sink(event);
+            if reconnected {
+                detect_os_on_current_connection(reconnect_app.clone(), reconnect_host_id.clone());
+            }
+        }),
         host,
         prompter,
     )
     .await?;
+    // Open the PTY before using another session channel on the same SSH transport.
+    detect_os_on_current_connection(app, host_id);
     Ok(registry.insert_with_output(Box::new(terminal), output))
 }
 

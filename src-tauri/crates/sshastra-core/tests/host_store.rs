@@ -151,7 +151,7 @@ fn a_version_4_file_is_migrated_with_no_default_directories() {
     store.upsert(None, draft("new")).unwrap();
     let json: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(json["version"], 16);
+    assert_eq!(json["version"], 17);
 }
 
 #[test]
@@ -334,7 +334,7 @@ fn the_file_is_versioned_json() {
 
     let json: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(json["version"], 16);
+    assert_eq!(json["version"], 17);
     assert_eq!(json["hosts"][0]["name"], "web");
     assert_eq!(json["hosts"][0]["auth"]["type"], "password");
 }

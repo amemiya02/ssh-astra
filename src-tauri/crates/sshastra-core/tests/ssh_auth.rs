@@ -119,6 +119,7 @@ fn host(sshd: &Sshd, auth: HostAuth) -> Host {
         name: "docker sshd".into(),
         tags: Vec::new(),
         icon: None,
+        detected_os: None,
         color: None,
         address: sshd.host.clone(),
         port: sshd.port,

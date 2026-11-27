@@ -53,6 +53,7 @@ async function renderEditor(props: Partial<EditorProps> = {}) {
           hosts={[]}
           save={vi.fn(async () => host)}
           testConnection={vi.fn(async () => {})}
+          redetectOs={vi.fn(async () => {})}
           onSaved={vi.fn()}
           onCancel={vi.fn()}
           {...props}
@@ -69,6 +70,18 @@ const field = (name: string) =>
   [...document.querySelectorAll<HTMLLabelElement>('[role="dialog"] label')].find((label) => label.textContent === name)!.control!;
 
 describe("Host editor", () => {
+  it("requests OS re-detection for the saved Host without saving edits", async () => {
+    const save = vi.fn<EditorProps["save"]>().mockResolvedValue(host);
+    const redetectOs = vi.fn(async () => {});
+    await renderEditor({ host: { ...host, detectedOs: "debian" }, save, redetectOs });
+
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Debian");
+    await act(async () => button("Re-detect").click());
+
+    expect(redetectOs).toHaveBeenCalledWith(host.id);
+    expect(save).not.toHaveBeenCalled();
+  });
+
   it.each([["Automatic", "Ubuntu", "ubuntu"], ["Ubuntu", "Automatic", undefined]] as const)(
     "changes the Host icon from %s to %s",
     async (previous, next, expected) => {
@@ -155,7 +168,7 @@ describe("Host editor", () => {
       address: "staging.local", auth: { type: "password" },
     }), "prod", expect.any(Function));
     expect(save).not.toHaveBeenCalled();
-    expect(document.querySelector('[role="status"]')?.textContent).toBe("Testing connection…");
+    expect([...document.querySelectorAll('[role="status"]')].map((status) => status.textContent)).toContain("Testing connection…");
     expect(button("Test connection").disabled).toBe(true);
     const prompt = field("Password").closest('[role="dialog"]');
     expect(prompt?.querySelector('[role="checkbox"]')).toBeNull();
@@ -167,7 +180,7 @@ describe("Host editor", () => {
       password.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await act(async () => button("Connect").click());
-    expect(document.querySelector('[role="status"]')?.textContent).toBe("Connection test succeeded.");
+    expect([...document.querySelectorAll('[role="status"]')].map((status) => status.textContent)).toContain("Connection test succeeded.");
   });
 
   it("shows the existing reason when a connection test fails", async () => {

@@ -43,6 +43,7 @@ async fn log_files_record_an_ssh_connection_without_password_or_terminal_data() 
         name: "Logging test host".to_owned(),
         tags: Vec::new(),
         icon: None,
+        detected_os: None,
         color: None,
         address: sshd.host,
         port: sshd.port,

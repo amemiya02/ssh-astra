@@ -1,4 +1,7 @@
+use std::{future::Future, time::Duration};
+
 use russh::ChannelMsg;
+use tokio::time::{timeout_at, Instant};
 
 use super::Connection;
 
@@ -20,14 +23,36 @@ pub enum ExecError {
     MissingExitStatus,
     #[error("the command exceeded the output limit")]
     OutputLimit,
+    #[error("the command timed out")]
+    TimedOut,
 }
 
 impl Connection {
     /// Runs a command without a PTY or stdin on its own channel. The combined
     /// captured output is limited to 1 MiB.
     pub async fn exec(&self, command: &str) -> Result<ExecOutput, ExecError> {
-        let mut channel = self.open_session_channel().await?;
-        let result = async {
+        self.exec_with_limits(command, 1024 * 1024, None).await
+    }
+
+    pub(super) async fn exec_bounded(
+        &self,
+        command: &str,
+        output_limit: usize,
+        timeout: Duration,
+    ) -> Result<ExecOutput, ExecError> {
+        self.exec_with_limits(command, output_limit, Some(Instant::now() + timeout))
+            .await
+    }
+
+    async fn exec_with_limits(
+        &self,
+        command: &str,
+        output_limit: usize,
+        deadline: Option<Instant>,
+    ) -> Result<ExecOutput, ExecError> {
+        let mut channel =
+            before_deadline(deadline, async { Ok(self.open_session_channel().await?) }).await?;
+        let result = before_deadline(deadline, async {
             channel.exec(true, command).await?;
             channel.eof().await?;
 
@@ -51,7 +76,7 @@ impl Connection {
                     ChannelMsg::Close => break,
                     _ => continue,
                 };
-                if output_len + data.len() > 1024 * 1024 {
+                if output_len + data.len() > output_limit {
                     return Err(ExecError::OutputLimit);
                 }
                 stream.extend_from_slice(&data);
@@ -64,12 +89,25 @@ impl Connection {
                 stderr,
                 status: status.ok_or(ExecError::MissingExitStatus)?,
             })
-        }
+        })
         .await;
         if result.is_err() {
-            let _ = channel.close().await;
+            let close_deadline = deadline.map(|_| Instant::now() + Duration::from_millis(250));
+            let _ = before_deadline(close_deadline, async { Ok(channel.close().await?) }).await;
         }
         result
+    }
+}
+
+async fn before_deadline<T>(
+    deadline: Option<Instant>,
+    future: impl Future<Output = Result<T, ExecError>>,
+) -> Result<T, ExecError> {
+    match deadline {
+        Some(deadline) => timeout_at(deadline, future)
+            .await
+            .map_err(|_| ExecError::TimedOut)?,
+        None => future.await,
     }
 }
 
