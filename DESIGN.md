@@ -226,7 +226,7 @@ components:
 
 **Creative North Star: "One theme, the whole workstation"**
 
-SSH Astra plays the category standard straight: the Termius / Warp / WindTerm workstation. A 48px nav rail on the far left, a Host vault (a 248px Host list column, and Home's grid of Host cards), compact pill tabs, Terminals that fill the stage with the File panel docked beside them, and a dense 24px status bar. Nothing about the layout tries to be novel; the craft is in density, alignment and state.
+SSH Astra plays the category standard straight: the Termius / Warp / WindTerm workstation. A 48px nav rail on the far left, a Host vault (a 248px Host list column and Home's choice of cards or rows), compact pill tabs, Terminals that fill the stage with the File panel docked beside them, and a dense 24px status bar. Nothing about the layout tries to be novel; the craft is in density, alignment and state.
 
 The identity is the theme model. Thirteen whole-window themes ship, and a theme is never just a Terminal scheme: it names the ground, sidebar, surface, raised layer, text, muted text, border, accent and state colours of the chrome *and* the Terminal's 16-colour palette, and every other token derives from those. Switching theme recolours the window and the open Terminals that follow it in one frame; hovering a theme in the gallery previews it live across the whole window before a click commits. Host monograms and tab marks take their colour from the active theme's ANSI hues, so each Host keeps a stable identity that still belongs to whatever theme is painted.
 
@@ -323,9 +323,9 @@ Within a tab, the focused pane splits to the right or down. Nested panes share a
 
 **Gutters are the handles.** The 6px gap is the resize handle itself: a 2px by 28px grip in `border` at rest, `muted-foreground/40` on hover, `ring` while focused or dragging.
 
-**Home.** A centred column (max 72rem, 24px side and 20px top padding) starts with a 36px search field, the Host sort menu and the New Host, Local terminal and Import buttons. Recent and each Group appear as a section of 56px Host cards in an auto-fill grid (min 15rem per card, 8px gaps), 20px between sections. Home and the Host list share the saved sort order for Hosts within each Group. Recent keeps its most recently opened order.
+**Home.** A centred column (max 72rem, 24px side and 20px top padding) starts with a 36px search field, the Host sort menu, the Cards and List control and the New Host, Local terminal and Import buttons. Recent and each Group use the selected layout, with 20px between sections. The default Cards layout uses an auto-fill grid with a minimum width of 15rem per card and 8px gaps. List uses a single column with 6px gaps. Home remembers the layout across restarts. Home and the Host list share the saved sort order for Hosts within each Group. Recent keeps its most recently opened order.
 
-**Quick connect.** A valid SSH address adds an outline action above Home's Host cards and the first result in the command palette. Both read “Connect to …” and switch to “Quick connect” in privacy mode. An exact saved Host name takes priority in either search.
+**Quick connect.** A valid SSH address adds an outline action above the Hosts on Home and the first result in the command palette. Both read “Connect to …” and switch to “Quick connect” in privacy mode. An exact saved Host name takes priority in either search.
 
 **Save as Host.** A Temporary Host offers this action in its tab menu and, when focused, at the right of the status bar. The Host editor fills in the connection details and asks for a name. Saving keeps the same Connection, Terminals and File panels.
 
@@ -402,9 +402,11 @@ The Host list and Home put a horizontally scrolling strip of Tag buttons below s
 
 Plain searches in the Host list, Home and the command palette match Tags. A query such as `tag:East Coast` matches the full Tag name regardless of case, including spaces.
 
-### Host cards (Home)
-- **Style:** 56px, 10px radius, 1px border, `ground` fill on Home's `surface` panel, 12px padding: a 32px monogram tile with the Connection dot at its corner (ringed 2px in ground), name at 500 over the mono address; a menu button on hover.
-- **States:** `accent` on hover, `accent/70` pressed, 3px focus halo.
+### Host cards and rows (Home)
+
+- In Cards, each card is 56px high with a 10px radius, 1px border, `ground` fill and 12px horizontal padding. The 32px Host tile shows the Connection dot at its corner with a 2px ground ring. The name at weight 500 sits above the mono address. The menu button appears on hover or focus.
+- In List, each row uses the same border and fill, a 48px minimum height and a 2px accent in the Host's theme hue at the left edge. A 20px Host tile leads. The name and mono address sit together, with Tag chips that wrap when room runs out. The Connection status is written out beside the menu.
+- Both layouts use `accent` on hover, `accent/70` when pressed and a 3px focus halo. Tab reaches the Host action and its menu in both layouts. Enter or Space on the focused Host opens a Terminal.
 
 ### Host tile
 

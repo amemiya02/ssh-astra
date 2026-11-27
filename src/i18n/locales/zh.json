@@ -1268,6 +1268,11 @@
   },
   "home": {
     "search": "按名称、地址、用户或标签搜索 Host",
+    "layout": {
+      "label": "主页布局",
+      "cards": "卡片",
+      "list": "列表"
+    },
     "recent": "最近使用",
     "hosts": "Host",
     "ungrouped": "未分组",
