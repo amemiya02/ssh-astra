@@ -12,7 +12,12 @@ export interface TerminalPrefsValue {
 export function useTerminalPrefs(): TerminalPrefsValue {
   const [prefs, setPrefs] = useSetting(terminalSetting);
   const updatePrefs = useCallback(
-    (patch: Partial<TerminalPrefs>) => setPrefs(normalizeTerminalPrefs({ ...getSetting(terminalSetting), ...patch })),
+    (patch: Partial<TerminalPrefs>) => {
+      const current = getSetting(terminalSetting);
+      const next = normalizeTerminalPrefs({ ...current, ...patch });
+      if (patch.highlighting === undefined) next.highlighting = current.highlighting;
+      setPrefs(next);
+    },
     [setPrefs],
   );
   return { prefs, updatePrefs };

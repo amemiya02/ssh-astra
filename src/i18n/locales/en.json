@@ -52,6 +52,11 @@
       "keepaliveSeconds": "Enter a whole number from 0 to 4,294,967,295"
     },
     "save": "Save",
+    "connectionTest": {
+      "action": "Test connection",
+      "testing": "Testing connection…",
+      "succeeded": "Connection test succeeded."
+    },
     "cancel": "Cancel",
     "edit": "Edit Host",
     "editDescription": "Change how SSH Astra connects to this Host.",
@@ -810,6 +815,32 @@
           "flash": "Flash tab",
           "sound": "Sound"
         }
+      },
+      "highlighting": {
+        "label": "Keyword highlighting",
+        "builtIn": {
+          "label": "Built-in rules",
+          "description": "Colour errors, warnings, failures, successes and IPv4 addresses."
+        },
+        "description": "Add up to {{max}} custom rules. Patterns ignore case and later rules take priority.",
+        "custom": "Custom highlight rules",
+        "pattern": "Pattern",
+        "kind": "Pattern type",
+        "text": "Plain text",
+        "regex": "Regular expression",
+        "color": "Highlight colour",
+        "colors": {
+          "red": "Red",
+          "green": "Green",
+          "yellow": "Yellow",
+          "blue": "Blue",
+          "magenta": "Magenta",
+          "cyan": "Cyan"
+        },
+        "enabled": "Enable rule",
+        "remove": "Remove rule",
+        "add": "Add rule",
+        "invalidRegex": "Enter a valid regular expression."
       },
       "copyOnSelect": {
         "label": "Copy on select",

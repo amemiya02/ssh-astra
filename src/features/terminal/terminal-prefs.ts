@@ -1,5 +1,6 @@
 import { defineSection, getSetting, setSetting } from "@/lib/storage";
 import { isTerminalColorScheme, type TerminalColorScheme } from "@/theme/terminal-themes";
+import { defaultTerminalHighlighting, normalizeTerminalHighlighting, type TerminalHighlighting } from "./terminal-highlighting";
 
 /**
  * How every Terminal looks and behaves. The Settings tab edits these
@@ -23,6 +24,7 @@ export interface TerminalPrefs {
   /** Draw programming ligatures (`->`, `!=`) when the font has them. */
   ligatures: boolean;
   colorScheme: TerminalColorScheme;
+  highlighting: TerminalHighlighting;
   /** Selecting text copies it to the clipboard. */
   copyOnSelect: boolean;
   /** Right-click pastes instead of doing nothing. */
@@ -62,6 +64,7 @@ export const defaultTerminalPrefs: TerminalPrefs = {
   bell: "none",
   ligatures: false,
   colorScheme: "app",
+  highlighting: defaultTerminalHighlighting,
   copyOnSelect: true,
   rightClickPaste: true,
   shellIntegration: true,
@@ -105,6 +108,7 @@ export function normalizeTerminalPrefs(raw: Partial<Record<keyof TerminalPrefs, 
     bell: terminalBellModes.find((mode) => mode === raw.bell) ?? d.bell,
     ligatures: bool(raw.ligatures, d.ligatures),
     colorScheme: isTerminalColorScheme(raw.colorScheme) ? raw.colorScheme : d.colorScheme,
+    highlighting: normalizeTerminalHighlighting(raw.highlighting),
     copyOnSelect: bool(raw.copyOnSelect, d.copyOnSelect),
     rightClickPaste: bool(raw.rightClickPaste, d.rightClickPaste),
     shellIntegration: bool(raw.shellIntegration, d.shellIntegration),

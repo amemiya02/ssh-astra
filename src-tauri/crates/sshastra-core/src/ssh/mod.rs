@@ -330,6 +330,12 @@ type SharedSftp = (Weak<Connection>, Weak<SftpFs>);
 /// second connect to the Host waits for the first instead of racing it.
 type Slot = tokio::sync::Mutex<Weak<Connection>>;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ConnectionPurpose {
+    Shared,
+    Test,
+}
+
 impl ConnectionManager {
     /// A manager that does not use any ssh-agent; see [`Self::with_agent`].
     pub fn new(known_hosts: KnownHosts) -> Self {
@@ -429,15 +435,43 @@ impl ConnectionManager {
         host: &Host,
         prompter: Arc<dyn Prompter>,
     ) -> Result<Arc<Connection>, ConnectError> {
+        self.connect_route(jump_hosts, host, prompter, ConnectionPurpose::Shared)
+            .await
+    }
+
+    /// Authenticates on a private Connection at every hop, without using the
+    /// credential vault or opening a shell, then closes the route.
+    pub async fn test_connection(
+        &self,
+        jump_hosts: &[Host],
+        host: &Host,
+        prompter: Arc<dyn Prompter>,
+    ) -> Result<(), ConnectError> {
+        let connection = self
+            .connect_route(jump_hosts, host, prompter, ConnectionPurpose::Test)
+            .await?;
+        // Disconnect from the target back out through its Jump hosts. The
+        // timeout bounds shutdown if a transport stops responding after login.
+        let _ = tokio::time::timeout(CONNECT_TIMEOUT, disconnect_route(connection)).await;
+        Ok(())
+    }
+
+    async fn connect_route(
+        &self,
+        jump_hosts: &[Host],
+        host: &Host,
+        prompter: Arc<dyn Prompter>,
+        purpose: ConnectionPurpose,
+    ) -> Result<Arc<Connection>, ConnectError> {
         let mut via = None;
         for jump in jump_hosts {
-            let hop = self.hop(jump, via, prompter.clone(), true).await;
+            let hop = self.hop(jump, via, prompter.clone(), true, purpose).await;
             via = Some(hop.map_err(|e| ConnectError::JumpHost {
                 name: jump.name.clone(),
                 source: Box::new(e),
             })?);
         }
-        self.hop(host, via, prompter, false).await
+        self.hop(host, via, prompter, false, purpose).await
     }
 
     /// The live Connection to `host`, or a new one opened directly or, with
@@ -448,6 +482,7 @@ impl ConnectionManager {
         via: Option<Arc<Connection>>,
         prompter: Arc<dyn Prompter>,
         jump_host: bool,
+        purpose: ConnectionPurpose,
     ) -> Result<Arc<Connection>, ConnectError> {
         let progress = HopProgress {
             host,
@@ -461,35 +496,44 @@ impl ConnectionManager {
                 "port": host.port,
             })
         );
-        let result = self
-            .shared(progress, || async {
-                let reach = progress.start(ConnectStage::Reach);
-                match via {
-                    None => {
-                        log::info!("connection hop={} step=tcp result=starting", host.id);
-                        let stream = open_tcp(host).await;
-                        log_hop(&host.id, "tcp", &stream);
-                        self.establish(progress, reach.finish(stream)?, prompter.clone(), None)
-                            .await
-                    }
-                    Some(jump) => {
-                        log::info!(
-                            "connection hop={} step=jump-tunnel result=starting",
-                            host.id
-                        );
-                        let stream = jump.open_tunnel(host).await;
-                        log_hop(&host.id, "jump-tunnel", &stream);
-                        self.establish(
-                            progress,
-                            reach.finish(stream)?,
-                            prompter.clone(),
-                            Some(jump),
-                        )
-                        .await
-                    }
+        let open = || async {
+            let reach = progress.start(ConnectStage::Reach);
+            match via {
+                None => {
+                    log::info!("connection hop={} step=tcp result=starting", host.id);
+                    let stream = open_tcp(host).await;
+                    log_hop(&host.id, "tcp", &stream);
+                    self.establish(
+                        progress,
+                        reach.finish(stream)?,
+                        prompter.clone(),
+                        None,
+                        purpose,
+                    )
+                    .await
                 }
-            })
-            .await;
+                Some(jump) => {
+                    log::info!(
+                        "connection hop={} step=jump-tunnel result=starting",
+                        host.id
+                    );
+                    let stream = jump.open_tunnel(host).await;
+                    log_hop(&host.id, "jump-tunnel", &stream);
+                    self.establish(
+                        progress,
+                        reach.finish(stream)?,
+                        prompter.clone(),
+                        Some(jump),
+                        purpose,
+                    )
+                    .await
+                }
+            }
+        };
+        let result = match purpose {
+            ConnectionPurpose::Shared => self.shared(progress, open).await,
+            ConnectionPurpose::Test => open().await.map(Arc::new),
+        };
         log_hop(&host.id, "connect", &result);
         result
     }
@@ -584,6 +628,7 @@ impl ConnectionManager {
         stream: S,
         prompter: Arc<dyn Prompter>,
         via: Option<Arc<Connection>>,
+        purpose: ConnectionPurpose,
     ) -> Result<Connection, ConnectError>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -593,7 +638,14 @@ impl ConnectionManager {
             inner: prompter,
             deadline: Arc::clone(&deadline),
         });
-        let work = self.handshake(progress, stream, prompter, via, Arc::clone(&deadline));
+        let work = self.handshake(
+            progress,
+            stream,
+            prompter,
+            via,
+            Arc::clone(&deadline),
+            purpose,
+        );
         handshake::within(&deadline, work)
             .await
             .unwrap_or(Err(ConnectError::TimedOut))
@@ -606,6 +658,7 @@ impl ConnectionManager {
         prompter: Arc<dyn Prompter>,
         via: Option<Arc<Connection>>,
         deadline: Arc<handshake::Deadline>,
+        purpose: ConnectionPurpose,
     ) -> Result<Connection, ConnectError>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -614,7 +667,9 @@ impl ConnectionManager {
         let host_key = progress.start(ConnectStage::HostKey);
         let failure = Arc::new(Mutex::new(None));
         let routes = Routes::default();
-        let agent_forwarding = (host.forward_agent && self.agent != Agent::None)
+        let agent_forwarding = (purpose == ConnectionPurpose::Shared
+            && host.forward_agent
+            && self.agent != Agent::None)
             .then(|| Arc::new(AgentForwarding::new(self.agent.clone())));
         let handler = ClientHandler {
             routes: routes.clone(),
@@ -637,13 +692,17 @@ impl ConnectionManager {
         let mut handle = host_key.finish(handshake)?;
 
         let mut login = progress.start(ConnectStage::Authenticate);
+        let vault: Arc<dyn CredentialVault> = match purpose {
+            ConnectionPurpose::Shared => Arc::clone(&self.vault),
+            ConnectionPurpose::Test => Arc::new(NoVault),
+        };
         let authenticated = auth::authenticate(
             &mut handle,
             host,
             auth::AuthSources {
                 agent: &self.agent,
                 home_dir: self.home_dir.as_deref(),
-                vault: &self.vault,
+                vault: &vault,
             },
             prompter.as_ref(),
             deadline,
@@ -668,6 +727,21 @@ impl ConnectionManager {
             file_namespace,
             _via: via,
         })
+    }
+}
+
+async fn disconnect_route(mut connection: Arc<Connection>) {
+    // Private connections have one owner: the next hop, or the test itself.
+    while let Some(Connection {
+        handle, _via: via, ..
+    }) = Arc::into_inner(connection)
+    {
+        let _ = handle
+            .disconnect(russh::Disconnect::ByApplication, "", "en")
+            .await;
+        let _ = handle.await;
+        let Some(jump) = via else { break };
+        connection = jump;
     }
 }
 

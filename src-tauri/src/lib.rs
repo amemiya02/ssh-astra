@@ -143,6 +143,7 @@ pub fn run() {
             commands::hosts::group_move,
             commands::connections::connections_watch,
             commands::connections::host_connect,
+            commands::connections::host_test_connection,
             commands::connections::host_disconnect,
             commands::hosts::hosts_import_ssh_config,
             commands::hosts::hosts_export,

@@ -6,6 +6,7 @@ import { useTerminalPrefs } from "@/features/terminal/terminal-prefs-context";
 import { cursorStyles, terminalBellModes, terminalNumberFields, type TerminalPrefs, type TerminalTitleSource } from "@/features/terminal/terminal-prefs";
 import { TerminalSchemeSelect } from "@/features/terminal/TerminalSchemeSelect";
 import { SettingRow } from "./SettingRow";
+import { TerminalHighlightingSettings } from "./terminal-highlighting-settings";
 
 type BooleanPref = "ligatures" | "cursorBlink" | "copyOnSelect" | "rightClickPaste" | "confirmMultilinePaste" | "shellIntegration";
 
@@ -170,6 +171,7 @@ export function TerminalSection() {
       {toggle("rightClickPaste")}
       {toggle("confirmMultilinePaste")}
       {toggle("shellIntegration")}
+      <TerminalHighlightingSettings config={prefs.highlighting} updatePrefs={updatePrefs} />
     </>
   );
 }
