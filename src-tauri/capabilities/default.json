@@ -12,7 +12,7 @@
     "dialog:allow-save",
     {
       "identifier": "opener:allow-open-url",
-      "allow": [{ "url": "http://*" }, { "url": "https://*" }]
+      "allow": [{ "url": "http://*" }, { "url": "https://*" }, { "url": "mailto:*" }]
     },
     "updater:allow-check",
     "updater:allow-download-and-install",

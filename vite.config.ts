@@ -30,6 +30,8 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
+    // This addon ships an ES module but its declared CommonJS entry is missing.
+    alias: { "@xterm/addon-ligatures": "@xterm/addon-ligatures/lib/addon-ligatures.mjs" },
     include: ["src/**/*.test.{ts,tsx}", "scripts/**/*.test.ts"],
   },
 });
