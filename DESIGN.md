@@ -406,7 +406,7 @@ Settings lists every theme as a card (10px radius, 6px padding, auto-fill at min
 - **Dialogs:** `raised`, 1px border, 14px radius, 24px padding, max 512px, `shadow-overlay` over the overlay scrim; footer buttons right-aligned, primary last.
 
 ### Host editor
-- **Basic information** is always visible and includes the name, address, port, user, authentication and its private key field, Group, and Jump host. Group shows the current location or the selected destination for a new Host. Use the Host list's move action to change a saved Host's Group.
+- **Basic information** is always visible and includes the name, address, port, user, authentication, Group, and Jump host. New Hosts start with Automatic authentication. The private key field appears when Private key is selected. Group shows the current location or the selected destination for a new Host. Use the Host list's move action to change a saved Host's Group.
 - **Advanced** is a full-width disclosure below Basic information. It starts collapsed and contains Terminal colours, the File panel folder, and the action to clear a saved Host's credentials. A save error attached to an advanced field opens the section, displays the message by the field, and moves focus to it.
 
 ### Security surfaces

@@ -124,4 +124,14 @@ describe("hostFormFrom", () => {
   it("starts new Hosts on port 22", () => {
     expect(emptyHostForm.port).toBe("22");
   });
+
+  it("starts new Hosts with automatic authentication and no identity file", () => {
+    const result = parseHostForm({
+      ...emptyHostForm,
+      name: "web",
+      address: "10.0.0.5",
+      user: "deploy",
+    });
+    expect(result.ok && result.draft.auth).toEqual({ type: "auto" });
+  });
 });

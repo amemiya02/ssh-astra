@@ -1,0 +1,28 @@
+{
+  "version": 5,
+  "groups": [],
+  "hosts": [
+    {
+      "id": "h-password",
+      "name": "pi",
+      "address": "raspberrypi.local",
+      "port": 22,
+      "user": "pi",
+      "auth": { "type": "password" },
+      "jumpHost": null,
+      "groupId": null,
+      "forwards": []
+    },
+    {
+      "id": "h-key",
+      "name": "build",
+      "address": "build.example.com",
+      "port": 22,
+      "user": "dev",
+      "auth": { "type": "key", "identityFile": "~/.ssh/build" },
+      "jumpHost": null,
+      "groupId": null,
+      "forwards": []
+    }
+  ]
+}

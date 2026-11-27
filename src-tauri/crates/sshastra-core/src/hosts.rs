@@ -19,7 +19,7 @@ pub use transfer::{ImportSummary, EXPORT_FORMAT};
 /// The file format version this build writes, to the store and to export
 /// files. Bump it together with a migration step in [`migrate`], which reads
 /// both.
-const CURRENT_VERSION: u32 = 5;
+const CURRENT_VERSION: u32 = 6;
 
 /// Identifies a Host across restarts and across the IPC boundary.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -79,9 +79,8 @@ pub struct Group {
 /// How a Host authenticates. Secrets are asked for (or read from the system
 /// keychain) at connect time, never stored in the Host.
 ///
-/// Whatever the variant, a connect tries, as far as the server allows:
-/// ssh-agent, then the private key file (if any), then password, then
-/// keyboard-interactive.
+/// Whatever the variant, a connect tries ssh-agent first, then the selected
+/// key files, password, and keyboard-interactive as the server allows.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
     tag = "type",
@@ -89,10 +88,12 @@ pub struct Group {
     rename_all_fields = "camelCase"
 )]
 pub enum HostAuth {
+    /// Try the default keys in the user's `.ssh` directory.
+    Auto,
     /// No key file: agent, password, keyboard-interactive.
     Password,
-    /// A private key file (OpenSSH or PEM; ed25519, ECDSA or RSA). A leading
-    /// `~/` means the user's home directory. A passphrase is asked for.
+    /// A private key file. A leading `~/` means the user's home directory.
+    /// A passphrase is asked for when needed.
     Key { identity_file: PathBuf },
 }
 
@@ -538,7 +539,7 @@ impl HostStore {
                 .and_then(|name| ids.get(name).cloned());
             let auth = match entry.identity_file {
                 Some(identity_file) => HostAuth::Key { identity_file },
-                None => HostAuth::Password,
+                None => HostAuth::Auto,
             };
             let mut host = HostDraft {
                 name: entry.name.clone(),
@@ -764,9 +765,10 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
             let hosts = serde_json::from_value(hosts.into()).map_err(corrupt)?;
             Ok(Library { groups, hosts })
         }
-        // v2 Hosts have no Port forwards, which `Host::forwards` defaults to;
-        // v2-v4 Hosts have no default directory (`None`: home).
-        2 | 4 | 5 => {
+        // v2 Hosts have no Port forwards, which `Host::forwards` defaults to.
+        // v2-v4 have no default directory (`None`: home). v6 adds `Auto`
+        // without changing how older authentication choices are read.
+        2 | 4 | 5 | CURRENT_VERSION => {
             let FileV2 { groups, hosts } = serde_json::from_str(text).map_err(corrupt)?;
             Ok(Library { groups, hosts })
         }
