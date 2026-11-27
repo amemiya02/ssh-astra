@@ -51,8 +51,8 @@ export function ConnectionSteps({ host, steps }: { host: Pick<Host, "id" | "name
   return (
     <div className="space-y-3">
       {[...hops].map(([id, hop]) => {
-        const stages = hop.steps.has("shell") && !hop.steps.has("reach")
-          ? ["shell"] as const // Already connected. Only this pane's shell is being opened.
+        const stages = hop.steps.has("reused")
+          ? hop.jumpHost ? ["reused"] as const : ["reused", "shell"] as const
           : hop.jumpHost ? connectionStages : terminalStages;
         const shown = hop.steps.has("waiting") ? ["waiting", ...stages] as const : stages;
         const name = hop.jumpHost ? t("connect.progress.jumpHost", { name: hop.name }) : hop.name;

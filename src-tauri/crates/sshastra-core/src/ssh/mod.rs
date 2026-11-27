@@ -542,6 +542,7 @@ impl ConnectionManager {
         };
         if let Some(live) = current.upgrade().filter(|c| !c.is_closed()) {
             log::info!("connection hop={id} step=connect result=reused");
+            progress.reused();
             return Ok(live);
         }
         let connection = Arc::new(establish().await?);

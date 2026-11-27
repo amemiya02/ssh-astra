@@ -605,7 +605,16 @@ async fn a_concurrent_connect_reports_waiting_before_reusing_the_connection() {
     assert!(Arc::ptr_eq(&first.unwrap(), &second));
     assert_eq!(
         reported_steps(&prompter),
-        successful_steps(&target.name, false, &[ConnectStage::Waiting])
+        [
+            successful_steps(&target.name, false, &[ConnectStage::Waiting]),
+            vec![(
+                target.name,
+                false,
+                ConnectStage::Reused,
+                ProgressStatus::Succeeded
+            )],
+        ]
+        .concat()
     );
 }
 

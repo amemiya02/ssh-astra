@@ -11,6 +11,7 @@ use crate::hosts::{Host, HostId};
 #[serde(rename_all = "camelCase")]
 pub enum ConnectStage {
     Waiting,
+    Reused,
     Reach,
     HostKey,
     Authenticate,
@@ -57,6 +58,28 @@ pub(super) struct HopProgress<'a> {
 }
 
 impl<'a> HopProgress<'a> {
+    pub(super) fn reused(self) {
+        self.report(ConnectStage::Reused, ProgressStatus::Succeeded, 0, None);
+    }
+
+    fn report(
+        self,
+        stage: ConnectStage,
+        status: ProgressStatus,
+        elapsed_ms: u64,
+        method: Option<AuthMethod>,
+    ) {
+        self.prompter.progress(ConnectProgress {
+            host_id: self.host.id.clone(),
+            host_name: self.host.name.clone(),
+            jump_host: self.jump_host,
+            stage,
+            status,
+            elapsed_ms,
+            method,
+        });
+    }
+
     pub(super) fn start(self, stage: ConnectStage) -> ActiveStep<'a> {
         let step = ActiveStep {
             hop: self,
@@ -99,15 +122,12 @@ impl ActiveStep<'_> {
     }
 
     fn report(&self, status: ProgressStatus) {
-        self.hop.prompter.progress(ConnectProgress {
-            host_id: self.hop.host.id.clone(),
-            host_name: self.hop.host.name.clone(),
-            jump_host: self.hop.jump_host,
-            stage: self.stage,
+        self.hop.report(
+            self.stage,
             status,
-            elapsed_ms: self.since.elapsed().as_millis() as u64,
-            method: self.method,
-        });
+            self.since.elapsed().as_millis() as u64,
+            self.method,
+        );
     }
 }
 

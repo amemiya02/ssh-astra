@@ -145,7 +145,9 @@ describe("sshastra", () => {
 
     const tab = $('[role="tab"][aria-selected="true"]');
     const panel = await tab.getAttribute("aria-controls");
+    if (!panel) throw new Error("the active tab has no panel");
     const pane = await $(`#${panel} [id^="pane-"]`).getAttribute("id");
+    if (!pane) throw new Error("the active panel has no pane");
     const passwordSelector = '[role="dialog"] input[type="password"]';
     const trust = $("button=Trust and connect");
     await browser.waitUntil(async () => await $(passwordSelector).isDisplayed() || await trust.isDisplayed());
@@ -155,7 +157,9 @@ describe("sshastra", () => {
     for (let attempt = 0; attempt < 3; attempt++) {
       const password = $(`${passwordSelector}:not([id="${answered}"])`);
       await password.waitForDisplayed();
-      answered = await password.getAttribute("id");
+      const id = await password.getAttribute("id");
+      if (!id) throw new Error("the password prompt has no id");
+      answered = id;
       await password.setValue("e2e-incorrect-password");
       await $("button=Connect").click();
     }

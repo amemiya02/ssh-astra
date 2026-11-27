@@ -499,6 +499,7 @@
       "close": "Close",
       "stage": {
         "waiting": "Wait for the existing connection",
+        "reused": "Use existing connection",
         "reach": "Reach server",
         "hostKey": "Verify host key",
         "authenticate": "Log in",

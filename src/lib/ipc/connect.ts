@@ -25,7 +25,7 @@ export interface ConnectProgress {
   hostId: HostId;
   hostName: string;
   jumpHost: boolean;
-  stage: "waiting" | "reach" | "hostKey" | "authenticate" | "shell";
+  stage: "waiting" | "reused" | "reach" | "hostKey" | "authenticate" | "shell";
   status: "running" | "succeeded" | "failed";
   elapsedMs: number;
   method: "none" | "agent" | "keyFile" | "password" | "keyboardInteractive" | null;

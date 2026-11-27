@@ -499,6 +499,7 @@
       "close": "关闭",
       "stage": {
         "waiting": "等待已有的连接",
+        "reused": "使用已有的连接",
         "reach": "到达服务器",
         "hostKey": "核对主机密钥",
         "authenticate": "登录",
