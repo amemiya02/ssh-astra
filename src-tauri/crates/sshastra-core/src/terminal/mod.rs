@@ -14,8 +14,8 @@ mod recording;
 mod registry;
 mod shell_integration;
 
-pub(crate) use encoding::OutputDecoder;
 pub use command_history::CommandHistory;
+pub(crate) use encoding::OutputDecoder;
 pub use encoding::{TerminalBackspace, TerminalCharset};
 pub use local_pty::{LocalPty, ShellCommand};
 pub use local_shells::{local_shell_command, local_shells, local_wsl_paths, LocalShell};

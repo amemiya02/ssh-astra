@@ -79,7 +79,7 @@ A file from a Host opened in the local editor with automatic upload on save. Fil
 _Avoid_: Download, transfer
 
 **Port forward**:
-A saved rule on a Host that tunnels traffic through its Connection: local, remote, or dynamic (SOCKS). One marked "start when connected" (auto-start) runs whenever its Host connects.
+A saved rule on a Host that tunnels traffic through its Connection. The available kinds are local, remote, SOCKS5, and HTTP CONNECT. A rule marked "start when connected" (auto-start) runs whenever its Host connects.
 _Avoid_: Tunnel, port mapping
 
 **Connect only**:
