@@ -89,10 +89,7 @@ function ShortcutRow({ name, setting, shortcuts, overrides }: {
         apply(result.chord);
       }
     };
-    context.capture.current = handler;
-    return () => {
-      if (context.capture.current === handler) context.capture.current = null;
-    };
+    return context.registerCapture(handler);
   }, [apply, context, platform, recording]);
 
   const action = t(setting.title);
@@ -120,7 +117,6 @@ function ShortcutRow({ name, setting, shortcuts, overrides }: {
               setRecording(!recording);
             }}
             onBlur={() => {
-              if (recording && context) context.capture.current = null;
               setRecording(false);
               setIssue(undefined);
             }}
