@@ -43,6 +43,8 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 arboard = "3.7"
+cap-fs-ext = "=4.0.3"
+cap-std = "=4.0.3"
 chrono = { version = "0.4", default-features = false, features = ["now"] }
 log = { workspace = true, features = ["std"] }
 png = "0.18"
