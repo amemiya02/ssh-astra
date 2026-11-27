@@ -803,6 +803,15 @@
       "usedWhenLight": "Used when your computer is light",
       "usedWhenDark": "Used when your computer is dark"
     },
+    "interfaceZoom": {
+      "label": "Interface zoom",
+      "description": "Scale the app from 90% to 125%."
+    },
+    "interfaceFont": {
+      "label": "Interface font",
+      "description": "Enter a font name. An empty or unavailable font uses the system font.",
+      "system": "System font"
+    },
     "language": {
       "label": "Interface language",
       "description": "System uses your computer's language when SSH Astra has it, otherwise English.",

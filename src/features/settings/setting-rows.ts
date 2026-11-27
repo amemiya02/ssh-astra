@@ -22,6 +22,12 @@ function row(
 }
 
 export const settingRows = {
+  interfaceZoom: row("appearance", "settings.interfaceZoom.label",
+    { en: "scale size magnification display", zh: "比例 大小 显示 放大 缩小" }, "settings.interfaceZoom.description",
+  ),
+  interfaceFont: row("appearance", "settings.interfaceFont.label",
+    { en: "typeface typography system family", zh: "字形 排版 系统 字体族" }, "settings.interfaceFont.description",
+  ),
   followAppearance: row("appearance", "settings.theme.follow.label",
     { en: "theme light dark automatic OS system", zh: "主题 浅色 深色 自动 系统" }, "settings.theme.follow.description",
   ),

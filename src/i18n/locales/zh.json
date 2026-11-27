@@ -803,6 +803,15 @@
       "usedWhenLight": "电脑为浅色时使用",
       "usedWhenDark": "电脑为深色时使用"
     },
+    "interfaceZoom": {
+      "label": "界面缩放",
+      "description": "将应用界面缩放至 90% 到 125%。"
+    },
+    "interfaceFont": {
+      "label": "界面字体",
+      "description": "输入字体名称。留空或字体不可用时将使用系统字体。",
+      "system": "系统字体"
+    },
     "language": {
       "label": "界面语言",
       "description": "跟随系统时使用电脑的语言；SSH Astra 不支持该语言时使用英文。",

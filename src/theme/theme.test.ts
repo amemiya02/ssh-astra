@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { appearanceSetting, applyTheme, resolveTheme, type AppearanceSettings } from "./theme";
 import { appThemes } from "./themes";
 
-const defaults: AppearanceSettings = { theme: "system", lightTheme: "light", darkTheme: "dark" };
+const defaults: AppearanceSettings = { theme: "system", lightTheme: "light", darkTheme: "dark", zoom: 100, fontFamily: "" };
 
 describe("resolveTheme", () => {
   it("follows the system with the light or dark pick", () => {
@@ -45,6 +45,19 @@ describe("applyTheme", () => {
 });
 
 describe("appearance settings", () => {
+  it("reads a named interface font and uses the system default for missing or invalid names", () => {
+    expect(appearanceSetting.parse({ fontFamily: "  Avenir Next  " }).fontFamily).toBe("Avenir Next");
+    expect(appearanceSetting.parse({ fontFamily: "   " }).fontFamily).toBe("");
+    expect(appearanceSetting.parse({ fontFamily: ["Avenir Next"] }).fontFamily).toBe("");
+  });
+
+  it("repairs saved interface zoom outside the supported range", () => {
+    expect(appearanceSetting.parse({ zoom: 80 }).zoom).toBe(90);
+    expect(appearanceSetting.parse({ zoom: 140 }).zoom).toBe(125);
+    expect(appearanceSetting.parse({ zoom: "125" }).zoom).toBe(100);
+    expect(appearanceSetting.parse({ zoom: 112 }).zoom).toBe(112);
+  });
+
   it("keeps the values older versions saved", () => {
     expect(appearanceSetting.parse({ theme: "dark" })).toEqual({ ...defaults, theme: "dark" });
     expect(appearanceSetting.parse({ theme: "light" })).toEqual({ ...defaults, theme: "light" });
@@ -53,6 +66,7 @@ describe("appearance settings", () => {
 
   it("reads a saved theme and the system picks", () => {
     expect(appearanceSetting.parse({ theme: "nord", lightTheme: "githubLight", darkTheme: "dracula" })).toEqual({
+      ...defaults,
       theme: "nord",
       lightTheme: "githubLight",
       darkTheme: "dracula",

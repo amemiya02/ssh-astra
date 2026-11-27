@@ -20,11 +20,11 @@ export function SettingRow({ setting, description, descriptionValues, children }
   const details = description === undefined && setting.description ? t(setting.description, descriptionValues ?? {}) : description;
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-3">
-      <div className="min-w-36 flex-1 space-y-0.5">
+      <div className="min-w-[min(100%,9rem)] flex-1 space-y-0.5">
         <p className="font-medium">{t(setting.title)}</p>
         {details && <p className="text-muted-foreground text-xs text-pretty">{details}</p>}
       </div>
-      {children && <div className="max-w-full shrink-0">{children}</div>}
+      {children && <div className="max-w-full shrink-0 [&>*]:max-w-full [&>[role=radiogroup]]:flex-wrap">{children}</div>}
     </div>
   );
 }

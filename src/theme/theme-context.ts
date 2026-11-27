@@ -12,6 +12,8 @@ export interface ThemeContextValue {
   setLightTheme(id: LightThemeId): void;
   /** The theme painted while following a dark system. */
   setDarkTheme(id: DarkThemeId): void;
+  setZoom(percent: number): void;
+  setFontFamily(fontFamily: string): void;
   /** Paints `id` across the window without saving it; `null` restores the saved theme. */
   preview(id: AppThemeId | null): void;
 }
