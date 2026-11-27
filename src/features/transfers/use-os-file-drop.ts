@@ -21,20 +21,17 @@ export function useOsFileDrop(
     if (!enabled) return;
     let stop: (() => void) | undefined;
     let cancelled = false;
-    const inside = (x: number, y: number) => {
-      const rect = target.current?.getBoundingClientRect();
-      return rect !== undefined && x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
-    };
     void onOsFileDrag((drag) => {
+      if (cancelled) return;
       if (drag.type === "leave") return setOver(false);
-      const hit = inside(drag.x, drag.y);
+      const hit = target.current?.contains(document.elementFromPoint(drag.x, drag.y)) ?? false;
       if (drag.type === "over") return setOver(hit);
       setOver(false);
       if (hit && drag.paths.length > 0) latest.current(drag.paths);
     }).then((unlisten) => {
       if (cancelled) unlisten();
       else stop = unlisten;
-    });
+    }).catch(() => undefined);
     return () => {
       cancelled = true;
       stop?.();

@@ -61,6 +61,11 @@ export function openFiles(hostId: HostId): Promise<FsId> {
   return invoke<FsId>("files_open", { hostId });
 }
 
+/** Resolves the remote Home folder over the Host's live Connection. */
+export function remoteHomeDirectory(hostId: HostId): Promise<string> {
+  return invoke("files_remote_home", { hostId });
+}
+
 /** Connects for a standalone SFTP tab, without opening a Terminal. */
 export function connectFiles(hostId: HostId, ask: (prompt: ConnectPrompt) => Promise<PromptAnswer>): Promise<FsId> {
   return invoke("files_connect", { hostId, onPrompt: connectPromptChannel(ask) });

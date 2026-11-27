@@ -96,6 +96,15 @@ pub fn live_sftp(app: AppHandle, host_id: HostId) -> OpenRemote {
     })
 }
 
+/// Resolves the home directory over the Host's existing Connection.
+#[tauri::command]
+pub async fn files_remote_home(
+    connections: State<'_, ConnectionManager>,
+    host_id: HostId,
+) -> CommandResult<String> {
+    Ok(connections.live_sftp(&host_id).await?.home().await?)
+}
+
 /// Lists a directory: `""`/`~` is home, `~/x` under it; the server resolves
 /// the rest. The listing carries the resolved path.
 #[tauri::command]

@@ -15,6 +15,8 @@ export interface TerminalCwds {
   report(paneId: string, path: string): void;
   /** The latest directory reported by this pane's shell, if any. */
   lastReported(paneId: string): string | undefined;
+  /** The shell ended or will be replaced; its next directory must come from a new report. */
+  resetReport(paneId: string): void;
   /** Takes the pane's File panel to its shell's directory. */
   sync(paneId: string): void;
   /** Forgets the panes not in `paneIds`. */
@@ -66,6 +68,13 @@ export function createTerminalCwds(
     },
     lastReported(paneId) {
       return panes.get(paneId)?.path ?? undefined;
+    },
+    resetReport(paneId) {
+      const state = panes.get(paneId);
+      if (!state) return;
+      state.path = null;
+      state.reporting = false;
+      state.asked = false;
     },
     sync(paneId) {
       const state = pane(paneId);
