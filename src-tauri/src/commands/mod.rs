@@ -9,6 +9,7 @@ pub mod files;
 pub mod forwards;
 pub mod home;
 pub mod hosts;
+pub mod notifications;
 pub mod settings;
 pub mod terminal;
 pub mod transfers;

@@ -35,9 +35,9 @@ describe("decodeTerminalMessage for a remote Terminal's Connection", () => {
   });
 
   it("reads giving up and coming back", () => {
-    expect(decodeTerminalMessage({ connection: { state: "disconnected", reason: "cannot reach the host" } })).toEqual({
+    expect(decodeTerminalMessage({ connection: { state: "disconnected", reason: "cannot reach the host", reportReconnectFailure: true } })).toEqual({
       type: "connection",
-      state: { state: "disconnected", reason: "cannot reach the host" },
+      state: { state: "disconnected", reason: "cannot reach the host", reportReconnectFailure: true },
     });
     expect(decodeTerminalMessage({ connection: { state: "connected" } })).toEqual({
       type: "connection",

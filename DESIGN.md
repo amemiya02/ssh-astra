@@ -410,15 +410,21 @@ The privacy toggle sits beside the theme menu. Its pressed state uses the `selec
 
 ### Toasts
 
-The lower-right corner of the workspace stacks up to three in-app toasts above the status bar. Cards use the raised surface, a 1px border, 10px radius and a status icon. They report completed or failed transfers while the Transfers panel is hidden or collapsed, Port forward failures, Remote edit upload failures, import results and explicit copy actions. Terminal copy on select is silent.
+The lower-right corner of the workspace stacks up to three in-app toasts above the status bar. Cards use the raised surface, a 1px border, 10px radius and a status icon. They report completed or failed transfers when both transfer lists are out of view, Port forward failures, Remote edit upload failures, import results and explicit copy actions. Terminal copy on select is silent.
 
 Additional toasts queue in arrival order. A normal toast stays on screen for five seconds. An error stays until dismissed with its labeled close button. Persistent live regions announce normal messages politely and errors assertively without moving focus.
+
+### System notifications
+
+The desktop app posts system notifications while its window is in the background. Each upload, download, or copy request produces one summary after all its transfers finish, including failed and cancelled items. A lost Connection can report one failed reconnection across the Terminals sharing it. Program requests show under a localized Terminal notification title, with up to one notification per Terminal per second. Existing in-app toasts follow their own visibility rules.
+
+Settings → Notifications has independent controls for transfer batches, failed reconnections, long-running commands, and Terminal programs. The native notification click restores the main window when the desktop reports activation. See the [platform checks](docs/notifications.md) for permissions and activation behavior.
 
 ### Settings navigation
 
 The top search field filters settings across all categories. Results keep their category headings and the original controls. Search matches titles, descriptions, and keywords in both English and Simplified Chinese. Clearing the field returns to the selected category. Choosing a category clears the search and scrolls its rows to the top.
 
-The left navigation lists Appearance, Terminal, Files, Connection, Transfers, Updates, and Diagnostics in that order when available. Appearance includes workspace layout and interface language. Updates and Diagnostics use the installed app's native features. The current category uses the `selected` surface, and narrow workspaces place the categories in a horizontally scrolling row above the controls. Shortcuts, Notifications, and Agent access can appear when they have settings available.
+The left navigation lists Appearance, Terminal, Files, Connection, Transfers, Notifications, Updates, and Diagnostics in that order when available. Appearance includes workspace layout and interface language. Notifications, Updates, and Diagnostics use the installed app's native features. The current category uses the `selected` surface, and narrow workspaces place the categories in a horizontally scrolling row above the controls. Shortcuts and Agent access can appear when they have settings available.
 
 Settings → Connection accepts a custom Unix agent socket or Windows named pipe in a text field. The field saves on Enter or blur. Clearing it returns new Connections to the system agent. A Connection uses the same source for authentication and agent forwarding when its Host enables forwarding.
 
@@ -456,6 +462,14 @@ Settings lists every theme as a card (10px radius, 6px padding, auto-fill at min
 
 - Queued and running rows offer Pause beside Cancel. Paused rows keep their progress bar, show Paused in the detail line, and offer Resume beside Cancel. Transfers waiting on a destination conflict can be paused from the conflict dialog.
 - A paused transfer frees its queue slot after the current write closes. Resume takes the next available slot in queue order and verifies any staged bytes before continuing. An overwrite that writes directly to the destination finishes its current file before pausing.
+
+### Global Transfers pane
+
+The status bar's transfer summary and the command palette open or focus the same Transfers tab. The summary shows the current count and speed while transfers run and stays available when the queue is idle. The pane fills the workspace on the surface colour and uses the same rows and actions as the File panel's transfer list.
+
+The All, In progress, Failed and Completed filters sit above the scrolling list. In progress includes paused transfers and those waiting for a conflict decision. Groups use the destination Host for uploads and the source Host for downloads and Host-to-Host copies. A copy row shows both Host names.
+
+Clear completed removes successful rows across Hosts. Completed downloads have a folder button labeled “Show in file manager” that reveals the local destination.
 
 ### Menus, tooltips, dialogs
 - **Menus:** `raised` fill, 1px border, 8px radius, 4px padding, `shadow-overlay`; items 6px radius, `accent` on focus, destructive items red.

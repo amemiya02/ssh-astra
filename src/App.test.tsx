@@ -441,7 +441,7 @@ it("closes a Local terminal and an unconnected restored pane without asking", as
 
 it.each([
   ["reconnecting", { connection: { state: "reconnecting", attempt: 1, attempts: 3 } }],
-  ["disconnected", { connection: { state: "disconnected", reason: "Connection closed" } }],
+  ["disconnected", { connection: { state: "disconnected", reason: "Connection closed", reportReconnectFailure: false } }],
   ["exited", { exitCode: 0 }],
 ] satisfies [string, TerminalMessage][])("closes a %s remote Terminal without asking", async (_, message) => {
   await render(workspace({ type: "open", tabId: "work", pane: remote("a") }));
@@ -848,6 +848,41 @@ it("starts and stops Broadcast from the palette and ends it when its tab or wind
   await render(initialTabs);
   expect(broadcastMarks()).toEqual([]);
   expect(document.querySelector('[aria-label="Turn off Broadcast"]')).toBeNull();
+});
+
+it("opens one global Transfers tab from the status bar and command palette", async () => {
+  await render(workspace({ type: "open", tabId: "home", pane: newPane({ kind: "home" }) }));
+  await clickButton("Open Transfers");
+  const globalTab = document.querySelector<HTMLButtonElement>('[role="tab"][aria-label="Transfers"]')!;
+  const pane = document.getElementById(globalTab.getAttribute("aria-controls")!)!;
+  expect(pane.hidden).toBe(false);
+  const watch = vi.mocked(invoke).mock.calls.find(([command]) => command === "transfers_watch")?.[1] as {
+    onEvent: { onmessage(transfer: Transfer): void };
+  };
+  const shared = {
+    id: 1, direction: "download", name: "notes.txt", source: "/srv/notes.txt", target: "/local/notes.txt",
+    sourceHost: { id: host.id, name: host.name }, bytesDone: 1, bytesTotal: 2, filesDone: 0, filesTotal: 1,
+    unprotected: false,
+  } satisfies Omit<Transfer, "state">;
+  await act(async () => watch.onEvent.onmessage({ ...shared, state: { type: "running" } }));
+  expect(document.querySelector('button[aria-label="Open Transfers"]')?.textContent).toBe("Transfers: 1");
+  expect(pane.querySelector("h2")?.textContent).toBe("Test Host");
+  expect(pane.querySelector('button[aria-label="Show in file manager"]')).toBeNull();
+
+  await act(async () => watch.onEvent.onmessage({ ...shared, state: { type: "done" }, bytesDone: 2, filesDone: 1 }));
+  expect(document.querySelector('[role="status"][aria-live="polite"]')?.textContent).toBe("");
+  await clickButton("Show in file manager");
+  expect(invoke).toHaveBeenCalledWith("transfer_reveal_download", { id: 1 });
+  await clickButton("Completed");
+  await clickButton("Clear completed");
+  expect(pane.textContent).toContain("No completed transfers.");
+  expect(invoke).toHaveBeenCalledWith("transfers_remove", { ids: [1] });
+
+  await act(async () => document.getElementById("tab-home")!.click());
+  expect(pane.hidden).toBe(true);
+  await paletteAction("Open Transfers");
+  expect(pane.hidden).toBe(false);
+  expect(tabIds()).toEqual(["tab-home", globalTab.id]);
 });
 
 it("announces transfer results when the Transfers panel is hidden and offers error dismissal", async () => {

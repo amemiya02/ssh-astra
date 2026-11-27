@@ -7,6 +7,7 @@ import {
   firstConflict,
   formatDuration,
   timeLeft,
+  transferGroups,
   transferSummary,
   type TransfersApi,
 } from "./transfersStore";
@@ -26,7 +27,7 @@ const transfer = (id: number, patch: Partial<Transfer> = {}): Transfer => ({
   ...patch,
 });
 
-function setup(initial: Transfer[] = []) {
+function setup(initial: Transfer[] = [], onBatchFinish?: Parameters<typeof createTransfersStore>[3]) {
   let push: (t: Transfer) => void = () => {};
   const api: TransfersApi = {
     watchTransfers: vi.fn((onEvent: (t: Transfer) => void) => {
@@ -44,7 +45,7 @@ function setup(initial: Transfer[] = []) {
     removeTransfers: vi.fn(() => Promise.resolve()),
   };
   let clock = 0;
-  const store = createTransfersStore(api, () => clock);
+  const store = createTransfersStore(api, () => clock, undefined, onBatchFinish);
   return {
     api,
     store,
@@ -56,6 +57,38 @@ function setup(initial: Transfer[] = []) {
 }
 
 describe("transfers store", () => {
+  it.each(["dismiss", "clearCompleted"] as const)("reports each batch once all paths settle, even with an early %s", async (clear) => {
+    const finished = vi.fn();
+    const { store, api, push } = setup([transfer(20, { state: { type: "done" } })], finished);
+    let acceptUpload: (ids: number[]) => void = () => {};
+    vi.mocked(api.uploadFiles).mockReturnValueOnce(new Promise((resolve) => { acceptUpload = resolve; }));
+    vi.mocked(api.downloadFiles).mockResolvedValueOnce([3]);
+    await store.getState().watch();
+    const hidePanel = store.getState().trackVisiblePanel();
+    const host = { id: "h1", name: "Host 1" };
+    const upload = store.getState().upload(host, ["/a", "/b"], "/srv");
+    await store.getState().download(host, ["/srv/c"], "/dl");
+    push(transfer(1, { state: { type: "done" } }));
+    if (clear === "dismiss") await store.getState().dismiss([1]);
+    else await store.getState().clearCompleted();
+    push(transfer(2));
+    acceptUpload([1, 2]);
+    await upload;
+    expect(finished).not.toHaveBeenCalled();
+
+    const failed = transfer(2, { state: { type: "failed", message: "Connection lost" } });
+    push(failed);
+    push(failed);
+    expect(finished.mock.calls).toEqual([[{ completed: 1, failed: 1, cancelled: 0 }]]);
+
+    push(transfer(3, { state: { type: "cancelled" } }));
+    expect(finished.mock.calls).toEqual([
+      [{ completed: 1, failed: 1, cancelled: 0 }],
+      [{ completed: 0, failed: 0, cancelled: 1 }],
+    ]);
+    hidePanel();
+  });
+
   it("starts from the backend's list and follows its changes, oldest first", async () => {
     const { store, push } = setup([transfer(2)]);
     await store.getState().watch();
@@ -107,15 +140,16 @@ describe("transfers store", () => {
   it("asks the backend to upload, download, cancel, retry and answer", async () => {
     const { api, store } = setup();
     const s = store.getState();
+    const host = { id: "h1", name: "Web" };
 
-    await s.upload("h1", ["/a"], "/srv");
-    await s.download("h1", ["/srv/b"], "/dl");
+    await s.upload(host, ["/a"], "/srv");
+    await s.download(host, ["/srv/b"], "/dl");
     await s.cancel(3);
     await s.retry(4);
     await s.answer(5, "skipAll");
 
-    expect(api.uploadFiles).toHaveBeenCalledWith("h1", ["/a"], "/srv");
-    expect(api.downloadFiles).toHaveBeenCalledWith("h1", ["/srv/b"], "/dl");
+    expect(api.uploadFiles).toHaveBeenCalledWith(host, ["/a"], "/srv");
+    expect(api.downloadFiles).toHaveBeenCalledWith(host, ["/srv/b"], "/dl");
     expect(api.cancelTransfer).toHaveBeenCalledWith(3);
     expect(api.retryTransfer).toHaveBeenCalledWith(4);
     expect(api.answerConflict).toHaveBeenCalledWith(5, "skipAll");
@@ -156,9 +190,49 @@ describe("transfers store", () => {
     expect(store.getState().transfers.map((t) => t.id)).toEqual([2]);
     expect(api.removeTransfers).toHaveBeenCalledWith([1, 3]);
   });
+
+  it("clears completed transfers without removing any other state or a later completion", async () => {
+    const { api, push, store } = setup([
+      transfer(1, { state: { type: "done" } }),
+      transfer(2, { state: { type: "failed", message: "x" } }),
+      transfer(3, { state: { type: "cancelled" } }),
+      transfer(4, { state: { type: "paused" } }),
+      transfer(5),
+    ]);
+    await store.getState().watch();
+    vi.mocked(api.removeTransfers).mockImplementationOnce(async () => {
+      push(transfer(5, { state: { type: "done" } }));
+    });
+
+    await store.getState().clearCompleted();
+
+    expect(store.getState().transfers.map(({ id }) => id)).toEqual([2, 3, 4, 5]);
+    expect(api.removeTransfers).toHaveBeenCalledWith([1]);
+  });
 });
 
 describe("transfer views", () => {
+  it("groups filtered transfers by Host identity in queue order", () => {
+    const web = { id: "h1", name: "Web" };
+    const replica = { id: "h2", name: "Web" };
+    const acrossHosts = [
+      transfer(1, { state: { type: "done" }, sourceHost: web, direction: "download" }),
+      transfer(2, { state: { type: "paused" }, targetHost: web }),
+      transfer(3, { state: { type: "failed", message: "boom" }, targetHost: replica }),
+      transfer(4, { state: { type: "conflict", path: "/dest" }, sourceHost: web, targetHost: replica, direction: "copy" }),
+      transfer(5, { state: { type: "queued" }, sourceHost: replica, direction: "download" }),
+      transfer(6, { state: { type: "cancelled" } }),
+      transfer(7, { targetHost: web }),
+    ];
+    const groupedIds = (filter: Parameters<typeof transferGroups>[1]) =>
+      transferGroups(acrossHosts, filter).map(({ host, transfers }) => [host?.id, transfers.map(({ id }) => id)]);
+
+    expect(groupedIds("all")).toEqual([["h1", [1, 2, 4, 7]], ["h2", [3, 5]], [undefined, [6]]]);
+    expect(groupedIds("inProgress")).toEqual([["h1", [2, 4, 7]], ["h2", [5]]]);
+    expect(groupedIds("failed")).toEqual([["h2", [3]]]);
+    expect(groupedIds("completed")).toEqual([["h1", [1]]]);
+  });
+
   const all = [
     transfer(1, { state: { type: "done" } }),
     transfer(2, { state: { type: "conflict", path: "/remote/x" } }),

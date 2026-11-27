@@ -54,6 +54,7 @@ use std::future::Future;
 use std::net::Ipv6Addr;
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
@@ -974,6 +975,7 @@ impl ConnectionManager {
             routes,
             agent_forwarding,
             file_namespace,
+            reconnect_failure_reported: Arc::default(),
             _proxy_command: None,
             _via: via,
         })
@@ -1024,6 +1026,7 @@ pub struct Connection {
     /// Ports the server listens on for us, and who gets their connections.
     routes: Routes,
     agent_forwarding: Option<Arc<AgentForwarding>>,
+    reconnect_failure_reported: Arc<AtomicBool>,
     /// The Jump host's Connection this one is tunnelled through, kept open
     /// for as long as this one is.
     _via: Option<Arc<Connection>>,

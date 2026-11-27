@@ -17,6 +17,7 @@ import { readCommandError, refusal, type ConnectPrompt, type PromptAnswer } from
 import * as edit from "@/lib/ipc/edit";
 import * as files from "@/lib/ipc/files";
 import { isTemporaryHost, type Host } from "@/lib/ipc/hosts";
+import { transferHost } from "@/lib/ipc/transfers";
 import { useSetting } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import { EditQuestionDialog } from "./EditQuestionDialog";
@@ -125,14 +126,14 @@ export function SftpWorkspace({ id, host, active, showPrompts = active, onStatus
   const upload = (paths: string[]) => {
     if (!remoteReady) return;
     setTransferError(null);
-    void transfersStore.getState().upload(host.id, paths, remotePath).catch((error: unknown) => {
+    void transfersStore.getState().upload(transferHost(host), paths, remotePath).catch((error: unknown) => {
       setTransferError(readCommandError(error).message);
     });
   };
   const download = (paths: string[]) => {
     if (!remoteReady || !localReady) return;
     setTransferError(null);
-    void transfersStore.getState().download(host.id, paths, nativePath(localPath)).catch((error: unknown) => {
+    void transfersStore.getState().download(transferHost(host), paths, nativePath(localPath)).catch((error: unknown) => {
       setTransferError(readCommandError(error).message);
     });
   };

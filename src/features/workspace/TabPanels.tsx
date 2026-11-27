@@ -4,6 +4,7 @@ import { useStore } from "zustand";
 import { Button } from "@/components/ui/button";
 import { PortForwardsPanel } from "@/features/forwards/PortForwardsPanel";
 import { SettingsPage } from "@/features/settings/SettingsPage";
+import { GlobalTransfersPane } from "@/features/transfers/GlobalTransfersPane";
 import { LocalTerminalView } from "@/features/terminal/LocalTerminalView";
 import { SftpWorkspace } from "@/features/files/SftpWorkspace";
 import { terminalCwds } from "@/features/files/terminalCwds";
@@ -194,6 +195,8 @@ function PaneContent({
       return <SftpWorkspace id={pane.id} host={pane.host} active={active} showPrompts={active || autoConnect} onStatusChange={onStatusChange} />;
     case "settings":
       return <SettingsPage />;
+    case "transfers":
+      return <GlobalTransfersPane visible={active} />;
     case "port-forwards":
       return <PortForwardsPanel host={pane.host} active={active} />;
   }

@@ -412,6 +412,24 @@
   },
   "transfers": {
     "title": "传输",
+    "open": "打开传输",
+    "filter": "筛选传输",
+    "filters": {
+      "all": "全部",
+      "inProgress": "进行中",
+      "failed": "失败",
+      "completed": "已完成"
+    },
+    "empty": {
+      "all": "没有传输。",
+      "inProgress": "没有未结束的传输。",
+      "failed": "没有失败的传输。",
+      "completed": "没有已完成的传输。"
+    },
+    "unknownHost": "未知主机",
+    "reveal": "在文件管理器中显示",
+    "revealFailed": "无法在文件管理器中显示 {{name}}。",
+    "clearFailed": "无法清除已完成的传输。",
     "expand": "显示传输",
     "collapse": "隐藏传输",
     "active": "进行中 {{count}}",
@@ -570,6 +588,19 @@
     "dismiss": "关闭通知：{{message}}",
     "transferDone": "传输完成：{{name}}",
     "transferFailed": "传输失败：{{name}}。{{reason}}"
+  },
+  "notifications": {
+    "transfers": {
+      "title": "一批传输已结束",
+      "body": "完成 {{completed}} 项，失败 {{failed}} 项，取消 {{cancelled}} 项。"
+    },
+    "reconnect": {
+      "title": "连接已断开",
+      "body": "无法重新连接到 {{host}}。"
+    },
+    "terminal": {
+      "title": "Terminal 通知"
+    }
   },
   "status": {
     "noConnections": "没有连接",
@@ -816,6 +847,7 @@
       "files": "文件",
       "connection": "连接",
       "transfers": "传输",
+      "notifications": "通知",
       "updates": "更新",
       "diagnostics": "诊断"
     },
@@ -1017,6 +1049,24 @@
       "concurrency": {
         "label": "同时传输数",
         "description": "同时进行的上传和下载数量，其余的排队等待。文件夹内的文件逐个复制。"
+      }
+    },
+    "notifications": {
+      "transfers": {
+        "label": "批量传输",
+        "description": "一批上传、下载或复制在后台结束时通知。"
+      },
+      "reconnect": {
+        "label": "重连失败",
+        "description": "连接断开且在后台重连失败时通知。"
+      },
+      "longCommand": {
+        "label": "长时间运行的命令",
+        "description": "Terminal 中长时间运行的命令在后台结束时通知。"
+      },
+      "terminal": {
+        "label": "Terminal 程序",
+        "description": "允许 Terminal 中的程序在窗口处于后台时发送通知。"
       }
     },
     "diagnostics": {

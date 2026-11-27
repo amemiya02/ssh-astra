@@ -29,6 +29,7 @@
 - **端口转发**：本地 / 远程 / SOCKS5，可随连接自动启动
 - **安全**：ssh-agent、私钥、OpenSSH 用户证书、密码和二次验证；凭据存系统钥匙串；与 OpenSSH 共用 `known_hosts`
 - **断线自动重连**
+- **系统通知**会在窗口处于后台时提示批量传输结束、重连失败和 Terminal 程序发出的通知。可在**设置 → 通知**中按类别开关。
 - **体验**：⌘K 命令面板，深色 / 浅色主题，中英双语，应用内更新
 
 <table>
@@ -58,6 +59,7 @@ SSH Astra 使用 xterm.js 6.0.0。
 
 - **同步刷新（DECSET 2026）**已支持。xterm.js 会积累屏幕重绘请求，等程序复位该模式后一次刷新。如果程序没有复位，xterm.js 会在一秒后恢复刷新。[6.0.0 发布说明](https://github.com/xtermjs/xterm.js/releases/tag/6.0.0) · [6.0.0 渲染服务源码](https://github.com/xtermjs/xterm.js/blob/6.0.0/src/browser/services/RenderService.ts#L320-L352)
 - **Kitty 键盘协议**在 6.0.0 中尚不支持。该版本的 CSI 处理器缺少 Kitty 键盘协议协商，键盘编码器使用传统转义序列。[6.0.0 CSI 处理器源码](https://github.com/xtermjs/xterm.js/blob/6.0.0/src/common/InputHandler.ts#L219-L268) · [6.0.0 键盘编码器源码](https://github.com/xtermjs/xterm.js/blob/6.0.0/src/common/input/Keyboard.ts)
+- **Terminal 程序通知**支持 iTerm2 的 OSC 9 和 rxvt 的 OSC 777 `notify`。每个 Terminal 每秒最多发送一条。[转义序列格式](https://github.com/wezterm/wezterm/blob/main/docs/escape-sequences.md)
 
 ## 安装
 

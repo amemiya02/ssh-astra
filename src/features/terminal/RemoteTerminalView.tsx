@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { notifySystem } from "@/features/notifications/system-notifications";
 import { ConnectionView, type ObservedProgress } from "@/features/connect/ConnectionView";
 import { ConnectPromptDialog } from "@/features/connect/ConnectPromptDialog";
 import { DisconnectedOverlay } from "@/features/connect/DisconnectedOverlay";
@@ -93,10 +94,12 @@ export function RemoteTerminalView({
   // Set while the Connection is down; the Terminal stays mounted under the overlay.
   const [recovery, setRecovery] = useState<Recovery | null>(null);
   const terminalId = useRef<TerminalId | null>(null);
+  const displayNameRef = useRef(displayHost.name);
   const onStatusChangeRef = useRef(onStatusChange);
   const onCwdRef = useRef(onCwd);
   const onTerminalRef = useRef(onTerminal);
   useEffect(() => {
+    displayNameRef.current = displayHost.name;
     onStatusChangeRef.current = onStatusChange;
     onCwdRef.current = onCwd;
     onTerminalRef.current = onTerminal;
@@ -119,6 +122,12 @@ export function RemoteTerminalView({
           onEvent(event);
           if (event.type !== "connection") return;
           const state = event.state;
+          if (state.state === "disconnected" && state.reportReconnectFailure) {
+            notifySystem({ category: "reconnect" }, (t) => ({
+              title: t("notifications.reconnect.title"),
+              body: t("notifications.reconnect.body", { host: displayNameRef.current }),
+            }));
+          }
           onStatusChangeRef.current?.(
             statusAfterDrop[state.state],
             state.state === "reconnecting" ? { attempt: state.attempt, attempts: state.attempts } : undefined,
