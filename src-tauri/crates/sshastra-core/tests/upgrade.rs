@@ -574,7 +574,7 @@ fn version_15_hosts_keep_their_icons_and_can_set_and_clear_a_colour() {
     let mut saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     assert_eq!(
         saved.as_object_mut().unwrap().remove("version"),
-        Some(json!(22))
+        Some(json!(23))
     );
     assert_eq!(saved, expected);
     let mut reopened = HostStore::open(&path).unwrap();
@@ -617,7 +617,7 @@ fn version_16_hosts_keep_their_icons_and_colours_before_detection() {
     let mut saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     assert_eq!(
         saved.as_object_mut().unwrap().remove("version"),
-        Some(json!(22))
+        Some(json!(23))
     );
     assert_eq!(saved, expected);
     let mut reopened = HostStore::open(path).unwrap();
@@ -650,7 +650,7 @@ fn legacy_algorithms_require_opt_in_per_host_after_upgrading_from_v17() {
     let mut saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     assert_eq!(
         saved.as_object_mut().unwrap().remove("version"),
-        Some(json!(22))
+        Some(json!(23))
     );
     assert_eq!(saved, expected);
     let mut reopened = HostStore::open(&path).unwrap();
@@ -691,7 +691,7 @@ fn version_18_hosts_keep_their_settings_and_start_without_bookmarks() {
     let mut saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     assert_eq!(
         saved.as_object_mut().unwrap().remove("version"),
-        Some(json!(22))
+        Some(json!(23))
     );
     assert_eq!(saved, expected);
     let reopened = HostStore::open(path).unwrap();
@@ -725,7 +725,7 @@ fn version_19_hosts_keep_their_settings_and_require_an_explicit_startup_opt_in()
     let mut saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     assert_eq!(
         saved.as_object_mut().unwrap().remove("version"),
-        Some(json!(22))
+        Some(json!(23))
     );
     assert_eq!(saved, expected);
     let mut reopened = HostStore::open(&path).unwrap();
@@ -781,7 +781,7 @@ fn a_version_20_file_keeps_all_existing_forward_kinds_when_saved_as_version_23()
     let mut saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     assert_eq!(
         saved.as_object_mut().unwrap().remove("version"),
-        Some(json!(22))
+        Some(json!(23))
     );
     assert_eq!(saved, expected);
     assert_eq!(

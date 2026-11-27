@@ -112,6 +112,8 @@ export function OpenSshReadSettings({ status }: { status: OpenSshStatus }) {
   const { t } = useTranslation();
   if (!status.enabled) return null;
   const report = status.read;
+  if (!report && !status.readProblem) return null;
+  const invalid = [...new Set(report?.issues.filter((issue) => issue.dropped).map((issue) => issue.entry) ?? [])];
   return (
     <div className="text-muted-foreground max-h-64 space-y-2 overflow-auto py-2 text-xs">
       {status.readProblem && <p role="alert" className="text-destructive">{t(`${copy}.read.readFailed`)}</p>}
@@ -123,6 +125,7 @@ export function OpenSshReadSettings({ status }: { status: OpenSshStatus }) {
               ["missing", report.missing],
               ["imported", report.imported],
               ["awaitingJump", report.awaitingJump],
+              ["invalid", invalid],
             ] as const).map(([label, names]) => names.length > 0 && (
               <div key={label}><p>{t(`${copy}.read.${label}`)}</p><Aliases names={names} /></div>
             ))}

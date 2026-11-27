@@ -1480,6 +1480,7 @@
           "updated": "已依 OpenSSH 設定更新",
           "missing": "OpenSSH 設定中已遺失的別名",
           "imported": "已從 OpenSSH 匯入",
+          "invalid": "無法套用的設定項目",
           "awaitingJump": "等待匯入所需 Jump host 的更新",
           "includeIncomplete": "無法讀取一個 OpenSSH Include，已保留原有設定。",
           "readFailed": "無法套用 OpenSSH 設定中的變更。",

@@ -73,6 +73,18 @@ fn changing_user_config_updates_linked_hosts_and_offers_new_aliases() {
     assert!(output.aliases.is_empty());
     assert_eq!(fs::read_to_string(&source).unwrap(), config);
 
+    let mut local: HostDraft = serde_json::from_value(serde_json::to_value(&linked).unwrap()).unwrap();
+    local.name = "App through user config".into();
+    local.jump_host = Some(linked.id.clone());
+    store.upsert(None, local).unwrap();
+    let output = ConfigExport::new(home.path().to_owned())
+        .refresh(store.list(), &ConnectionSettings::default())
+        .unwrap();
+    assert_eq!(output.aliases, ["app-through-user-config"]);
+    let fragment = fs::read_to_string(ssh.join("ssh-astra.conf")).unwrap();
+    assert!(fragment.contains("    ProxyJump linked\n"));
+    assert!(!fragment.contains("Host linked\n"));
+
     assert!(store.import_open_ssh_offered(&user, &offer).unwrap().is_some());
     let new = store.list().iter().find(|host| host.name == "new").unwrap();
     let jump = store.get(new.jump_host.as_ref().unwrap()).unwrap();
@@ -134,4 +146,28 @@ fn an_import_review_cannot_add_an_alias_that_became_available_after_review() {
     assert!(store.import_open_ssh_offered(&config, &review).unwrap().is_none());
     assert!(store.list().is_empty());
     assert_eq!(diff_open_ssh(store.list(), &config).new, ["blocked", "offered"]);
+}
+
+#[test]
+fn config_provenance_stays_in_the_local_host_library() {
+    use sshastra_core::ssh_config::parse;
+
+    let home = tempfile::tempdir().unwrap();
+    let ssh = home.path().join(".ssh");
+    fs::create_dir(&ssh).unwrap();
+    let context = ParseContext { local_user: "tester".into() };
+    fs::write(ssh.join("config"), "Host tracked\n").unwrap();
+    let config = read_user_config(home.path(), &context).unwrap();
+    let path = home.path().join("hosts.json");
+    let mut store = HostStore::open(&path).unwrap();
+    store.import_open_ssh(config).unwrap();
+    store.import_config(parse("Host other\n", &context, &mut |_| Ok(Vec::new()))).unwrap();
+    assert!(store.list()[0].open_ssh_source.is_some());
+    assert!(store.list()[1].open_ssh_source.is_none());
+
+    let exported = store.export();
+    assert!(!exported.contains("openSshSource"));
+    let mut imported = HostStore::open(home.path().join("imported.json")).unwrap();
+    imported.import(&fs::read_to_string(&path).unwrap()).unwrap();
+    assert!(imported.list().iter().all(|host| host.open_ssh_source.is_none()));
 }

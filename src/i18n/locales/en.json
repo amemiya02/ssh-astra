@@ -1481,6 +1481,7 @@
           "updated": "Updated from OpenSSH",
           "missing": "Aliases missing from your OpenSSH config",
           "imported": "Imported from OpenSSH",
+          "invalid": "Config entries that could not be applied",
           "awaitingJump": "Updates waiting for a required Jump host",
           "includeIncomplete": "An OpenSSH Include could not be read. Sync kept the saved settings.",
           "readFailed": "Could not apply changes from your OpenSSH config.",

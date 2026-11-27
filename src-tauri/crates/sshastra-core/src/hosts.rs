@@ -796,7 +796,7 @@ impl HostStore {
             .iter()
             .map(|h| (h.name.clone(), h.id.clone()))
             .collect();
-        let source_ids = open_ssh.then(|| open_ssh::source_ids(&library.hosts));
+        let mut source_ids = open_ssh.then(|| open_ssh::source_ids(&library.hosts));
         let mut added = Vec::new();
         for entry in parsed.hosts {
             if ids.contains_key(&entry.name)
@@ -807,6 +807,9 @@ impl HostStore {
             }
             let id = HostId::generate();
             ids.insert(entry.name.clone(), id.clone());
+            if let Some(sources) = &mut source_ids {
+                sources.insert(entry.name.to_ascii_lowercase(), id.clone());
+            }
             added.push((id, entry));
         }
         for (id, entry) in added {

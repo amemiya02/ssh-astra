@@ -17,7 +17,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::io::{self, Read};
+use std::io::{self, BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 
 use crate::forward::{ForwardDraft, ForwardKind, LOOPBACK, REMOTE_LOOPBACK};
@@ -918,8 +918,7 @@ impl Hosts {
 // --- Reading the real files ------------------------------------------------
 
 /// Resolves `Include` patterns on the file system the way `ssh` does for the
-/// user's config: relative to `~/.ssh`, `~` expanded, `*`/`?` globbed in the
-/// file name.
+/// user's config: relative to `~/.ssh`, with home path and glob expansion.
 pub struct FsIncludes {
     pub home: PathBuf,
 }
@@ -969,11 +968,11 @@ impl FsIncludes {
         paths.sort();
         let mut files = Vec::new();
         for path in paths {
-            match read_config_file(&path, remaining_bytes) {
-                Ok(Some(text)) if !omit_managed || !text.starts_with(HEADER) => {
+            match read_config_file(&path, remaining_bytes, omit_managed) {
+                Ok(Some(text)) => {
                     files.push(IncludedFile { name: path.display().to_string(), text });
                 }
-                Ok(_) => {}
+                Ok(None) => {}
                 Err(error) => return Err(format!("{}: {error}", path.display())),
             }
         }
@@ -982,7 +981,11 @@ impl FsIncludes {
 }
 
 /// Read a regular config file without following a path into an unbounded stream.
-fn read_config_file(path: &Path, remaining_bytes: &mut u64) -> io::Result<Option<String>> {
+fn read_config_file(
+    path: &Path,
+    remaining_bytes: &mut u64,
+    omit_managed: bool,
+) -> io::Result<Option<String>> {
     let mut options = fs::OpenOptions::new();
     options.read(true);
     #[cfg(unix)]
@@ -998,8 +1001,12 @@ fn read_config_file(path: &Path, remaining_bytes: &mut u64) -> io::Result<Option
     if !file.metadata()?.is_file() {
         return Err(io::Error::other("OpenSSH config is not a regular file"));
     }
+    let mut reader = BufReader::new(file);
+    if omit_managed && reader.fill_buf()?.starts_with(HEADER.as_bytes()) {
+        return Ok(None);
+    }
     let mut text = String::new();
-    file.take(*remaining_bytes + 1).read_to_string(&mut text)?;
+    reader.take(*remaining_bytes + 1).read_to_string(&mut text)?;
     *remaining_bytes = remaining_bytes.checked_sub(text.len() as u64)
         .ok_or_else(|| io::Error::other("OpenSSH config exceeds the size limit"))?;
     Ok(Some(text))
@@ -1016,10 +1023,9 @@ pub fn read_user_config(home: &Path, ctx: &ParseContext) -> std::io::Result<User
     let path = home.join(".ssh").join("config");
     let mut remaining_bytes = MAX_CONFIG_BYTES;
     let mut remaining_files = MAX_INCLUDE_FILES;
-    let text = read_config_file(&path, &mut remaining_bytes)?.unwrap_or_default();
+    let text = read_config_file(&path, &mut remaining_bytes, true)?.unwrap_or_default();
     let includes = FsIncludes { home: home.to_path_buf() };
-    let text = if text.starts_with(HEADER) { "" } else { &text };
-    Ok(parse_config(text, ctx, &mut |pattern| {
+    Ok(parse_config(&text, ctx, &mut |pattern| {
         includes.resolve_files(pattern, true, &mut remaining_files, &mut remaining_bytes)
     }))
 }
