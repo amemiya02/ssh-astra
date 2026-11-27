@@ -65,6 +65,79 @@ describe("tabsReducer: tabs", () => {
     expect(state.tabs[1]).toEqual(tab("b", [local("b.1")]));
   });
 
+  it("duplicates a remote Terminal in a new tab on the same Host", () => {
+    const web = host("web");
+    const source = tab("remote", [{ ...remote("original", web, "connected"), title: "shell title" }]);
+    const state = tabsReducer({ tabs: [source], activeId: source.id }, {
+      type: "duplicateTab", id: source.id, tabId: "copy", paneIds: ["new-shell"],
+    });
+
+    expect(state).toEqual({
+      tabs: [source, tab("copy", [remote("new-shell", web)])],
+      activeId: "copy",
+    });
+  });
+
+  it("duplicates the full split and focused position of a maximized tab", () => {
+    const web = host("web");
+    const db = host("db");
+    const source: Tab = {
+      id: "work",
+      layout: {
+        type: "split", orientation: "horizontal", children: [
+          { ratio: 0.7, layout: { type: "pane", pane: remote("web", web, "connected") } },
+          { ratio: 0.3, layout: {
+            type: "split", orientation: "vertical", children: [
+              { ratio: 0.25, layout: { type: "pane", pane: local("local") } },
+              { ratio: 0.75, layout: {
+                type: "pane", pane: { ...remote("db", db, "disconnected"), restoreConnection: "manual" },
+              } },
+            ],
+          } },
+        ],
+      },
+      activePaneId: "db",
+      paneMaximized: true,
+      customTitle: "Work",
+      color: "blue",
+      locked: true,
+    };
+    const other = tab("other");
+    const state = tabsReducer({ tabs: [source, other], activeId: other.id }, {
+      type: "duplicateTab", id: source.id, tabId: "copy", paneIds: ["copy-web", "copy-local", "copy-db"],
+    });
+
+    expect(ids(state)).toEqual(["work", "copy", "other"]);
+    expect(state.activeId).toBe("copy");
+    expect(state.tabs[0]).toBe(source);
+    expect(state.tabs[1]).toEqual({
+      id: "copy",
+      layout: {
+        type: "split", orientation: "horizontal", children: [
+          { ratio: 0.7, layout: { type: "pane", pane: remote("copy-web", web) } },
+          { ratio: 0.3, layout: {
+            type: "split", orientation: "vertical", children: [
+              { ratio: 0.25, layout: { type: "pane", pane: local("copy-local") } },
+              { ratio: 0.75, layout: { type: "pane", pane: remote("copy-db", db) } },
+            ],
+          } },
+        ],
+      },
+      activePaneId: "copy-db",
+      customTitle: "Work",
+      color: "blue",
+    });
+  });
+
+  it("does not duplicate tabs with a singleton pane, even in a split", () => {
+    const source = tab("prefs", [{ id: "settings", kind: "settings" }, local("shell")]);
+    const state = { tabs: [source], activeId: source.id };
+
+    expect(tabsReducer(state, {
+      type: "duplicateTab", id: source.id, tabId: "copy", paneIds: ["copy-settings", "copy-shell"],
+    })).toBe(state);
+  });
+
   it("opening Settings again focuses the open Settings tab instead of adding a second", () => {
     const settings = (id: string): Pane => ({ id, kind: "settings" });
     const opened = tabsReducer(withTabs(["a"], "a"), { type: "open", tabId: "s1", pane: settings("s1.1") });

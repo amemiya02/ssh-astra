@@ -25,6 +25,8 @@ export interface HostDraft {
   identitiesOnly?: boolean;
   /** Allow the remote host to use the local SSH agent during a Connection. */
   forwardAgent?: boolean;
+  /** Seconds between keepalives; absent follows the global setting, 0 turns them off. */
+  keepaliveSeconds?: number;
   /** The Jump host this Host is reached through, or `null` to connect directly. */
   jumpHost: HostId | null;
   /** This Host's Terminal colour scheme id, overriding the global one; absent follows it. */

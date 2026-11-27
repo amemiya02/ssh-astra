@@ -87,6 +87,7 @@ impl Fixture {
             terminal_scheme: None,
             identities_only: false,
             forward_agent: false,
+            keepalive_seconds: None,
             default_directory: None,
             forwards: Vec::new(),
         };
@@ -240,6 +241,7 @@ fn behind(name: &str, jump: &Host) -> Host {
         terminal_scheme: None,
         identities_only: false,
         forward_agent: false,
+        keepalive_seconds: None,
         default_directory: None,
         forwards: Vec::new(),
     }

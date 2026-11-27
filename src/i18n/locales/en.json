@@ -31,6 +31,7 @@
       "identityFile": "Private key file",
       "identitiesOnly": "Identities only",
       "forwardAgent": "Agent forwarding",
+      "keepaliveSeconds": "Keepalive interval (seconds)",
       "terminalScheme": "Terminal colours",
       "defaultDirectory": "File panel folder"
     },
@@ -40,9 +41,11 @@
     "defaultDirectoryHint": "Where the File panel opens the first time. Leave blank for the home folder.",
     "identitiesOnlyHint": "When a key file is selected, offer only its matching key from ssh-agent and skip default key files.",
     "forwardAgentHint": "While connected, the remote host can use your SSH keys through your local agent. Reconnect to apply changes.",
+    "keepaliveHint": "Leave blank to follow the global setting. Enter 0 to turn keepalives off. Reconnect to apply changes.",
     "errors": {
       "required": "Required",
-      "port": "Enter a port from 1 to 65535"
+      "port": "Enter a port from 1 to 65535",
+      "keepaliveSeconds": "Enter a whole number from 0 to 4,294,967,295"
     },
     "save": "Save",
     "cancel": "Cancel",
@@ -130,6 +133,10 @@
     "localTerminal": "Local terminal",
     "newLocalTerminal": "New Local terminal",
     "close": "Close {{title}}",
+    "closeTab": "Close tab",
+    "closeOthers": "Close other tabs",
+    "closeRight": "Close tabs to the right",
+    "duplicate": "Duplicate tab",
     "rename": "Rename tab",
     "renameHint": "Clear the title to use the automatic name.",
     "title": "Tab title",

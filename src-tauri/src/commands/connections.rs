@@ -22,7 +22,7 @@ use crate::error::CommandResult;
 use crate::prompts::{ChannelPrompter, PendingPrompts, PromptRequest};
 
 /// Connects to `host` through its Jump hosts `hops` (outermost first), with
-/// the keepalive from the settings, then starts the Host's auto-start Port
+/// the global keepalive as the default, then starts the Host's auto-start Port
 /// forwards (as saved now). Rules that fail to start are reported through
 /// the forwards channel; they never fail the connect.
 pub async fn connect_host(
