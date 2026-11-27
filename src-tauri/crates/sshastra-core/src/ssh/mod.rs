@@ -102,6 +102,10 @@ impl ConnectionSettings {
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+/// Whether an authenticated Connection is still usable, without holding it open.
+pub type ConnectionAvailability = Box<dyn Fn() -> bool + Send + Sync>;
+type ConnectionListener = dyn Fn(&HostId, ConnectionAvailability) + Send + Sync;
+
 /// A server key not yet in known_hosts, put to the user.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostKeyPrompt {
@@ -329,6 +333,7 @@ pub struct ConnectionManager {
     keepalive_interval: Mutex<Option<Duration>>,
     handshake_timeout: Duration,
     slots: Mutex<HashMap<HostId, Arc<Slot>>>,
+    connection_listener: Option<Box<ConnectionListener>>,
     /// Each Host's shared SFTP session ([`Self::live_sftp`]), kept only while
     /// something holds it and tied to the Connection it was opened on.
     sftp: tokio::sync::Mutex<HashMap<HostId, SharedSftp>>,
@@ -383,8 +388,19 @@ impl ConnectionManager {
             keepalive_interval: Mutex::new(ConnectionSettings::default().keepalive_interval()),
             handshake_timeout: HANDSHAKE_TIMEOUT,
             slots: Mutex::default(),
+            connection_listener: None,
             sftp: tokio::sync::Mutex::default(),
         }
+    }
+
+    /// Reports each newly authenticated shared Connection. The listener runs
+    /// synchronously while the Host's connect slot is still held.
+    pub fn with_connection_listener(
+        mut self,
+        listener: impl Fn(&HostId, ConnectionAvailability) + Send + Sync + 'static,
+    ) -> Self {
+        self.connection_listener = Some(Box::new(listener));
+        self
     }
 
     /// Offers the keys of `agent` before any other method. The app passes
@@ -722,6 +738,16 @@ impl ConnectionManager {
         }
         let connection = Arc::new(establish().await?);
         *current = Arc::downgrade(&connection);
+        if let Some(listener) = &self.connection_listener {
+            let weak = current.clone();
+            listener(
+                id,
+                Box::new(move || {
+                    weak.upgrade()
+                        .is_some_and(|connection| !connection.is_closed())
+                }),
+            );
+        }
         Ok(connection)
     }
 
@@ -999,8 +1025,18 @@ impl Connection {
         let channel = self
             .open_session_channel()
             .await
-            .map_err(|e| FsError::Protocol(e.to_string()))?;
+            .map_err(|e| self.sftp_channel_error(e))?;
         SftpFs::start(Arc::clone(self), channel).await
+    }
+
+    pub(crate) fn sftp_channel_error(&self, error: russh::Error) -> FsError {
+        match error {
+            russh::Error::Disconnect | russh::Error::HUP => FsError::NotConnected,
+            russh::Error::SendError | russh::Error::RecvError if self.is_closed() => {
+                FsError::NotConnected
+            }
+            _ => FsError::Protocol(error.to_string()),
+        }
     }
 
     pub(crate) async fn open_session_channel(

@@ -665,6 +665,86 @@ fn remote_endpoint(fs: &Arc<MemoryFs>, id: &str, name: &str) -> RemoteTransfer {
 }
 
 #[tokio::test]
+async fn a_disconnected_host_transfer_waits_for_both_hosts_and_retries_once() {
+    let h = Harness::new();
+    let source = MemoryFs::new();
+    source.file("/payload", "contents");
+    h.remote.dir("/incoming");
+
+    let mut from = remote_endpoint(&source, "source", "Source");
+    let mut to = remote_endpoint(&h.remote, "target", "Target");
+    let source_live = Arc::new(AtomicBool::new(true));
+    let target_live = Arc::new(AtomicBool::new(true));
+    let refuse_source = Arc::new(AtomicBool::new(true));
+    let source_id = from.host.id.clone();
+    let target_id = to.host.id.clone();
+    let restore = |host: &HostId, live: &Arc<AtomicBool>| {
+        live.store(true, Ordering::SeqCst);
+        let live = live.clone();
+        h.queue
+            .connection_restored(host, Box::new(move || live.load(Ordering::SeqCst)));
+    };
+    restore(&source_id, &source_live);
+    restore(&target_id, &target_live);
+    let original = from.open;
+    from.open = Arc::new({
+        let source_live = source_live.clone();
+        let refuse_source = refuse_source.clone();
+        move || {
+            if refuse_source.load(Ordering::SeqCst) {
+                source_live.store(false, Ordering::SeqCst);
+                Box::pin(async { Err(FsError::NotConnected) })
+            } else {
+                original()
+            }
+        }
+    });
+    let original = to.open;
+    to.open = Arc::new({
+        let target_live = target_live.clone();
+        move || {
+            if !target_live.load(Ordering::SeqCst) {
+                Box::pin(async { Err(FsError::NotConnected) })
+            } else {
+                original()
+            }
+        }
+    });
+
+    target_live.store(false, Ordering::SeqCst);
+    let id = h
+        .queue
+        .copy_remote(from, "/payload".into(), to, "/incoming".into());
+    let failed = TransferState::Failed {
+        message: "not connected".into(),
+    };
+    h.until_state(id, failed.clone()).await;
+    restore(
+        &HostId::from("unrelated".to_owned()),
+        &Arc::new(AtomicBool::new(true)),
+    );
+    restore(&source_id, &source_live);
+    assert_eq!(h.transfer(id).state, failed);
+    restore(&target_id, &target_live);
+    h.until("two failed attempts", |_| {
+        h.events_for(id)
+            .iter()
+            .filter(|t| t.state == failed)
+            .count()
+            == 2
+    })
+    .await;
+
+    refuse_source.store(false, Ordering::SeqCst);
+    restore(&source_id, &source_live);
+    restore(&target_id, &target_live);
+    assert_eq!(h.transfer(id).state, failed);
+    h.queue.retry(id);
+    h.until_state(id, TransferState::Done).await;
+    assert_eq!(h.remote.read("/incoming/payload").unwrap(), b"contents");
+}
+
+#[tokio::test]
 async fn copying_between_hosts_preserves_the_nested_tree_and_identifies_both_hosts() {
     let h = Harness::new();
     let source = MemoryFs::new();

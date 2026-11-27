@@ -19,7 +19,10 @@ use tokio::sync::{oneshot, watch};
 
 use super::staged_write::{OpenedWrite, Partial, Side, StageLease, StageSlots, StagedWrite};
 use super::{join, FileKind, FileStat, FsError, FsResult, LocalFs, RemoteFs};
-use crate::{hosts::HostId, ssh::BoxFuture};
+use crate::{
+    hosts::HostId,
+    ssh::{BoxFuture, ConnectionAvailability},
+};
 
 /// The most often a running transfer reports its byte progress.
 pub const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
@@ -152,6 +155,7 @@ type Listener = dyn Fn(&Transfer) + Send + Sync;
 /// [`download`](Self::download), and [`copy_remote`](Self::copy_remote) must
 /// be called on a Tokio runtime, which runs every transfer. Other methods
 /// may be called anywhere.
+#[derive(Clone)]
 pub struct TransferQueue {
     inner: Arc<Inner>,
 }
@@ -173,6 +177,7 @@ struct State {
     running: usize,
     pending: VecDeque<TransferId>,
     entries: BTreeMap<TransferId, Entry>,
+    connections: HashMap<HostId, ConnectionAvailability>,
     /// An `OverwriteAll` (`true`) or `SkipAll` (`false`) answer.
     answer_all: Option<bool>,
     events: VecDeque<Transfer>,
@@ -189,6 +194,14 @@ struct Entry {
     control: Option<watch::Sender<Control>>,
     answer: Option<oneshot::Sender<ConflictAnswer>>,
     last_progress: Option<Instant>,
+    auto_retry: AutoRetry,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AutoRetry {
+    Available,
+    Waiting,
+    Used,
 }
 
 #[derive(Clone)]
@@ -205,6 +218,7 @@ enum Location {
     Remote {
         path: String,
         open: OpenRemote,
+        host_id: Option<HostId>,
         host: Option<TransferHost>,
     },
 }
@@ -224,6 +238,13 @@ impl Location {
         }
     }
 
+    fn host_id(&self) -> Option<&HostId> {
+        match self {
+            Self::Local(_) => None,
+            Self::Remote { host_id, .. } => host_id.as_ref(),
+        }
+    }
+
     fn opener(&self) -> Option<&OpenRemote> {
         match self {
             Self::Local(_) => None,
@@ -238,12 +259,43 @@ impl Location {
     async fn open(&self, local: &Arc<dyn LocalFs>) -> FsResult<Side> {
         match self {
             Self::Local(path) => Ok(Side::Local(local.clone(), path.clone())),
-            Self::Remote { path, open, host } => Ok(Side::Remote(
-                open().await?,
-                path.clone(),
-                host.as_ref().map(|host| host.id.clone()),
-            )),
+            Self::Remote {
+                path,
+                open,
+                host_id,
+                ..
+            } => Ok(Side::Remote(open().await?, path.clone(), host_id.clone())),
         }
+    }
+}
+
+impl Job {
+    fn hosts(&self) -> impl Iterator<Item = &HostId> {
+        [self.source.host_id(), self.target.host_id()]
+            .into_iter()
+            .flatten()
+    }
+}
+
+impl State {
+    fn queue_recovered(&mut self, id: TransferId) {
+        let entry = self.entries.get_mut(&id).expect("a transfer is listed");
+        if entry.auto_retry == AutoRetry::Waiting
+            && entry
+                .job
+                .hosts()
+                .all(|host| self.connections.get(host).is_some_and(|live| live()))
+        {
+            entry.auto_retry = AutoRetry::Used;
+            self.requeue(id);
+        }
+    }
+
+    fn requeue(&mut self, id: TransferId) {
+        let entry = self.entries.get_mut(&id).expect("a transfer is listed");
+        entry.info.state = TransferState::Queued;
+        self.pending.push_back(id);
+        self.events.push_back(entry.info.clone());
     }
 }
 
@@ -264,6 +316,7 @@ impl TransferQueue {
                     running: 0,
                     pending: VecDeque::new(),
                     entries: BTreeMap::new(),
+                    connections: HashMap::new(),
                     answer_all: None,
                     events: VecDeque::new(),
                     publishing: false,
@@ -285,6 +338,27 @@ impl TransferQueue {
     /// Queues copying the local file or folder `local` into the remote
     /// directory `remote_dir`.
     pub fn upload(&self, open: OpenRemote, local: PathBuf, remote_dir: String) -> TransferId {
+        self.enqueue_upload(None, open, local, remote_dir)
+    }
+
+    /// Queues an upload that can resume once when this Host reconnects.
+    pub fn upload_to(
+        &self,
+        host: HostId,
+        open: OpenRemote,
+        local: PathBuf,
+        remote_dir: String,
+    ) -> TransferId {
+        self.enqueue_upload(Some(host), open, local, remote_dir)
+    }
+
+    fn enqueue_upload(
+        &self,
+        host_id: Option<HostId>,
+        open: OpenRemote,
+        local: PathBuf,
+        remote_dir: String,
+    ) -> TransferId {
         let name = local
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -297,6 +371,7 @@ impl TransferQueue {
             target: Location::Remote {
                 path,
                 open,
+                host_id,
                 host: None,
             },
         })
@@ -305,6 +380,27 @@ impl TransferQueue {
     /// Queues copying the remote file or folder `remote` into the local
     /// directory `local_dir`.
     pub fn download(&self, open: OpenRemote, remote: String, local_dir: PathBuf) -> TransferId {
+        self.enqueue_download(None, open, remote, local_dir)
+    }
+
+    /// Queues a download that can resume once when this Host reconnects.
+    pub fn download_from(
+        &self,
+        host: HostId,
+        open: OpenRemote,
+        remote: String,
+        local_dir: PathBuf,
+    ) -> TransferId {
+        self.enqueue_download(Some(host), open, remote, local_dir)
+    }
+
+    fn enqueue_download(
+        &self,
+        host_id: Option<HostId>,
+        open: OpenRemote,
+        remote: String,
+        local_dir: PathBuf,
+    ) -> TransferId {
         let name = remote_name(&remote).to_owned();
         let local = local_dir.join(&name);
         self.enqueue(Job {
@@ -313,6 +409,7 @@ impl TransferQueue {
             source: Location::Remote {
                 path: remote,
                 open,
+                host_id,
                 host: None,
             },
             target: Location::Local(local),
@@ -340,14 +437,37 @@ impl TransferQueue {
             source: Location::Remote {
                 path: source_path,
                 open: source.open,
+                host_id: Some(source.host.id.clone()),
                 host: Some(source.host),
             },
             target: Location::Remote {
                 path,
                 open: target.open,
+                host_id: Some(target.host.id.clone()),
                 host: Some(target.host),
             },
         })
+    }
+
+    /// Records a newly established Connection and wakes eligible transfers.
+    /// A Host-to-Host transfer needs both Connections when it retries.
+    pub fn connection_restored(&self, host: &HostId, live: ConnectionAvailability) {
+        let mut st = self.inner.lock();
+        st.connections.insert(host.clone(), live);
+        let waiting: Vec<_> = st
+            .entries
+            .iter()
+            .filter(|(_, entry)| {
+                entry.auto_retry == AutoRetry::Waiting && entry.job.hosts().any(|id| id == host)
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        for id in waiting {
+            st.queue_recovered(id);
+        }
+        drop(st);
+        self.inner.publish();
+        self.inner.pump();
     }
 
     /// Cancels the transfer and discards its incomplete staging files.
@@ -360,6 +480,9 @@ impl TransferQueue {
         match entry.info.state {
             TransferState::Queued | TransferState::Paused | TransferState::Failed { .. } => {
                 entry.info.state = TransferState::Cancelled;
+                if entry.auto_retry == AutoRetry::Waiting {
+                    entry.auto_retry = AutoRetry::Used;
+                }
                 let snapshot = entry.info.clone();
                 let partials = std::mem::take(&mut entry.partials);
                 st.pending.retain(|p| *p != id);
@@ -432,10 +555,10 @@ impl TransferQueue {
         if !can_requeue(&entry.info.state) {
             return;
         }
-        entry.info.state = TransferState::Queued;
-        let snapshot = entry.info.clone();
-        st.pending.push_back(id);
-        st.events.push_back(snapshot);
+        if entry.auto_retry == AutoRetry::Waiting {
+            entry.auto_retry = AutoRetry::Used;
+        }
+        st.requeue(id);
         drop(st);
         self.inner.publish();
         self.inner.pump();
@@ -535,6 +658,7 @@ impl TransferQueue {
                 control: None,
                 answer: None,
                 last_progress: None,
+                auto_retry: AutoRetry::Available,
             },
         );
         st.pending.push_back(id);
@@ -749,18 +873,32 @@ impl Inner {
             if st.running == 0 && st.pending.is_empty() {
                 st.answer_all = None;
             }
-            let entry = st
-                .entries
-                .get_mut(&id)
-                .expect("a running transfer is listed");
+            let State {
+                entries,
+                connections,
+                ..
+            } = &mut *st;
+            let entry = entries.get_mut(&id).expect("a running transfer is listed");
             let mut late_cleanup = Vec::new();
             let result = match (result, entry.control.take()) {
                 (Err(_), Some(control)) if *control.borrow() == Control::Cancel => {
                     late_cleanup = std::mem::take(&mut entry.partials);
                     Err(Stop::Cancelled)
                 }
+                (Err(Stop::Failed(FsError::NotConnected)), Some(control))
+                    if *control.borrow() == Control::Pause =>
+                {
+                    Err(Stop::Paused)
+                }
                 (result, _) => result,
             };
+            if matches!(result, Err(Stop::Failed(FsError::NotConnected)))
+                && entry.auto_retry == AutoRetry::Available
+                && entry.job.hosts().next().is_some()
+                && entry.job.hosts().all(|host| connections.contains_key(host))
+            {
+                entry.auto_retry = AutoRetry::Waiting;
+            }
             entry.answer = None;
             entry.info.state = match &result {
                 Ok(()) => TransferState::Done,
@@ -772,6 +910,8 @@ impl Inner {
             };
             let snapshot = entry.info.clone();
             st.events.push_back(snapshot);
+            // Authentication may have finished while the attempt was settling.
+            st.queue_recovered(id);
             (result, late_cleanup)
         };
         self.schedule_cleanup(late_cleanup);
@@ -974,10 +1114,7 @@ impl Inner {
                 // An in-place overwrite has no staging file. Once started,
                 // finish that file before honoring a pause.
                 let n = interruptible(control, !unprotected, async {
-                    reader
-                        .read(&mut buf)
-                        .await
-                        .map_err(|e| io_error(&source.display(), e))
+                    reader.read(&mut buf).await.map_err(|e| source.io_error(e))
                 })
                 .await?;
                 if n == 0 {
@@ -987,7 +1124,7 @@ impl Inner {
                     writer
                         .write_all(&buf[..n])
                         .await
-                        .map_err(|e| io_error(&stage.target().display(), e))
+                        .map_err(|e| stage.target().io_error(e))
                 })
                 .await?;
                 self.progress(id, n as u64);
@@ -996,7 +1133,7 @@ impl Inner {
                 writer
                     .shutdown()
                     .await
-                    .map_err(|e| io_error(&stage.target().display(), e))
+                    .map_err(|e| stage.target().io_error(e))
             })
             .await
         }
@@ -1005,7 +1142,7 @@ impl Inner {
         if matches!(copied, Err(Stop::Paused)) {
             // Close the writer before exposing the partial or releasing the slot.
             if let Err(e) = writer.shutdown().await {
-                copied = Err(io_error(&stage.target().display(), e).into());
+                copied = Err(stage.target().io_error(e).into());
             }
         } else if copied.is_err() && matches!(stage.target(), Side::Local(..)) {
             // A local write may still be running in Tokio's blocking pool.
@@ -1110,10 +1247,6 @@ where
         }
         result = operation => result.map_err(Stop::from),
     }
-}
-
-fn io_error(path: &str, e: std::io::Error) -> FsError {
-    FsError::Io(format!("{path}: {e}"))
 }
 
 /// One thing to create at the destination.

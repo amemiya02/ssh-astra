@@ -51,6 +51,13 @@ impl Side {
         }
     }
 
+    pub(super) fn io_error(&self, error: io::Error) -> FsError {
+        match self {
+            Self::Remote(fs, ..) if fs.transfer_connection_lost(&error) => FsError::NotConnected,
+            _ => FsError::Io(format!("{}: {error}", self.display())),
+        }
+    }
+
     pub(super) async fn stat(&self) -> FsResult<FileStat> {
         match self {
             Self::Local(fs, path) => fs.stat(path).await,
@@ -627,6 +634,6 @@ async fn read_tail(side: &Side, offset: u64, len: usize) -> FsResult<Option<Vec<
     match reader.read_exact(&mut data).await {
         Ok(_) => Ok(Some(data)),
         Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => Ok(None),
-        Err(e) => Err(FsError::Io(format!("{}: {e}", side.display()))),
+        Err(e) => Err(side.io_error(e)),
     }
 }
