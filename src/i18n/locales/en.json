@@ -78,7 +78,15 @@
     "search": "Search Hosts",
     "clearSearch": "Clear search",
     "noResultsTitle": "No matching Hosts",
-    "noResultsBody": "Search looks at names, addresses and users.",
+    "noResultsBody": "Try a different search or Tag filter.",
+    "tags": {
+      "filter": "Filter Hosts by Tag",
+      "all": "All Tags",
+      "label": "Tags",
+      "add": "Add Tag",
+      "remove": "Remove Tag {{tag}}",
+      "limits": "Up to {{maxTags}} Tags, {{maxLength}} characters each."
+    },
     "emptyGroup": "Drag Hosts here",
     "emptyGroupSorted": "No Hosts in this Group",
     "sort": {
@@ -1188,7 +1196,7 @@
     "failed": "Could not open a Temporary Host."
   },
   "home": {
-    "search": "Search Hosts by name, address or user",
+    "search": "Search Hosts by name, address, user or Tag",
     "recent": "Recent",
     "hosts": "Hosts",
     "ungrouped": "Ungrouped",

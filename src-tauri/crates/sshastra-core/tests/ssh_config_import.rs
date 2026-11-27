@@ -297,6 +297,7 @@ fn a_host_with_a_taken_name_is_skipped_and_its_namesake_used_as_jump_host() {
             None,
             HostDraft {
                 name: "bastion".into(),
+                tags: Vec::new(),
                 address: "my-bastion".into(),
                 port: 2200,
                 user: "me".into(),

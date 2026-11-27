@@ -2,6 +2,7 @@
 //! versioned JSON file in the app's config directory, replaced atomically on
 //! every change. Credentials are never stored here.
 
+use std::collections::HashSet;
 use std::fmt;
 use std::fs;
 use std::io;
@@ -21,7 +22,10 @@ pub use transfer::{ImportSummary, EXPORT_FORMAT};
 /// The file format version this build writes, to the store and to export
 /// files. Bump it together with a migration step in [`migrate`], which reads
 /// both.
-const CURRENT_VERSION: u32 = 13;
+const CURRENT_VERSION: u32 = 14;
+
+const MAX_HOST_TAGS: usize = 10;
+const MAX_TAG_LENGTH: usize = 32;
 
 /// Identifies a Host across restarts and across the IPC boundary.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -105,6 +109,9 @@ pub enum HostAuth {
 pub struct Host {
     pub id: HostId,
     pub name: String,
+    /// User-defined labels, in the order they were added.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
     pub address: String,
     pub port: u16,
     pub user: String,
@@ -158,6 +165,8 @@ pub struct Host {
 #[serde(rename_all = "camelCase")]
 pub struct HostDraft {
     pub name: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
     pub address: String,
     pub port: u16,
     pub user: String,
@@ -220,6 +229,7 @@ impl HostDraft {
         Ok(Host {
             id,
             name: self.name.trim().to_owned(),
+            tags: normalize_tags(&self.tags),
             address: self.address.trim().to_owned(),
             port: self.port,
             user: self.user.trim().to_owned(),
@@ -244,6 +254,21 @@ impl HostDraft {
             forwards: Vec::new(),
         })
     }
+}
+
+fn normalize_tags(tags: &[String]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    tags.iter()
+        .map(|tag| {
+            let tag = tag.trim();
+            tag.char_indices()
+                .nth(MAX_TAG_LENGTH)
+                .map_or(tag, |(end, _)| tag[..end].trim_end())
+        })
+        .filter(|tag| !tag.is_empty() && seen.insert(tag.to_lowercase()))
+        .take(MAX_HOST_TAGS)
+        .map(str::to_owned)
+        .collect()
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -614,6 +639,7 @@ impl HostStore {
             };
             let mut host = HostDraft {
                 name: entry.name.clone(),
+                tags: Vec::new(),
                 address: entry.address,
                 port: entry.port,
                 user: entry.user,
@@ -866,8 +892,9 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
         // adds a command sent after each shell opens. v11 adds the Terminal
         // character set and Backspace byte, defaulting to UTF-8 and DEL.
         // v12 adds outbound proxies; older Hosts inherit the global setting.
-        // v13 adds a local shell command as an outbound proxy choice.
-        2 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | CURRENT_VERSION => {
+        // v13 adds a local shell command as an outbound proxy choice. v14
+        // adds Tags; older Hosts default to an empty list.
+        2 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | CURRENT_VERSION => {
             let FileV2 { groups, hosts } = serde_json::from_str(text).map_err(corrupt)?;
             Ok(Library { groups, hosts })
         }
@@ -885,13 +912,16 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
             host.post_login_command = None;
         }
     }
-    if version < CURRENT_VERSION {
+    if version < 13 {
         // An older file could not authorize running a ProxyCommand.
         for host in &mut library.hosts {
             if version < 12 || matches!(host.proxy, HostProxy::ProxyCommand(_)) {
                 host.proxy = HostProxy::Inherit;
             }
         }
+    }
+    for host in &mut library.hosts {
+        host.tags = normalize_tags(&host.tags);
     }
     Ok(library)
 }

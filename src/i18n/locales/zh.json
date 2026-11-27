@@ -78,7 +78,15 @@
     "search": "搜索 Host",
     "clearSearch": "清除搜索",
     "noResultsTitle": "没有匹配的 Host",
-    "noResultsBody": "按名称、地址和用户名搜索。",
+    "noResultsBody": "请尝试其他搜索词或标签筛选条件。",
+    "tags": {
+      "filter": "按标签筛选 Host",
+      "all": "所有标签",
+      "label": "标签",
+      "add": "添加标签",
+      "remove": "移除标签 {{tag}}",
+      "limits": "最多 {{maxTags}} 个标签，每个最多 {{maxLength}} 个字符。"
+    },
     "emptyGroup": "把 Host 拖到这里",
     "emptyGroupSorted": "此分组中没有 Host",
     "sort": {
@@ -1188,7 +1196,7 @@
     "failed": "无法打开临时主机。"
   },
   "home": {
-    "search": "按名称、地址或用户搜索 Host",
+    "search": "按名称、地址、用户或标签搜索 Host",
     "recent": "最近使用",
     "hosts": "Host",
     "ungrouped": "未分组",

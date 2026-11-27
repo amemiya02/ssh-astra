@@ -1,3 +1,4 @@
+import { explicitTagQuery } from "@/features/hosts/host-tags";
 import type { Host, QuickConnectTarget } from "@/lib/ipc/hosts";
 
 /** Parse an SSH destination. An IPv6 address with a port must be bracketed. */
@@ -51,6 +52,13 @@ function isIpv6(address: string): boolean {
 export function exactHostMatch(hosts: readonly Host[], input: string): Host | undefined {
   const query = input.trim().toLowerCase();
   return query ? hosts.find((host) => host.name.toLowerCase() === query) : undefined;
+}
+
+/** A saved Host name takes precedence over a destination typed in search. */
+export function connectionSearch(hosts: readonly Host[], query: string): { exact?: Host; quick?: QuickConnectTarget } {
+  if (explicitTagQuery(query) !== undefined) return {};
+  const exact = exactHostMatch(hosts, query);
+  return exact ? { exact } : { quick: parseQuickConnect(query) };
 }
 
 export function quickConnectLabel({ user, address, port }: QuickConnectTarget): string {

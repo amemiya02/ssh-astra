@@ -1,4 +1,5 @@
 import { fuzzyMatch } from "@/features/hosts/hostTree";
+import { explicitTagQuery, hasHostTag } from "@/features/hosts/host-tags";
 
 export type PaletteGroup = "hosts" | "tabs" | "actions";
 
@@ -12,6 +13,8 @@ export interface PaletteEntry {
   detail?: string;
   /** Other words that should find it ("preferences" for Settings). */
   keywords?: string[];
+  /** Hosts only: their Tags, ranked below the existing searchable fields. */
+  tags?: readonly string[];
   /** Hosts only: 0 is the most recently opened. */
   recent?: number;
 }
@@ -61,13 +64,23 @@ export function rankPalette<T extends PaletteEntry>(entries: T[], query: string)
       .map((entry) => ({ entry, id: entry.id, titleMatches: [] }));
   }
 
+  const tag = explicitTagQuery(q);
+  if (tag !== undefined) {
+    return entries
+      .filter((entry) => entry.group === "hosts" && hasHostTag(entry.tags, tag))
+      .sort(byRecency)
+      .map((entry) => ({ entry, id: entry.id, titleMatches: [] }));
+  }
+
   const scored = entries.flatMap((entry) => {
     const title = score(entry.title, q);
     if (title) return [{ entry, value: title.score, titleMatches: title.indexes }];
     // Any title match beats any match elsewhere.
     const others = [entry.detail ?? "", ...(entry.keywords ?? [])].map((text) => score(text, q)?.score ?? -Infinity);
     const best = Math.max(...others);
-    return best === -Infinity ? [] : [{ entry, value: best - 5000, titleMatches: [] }];
+    if (best !== -Infinity) return [{ entry, value: best - 5000, titleMatches: [] }];
+    const bestTag = Math.max(...(entry.tags ?? []).map((tag) => score(tag, q)?.score ?? -Infinity));
+    return bestTag === -Infinity ? [] : [{ entry, value: bestTag - 10000, titleMatches: [] }];
   });
   return scored
     .sort((a, b) => b.value - a.value || byRecency(a.entry, b.entry))

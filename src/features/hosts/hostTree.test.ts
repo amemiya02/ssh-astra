@@ -106,6 +106,23 @@ describe("searchTree", () => {
   it("returns the whole tree for a blank query", () => {
     expect(shape(searchTree(sample, "  "))).toEqual(shape(buildTree(sample)));
   });
+
+  it("finds Tags in plain searches and reserves tag: for a complete Tag name", () => {
+    const tree = {
+      groups: [group("prod")],
+      hosts: [
+        host("api", "prod", { tags: ["East Coast", "24"] }),
+        host("proxy", null, { tags: ["East Coast Preview"] }),
+        host("db", null, { name: "East Coast" }),
+      ],
+    };
+
+    expect(shape(searchTree(tree, "east coast"))).toEqual([{ prod: ["api"] }, "proxy", "db"]);
+    expect(shape(searchTree(tree, " TAG: East Coast "))).toEqual([{ prod: ["api"] }]);
+    expect(shape(searchTree(tree, "tag:24"))).toEqual([{ prod: ["api"] }]);
+    expect(searchTree(tree, "tag:")).toEqual([]);
+    expect(shape(searchTree(tree, "east", "EAST COAST PREVIEW"))).toEqual(["proxy"]);
+  });
 });
 
 describe("dropMove", () => {

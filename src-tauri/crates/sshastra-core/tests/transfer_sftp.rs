@@ -36,6 +36,7 @@ fn endpoint(sshd: &Sshd, dir: &Path) -> (ConnectionManager, Host) {
     let host = Host {
         id: HostId::from("transfer".to_owned()),
         name: "transfer".into(),
+        tags: Vec::new(),
         address: sshd.host.clone(),
         port: sshd.port,
         user: sshd.user.into(),

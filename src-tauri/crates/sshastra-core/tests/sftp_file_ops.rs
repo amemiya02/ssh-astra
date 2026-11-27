@@ -37,6 +37,7 @@ async fn connect(sshd: &Sshd) -> (Arc<Connection>, tempfile::TempDir) {
     let host = Host {
         id: HostId::from("sftp-ops".to_owned()),
         name: "sftp-ops".into(),
+        tags: Vec::new(),
         address: sshd.host.clone(),
         port: sshd.port,
         user: sshd.user.into(),

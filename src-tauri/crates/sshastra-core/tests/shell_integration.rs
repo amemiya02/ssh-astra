@@ -87,6 +87,7 @@ impl Shell {
         let host = Host {
             id: HostId::from(format!("{user}-shell")),
             name: "shell".into(),
+            tags: Vec::new(),
             address: sshd.host.clone(),
             port: sshd.port,
             user: user.into(),

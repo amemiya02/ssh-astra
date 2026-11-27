@@ -79,6 +79,7 @@ impl Fixture {
         let host = Host {
             id: HostId::from("flaky".to_owned()),
             name: "flaky sshd".into(),
+            tags: Vec::new(),
             address: sshd.host.clone(),
             port: sshd.port,
             user: sshd.user.into(),

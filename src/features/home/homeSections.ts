@@ -11,11 +11,10 @@ export interface HomeSection {
 }
 
 /**
- * Home's Hosts grouped by Group, narrowed by the search `query` (name, address, user; same
- * fuzzy match as the Host list). Groups come in tree order, the ungrouped Hosts last; a Group
- * with nothing to show is left out.
+ * Home's Hosts, narrowed by the same search and Tag as the Host list. Groups
+ * come in tree order, the ungrouped Hosts last. Empty Groups are left out.
  */
-export function homeSections(tree: HostTree, query: string): HomeSection[] {
+export function homeSections(tree: HostTree, query: string, selectedTag: string | null = null): HomeSection[] {
   const sections: HomeSection[] = [];
   const ungrouped: HomeSection = { id: "ungrouped", title: null, hosts: [] };
 
@@ -33,7 +32,7 @@ export function homeSections(tree: HostTree, query: string): HomeSection[] {
       walk(node.children.filter((child) => child.kind === "group"), inside, here);
     }
   };
-  walk(searchTree(tree, query), [], null);
+  walk(searchTree(tree, query, selectedTag), [], null);
 
   return [...sections, ungrouped].filter((section) => section.hosts.length > 0);
 }

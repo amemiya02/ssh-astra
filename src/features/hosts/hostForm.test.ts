@@ -68,13 +68,17 @@ describe("parseHostForm", () => {
 
 describe("hostFormFrom", () => {
   it("round-trips a saved Host through the form", () => {
-    const host = { id: "1", name: "db", address: "db.local", port: 22, user: "root", auth: { type: "password" as const }, jumpHost: "2", groupId: null, forwards: [] };
+    const host = {
+      id: "1", name: "db", tags: ["Database"], address: "db.local", port: 22, user: "root",
+      auth: { type: "password" as const }, jumpHost: "2", groupId: null, forwards: [],
+    };
     const form = hostFormFrom(host);
     expect(form).toEqual({
       name: "db",
       address: "db.local",
       port: "22",
       user: "root",
+      tags: ["Database"],
       jumpHost: "2",
       authType: "password",
       identityFile: "",

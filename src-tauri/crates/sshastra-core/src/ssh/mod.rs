@@ -562,6 +562,7 @@ impl ConnectionManager {
         };
         let host = HostDraft {
             name,
+            tags: Vec::new(),
             address,
             port,
             user,

@@ -9,6 +9,7 @@ import type { HostId } from "@/lib/ipc/hosts";
 import { useSetting } from "@/lib/storage";
 import { HostList } from "./HostList";
 import { HostSortMenu } from "./HostSortMenu";
+import { HostTagFilter } from "./HostTagFilter";
 import { HostsSidebar } from "./HostsSidebar";
 import { RowMoreMenu } from "./RowMenu";
 import { recentHostsSetting } from "./host-history";
@@ -35,14 +36,15 @@ export function HostsPanel({
   const status = useHosts((s) => s.status);
   const loadError = useHosts((s) => s.error);
   const [query, setQuery] = useState("");
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [sort, setSort] = useSetting(hostSortSetting);
   const [history] = useSetting(recentHostsSetting);
   const { messages, selected, selectedGroupId } = controller;
 
-  const searching = query.trim() !== "";
+  const searching = query.trim() !== "" || selectedTag !== null;
   const sortHistory = sort === "recent" ? history : undefined;
   const sortedTree = useMemo(() => sortHostTree(tree, sort, sortHistory), [tree, sort, sortHistory]);
-  const nodes = useMemo(() => searchTree(sortedTree, query), [sortedTree, query]);
+  const nodes = useMemo(() => searchTree(sortedTree, query, selectedTag), [sortedTree, query, selectedTag]);
 
   let list;
   if (status === "error") {
@@ -54,10 +56,11 @@ export function HostsPanel({
         {messages}
       </div>
     );
-  } else if (tree.hosts.length > 0 || tree.groups.length > 0) {
+  } else if (tree.hosts.length > 0 || tree.groups.length > 0 || selectedTag !== null) {
     list = (
       <div className="flex h-full flex-col gap-2">
         <SearchField value={query} onChange={setQuery} />
+        <HostTagFilter hosts={tree.hosts} value={selectedTag} onChange={setSelectedTag} />
         {messages}
         <div className="min-h-0 flex-1">
           {searching && nodes.length === 0 ? (
@@ -131,7 +134,7 @@ export function HostsPanel({
   );
 }
 
-/** Fuzzy search over names, addresses and users. Escape clears it. */
+/** Escape clears the search. */
 function SearchField({ value, onChange }: { value: string; onChange(value: string): void }) {
   const { t } = useTranslation();
   return (
