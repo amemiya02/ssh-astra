@@ -297,8 +297,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
             activeId={activeId}
             platform={platform}
             onActivate={(id) => dispatch({ type: "activate", id })}
-            onClose={(id) => dispatch({ type: "close", id })}
-            onCustomize={dispatch}
+            onTabAction={dispatch}
             onMove={(id, to) => dispatch({ type: "move", id, to })}
             onNewLocalTerminal={openLocalTerminal}
             onSplit={split}
