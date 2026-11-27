@@ -78,7 +78,15 @@
     "search": "Search Hosts",
     "clearSearch": "Clear search",
     "noResultsTitle": "No matching Hosts",
-    "noResultsBody": "Search looks at names, addresses and users.",
+    "noResultsBody": "Try a different search or Tag filter.",
+    "tags": {
+      "filter": "Filter Hosts by Tag",
+      "all": "All Tags",
+      "label": "Tags",
+      "add": "Add Tag",
+      "remove": "Remove Tag {{tag}}",
+      "limits": "Up to {{maxTags}} Tags, {{maxLength}} characters each."
+    },
     "emptyGroup": "Drag Hosts here",
     "emptyGroupSorted": "No Hosts in this Group",
     "sort": {
@@ -1193,7 +1201,14 @@
     "downloadingPercent": "Downloading the update… {{percent}}%",
     "restarting": "Restarting into the new version…",
     "installFailed": "The update failed: {{reason}}",
-    "retry": "Try again",
+    "releaseNotes": "Release notes",
+    "noReleaseNotes": "No release notes are available for this version.",
+    "interruptions": "Restarting will interrupt the following activity.",
+    "connections_one": "{{count}} Connection",
+    "connections_other": "{{count}} Connections",
+    "transfers_one": "{{count}} transfer",
+    "transfers_other": "{{count}} transfers",
+    "later": "Later",
     "dismiss": "Dismiss"
   },
   "rail": {
@@ -1212,7 +1227,7 @@
     "failed": "Could not open a Temporary Host."
   },
   "home": {
-    "search": "Search Hosts by name, address or user",
+    "search": "Search Hosts by name, address, user or Tag",
     "recent": "Recent",
     "hosts": "Hosts",
     "ungrouped": "Ungrouped",

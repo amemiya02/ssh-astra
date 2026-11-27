@@ -19,6 +19,7 @@ fn store() -> (tempfile::TempDir, HostStore) {
 fn draft(name: &str) -> HostDraft {
     HostDraft {
         name: name.into(),
+        tags: Vec::new(),
         address: format!("{name}.example.com"),
         port: 22,
         user: "deploy".into(),
@@ -60,6 +61,7 @@ fn populated() -> (tempfile::TempDir, HostStore) {
         .upsert(
             None,
             HostDraft {
+                tags: vec!["  Production ".into(), "East Coast".into()],
                 jump_host: Some(bastion.id.clone()),
                 auth: HostAuth::Key {
                     identity_file: PathBuf::from("~/.ssh/id_ed25519"),
@@ -156,10 +158,66 @@ fn exporting_then_importing_into_an_empty_store_gives_the_same_host_list() {
     let imported = target.tree();
     assert_eq!(imported.hosts.len(), 3);
     assert_eq!(imported.groups.len(), 3);
+    let web = imported
+        .hosts
+        .iter()
+        .find(|host| host.name == "web")
+        .unwrap();
+    assert_eq!(web.tags, ["Production", "East Coast"]);
+    let exported: serde_json::Value = serde_json::from_str(&file).unwrap();
+    let exported_web = exported["hosts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|host| host["name"] == "web")
+        .unwrap();
+    assert_eq!(
+        exported_web["tags"],
+        serde_json::json!(["Production", "East Coast"])
+    );
     assert_eq!(renamed(&source.tree(), &imported), imported);
     assert_eq!(summary.hosts_added, 3);
     assert_eq!(summary.groups_added, 3);
     assert!(summary.skipped_hosts.is_empty());
+}
+
+#[test]
+fn importing_enforces_tag_limits_and_normalization() {
+    let (_a, source) = populated();
+    let mut exported: serde_json::Value = serde_json::from_str(&source.export()).unwrap();
+    exported["hosts"][1]["tags"] = serde_json::json!([
+        "  Production ",
+        "production",
+        "  ",
+        "abcdefghijklmnopqrstuvwxyz1234567890",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11"
+    ]);
+
+    let (_b, mut target) = store();
+    target.import(&exported.to_string()).unwrap();
+    assert_eq!(
+        target.list()[1].tags,
+        [
+            "Production",
+            "abcdefghijklmnopqrstuvwxyz123456",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10"
+        ]
+    );
 }
 
 #[test]

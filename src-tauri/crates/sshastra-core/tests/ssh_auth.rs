@@ -117,6 +117,7 @@ fn host(sshd: &Sshd, auth: HostAuth) -> Host {
     Host {
         id: HostId::from(format!("auth-{}", sshd.port)),
         name: "docker sshd".into(),
+        tags: Vec::new(),
         address: sshd.host.clone(),
         port: sshd.port,
         user: sshd.user.into(),

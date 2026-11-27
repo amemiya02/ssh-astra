@@ -8,6 +8,7 @@ use sshastra_core::hosts::{GroupId, HostAuth, HostDraft, HostStore, HostStoreErr
 fn draft(name: &str) -> HostDraft {
     HostDraft {
         name: name.into(),
+        tags: Vec::new(),
         address: "10.0.0.5".into(),
         port: 22,
         user: "deploy".into(),
@@ -76,7 +77,7 @@ fn a_version_1_file_opens_with_every_host_at_the_top_level() {
     store.create_group("Prod", None).unwrap();
     let json: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(json["version"], 13);
+    assert_eq!(json["version"], 14);
     assert_eq!(json["hosts"][0]["name"], "web");
 }
 

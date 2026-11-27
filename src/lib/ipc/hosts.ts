@@ -38,6 +38,8 @@ export interface HostDraft {
   port: number;
   user: string;
   auth: HostAuth;
+  /** Organisational labels. An absent list is empty. */
+  tags?: string[];
   /** With a selected key, restrict ssh-agent to its matching identity. */
   identitiesOnly?: boolean;
   /** Allow the remote host to use the local SSH agent during a Connection. */

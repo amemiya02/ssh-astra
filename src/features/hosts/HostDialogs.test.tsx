@@ -69,6 +69,34 @@ const field = (name: string) =>
   [...document.querySelectorAll<HTMLLabelElement>('[role="dialog"] label')].find((label) => label.textContent === name)!.control!;
 
 describe("Host editor", () => {
+  it("suggests existing Tags, removes a Tag and sends the edited Tags through HostDraft", async () => {
+    const save = vi.fn<EditorProps["save"]>().mockResolvedValue(host);
+    await renderEditor({
+      save,
+      host: { ...host, tags: ["Old Tag"] },
+      hosts: [{ ...host, id: "other", tags: ["East Coast", "old tag"] }],
+    });
+
+    const input = field("Tags") as HTMLInputElement;
+    expect([...input.list!.options].map((option) => option.value)).toEqual(["East Coast"]);
+    const remove = document.querySelector<HTMLButtonElement>('button[aria-label="Remove Tag Old Tag"]')!;
+    act(() => remove.click());
+
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    const type = (value: string) => {
+      setValue.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    act(() => type("  East Coast  "));
+    act(() => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true })));
+    expect(input.value).toBe("");
+    expect(save).not.toHaveBeenCalled();
+    act(() => type("Production"));
+
+    await act(async () => button("Save").click());
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ tags: ["East Coast", "Production"] }), "prod");
+  });
+
   it("tests the current unsaved address, answers a password prompt without a save checkbox, and shows success", async () => {
     const save = vi.fn<EditorProps["save"]>();
     const testConnection = vi.fn<EditorProps["testConnection"]>().mockImplementation(async (_draft, _id, ask) => {

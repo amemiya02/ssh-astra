@@ -396,6 +396,12 @@ Compact and native-feeling; controls recede until hovered, pressed or focused.
 - **States:** `accent` on hover, `selected` when selected; search matches are bolded in foreground.
 - **Sorting:** The header's sort menu offers manual order, name, address and last connected. Only manual order supports drag and drop, and search results keep dragging disabled.
 
+### Tag filters
+
+The Host list and Home put a horizontally scrolling strip of Tag buttons below search when saved Hosts have Tags. The 24px buttons use the `muted` fill, a border, 6px corners and `text-xs`. The active button uses `selected` fill and exposes its pressed state to assistive technologies. All Tags clears the filter. A selected Tag narrows the results alongside the search, opens matching Groups in the Host list and leaves dragging disabled. Home shows Recent again when the filter and search are cleared.
+
+Plain searches in the Host list, Home and the command palette match Tags. A query such as `tag:East Coast` matches the full Tag name regardless of case, including spaces.
+
 ### Host cards (Home)
 - **Style:** 56px, 10px radius, 1px border, `ground` fill on Home's `surface` panel, 12px padding: a 32px monogram tile with the Connection dot at its corner (ringed 2px in ground), name at 500 over the mono address; a menu button on hover.
 - **States:** `accent` on hover, `accent/70` pressed, 3px focus halo.
@@ -480,8 +486,15 @@ Clear completed removes successful rows across Hosts. Completed downloads have a
 - **Tooltips:** inverted (foreground fill, ground text), `text-xs`, 8px radius.
 - **Dialogs:** `raised`, 1px border, 14px radius, 24px padding, max 512px, `shadow-overlay` over the overlay scrim; footer buttons right-aligned, primary last.
 
+### Update dialog
+
+Select the available version in the status bar to see its version number and scroll through the release notes. Render Markdown as formatted text, omit embedded HTML and images, and open HTTP and HTTPS links in the system browser. The updater manifest carries the draft release’s notes at build time.
+
+Show live counts for Connections, unfinished transfers (including paused transfers) and running Port forwards. Focus Later when the dialog opens. Later closes it and keeps the offer in the status bar. Update and restart is the primary action. The status bar shows download and restart progress.
+
 ### Host editor
-- **Basic information** is always visible and includes the name, address, port, user, authentication, Group, and Jump host. New Hosts start with Automatic authentication. The private key field appears when Private key is selected. Group shows the current location or the selected destination for a new Host. Use the Host list's move action to change a saved Host's Group.
+- **Basic information** is always visible and includes the name, address, port, user, authentication, Group, Tags, and Jump host. New Hosts start with Automatic authentication. The private key field appears when Private key is selected. Group shows the current location or the selected destination for a new Host. Use the Host list's move action to change a saved Host's Group.
+- The Tags field suggests Tags already used on other Hosts. Press Enter or use Add Tag to add the typed value. Added Tags wrap above the input as 24px `muted` chips with a labelled remove button. The note below the field shows the limit of ten Tags and 32 characters per Tag.
 - **Advanced** is a full-width disclosure below Basic information. It starts collapsed and contains Identities only, Terminal colours, the File panel folder, and the action to clear a saved Host's credentials. A save error attached to an advanced field opens the section, displays the message by the field, and moves focus to it.
 - **Test connection** is an outlined action in the footer. The result appears above the footer with a muted progress message, a success message, or the standard Connection error panel.
 
@@ -508,7 +521,7 @@ If the Connection drops, a scrollable overlay covers the Terminal and shows the 
 - **Do** use the overridden Tailwind sizes (`text-xs` 11.5px, `text-sm` 13px, `text-base` 14px, `text-lg` 15px) and the radius scale (6 / 8 / 10 / 14px).
 - **Do** build icon-only controls with `IconButton` and a `label`; give every interactive element a visible `:focus-visible` ring (`ring`, 3px halo).
 - **Do** respect `prefers-reduced-motion`: the base layer reduces every animation and transition to near zero.
-- **Do** capitalise GLOSSARY.md terms in English copy (Host, Group, Jump host, Connection, Known host, Terminal, Local terminal, File panel, Port forward), write everything else in sentence case, and put all copy behind i18n keys in both locales.
+- **Do** capitalise GLOSSARY.md terms in English copy (Host, Group, Tag, Jump host, Connection, Known host, Terminal, Local terminal, File panel, Port forward), write everything else in sentence case, and put all copy behind i18n keys in both locales.
 
 ### Don't:
 - **Don't** put literal colours, Tailwind palette colours or arbitrary colour values in components; literal hex belongs in the theme and Terminal palette definitions under `src/theme`.

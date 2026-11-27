@@ -15,6 +15,8 @@ export interface DownloadProgress {
 export interface AvailableUpdate {
   /** The new version, e.g. `0.2.0`. */
   version: string;
+  /** Markdown release notes, if provided by the update endpoint. */
+  notes?: string;
   /** Downloads it (verifying its signature against the configured public key) and installs it. */
   install(onProgress: (progress: DownloadProgress) => void): Promise<void>;
 }
@@ -34,6 +36,7 @@ export async function checkForUpdate(): Promise<AvailableUpdate | null> {
   if (!update) return null;
   return {
     version: update.version,
+    notes: update.body,
     async install(onProgress) {
       let downloaded = 0;
       let total: number | undefined;

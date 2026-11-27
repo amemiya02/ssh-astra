@@ -110,6 +110,7 @@ fn host(sshd: &Sshd, auth: HostAuth) -> Host {
     Host {
         id: HostId::from(format!("vault-{}", sshd.port)),
         name: "docker sshd".into(),
+        tags: Vec::new(),
         address: sshd.host.clone(),
         port: sshd.port,
         user: sshd.user.into(),
@@ -530,6 +531,7 @@ async fn saved_credentials_never_reach_sshastras_own_files() {
 fn draft(sshd: &Sshd, auth: HostAuth) -> HostDraft {
     HostDraft {
         name: format!("docker {}", sshd.port),
+        tags: Vec::new(),
         address: sshd.host.clone(),
         port: sshd.port,
         user: sshd.user.into(),

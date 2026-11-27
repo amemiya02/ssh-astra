@@ -1,4 +1,5 @@
 import type { Group, GroupId, Host, HostId, HostTree } from "@/lib/ipc/hosts";
+import { explicitTagQuery, hasHostTag } from "./host-tags";
 
 /** Which characters of a Host's fields matched the search, by field. */
 export type HostMatches = Partial<Record<"name" | "address" | "user", number[]>>;
@@ -50,21 +51,31 @@ export function fuzzyMatch(text: string, query: string): number[] | null {
 }
 
 /**
- * The tree narrowed to Hosts whose name, address or user fuzzy-match `query`,
- * inside the Groups that hold them. A blank query returns the whole tree.
+ * The tree narrowed by the search and an optional selected Tag, inside the
+ * Groups that hold the matching Hosts.
  */
-export function searchTree(tree: HostTree, query: string): TreeNode[] {
+export function searchTree(tree: HostTree, query: string, selectedTag: string | null = null): TreeNode[] {
   const q = query.trim();
-  if (!q) return buildTree(tree);
+  if (!q && selectedTag === null) return buildTree(tree);
 
+  const tagQuery = explicitTagQuery(q);
   const matches = new Map<HostId, HostMatches>();
   for (const host of tree.hosts) {
-    const found: HostMatches = {};
-    for (const field of ["name", "address", "user"] as const) {
-      const hit = fuzzyMatch(host[field], q);
-      if (hit) found[field] = hit;
+    if (selectedTag !== null && !hasHostTag(host.tags, selectedTag)) continue;
+    if (tagQuery !== undefined) {
+      if (hasHostTag(host.tags, tagQuery)) matches.set(host.id, {});
+      continue;
     }
-    if (Object.keys(found).length > 0) matches.set(host.id, found);
+    const found: HostMatches = {};
+    if (q) {
+      for (const field of ["name", "address", "user"] as const) {
+        const hit = fuzzyMatch(host[field], q);
+        if (hit) found[field] = hit;
+      }
+    }
+    if (!q || Object.keys(found).length > 0 || host.tags?.some((tag) => fuzzyMatch(tag, q) !== null)) {
+      matches.set(host.id, found);
+    }
   }
 
   const prune = (nodes: TreeNode[]): TreeNode[] =>

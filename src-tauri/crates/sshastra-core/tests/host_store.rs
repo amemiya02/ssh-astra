@@ -11,6 +11,7 @@ use sshastra_core::hosts::{Host, HostAuth, HostDraft, HostId, HostStore, HostSto
 fn draft(name: &str) -> HostDraft {
     HostDraft {
         name: name.into(),
+        tags: Vec::new(),
         address: "10.0.0.5".into(),
         port: 2222,
         user: "deploy".into(),
@@ -33,6 +34,51 @@ fn via(name: &str, jump: &Host) -> HostDraft {
         jump_host: Some(jump.id.clone()),
         ..draft(name)
     }
+}
+
+#[test]
+fn saving_and_editing_a_host_keeps_at_most_ten_normalized_tags() {
+    let (_dir, path) = store_path();
+    let mut store = HostStore::open(&path).unwrap();
+    let host = store.upsert(None, draft("web")).unwrap();
+    let long_tag = "界".repeat(32);
+    let mut tags = vec![
+        "  Production  ".into(),
+        "PRODUCTION".into(),
+        "\t".into(),
+        format!("{long_tag}字"),
+        long_tag.clone(),
+        "  Äpfel ".into(),
+        "äPFEL".into(),
+    ];
+    tags.extend((4..=12).map(|n| format!("Tag {n}")));
+    let saved = store
+        .upsert(
+            Some(host.id.clone()),
+            HostDraft {
+                tags,
+                ..draft("web")
+            },
+        )
+        .unwrap();
+
+    let expected = [
+        "Production",
+        &long_tag,
+        "Äpfel",
+        "Tag 4",
+        "Tag 5",
+        "Tag 6",
+        "Tag 7",
+        "Tag 8",
+        "Tag 9",
+        "Tag 10",
+    ];
+    assert_eq!(saved.tags, expected);
+    assert_eq!(HostStore::open(&path).unwrap().list()[0].tags, expected);
+
+    store.upsert(Some(host.id), draft("web")).unwrap();
+    assert!(HostStore::open(&path).unwrap().list()[0].tags.is_empty());
 }
 
 #[test]
@@ -103,7 +149,7 @@ fn a_version_4_file_is_migrated_with_no_default_directories() {
     store.upsert(None, draft("new")).unwrap();
     let json: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(json["version"], 13);
+    assert_eq!(json["version"], 14);
 }
 
 #[test]
@@ -286,7 +332,7 @@ fn the_file_is_versioned_json() {
 
     let json: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(json["version"], 13);
+    assert_eq!(json["version"], 14);
     assert_eq!(json["hosts"][0]["name"], "web");
     assert_eq!(json["hosts"][0]["auth"]["type"], "password");
 }

@@ -10,7 +10,7 @@ import {
   CommandList,
   CommandShortcut,
 } from "@/components/ui/command";
-import { exactHostMatch, parseQuickConnect, quickConnectLabel } from "@/features/connect/quick-connect";
+import { connectionSearch, quickConnectLabel } from "@/features/connect/quick-connect";
 import { HostMonogram } from "@/features/hosts/HostMonogram";
 import { recentHostIds, recentHostsSetting } from "@/features/hosts/host-history";
 import { useHosts } from "@/features/hosts/hostsStore";
@@ -67,6 +67,7 @@ export function CommandPalette({ open, onOpenChange, tabs, onOpenHost, onQuickCo
           group: "hosts",
           title: host.name,
           detail: `${host.user}@${host.address}${host.port === 22 ? "" : `:${host.port}`}`,
+          tags: host.tags,
           recent: recency.get(host.id),
           host,
           run: () => onOpenHost(host),
@@ -88,10 +89,9 @@ export function CommandPalette({ open, onOpenChange, tabs, onOpenHost, onQuickCo
 
   const sections = useMemo(() => {
     const ranked = rankPalette(rows, query);
-    const exact = exactHostMatch(hosts, query);
+    const { exact, quick } = connectionSearch(hosts, query);
     const exactIndex = exact ? ranked.findIndex(({ entry }) => entry.host?.id === exact.id) : -1;
     if (exactIndex > 0) ranked.unshift(ranked.splice(exactIndex, 1)[0]!);
-    const quick = exact ? undefined : parseQuickConnect(query);
     if (quick) {
       const entry: Row = {
         id: "action:quickConnect",

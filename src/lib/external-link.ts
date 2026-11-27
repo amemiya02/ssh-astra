@@ -1,5 +1,5 @@
-/** Returns the exact destination to show and open, or null for an unsafe Terminal link. */
-export function terminalLinkDestination(uri: string): string | null {
+/** Returns the exact destination to show and open, or null for an unsafe external link. */
+export function externalLinkDestination(uri: string): string | null {
   if (/[\\\p{White_Space}\p{Cc}\p{Cs}]/u.test(uri)) return null;
 
   try {

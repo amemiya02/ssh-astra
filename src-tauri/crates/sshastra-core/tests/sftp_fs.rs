@@ -36,6 +36,7 @@ async fn sftp(sshd: &Sshd) -> (SftpFs, tempfile::TempDir) {
     let host = Host {
         id: HostId::from("sftp".to_owned()),
         name: "sftp".into(),
+        tags: Vec::new(),
         address: sshd.host.clone(),
         port: sshd.port,
         user: sshd.user.into(),

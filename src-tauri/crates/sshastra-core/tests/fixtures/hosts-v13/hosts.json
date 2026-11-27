@@ -1,0 +1,22 @@
+{
+  "version": 13,
+  "groups": [
+    { "id": "g-prod", "name": "Production", "parentId": null }
+  ],
+  "hosts": [
+    {
+      "id": "h-proxy-command",
+      "name": "Gateway",
+      "address": "ssh.example.net",
+      "port": 2222,
+      "user": "deploy",
+      "auth": { "type": "auto" },
+      "identitiesOnly": false,
+      "forwardAgent": false,
+      "proxy": { "mode": "proxyCommand", "config": "nc %h %p" },
+      "jumpHost": null,
+      "groupId": "g-prod",
+      "forwards": []
+    }
+  ]
+}

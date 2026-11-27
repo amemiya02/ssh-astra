@@ -17,6 +17,7 @@ import { HomeView } from "@/features/home/HomeView";
 import { rememberHostOpened, useRecordHostConnections } from "@/features/hosts/host-history";
 import { useHosts } from "@/features/hosts/hostsStore";
 import { updateSetting } from "@/features/updates/update-settings";
+import { UpdateNotice } from "@/features/updates/UpdateNotice";
 import { checkOnStartup, updatesStore } from "@/features/updates/updatesStore";
 import { HostsPanel } from "@/features/hosts/HostsPanel";
 import { useHostsController } from "@/features/hosts/useHostsController";
@@ -28,6 +29,7 @@ import { zoomTerminalFont } from "@/features/terminal/terminal-prefs";
 import { useTerminalPrefs } from "@/features/terminal/terminal-prefs-context";
 import { terminalOutputKinds, terminalOutputs } from "@/features/terminal/terminal-outputs";
 import { createBroadcast, type BroadcastScope } from "@/features/workspace/broadcast";
+import { interruptionCounts } from "@/features/workspace/interruption-counts";
 import { paneNeighbors } from "@/features/workspace/pane-layout";
 import { privacyModeSetting, togglePrivacyMode } from "@/features/workspace/privacy-mode";
 import { useResolvedShortcuts } from "@/features/workspace/shortcut-settings";
@@ -472,6 +474,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
           reconnecting,
           forwards,
           transfers,
+          updateNotice: <UpdateNotice interruptions={interruptionCounts(connected, transferList, running)} />,
           activeRemote: focusedPane?.kind === "remote-terminal" ? focusedPane.host : null,
           saveTemporaryHost: focusedTemporaryHost && (() => hostsController.openTemporaryHostEditor(focusedTemporaryHost)),
           broadcast: broadcastMode && {

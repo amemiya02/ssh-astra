@@ -26,6 +26,7 @@ jobs:
     runs-on: ubuntu-22.04
     outputs:
       release-id: ${{ steps.draft.outputs.result }}
+      release-body: ${{ steps.draft.outputs.body }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -51,6 +52,7 @@ jobs:
             const existing = releases.find((r) => r.tag_name === tag);
             if (existing) {
               if (!existing.draft) core.setFailed(`The release for ${tag} is already published.`);
+              core.setOutput("body", existing.body ?? "");
               return existing.id;
             }
             const { data } = await github.rest.repos.createRelease({
@@ -62,6 +64,7 @@ jobs:
               draft: true,
               prerelease: tag.includes("-"),
             });
+            core.setOutput("body", data.body ?? "");
             return data.id;
 
   build:
@@ -116,6 +119,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.draft.outputs.release-id }}
+          # When given a releaseId, the action copies this input into latest.json.
+          releaseBody: ${{ needs.draft.outputs.release-body }}
           # Makes latest.json point at this tag's assets, not releases/latest.
           tagName: ${{ github.ref_name }}
           releaseDraft: true

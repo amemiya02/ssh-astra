@@ -4,6 +4,9 @@ import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogTrigger } from "@/components/ui/dialog";
+import type { InterruptionCounts } from "@/features/workspace/interruption-counts";
+import { UpdateDialog } from "./UpdateDialog";
 import { updatesStore, useUpdates, type UpdateStatus } from "./updatesStore";
 
 /** How long the answer to a manual check stays in the status bar. */
@@ -36,10 +39,10 @@ function noticeText(status: UpdateStatus, t: TFunction): string | null {
 }
 
 /**
- * The update notice in the status bar: a newer version with "Update and restart", the download
- * in progress, or the short answer to a manual check (which clears itself).
+ * The status bar entry for reviewing an update, tracking its progress, or seeing the answer
+ * to a manual check (which clears itself).
  */
-export function UpdateNotice() {
+export function UpdateNotice({ interruptions }: { interruptions: InterruptionCounts }) {
   const { t } = useTranslation();
   const status = useUpdates((s) => s.status);
   const { install, dismiss } = updatesStore.getState();
@@ -56,19 +59,24 @@ export function UpdateNotice() {
   const canDismiss = status.type !== "downloading" && status.type !== "restarting" && status.type !== "checking";
 
   return (
-    <span className="flex min-w-0 shrink-0 items-center gap-1 border-r px-2.5 tabular-nums">
-      <span className="truncate" title={text}>
-        {text}
-      </span>
-      {canInstall && (
-        <Button
-          variant="ghost"
-          size="xs"
-          className="text-foreground h-5 font-medium"
-          onClick={() => void install()}
-        >
-          {status.type === "installFailed" ? t("updates.retry") : t("updates.install")}
-        </Button>
+    <span role="status" className="flex min-w-0 shrink-0 items-center gap-1 border-r px-2.5 tabular-nums">
+      {canInstall ? (
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button variant="ghost" size="xs" className="text-foreground h-5 min-w-0 font-medium" title={text}>
+              <span className="max-w-48 truncate">{text}</span>
+            </Button>
+          </DialogTrigger>
+          <UpdateDialog
+            version={status.version}
+            notes={status.notes}
+            failure={status.type === "installFailed" ? status.reason : undefined}
+            interruptions={interruptions}
+            onInstall={() => void install()}
+          />
+        </Dialog>
+      ) : (
+        <span className="max-w-48 truncate" title={text}>{text}</span>
       )}
       {canDismiss && (
         <IconButton label={t("updates.dismiss")} className="size-5" onClick={dismiss}>

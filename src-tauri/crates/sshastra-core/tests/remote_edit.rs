@@ -569,6 +569,7 @@ async fn saving_the_temp_file_changes_the_file_on_the_server() {
     let host = Host {
         id: host(),
         name: "edit".into(),
+        tags: Vec::new(),
         address: sshd.host.clone(),
         port: sshd.port,
         user: sshd.user.into(),
