@@ -44,6 +44,62 @@ beforeAll(() => {
 
 beforeEach(() => vi.clearAllMocks());
 
+it("pastes an uploaded image only into the initiating Host and exact shell", async () => {
+  const paneId = "image-pane";
+  const root = createRoot(document.createElement("div"));
+  const terminal = new Terminal();
+  const peer = vi.fn();
+  const broadcast = createBroadcast();
+  broadcast.register("other-tab", "peer-pane", peer);
+  broadcast.updateWorkspace(paneId, ["tab", "other-tab"], [paneId, "peer-pane"]);
+  broadcast.toggle("window", "tab");
+  const ipc = vi.mocked(invoke);
+  let finishUpload!: (path: string) => void;
+  const upload = new Promise<string>((resolve) => { finishUpload = resolve; });
+  const uploaded = "/home/my user/.sshastra-clipboard/image-example.png";
+  ipc.mockImplementation(async (command) => {
+    if (command === "remote_terminal_open") return 7;
+    if (command === "terminal_save_clipboard_image") return upload;
+  });
+
+  act(() => root.render(
+    <BroadcastPaneContext.Provider value={{ broadcast, tabId: "tab", paneId }}>
+      <RemoteTerminalView paneId={paneId} host={host} onEditHost={() => {}} onClose={() => {}} />
+    </BroadcastPaneContext.Provider>,
+  ));
+  const view = vi.mocked(XtermView).mock.lastCall![0];
+  let detach: (() => void) | undefined;
+  try {
+    await act(async () => { detach = view.attach(terminal); });
+    const { onEvent } = ipc.mock.calls.find(([command]) => command === "remote_terminal_open")![1] as {
+      onEvent: { onmessage: (message: TerminalMessage) => void };
+    };
+    const paste = view.imagePasteRef!.current!();
+    expect(ipc).toHaveBeenCalledWith("terminal_save_clipboard_image", {
+      id: 7, host: { id: "prod", name: "Production" }, generation: 0,
+    });
+    expect(ipc.mock.calls.filter(([command]) => command === "terminal_write")).toEqual([]);
+    act(() => onEvent.onmessage({ connection: { state: "reconnecting", attempt: 1, attempts: 3 } }));
+    act(() => onEvent.onmessage({ connection: { state: "connected" } }));
+    finishUpload(uploaded);
+    await paste;
+    expect(ipc.mock.calls.filter(([command]) => command === "terminal_write")).toEqual([]);
+
+    await view.imagePasteRef!.current!();
+    expect(ipc.mock.calls.filter(([command]) => command === "terminal_write")).toEqual([
+      ["terminal_write", { id: 7, data: `'${uploaded}'`, generation: 1 }],
+    ]);
+    expect(peer).not.toHaveBeenCalled();
+  } finally {
+    act(() => {
+      detach?.();
+      terminal.dispose();
+      root.unmount();
+    });
+    ipc.mockImplementation(async (command) => command === "remote_terminal_open" ? 7 : undefined);
+  }
+});
+
 it("follows the File panel only on its own ready Terminal, even with Broadcast enabled", async () => {
   await startSettings({ load: async () => ({}), save: async () => undefined });
   const paneId = "files-pane";

@@ -90,6 +90,16 @@ impl TerminalRegistry {
         self.with(id, |t| t.write(data))
     }
 
+    pub fn connection(&self, id: TerminalId) -> Result<Option<(u64, Arc<crate::ssh::Connection>)>> {
+        self.with(id, |terminal| Ok(terminal.connection()))
+    }
+
+    pub fn write_for_connection(&self, id: TerminalId, generation: u64, data: &[u8]) -> Result<()> {
+        self.with(id, |terminal| {
+            terminal.write_for_connection(generation, data)
+        })
+    }
+
     pub fn follow_file_directory(&self, id: TerminalId, prompt_id: u64, path: &str) -> Result<()> {
         self.with(id, |terminal| {
             terminal.follow_file_directory(prompt_id, path)

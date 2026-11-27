@@ -40,6 +40,8 @@ export interface Transfer {
   sourceHost?: TransferHost;
   targetHost?: TransferHost;
   state: TransferState;
+  /** A temporary source that requires a fresh paste after cancellation or failure. */
+  privateSource?: boolean;
   unprotected: boolean;
   /** Totals are 0 until a folder has been walked. */
   bytesDone: number;

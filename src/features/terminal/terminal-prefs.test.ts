@@ -28,6 +28,7 @@ describe("terminal preferences", () => {
     expect(prefs.bell).toBe("none");
     expect(prefs.copyOnSelect).toBe(true);
     expect(prefs.rightClickPaste).toBe(false);
+    expect(prefs.pasteImages).toBe(false);
     expect(prefs.shellIntegration).toBe(true);
     expect(prefs.localShell).toBeNull();
     expect(prefs.autoLog).toBe(false);
@@ -64,6 +65,7 @@ describe("terminal preferences", () => {
       },
       copyOnSelect: false,
       rightClickPaste: false,
+      pasteImages: true,
       shellIntegration: false,
       localShell: "/bin/zsh",
       autoLog: true,

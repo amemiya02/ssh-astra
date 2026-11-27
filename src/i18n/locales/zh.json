@@ -731,6 +731,9 @@
     "followSystemAction": "主题：跟随系统"
   },
   "terminal": {
+    "imagePaste": {
+      "failed": "无法保存或粘贴剪贴板图片。"
+    },
     "fileDrop": {
       "destinationTitle": "选择上传目录",
       "destinationBody": "{{host}} 上的终端尚未上报当前目录。要将文件上传到哪里？",
@@ -1246,6 +1249,10 @@
       "confirmMultilinePaste": {
         "label": "多行粘贴前确认",
         "description": "粘贴多于一行的内容前先询问，因为 shell 会逐行立即执行。"
+      },
+      "pasteImages": {
+        "label": "将剪贴板图片粘贴为路径",
+        "description": "剪贴板中只有图片时，将图片保存为 PNG 并粘贴其路径。远程终端会将 PNG 上传到该主机的 SSH Astra 缓存目录。"
       },
       "shellIntegration": {
         "label": "Shell 集成",
