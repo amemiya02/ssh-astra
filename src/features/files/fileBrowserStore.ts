@@ -207,8 +207,9 @@ export function createFileBrowserStore(
     /** Runs an operation on the open session, then refreshes (also after a partial failure). */
     const operate = async (
       run: (id: FsId, dir: string) => Promise<void>,
-      { select, dir = get().path }: { select?: string; dir?: string } = {},
+      { select, directory }: { select?: string; directory?: string } = {},
     ): Promise<CommandError | null> => {
+      const dir = directory ?? get().path;
       if (fsId === null || dir === null) return notOpen;
       const generation = openGeneration;
       let failure: CommandError | null = null;
@@ -415,7 +416,7 @@ export function createFileBrowserStore(
       },
       remove: (names) => operate((id, dir) => api.deleteFiles(id, names.map((n) => childPath(dir, n)))),
       setPermissions: (directory, name, change) =>
-        operate((id, dir) => api.chmodFile(id, childPath(dir, name), change), { dir: directory }),
+        operate((id, dir) => api.chmodFile(id, childPath(dir, name), change), { directory }),
 
       disconnect() {
         openGeneration += 1;
