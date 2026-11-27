@@ -84,6 +84,7 @@ function renderWorkspace(initialPane: Pane = local("a")) {
           onTabAction={dispatch}
           onMove={() => {}}
           onNewLocalTerminal={() => {}}
+          onNewLocalShell={() => {}}
           onSplit={() => {}}
         />
         <TabPanels

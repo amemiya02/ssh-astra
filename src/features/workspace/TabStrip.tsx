@@ -18,6 +18,7 @@ import { IconButton } from "@/components/IconButton";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { HostMonogram } from "@/features/hosts/HostMonogram";
 import { hueClasses } from "@/features/hosts/hostHue";
+import { LocalShellMenu } from "@/features/terminal/LocalShellMenu";
 import { terminalOutputs } from "@/features/terminal/terminal-outputs";
 import type { TerminalTitleSource } from "@/features/terminal/terminal-prefs";
 import type { Host, TemporaryHost } from "@/lib/ipc/hosts";
@@ -58,6 +59,7 @@ interface TabStripProps {
   /** Drop the dragged tab `id` at index `to`. */
   onMove(id: string, to: number): void;
   onNewLocalTerminal(): void;
+  onNewLocalShell(id: string): void;
   onSplit(orientation: SplitOrientation): void;
   onSaveTemporaryHost?(host: TemporaryHost): void;
 }
@@ -100,6 +102,7 @@ export function TabStrip({
   onTabAction,
   onMove,
   onNewLocalTerminal,
+  onNewLocalShell,
   onSplit,
   onSaveTemporaryHost,
 }: TabStripProps) {
@@ -419,14 +422,17 @@ export function TabStrip({
         vertical ? "flex shrink-0 items-center justify-center gap-1" : "contents",
         compact && "flex-col",
       )}>
-        <IconButton
-          label={t("tabs.newLocalTerminal")}
-          shortcut={shortcutLabel("newTab", shortcuts)}
-          tooltipSide={vertical ? "right" : "bottom"}
-          onClick={onNewLocalTerminal}
-        >
-          <Plus />
-        </IconButton>
+        <div className={cn("flex shrink-0 items-center", compact && "flex-col")}>
+          <IconButton
+            label={t("tabs.newLocalTerminal")}
+            shortcut={shortcutLabel("newTab", shortcuts)}
+            tooltipSide={vertical ? "right" : "bottom"}
+            onClick={onNewLocalTerminal}
+          >
+            <Plus />
+          </IconButton>
+          <LocalShellMenu vertical={vertical} onSelect={onNewLocalShell} />
+        </div>
         {!vertical && <div data-tauri-drag-region className="h-full min-w-4 flex-1" />}
         {selected && canSplit(selected) && (
           <>

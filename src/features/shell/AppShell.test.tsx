@@ -76,6 +76,7 @@ function shell(activeKind: PaneKind["kind"] | null) {
             onTabAction={() => {}}
             onMove={() => {}}
             onNewLocalTerminal={() => {}}
+            onNewLocalShell={() => {}}
             onSplit={() => {}}
           />}
           workspace={<><input aria-label="Terminal input" /><WorkspaceSection /></>}

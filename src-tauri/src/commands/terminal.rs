@@ -6,6 +6,7 @@
 //!   (also `"connected"`, `"disconnected"` with a `reason`),
 //! - the shell's directory is JSON `{ "cwd": "/abs/path" }`, read from the
 //!   local process on macOS/Linux or reported by the remote shell,
+//! - a missing Local terminal shell is JSON `{ "localShellFallback": true }`,
 //! - Shell integration markers and availability are JSON
 //!   `{ "shellIntegration": { "type": "promptStart" } }` (or the matching event),
 //! - Terminal log status is JSON `{ "terminalLog": { "state": "active" } }`,
@@ -20,9 +21,9 @@ use serde::Serialize;
 use sshastra_core::hosts::HostId;
 use sshastra_core::ssh::{RemoteTerminal, RemoteTerminalOptions};
 use sshastra_core::terminal::{
-    ConnectionState, LocalPty, OutputKind, OutputStatus, ShellCommand, ShellIntegrationEvent,
-    TerminalEvent, TerminalId, TerminalOutput, TerminalRegistry, TerminalSettings, TerminalSize,
-    REPORT_CWD,
+    local_shell_command, local_shells, ConnectionState, LocalPty, LocalShell, OutputKind,
+    OutputStatus, ShellCommand, ShellIntegrationEvent, TerminalEvent, TerminalId, TerminalOutput,
+    TerminalRegistry, TerminalSettings, TerminalSize, REPORT_CWD,
 };
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, State};
@@ -41,6 +42,12 @@ struct ExitMessage {
 #[derive(Serialize)]
 struct CwdMessage {
     cwd: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LocalShellFallbackMessage {
+    local_shell_fallback: bool,
 }
 
 #[derive(Serialize)]
@@ -136,7 +143,12 @@ fn channel_sink(
     }
 }
 
-/// Opens a Local terminal running the user's default shell.
+#[tauri::command]
+pub async fn local_terminal_shells() -> Vec<LocalShell> {
+    local_shells().await
+}
+
+/// Opens a Local terminal with the selected shell or the user's system default.
 #[tauri::command]
 pub async fn local_terminal_open(
     registry: State<'_, TerminalRegistry>,
@@ -145,8 +157,23 @@ pub async fn local_terminal_open(
     size: TerminalSize,
     on_event: Channel<InvokeResponseBody>,
     cwd: Option<PathBuf>,
+    shell_id: Option<String>,
 ) -> CommandResult<TerminalId> {
-    let command = ShellCommand::default_shell();
+    let command = match shell_id {
+        Some(id) => match local_shell_command(&id).await {
+            Some(command) => command,
+            None => {
+                send_json(
+                    &on_event,
+                    &LocalShellFallbackMessage {
+                        local_shell_fallback: true,
+                    },
+                );
+                ShellCommand::default_shell()
+            }
+        },
+        None => ShellCommand::default_shell(),
+    };
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     let command = match cwd {
         // portable-pty selects the user's home when this path is no longer a directory.

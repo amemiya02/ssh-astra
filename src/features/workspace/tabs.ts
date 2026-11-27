@@ -15,7 +15,7 @@ export type ConnectionStatus = "connecting" | "connected" | "disconnected";
 export type PaneKind =
   /** The Host vault: search, recent and every Host as a card. One per window. */
   | { kind: "home" }
-  | { kind: "local-terminal"; cwd?: string }
+  | { kind: "local-terminal"; cwd?: string; shellId?: string }
   | { kind: "remote-terminal"; host: Host; initialCwd?: string }
   | { kind: "sftp"; host: Host }
   | { kind: "settings" }
@@ -409,7 +409,10 @@ function duplicateTab(state: TabsState, { id, tabId, paneIds }: Extract<TabsActi
 
   const copies = new Map(panes.map((pane, index) => [
     pane.id,
-    newPane(pane.kind === "remote-terminal" ? { kind: pane.kind, host: pane.host } : { kind: "local-terminal" }, paneIds[index]!),
+    newPane(pane.kind === "remote-terminal" ? { kind: pane.kind, host: pane.host } : {
+      kind: "local-terminal",
+      ...(pane.kind === "local-terminal" && pane.shellId !== undefined ? { shellId: pane.shellId } : {}),
+    }, paneIds[index]!),
   ]));
   const layout = mapLeaves(source.layout, (leaf) => ({ type: "pane", pane: copies.get(leaf.pane.id)! }))!;
   const copy: Tab = {

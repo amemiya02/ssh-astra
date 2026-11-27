@@ -739,6 +739,15 @@
       "failed": "无法写入终端录制文件。{{message}}"
     },
     "pressEnterToRestart": "按 Enter 启动新的 shell。",
+    "localShell": {
+      "choose": "选择本地终端 Shell",
+      "systemDefault": "系统默认",
+      "loading": "正在查找已安装的 Shell…",
+      "failed": "无法列出已安装的 Shell。",
+      "empty": "未找到已安装的 Shell。",
+      "unavailable": "所选 Shell 不可用",
+      "fallback": "所选 Shell 不可用，已改用系统默认 Shell。"
+    },
     "menu": {
       "label": "终端菜单",
       "clear": "清屏"
@@ -1079,6 +1088,10 @@
     "on": "开",
     "off": "关",
     "terminal": {
+      "localShell": {
+        "label": "默认本地 Shell",
+        "description": "新建本地终端时使用的 Shell。"
+      },
       "font": {
         "label": "字体",
         "description": "CSS 字体列表，使用其中第一个已安装在这台电脑上的字体。"

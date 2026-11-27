@@ -739,6 +739,15 @@
       "failed": "無法寫入終端機錄製檔案。{{message}}"
     },
     "pressEnterToRestart": "按 Enter 啟動新的 shell。",
+    "localShell": {
+      "choose": "選擇本機終端機 Shell",
+      "systemDefault": "系統預設",
+      "loading": "正在尋找已安裝的 Shell…",
+      "failed": "無法列出已安裝的 Shell。",
+      "empty": "找不到已安裝的 Shell。",
+      "unavailable": "所選 Shell 無法使用",
+      "fallback": "所選 Shell 無法使用，已改用系統預設 Shell。"
+    },
     "menu": {
       "label": "終端機選單",
       "clear": "清除畫面"
@@ -1079,6 +1088,10 @@
     "on": "開",
     "off": "關",
     "terminal": {
+      "localShell": {
+        "label": "預設本機 Shell",
+        "description": "新增本機終端機時使用的 Shell。"
+      },
       "font": {
         "label": "字型",
         "description": "依照 CSS 字型清單的順序，使用這部電腦上已安裝的第一個字型。"
