@@ -4,6 +4,8 @@ import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import type { HostConnection } from "@/features/connect/hostConnection";
+import type { HostId } from "@/lib/ipc/hosts";
 import { HostList } from "./HostList";
 import { HostsSidebar } from "./HostsSidebar";
 import { RowMoreMenu } from "./RowMenu";
@@ -16,7 +18,14 @@ import type { HostsController } from "./useHostsController";
  * (editor, dialogs, row actions) comes from the shared `HostsController`. Double-click (or Enter
  * on) a Host to open it.
  */
-export function HostsPanel({ controller }: { controller: HostsController }) {
+export function HostsPanel({
+  controller,
+  connections,
+}: {
+  controller: HostsController;
+  /** Each Host's Connection, shown on its row. */
+  connections: ReadonlyMap<HostId, HostConnection>;
+}) {
   const { t } = useTranslation();
   const tree = useHosts((s) => s.tree);
   const status = useHosts((s) => s.status);
@@ -57,6 +66,7 @@ export function HostsPanel({ controller }: { controller: HostsController }) {
               selected={selected}
               onSelect={controller.setSelected}
               renamingGroupId={controller.renamingGroupId}
+              connections={connections}
               actions={controller.actions}
             />
           )}

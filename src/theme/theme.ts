@@ -1,4 +1,5 @@
 import { defineSection, getSetting } from "@/lib/storage";
+import { ansiHues, monogramInk } from "./monogram-ink";
 import {
   appThemes,
   darkThemeIds,
@@ -60,12 +61,10 @@ export function applyInitialTheme(): void {
 
 const kebab = (name: string) => name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
 
-const ansiHues = ["red", "green", "yellow", "blue", "magenta", "cyan"] as const;
-
 /**
  * Paints `theme` on the document root. The ui colours become `--ui-*` custom properties
  * that `src/index.css` derives every token from; the Terminal's colours become
- * `--terminal-*` and `--ansi-*`. `.dark` marks dark themes for the few styles that differ.
+ * `--terminal-*` and `--ansi-*` (`--ansi-*-ink` is the hue as monogram letters). `.dark` marks dark themes for the few styles that differ.
  */
 export function applyTheme(root: HTMLElement, theme: AppTheme): void {
   for (const [name, value] of Object.entries(theme.ui) as [keyof ThemeUi, string][]) {
@@ -73,7 +72,10 @@ export function applyTheme(root: HTMLElement, theme: AppTheme): void {
   }
   root.style.setProperty("--terminal-background", theme.terminal.background);
   root.style.setProperty("--terminal-foreground", theme.terminal.foreground);
-  for (const hue of ansiHues) root.style.setProperty(`--ansi-${hue}`, theme.terminal[hue]);
+  for (const hue of ansiHues) {
+    root.style.setProperty(`--ansi-${hue}`, theme.terminal[hue]);
+    root.style.setProperty(`--ansi-${hue}-ink`, monogramInk(theme, hue));
+  }
   root.classList.toggle("dark", theme.appearance === "dark");
   root.style.colorScheme = theme.appearance;
   root.dataset.theme = theme.id;

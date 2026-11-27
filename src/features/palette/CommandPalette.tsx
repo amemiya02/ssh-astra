@@ -10,6 +10,7 @@ import {
   CommandList,
   CommandShortcut,
 } from "@/components/ui/command";
+import { HostMonogram } from "@/features/hosts/HostMonogram";
 import { useHosts } from "@/features/hosts/hostsStore";
 import type { Host } from "@/lib/ipc/hosts";
 import { useSetting } from "@/lib/storage";
@@ -32,6 +33,8 @@ export interface CommandPaletteProps {
 }
 
 interface Row extends PaletteEntry {
+  /** A Host row shows the Host's tile instead of the group's icon. */
+  host?: Host;
   shortcut?: string;
   run(): void;
 }
@@ -61,6 +64,7 @@ export function CommandPalette({ open, onOpenChange, tabs, onOpenHost, onActivat
           title: host.name,
           detail: `${host.user}@${host.address}${host.port === 22 ? "" : `:${host.port}`}`,
           recent: recency.get(host.id),
+          host,
           run: () => onOpenHost(host),
         }),
       ),
@@ -123,10 +127,10 @@ export function CommandPalette({ open, onOpenChange, tabs, onOpenHost, onActivat
               const Icon = icons[entry.group];
               return (
                 <CommandItem key={entry.id} value={entry.id} onSelect={() => run(entry)} className="py-2">
-                  <Icon aria-hidden />
+                  {entry.host ? <HostMonogram host={entry.host} /> : <Icon aria-hidden />}
                   <span className="min-w-0 flex-1 truncate">
                     <Highlighted text={entry.title} indexes={titleMatches} />
-                    {entry.detail && <span className="text-muted-foreground ml-2 text-xs">{entry.detail}</span>}
+                    {entry.detail && <span className="text-muted-foreground ml-2 font-mono text-xs">{entry.detail}</span>}
                   </span>
                   {entry.shortcut && <CommandShortcut>{entry.shortcut}</CommandShortcut>}
                 </CommandItem>

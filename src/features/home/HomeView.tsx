@@ -4,7 +4,9 @@ import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { hostHue, hueClasses, monogram } from "@/features/hosts/hostHue";
+import { ConnectionDot } from "@/features/connect/ConnectionDot";
+import type { HostConnection } from "@/features/connect/hostConnection";
+import { HostMonogram } from "@/features/hosts/HostMonogram";
 import { Highlighted } from "@/features/hosts/HostList";
 import { hostMenuEntries } from "@/features/hosts/hostMenu";
 import { RowContextMenu, RowMoreMenu } from "@/features/hosts/RowMenu";
@@ -23,8 +25,8 @@ interface HomeViewProps {
   /** The Home tab is the one shown: its search field takes focus. */
   active: boolean;
   controller: HostsController;
-  /** Hosts with a live Connection (a Terminal, "Connect only" or a Port forward). */
-  connectedIds: ReadonlySet<HostId>;
+  /** Each Host's Connection (a Terminal, "Connect only" or a Port forward). */
+  connections: ReadonlyMap<HostId, HostConnection>;
   onOpenLocalTerminal(): void;
 }
 
@@ -32,7 +34,7 @@ interface HomeViewProps {
  * The Host vault: search, the actions for getting Hosts in, Hosts opened lately, and every Host
  * as a card, by Group. A card opens a Terminal; its menu offers what the Host list's row menu does.
  */
-export function HomeView({ active, controller, connectedIds, onOpenLocalTerminal }: HomeViewProps) {
+export function HomeView({ active, controller, connections, onOpenLocalTerminal }: HomeViewProps) {
   const { t } = useTranslation();
   const tree = useHosts((s) => s.tree);
   const status = useHosts((s) => s.status);
@@ -134,7 +136,7 @@ export function HomeView({ active, controller, connectedIds, onOpenLocalTerminal
                 <ul className={cardGrid}>
                   {recents.map((host) => (
                     <li key={host.id}>
-                      <HostCard host={host} controller={controller} connected={connectedIds.has(host.id)} />
+                      <HostCard host={host} controller={controller} connection={connections.get(host.id)} />
                     </li>
                   ))}
                 </ul>
@@ -149,7 +151,7 @@ export function HomeView({ active, controller, connectedIds, onOpenLocalTerminal
                 <ul className={cardGrid}>
                   {section.hosts.map(({ host, matches }) => (
                     <li key={host.id}>
-                      <HostCard host={host} matches={matches} controller={controller} connected={connectedIds.has(host.id)} />
+                      <HostCard host={host} matches={matches} controller={controller} connection={connections.get(host.id)} />
                     </li>
                   ))}
                 </ul>
@@ -162,17 +164,17 @@ export function HomeView({ active, controller, connectedIds, onOpenLocalTerminal
   );
 }
 
-/** One Host: monogram tile in its hue, name, `user@address`, a dot while connected. Click or Enter opens a Terminal. */
+/** One Host: monogram tile in its hue, name, `user@address`, a dot while connected or connecting. Click or Enter opens a Terminal. */
 function HostCard({
   host,
   matches,
   controller,
-  connected,
+  connection,
 }: {
   host: Host;
   matches?: { name?: number[]; address?: number[]; user?: number[] };
   controller: HostsController;
-  connected: boolean;
+  connection?: HostConnection;
 }) {
   const { t } = useTranslation();
   const { actions } = controller;
@@ -185,16 +187,9 @@ function HostCard({
           className="bg-background hover:bg-accent active:bg-accent/70 focus-visible:ring-ring/50 flex h-14 w-full min-w-0 items-center gap-3 rounded-lg border px-3 pr-9 text-left transition-colors outline-none focus-visible:ring-[3px]"
           onClick={() => actions.open(host)}
         >
-          <span
-            aria-hidden
-            className={cn(
-              "relative grid size-8 shrink-0 place-items-center rounded-md text-xs font-semibold",
-              hueClasses[hostHue(host.id)].tile,
-            )}
-          >
-            {monogram(host.name)}
-            {connected && <span className="bg-success ring-background absolute -right-0.5 -bottom-0.5 size-2 rounded-full ring-2" />}
-          </span>
+          <HostMonogram host={host} size="md">
+            {connection && <ConnectionDot state={connection} className="ring-background absolute -right-0.5 -bottom-0.5 size-2 ring-2" />}
+          </HostMonogram>
           <span className="min-w-0 flex-1">
             <span className="block truncate font-medium">
               <Highlighted text={host.name} indexes={matches?.name} />
@@ -204,7 +199,7 @@ function HostCard({
               {host.port === 22 ? "" : `:${host.port}`}
             </span>
           </span>
-          {connected && <span className="sr-only">{t("tabs.status.connected")}</span>}
+          {connection && <span className="sr-only">{t(`tabs.status.${connection}`)}</span>}
         </button>
         <RowMoreMenu
           entries={entries}

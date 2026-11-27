@@ -18,9 +18,17 @@ describe("hostHue", () => {
 
 describe("monogram", () => {
   it("takes the first letters of the first two words", () => {
-    expect(monogram("web-01")).toBe("W0");
     expect(monogram("home assistant")).toBe("HA");
+    expect(monogram("api-staging")).toBe("AS");
     expect(monogram("nas")).toBe("N");
+  });
+
+  it("keeps the number a name ends in, so siblings differ and no zero reads as an O", () => {
+    expect(monogram("web-01")).toBe("W1");
+    expect(monogram("web-02")).toBe("W2");
+    expect(monogram("db-01")).toBe("D1");
+    expect(monogram("db-12")).toBe("D12");
+    expect(monogram("node.2024")).toBe("N24");
   });
 
   it("falls back to a placeholder for a name with no letters", () => {

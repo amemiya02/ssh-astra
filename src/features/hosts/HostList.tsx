@@ -15,11 +15,13 @@ import { ChevronRight, Folder, FolderInput, FolderPlus, Pencil, Trash2 } from "l
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Input } from "@/components/ui/input";
-import type { Group, GroupId, Host, HostTree } from "@/lib/ipc/hosts";
+import type { Group, GroupId, Host, HostId, HostTree } from "@/lib/ipc/hosts";
 import { defineSection, useSetting } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import { dropMove, type DragItem, type DropPosition, type DropTarget, type MoveOp, type TreeNode } from "./hostTree";
-import { hostHue, hueClasses, monogram } from "./hostHue";
+import { ConnectionDot } from "@/features/connect/ConnectionDot";
+import type { HostConnection } from "@/features/connect/hostConnection";
+import { HostMonogram } from "./HostMonogram";
 import { hostMenuEntries } from "./hostMenu";
 import { RowContextMenu, RowMoreMenu, type MenuEntry } from "./RowMenu";
 
@@ -53,6 +55,8 @@ interface HostListProps {
   selected: DragItem | null;
   onSelect(item: DragItem): void;
   renamingGroupId: GroupId | null;
+  /** Each Host's Connection, for the dot on its row. */
+  connections: ReadonlyMap<HostId, HostConnection>;
   actions: HostListActions;
 }
 
@@ -93,7 +97,16 @@ const keyOf = (item: DragItem | DropTarget) => (item.kind === "root" ? "root" : 
  * and reorder. Dropping on the top or bottom edge of a row places the item
  * before or after it; dropping on the middle of a Group puts it inside.
  */
-export function HostList({ tree, nodes, searching, selected, onSelect, renamingGroupId, actions }: HostListProps) {
+export function HostList({
+  tree,
+  nodes,
+  searching,
+  selected,
+  onSelect,
+  renamingGroupId,
+  connections,
+  actions,
+}: HostListProps) {
   const { t } = useTranslation();
   const { collapsed, toggle } = useCollapsedGroups();
   const [dragging, setDragging] = useState<DragData | null>(null);
@@ -169,6 +182,7 @@ export function HostList({ tree, nodes, searching, selected, onSelect, renamingG
               <HostRowButton
                 host={host}
                 matches={node.matches}
+                connection={connections.get(host.id)}
                 selected={selected?.kind === "host" && selected.id === host.id}
                 onSelect={() => onSelect(item)}
                 onOpen={() => actions.open(host)}
@@ -346,6 +360,7 @@ const rowButton =
 function HostRowButton({
   host,
   matches,
+  connection,
   selected,
   onSelect,
   onOpen,
@@ -354,6 +369,7 @@ function HostRowButton({
 }: {
   host: Host;
   matches?: Extract<TreeNode, { kind: "host" }>["matches"];
+  connection?: HostConnection;
   selected: boolean;
   onSelect(): void;
   onOpen(): void;
@@ -382,19 +398,19 @@ function HostRowButton({
         }
       }}
     >
-      <span
-        aria-hidden
-        className={cn(
-          "grid size-5 shrink-0 place-items-center rounded-md text-[10px] leading-none font-semibold",
-          hueClasses[hostHue(host.id)].tile,
+      <HostMonogram host={host} />
+      <span className="flex max-w-[65%] shrink-0 items-center gap-1.5">
+        <span className="truncate font-medium">
+          <Highlighted text={host.name} indexes={matches?.name} />
+        </span>
+        {connection && (
+          <>
+            <ConnectionDot state={connection} />
+            <span className="sr-only">{t(`tabs.status.${connection}`)}</span>
+          </>
         )}
-      >
-        {monogram(host.name)}
       </span>
-      <span className="max-w-[65%] shrink-0 truncate font-medium">
-        <Highlighted text={host.name} indexes={matches?.name} />
-      </span>
-      <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
+      <span className="text-muted-foreground min-w-0 flex-1 truncate font-mono text-xs">
         <Highlighted text={host.user} indexes={matches?.user} />@
         <Highlighted text={host.address} indexes={matches?.address} />
         {host.port === 22 ? "" : `:${host.port}`}

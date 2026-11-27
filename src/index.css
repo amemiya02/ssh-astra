@@ -118,11 +118,17 @@
   --color-terminal-background: var(--terminal-background);
   --color-terminal-foreground: var(--terminal-foreground);
   --color-ansi-red: var(--ansi-red);
+  --color-ansi-red-ink: var(--ansi-red-ink);
   --color-ansi-green: var(--ansi-green);
+  --color-ansi-green-ink: var(--ansi-green-ink);
   --color-ansi-yellow: var(--ansi-yellow);
+  --color-ansi-yellow-ink: var(--ansi-yellow-ink);
   --color-ansi-blue: var(--ansi-blue);
+  --color-ansi-blue-ink: var(--ansi-blue-ink);
   --color-ansi-magenta: var(--ansi-magenta);
+  --color-ansi-magenta-ink: var(--ansi-magenta-ink);
   --color-ansi-cyan: var(--ansi-cyan);
+  --color-ansi-cyan-ink: var(--ansi-cyan-ink);
 }
 
 @layer base {

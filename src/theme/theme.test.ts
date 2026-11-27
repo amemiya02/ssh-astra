@@ -40,6 +40,7 @@ describe("applyTheme", () => {
     expect(painted("--terminal-background")).toBe(appThemes.tokyoNight.terminal.background);
     expect(painted("--terminal-foreground")).toBe(appThemes.tokyoNight.terminal.foreground);
     expect(painted("--ansi-red")).toBe(appThemes.tokyoNight.terminal.red);
+    expect(painted("--ansi-red-ink")).toMatch(/^#[0-9a-f]{6}$/);
   });
 });
 

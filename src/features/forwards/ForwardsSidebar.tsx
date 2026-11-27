@@ -1,7 +1,7 @@
 import { ArrowRightLeft } from "lucide-react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { hostHue, hueClasses, monogram } from "@/features/hosts/hostHue";
+import { HostMonogram } from "@/features/hosts/HostMonogram";
 import { useHosts } from "@/features/hosts/hostsStore";
 import { SidebarHeader } from "@/features/shell/SidebarHeader";
 import type { Host } from "@/lib/ipc/hosts";
@@ -35,15 +35,7 @@ export function ForwardsSidebar({ onOpenForwards }: { onOpenForwards(host: Host)
                   className="hover:bg-accent active:bg-accent/70 focus-visible:ring-ring/50 flex h-7.5 w-full min-w-0 items-center gap-2 rounded-lg px-2 text-left outline-none focus-visible:ring-[3px]"
                   onClick={() => onOpenForwards(host)}
                 >
-                  <span
-                    aria-hidden
-                    className={cn(
-                      "grid size-5 shrink-0 place-items-center rounded-md text-[10px] leading-none font-semibold",
-                      hueClasses[hostHue(host.id)].tile,
-                    )}
-                  >
-                    {monogram(host.name)}
-                  </span>
+                  <HostMonogram host={host} />
                   <span className="min-w-0 flex-1 truncate font-medium">{host.name}</span>
                   <span
                     className={cn("shrink-0 text-xs tabular-nums", running > 0 ? "text-success" : "text-muted-foreground")}

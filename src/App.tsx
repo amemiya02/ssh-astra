@@ -3,6 +3,7 @@ import { Server } from "lucide-react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { connectionsStore, useConnections } from "@/features/connect/connectionsStore";
+import { hostConnections } from "@/features/connect/hostConnection";
 import { CommandDialog, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { FilePanelContent, type FilePanelPane } from "@/features/files/FilePanelContent";
 import { useRetainRemoteFilePanels } from "@/features/files/use-retain-remote-file-panels";
@@ -204,6 +205,7 @@ export function App() {
   const hostsController = useHostsController({ open: openRemoteTerminal, openSftp, openForwards });
   const forwardStates = useForwards((s) => s.states);
   const held = useConnections((s) => s.held);
+  const connectingHeld = useConnections((s) => s.connecting);
   const running = runningForwards({ states: forwardStates });
   const connected = activeConnections(connectedHosts(state), running, hosts, held);
   const forwards = runningRules(running, hosts).map(({ rule }) => forwardStatusText(rule, t));
@@ -224,7 +226,7 @@ export function App() {
   const transferList = useTransfers((s) => s.transfers);
   const transferSpeeds = useTransfers((s) => s.speeds);
   const transfers = transferSummary(transferList, transferSpeeds);
-  const connectedIds = useMemo(() => new Set(connected.map((host) => host.id)), [connected]);
+  const connections = useMemo(() => hostConnections(connected, state, connectingHeld), [connected, state, connectingHeld]);
   const focused = activeTab(state);
   const focusedPane = focused && activePane(focused);
   const filePanelPane: FilePanelPane | undefined =
@@ -237,7 +239,7 @@ export function App() {
     <>
       <AppShell
         sidebar={{
-          hosts: <HostsPanel controller={hostsController} />,
+          hosts: <HostsPanel controller={hostsController} connections={connections} />,
           forwards: <ForwardsSidebar onOpenForwards={openForwards} />,
         }}
         nav={{
@@ -267,7 +269,7 @@ export function App() {
               <HomeView
                 active={active}
                 controller={hostsController}
-                connectedIds={connectedIds}
+                connections={connections}
                 onOpenLocalTerminal={openLocalTerminal}
               />
             )}
