@@ -5,6 +5,8 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use serde::Deserialize;
+#[cfg(any(windows, target_os = "macos"))]
+use sshastra_core::files::SftpFs;
 use sshastra_core::files::{FileReader, FsError, FsId, FsResult};
 use sshastra_core::ssh::BoxFuture;
 use tokio::io::AsyncReadExt;
@@ -161,18 +163,19 @@ impl Report {
 pub(crate) async fn start(
     window: tauri::WebviewWindow,
     file: FilePromise,
-    fs: Arc<sshastra_core::files::SftpFs>,
+    fs: Arc<SftpFs>,
 ) -> crate::error::CommandResult<bool> {
     let path = Arc::<str>::from(file.path(cfg!(windows))?);
     let length = (file.size != 0).then_some(file.size);
     let modified = file.modified;
+    let session = Session(Some(fs));
     let source = Arc::new(Source {
         name: file.name,
         length,
         #[cfg(windows)]
         modified,
         open: Box::new(move |offset| {
-            let fs = fs.clone();
+            let fs = session.get();
             let path = path.clone();
             Box::pin(async move {
                 fs.open_regular_read_at(&path, offset, length, modified)
@@ -188,6 +191,27 @@ pub(crate) async fn start(
     let started = windows::start(window, source, report);
     started.map_err(|error| FsError::Io(error.to_string()))?;
     Ok(done.await.unwrap_or(Ok(false))?)
+}
+
+#[cfg(any(windows, target_os = "macos"))]
+struct Session(Option<Arc<SftpFs>>);
+
+#[cfg(any(windows, target_os = "macos"))]
+impl Session {
+    fn get(&self) -> Arc<SftpFs> {
+        self.0.as_ref().expect("session is kept until drop").clone()
+    }
+}
+
+#[cfg(any(windows, target_os = "macos"))]
+impl Drop for Session {
+    fn drop(&mut self) {
+        // The OS can release the final promise on a native thread. SftpFs closes
+        // its channel using the current Tokio runtime when the File panel is gone.
+        let runtime = tauri::async_runtime::handle();
+        let _entered = runtime.inner().enter();
+        drop(self.0.take());
+    }
 }
 
 #[cfg(test)]

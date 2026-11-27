@@ -92,12 +92,10 @@ fn run(hwnd: HWND, source: Arc<Source>, report: Arc<Report>) -> Result<()> {
     let status = unsafe { DoDragDrop(&data, &drop_source, DROPEFFECT_COPY, &mut effect) };
     drag.in_drag_loop.store(false, Ordering::Release);
     if status == DRAGDROP_S_DROP && effect.contains(DROPEFFECT_COPY) {
-        if !drag.extracting.load(Ordering::Acquire) {
+        if !drag.extracting.load(Ordering::Acquire) && drag.read_started.load(Ordering::Acquire) {
             // A synchronous consumer finished its Drop call. A stream already handed
             // to the consumer remains valid independently of the IDataObject.
-            if drag.read_started.load(Ordering::Acquire) {
-                drag.report.finish(Ok(true));
-            }
+            drag.report.finish(Ok(true));
         }
     } else {
         drag.stop_reading();
