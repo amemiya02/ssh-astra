@@ -337,6 +337,7 @@ pub fn run() {
             commands::terminal::terminal_latency_start,
             commands::terminal::terminal_latency_stop,
             commands::resources::terminal_resources_start,
+            commands::resources::terminal_resources_set_interval,
             commands::resources::terminal_resources_stop,
             commands::agent::terminal_agent_screen,
             commands::agent::review::terminal_agent_review_answer,

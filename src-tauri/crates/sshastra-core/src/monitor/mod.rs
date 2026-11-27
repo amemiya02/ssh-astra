@@ -5,13 +5,12 @@ use std::str;
 use std::time::Duration;
 
 use russh::{Channel, ChannelMsg, Sig};
-use serde::Serialize;
-use tokio::sync::oneshot;
-use tokio::time::{interval, timeout, MissedTickBehavior};
+use serde::{Deserialize, Serialize};
+use tokio::sync::{oneshot, watch};
+use tokio::time::{sleep_until, timeout, Instant};
 
 use crate::ssh::{shell_quote, Connection};
 
-const SAMPLE_INTERVAL: Duration = Duration::from_secs(2);
 const SAMPLE_TIMEOUT: Duration = Duration::from_secs(6);
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(1);
 const MAX_FRAME_BYTES: usize = 64 * 1024;
@@ -20,6 +19,34 @@ const MAX_MOUNTS: usize = 5;
 const SAMPLER: &str = include_str!("sampler.sh");
 
 type Session = Channel<russh::client::Msg>;
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(try_from = "u8")]
+pub enum ResourceInterval {
+    OneSecond = 1,
+    #[default]
+    TwoSeconds = 2,
+    FiveSeconds = 5,
+}
+
+impl TryFrom<u8> for ResourceInterval {
+    type Error = &'static str;
+
+    fn try_from(seconds: u8) -> Result<Self, Self::Error> {
+        match seconds {
+            1 => Ok(Self::OneSecond),
+            2 => Ok(Self::TwoSeconds),
+            5 => Ok(Self::FiveSeconds),
+            _ => Err("resource sampling interval must be 1, 2, or 5 seconds"),
+        }
+    }
+}
+
+impl ResourceInterval {
+    fn duration(self) -> Duration {
+        Duration::from_secs(self as u64)
+    }
+}
 
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -65,9 +92,11 @@ pub struct NetworkRate {
 
 /// Runs the fixed sampler until stopped or the consumer stops accepting events.
 /// Dropping the stop sender has the same effect as sending it.
+/// Interval updates adjust the next deadline without interrupting a sample.
 pub async fn watch_resources(
     connection: &Connection,
     mut stopped: oneshot::Receiver<()>,
+    mut interval: watch::Receiver<ResourceInterval>,
     mut emit: impl FnMut(ResourceEvent) -> bool,
 ) {
     if stopped.try_recv() != Err(oneshot::error::TryRecvError::Empty) {
@@ -87,7 +116,7 @@ pub async fn watch_resources(
     let result = tokio::select! {
         biased;
         _ = &mut stopped => None,
-        result = stream_samples(&mut channel, &mut emit) => Some(result),
+        result = stream_samples(&mut channel, &mut interval, &mut emit) => Some(result),
     };
     if result == Some(Err(())) {
         emit(ResourceEvent::Unavailable);
@@ -97,6 +126,7 @@ pub async fn watch_resources(
 
 async fn stream_samples(
     channel: &mut Session,
+    interval: &mut watch::Receiver<ResourceInterval>,
     emit: &mut impl FnMut(ResourceEvent) -> bool,
 ) -> Result<(), ()> {
     let command = format!(
@@ -107,12 +137,10 @@ async fn stream_samples(
         .await
         .map_err(|_| ())?
         .map_err(|_| ())?;
-    let mut ticks = interval(SAMPLE_INTERVAL);
-    ticks.set_missed_tick_behavior(MissedTickBehavior::Delay);
     let mut previous = None;
     let mut buffer = Vec::new();
     loop {
-        ticks.tick().await;
+        let started = Instant::now();
         let frame = timeout(SAMPLE_TIMEOUT, next_frame(channel, &mut buffer))
             .await
             .map_err(|_| ())??;
@@ -129,6 +157,24 @@ async fn stream_samples(
                 }
                 previous = Some(sample);
             }
+        }
+        wait_for_sample(started, interval).await;
+    }
+}
+
+async fn wait_for_sample(started: Instant, interval: &mut watch::Receiver<ResourceInterval>) {
+    loop {
+        // Pick up either a faster or slower cadence without ever adding a request in flight.
+        let deadline = started + interval.borrow_and_update().duration();
+        tokio::select! {
+            biased;
+            change = interval.changed() => {
+                if change.is_err() {
+                    sleep_until(deadline).await;
+                    return;
+                }
+            }
+            () = sleep_until(deadline) => return,
         }
     }
 }

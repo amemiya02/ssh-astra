@@ -972,8 +972,10 @@ impl ConnectionManager {
         let failure = Arc::new(Mutex::new(None));
         let routes = Routes::default();
         let config = self.client_config(host);
-        let (keepalive_samples, keepalive_rtt) =
-            config.keepalive_interval.map(|_| watch::channel(None)).unzip();
+        let (keepalive_samples, keepalive_rtt) = config
+            .keepalive_interval
+            .map(|_| watch::channel(None))
+            .unzip();
         let agent = self.agent.lock().unwrap_or_else(|p| p.into_inner()).clone();
         let agent_forwarding = (matches!(purpose, ConnectionPurpose::Shared)
             && host.forward_agent

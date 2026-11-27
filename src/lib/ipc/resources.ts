@@ -1,4 +1,5 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
+import type { ResourceInterval } from "@/features/resources/resource-settings";
 import type { TerminalId } from "./terminal";
 
 export interface ResourceUsage {
@@ -19,14 +20,24 @@ export interface ResourceSnapshot {
 
 export type ResourceEvent = { type: "snapshot"; snapshot: ResourceSnapshot } | { type: "unsupported" | "unavailable" };
 
-/** Streams the existing remote Terminal's resources until the returned cleanup runs. */
-export function watchResources(id: TerminalId, emit: (event: ResourceEvent) => void): () => void {
+/** Streams a remote Terminal's resources until the subscription is stopped. */
+export function watchResources(id: TerminalId, intervalSeconds: ResourceInterval, emit: (event: ResourceEvent) => void) {
   let active = true;
   const onEvent = new Channel<ResourceEvent>((event) => { if (active) emit(event); });
-  const started = invoke<void>("terminal_resources_start", { id, onEvent });
-  void started.catch(() => { if (active) emit({ type: "unavailable" }); });
-  return () => {
-    active = false;
-    void started.then(() => invoke("terminal_resources_stop", { id, subscription: onEvent.id })).catch(() => undefined);
+  const subscription = onEvent.id;
+  const started = invoke<void>("terminal_resources_start", { id, onEvent, intervalSeconds });
+  let updates = started.catch(() => { if (active) emit({ type: "unavailable" }); });
+  return {
+    setInterval(intervalSeconds: ResourceInterval) {
+      // Register first and deliver changes in order, even when the user clicks quickly.
+      updates = updates.then(() => {
+        if (active) return invoke<void>("terminal_resources_set_interval", { id, subscription, intervalSeconds })
+          .catch(() => undefined);
+      });
+    },
+    stop() {
+      active = false;
+      void started.then(() => invoke("terminal_resources_stop", { id, subscription })).catch(() => undefined);
+    },
   };
 }

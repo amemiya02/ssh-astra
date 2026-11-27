@@ -24,8 +24,8 @@ use sshastra_core::ssh::{QuickConnectTarget, RemoteTerminal, RemoteTerminalOptio
 use sshastra_core::terminal::{
     local_shell_command, local_shells, local_wsl_paths, ConnectionState, LocalPty, LocalShell,
     OutputKind, OutputStatus, SavedTerminalMetadata, ShellCommand, ShellIntegrationEvent,
-    TerminalError, TerminalEvent, TerminalId, TerminalOutput, TerminalRegistry, TerminalSettings, TerminalSize,
-    REPORT_CWD,
+    TerminalError, TerminalEvent, TerminalId, TerminalOutput, TerminalRegistry, TerminalSettings,
+    TerminalSize, REPORT_CWD,
 };
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{Manager, State, Webview, WebviewWindow};
@@ -451,10 +451,15 @@ pub fn terminal_latency_start(
 ) -> CommandResult<()> {
     let (samples, mut stopped) =
         windows::with_resources(&window, |resources| -> CommandResult<_> {
-            let route = resources.terminals.get(&id).ok_or(TerminalError::NotFound(id))?;
+            let route = resources
+                .terminals
+                .get(&id)
+                .ok_or(TerminalError::NotFound(id))?;
             let mut route = route.lock();
             let (_, connection) = registry.connection(id)?.ok_or(FsError::NotConnected)?;
-            let stopped = route.start_latency(on_sample.id()).ok_or(FsError::NotConnected)?;
+            let stopped = route
+                .start_latency(on_sample.id())
+                .ok_or(FsError::NotConnected)?;
             Ok((connection.watch_keepalive_rtt(), stopped))
         })??;
     let Some(mut samples) = samples else {
@@ -463,7 +468,8 @@ pub fn terminal_latency_start(
     };
     tauri::async_runtime::spawn(async move {
         loop {
-            let sample = samples.borrow_and_update()
+            let sample = samples
+                .borrow_and_update()
                 .and_then(|duration| u64::try_from(duration.as_millis()).ok());
             if on_sample.send(sample).is_err() {
                 return;

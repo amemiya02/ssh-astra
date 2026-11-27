@@ -468,9 +468,9 @@ Settings lists every theme as a card (10px radius, 6px padding, auto-fill at min
 
 ### Resource panel
 
-The dock beside a remote Terminal has Files and Resources tabs in both dock positions. Each pane starts on Files and remembers its own selection in the current Window. The active pane supplies the dock content. Selecting Resources reads the Host over the Terminal's existing Connection every two seconds while the dock, tab, and Window are visible.
+The dock beside a remote Terminal has Files and Resources tabs in both dock positions. Each pane starts on Files and remembers its own selection in the current Window. The active pane supplies the dock content. Selecting Resources reads the Host over the Terminal's existing Connection while the dock, tab, and Window are visible. The Resources tab can set the shared sampling interval to one, two, or five seconds. It defaults to two seconds, and a change applies to visible panels immediately.
 
-The panel groups CPU usage and core count, 1-, 5-, and 15-minute load, memory, swap, uptime, up to five disk mount points, and receive and send rates for each non-loopback network interface. Rates appear after the second snapshot. The panel shows a status message while connecting or measuring and when the system lacks the required `/proc` files. Hiding the panel, moving or closing the Terminal, or losing its Connection clears the current snapshot and stops sampling.
+The panel groups CPU usage and core count, 1-, 5-, and 15-minute load, memory, swap, uptime, up to five disk mount points, and receive and send rates for each non-loopback network interface. Rates appear after the second snapshot. The panel shows five-minute trends for CPU, one-minute load, memory, swap, and aggregate disk and network activity. Hiding the panel clears the current snapshot and stops sampling. Recent trends remain in the Window's memory between visibility changes and clear when the Terminal moves, closes, or loses its Connection. The panel shows a status message while connecting or measuring and when the system lacks the required `/proc` files.
 
 ### File panel path bar
 
