@@ -16,7 +16,7 @@ mod shell_integration;
 pub(crate) use encoding::OutputDecoder;
 pub use encoding::{TerminalBackspace, TerminalCharset};
 pub use local_pty::{LocalPty, ShellCommand};
-pub use local_shells::{local_shell_command, local_shells, LocalShell};
+pub use local_shells::{local_shell_command, local_shells, local_wsl_paths, LocalShell};
 pub use log_text::TerminalLogText;
 pub use output::{OutputKind, OutputStatus, TerminalOutput};
 pub use registry::{TerminalId, TerminalRegistry};

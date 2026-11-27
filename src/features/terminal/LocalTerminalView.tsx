@@ -1,25 +1,32 @@
 import type { Terminal as XTerm } from "@xterm/xterm";
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { showToast } from "@/features/toasts/toastStore";
+import { useOsFileDrop } from "@/features/transfers/use-os-file-drop";
 import { BroadcastPaneContext } from "@/features/workspace/broadcast";
 import { TabActivityContext } from "@/features/workspace/tab-activity";
 import {
   closeTerminal,
   openLocalTerminal,
+  resolveWslPaths,
   resizeTerminal,
   writeTerminal,
   type TerminalId,
 } from "@/lib/ipc/terminal";
 import { getSetting } from "@/lib/storage";
+import { quoteDroppedPaths } from "./dropped-paths";
 import { XtermView } from "./XtermView";
+import { terminalPasteInput } from "./terminal-input";
 import { terminalOutputs } from "./terminal-outputs";
 import { terminalSetting } from "./terminal-prefs";
 
 const dim = (text: string) => `\x1b[2m${text}\x1b[0m`;
 
 interface LocalTerminalViewProps {
-  /** Whether its tab is shown; becoming active refits and focuses the Terminal. */
+  /** Whether this is the focused pane of the shown tab. Becoming active refits and focuses it. */
   active?: boolean;
+  /** Non-focused splits in the shown tab can also receive dropped files. */
+  visible?: boolean;
   initialCwd?: string;
   shellId?: string;
   onCwd?(cwd: string): void;
@@ -32,9 +39,13 @@ interface LocalTerminalViewProps {
  * Stays mounted while its tab is hidden. When the shell exits or cannot start,
  * Enter starts a new one in the same tab.
  */
-export function LocalTerminalView({ active = true, initialCwd, shellId, onCwd, onTitleChange }: LocalTerminalViewProps) {
+export function LocalTerminalView({ active = true, visible = active, initialCwd, shellId, onCwd, onTitleChange }: LocalTerminalViewProps) {
   const { t } = useTranslation();
   const [shellFallback, setShellFallback] = useState(false);
+  const [running, setRunning] = useState(false);
+  const dropTarget = useRef<HTMLDivElement>(null);
+  const pasteDroppedPaths = useRef<((paths: string[]) => Promise<void>) | null>(null);
+  const drop = useOsFileDrop(dropTarget, visible && running, (paths) => { void pasteDroppedPaths.current?.(paths); });
   const { broadcast, tabId, paneId } = useContext(BroadcastPaneContext) ?? {};
   const { activity, tabId: activityTabId } = useContext(TabActivityContext) ?? {};
   // Read through refs so a language change or a new callback never recreates the Terminal.
@@ -61,6 +72,8 @@ export function LocalTerminalView({ active = true, initialCwd, shellId, onCwd, o
     const size = () => ({ cols: xterm.cols, rows: xterm.rows });
 
     const offerRestart = () => {
+      pasteDroppedPaths.current = null;
+      setRunning(false);
       unregisterWriter?.();
       unregisterWriter = undefined;
       releaseOutput?.();
@@ -110,12 +123,29 @@ export function LocalTerminalView({ active = true, initialCwd, shellId, onCwd, o
         xterm.write(`\r\n${dim(message)}\r\n`);
         offerRestart();
       }, cwd, shellId ?? getSetting(terminalSetting).localShell ?? undefined).then(
-        (opened) => {
+        ({ id: opened, shellProgram, wslDistribution }) => {
           if (disposed || exited) {
             void closeTerminal(opened);
             return;
           }
           id = opened;
+          pasteDroppedPaths.current = async (paths) => {
+            const isCurrent = () => !disposed && !exited && id === opened;
+            const failed = () => {
+              if (isCurrent()) showToast((t) => t("terminal.fileDrop.pasteFailed"), "error");
+            };
+            try {
+              const input = wslDistribution ? await resolveWslPaths(wslDistribution, paths) : { shellProgram, paths };
+              if (!isCurrent()) return;
+              const text = input && quoteDroppedPaths(input.shellProgram, input.paths);
+              if (text === null) return failed();
+              const bracketed = xterm.modes.bracketedPasteMode && !xterm.options.ignoreBracketedPasteMode;
+              await writeTerminal(opened, terminalPasteInput(text, bracketed, false));
+            } catch {
+              failed();
+            }
+          };
+          setRunning(true);
           output?.attach(opened);
           if (pendingInput) {
             void writeTerminal(opened, pendingInput);
@@ -160,6 +190,7 @@ export function LocalTerminalView({ active = true, initialCwd, shellId, onCwd, o
 
     return () => {
       disposed = true;
+      pasteDroppedPaths.current = null;
       releaseOutput?.();
       unregisterWriter?.();
       pendingInput = "";
@@ -171,7 +202,7 @@ export function LocalTerminalView({ active = true, initialCwd, shellId, onCwd, o
   }, [activity, activityTabId, broadcast, paneId, shellId, tabId]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div ref={dropTarget} className="relative flex h-full min-h-0 flex-col">
       {shellFallback && (
         <p role="status" className="bg-surface text-foreground shrink-0 border-b px-3 py-1.5 text-xs">
           {t("terminal.localShell.fallback")}
@@ -180,6 +211,7 @@ export function LocalTerminalView({ active = true, initialCwd, shellId, onCwd, o
       <div className="min-h-0 flex-1">
         <XtermView active={active} onTitleChange={onTitleChange} attach={attach} />
       </div>
+      {drop.over && <span aria-hidden className="ring-primary pointer-events-none absolute inset-1 z-10 rounded-md ring-2 ring-inset" />}
     </div>
   );
 }

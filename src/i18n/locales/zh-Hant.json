@@ -718,6 +718,15 @@
     "followSystemAction": "主題：依照系統"
   },
   "terminal": {
+    "fileDrop": {
+      "destinationTitle": "選擇上傳目錄",
+      "destinationBody": "{{host}} 上的終端尚未回報目前目錄。要將檔案上傳到哪裡？",
+      "filePanel": "檔案面板目錄",
+      "home": "家目錄",
+      "cancel": "取消",
+      "uploadFailed": "無法開始向 {{host}} 上傳檔案。",
+      "pasteFailed": "無法將拖入的路徑貼到此 shell。"
+    },
     "shellIntegration": {
       "disabled": "設定中已關閉 Shell 整合。",
       "unsupported": "目前的 shell 不支援整合。請使用已啟用提示字元展開的 bash 4.4 以上版本，或使用 zsh。",

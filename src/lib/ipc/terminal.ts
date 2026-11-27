@@ -14,6 +14,12 @@ export interface LocalShell {
   label: string;
 }
 
+interface OpenedLocalTerminal {
+  id: TerminalId;
+  shellProgram: string;
+  wslDistribution: string | null;
+}
+
 export function listLocalShells(): Promise<LocalShell[]> {
   return invoke("local_terminal_shells");
 }
@@ -87,9 +93,14 @@ export async function openLocalTerminal(
   onEvent: (event: TerminalEvent) => void,
   cwd?: string,
   shellId?: string,
-): Promise<TerminalId> {
+): Promise<OpenedLocalTerminal> {
   const channel = new Channel<TerminalMessage>((message) => onEvent(decodeTerminalMessage(message)));
-  return invoke<TerminalId>("local_terminal_open", { size, onEvent: channel, cwd, shellId });
+  return invoke("local_terminal_open", { size, onEvent: channel, cwd, shellId });
+}
+
+/** Resolves file paths and the login shell within the selected WSL distribution. */
+export function resolveWslPaths(distribution: string, paths: string[]): Promise<{ shellProgram: string; paths: string[] } | null> {
+  return invoke("local_terminal_wsl_paths", { distribution, paths });
 }
 
 export function writeTerminal(id: TerminalId, data: string): Promise<void> {
