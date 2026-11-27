@@ -182,7 +182,9 @@ describe("FileBrowser", () => {
     await act(async () => button("Save").click());
     expect(hostsIpc.renameBookmark).toHaveBeenCalledWith("host", "/archive", "Off-site");
     await openBookmarks();
-    expect(bookmarkMenuItem("Off-site")?.textContent).toBe("Off-site/archive");
+    const renamed = bookmarkMenuItem("Off-site");
+    expect(renamed?.textContent).toBe("Off-site/archive");
+    await act(async () => renamed!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
   });
 
   it("keeps Bookmark controls out of a browser whose Host has not been saved", async () => {
