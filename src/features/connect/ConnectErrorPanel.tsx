@@ -58,6 +58,10 @@ export function ConnectErrorPanel({ error }: { error: CommandError }) {
     "proxyInvalidResponse",
     "proxyAuthenticationFailed",
     "proxyConnectFailed",
+    "proxyCommandInvalid",
+    "proxyCommandTarget",
+    "proxyCommandStart",
+    "proxyCommandFailed",
     "cancelled",
     "keyUnreadable",
     "keyPassphraseIncorrect",
@@ -75,7 +79,7 @@ export function ConnectErrorPanel({ error }: { error: CommandError }) {
         <span className="break-all">{kind ? t(`connect.errors.${kind}`, details) : t("connect.errors.generic")}</span>
       </p>
       {hop}
-      <p className="text-muted-foreground mt-1 break-all">{error.message}</p>
+      <p className="text-muted-foreground mt-1 break-all whitespace-pre-wrap">{error.message}</p>
     </div>
   );
 }

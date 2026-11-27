@@ -110,6 +110,8 @@
       "partial": "Imported without some settings",
       "error": "Could not import ~/.ssh/config: {{message}}",
       "close": "Close",
+      "proxyCommands": "Imported ProxyCommands",
+      "proxyCommandHint": "These commands run locally when you connect to the listed Hosts.",
       "problems": {
         "invalidValue": "{{directive}} {{value}} is not understood",
         "unsupported": "{{directive}} is not supported",
@@ -664,6 +666,7 @@
     "direct": "Direct connection",
     "inherit": "Use global proxy setting",
     "jumpHint": "This Connection uses the proxy setting of its first Jump host.",
+    "commandHint": "Runs in your local shell when connecting. Use %h for the Host address, %p for the port, and %r for the username.",
     "passwordHint": "Optional. Add a username to enter a proxy password at connection time.",
     "save": "Save proxy",
     "clearPassword": "Clear saved password",
@@ -672,12 +675,14 @@
     "fields": {
       "address": "Proxy address",
       "port": "Proxy port",
-      "username": "Proxy username"
+      "username": "Proxy username",
+      "command": "Shell command"
     },
     "errors": {
       "proxyAddress": "Enter a hostname or IP address.",
       "proxyPort": "Enter a port from 1 to 65535.",
-      "proxyUsername": "Enter a username supported by this proxy type."
+      "proxyUsername": "Enter a username supported by this proxy type.",
+      "proxyCommand": "Enter a valid shell command."
     },
     "prompt": {
       "title": "Proxy password for {{user}} at {{host}}",
@@ -756,6 +761,10 @@
       "proxyInvalidResponse": "The outbound proxy returned an invalid response",
       "proxyAuthenticationFailed": "The outbound proxy rejected authentication",
       "proxyConnectFailed": "The outbound proxy could not connect to the Host",
+      "proxyCommandInvalid": "Check the ProxyCommand settings",
+      "proxyCommandTarget": "A Host value contains characters that ProxyCommand cannot substitute",
+      "proxyCommandStart": "Could not start the ProxyCommand",
+      "proxyCommandFailed": "The ProxyCommand closed the SSH connection",
       "cancelled": "Connection cancelled.",
       "generic": "Could not connect.",
       "keyUnreadable": "Could not use the private key {{keyPath}}: {{reason}}",

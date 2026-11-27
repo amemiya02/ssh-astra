@@ -69,6 +69,48 @@ Host bad
 ";
 
 #[test]
+fn ssh_config_import_lists_saved_proxy_commands_without_running_them() {
+    use sshastra_core::proxy::HostProxy;
+
+    let (dir, mut store) = store();
+    let marker = dir.path().join("proxy-started");
+    let command = format!(
+        "printf '%s' '$HOME' > {} && nc  \"%h\" %p",
+        sshastra_core::ssh::shell_quote(marker.to_str().unwrap())
+    );
+    let report = import(
+        &mut store,
+        &format!(
+            "Host first second\n  ProxyCommand= {command}\nHost disabled\n  ProxyCommand none"
+        ),
+    );
+
+    assert!(!marker.exists());
+    assert_eq!(report.imported, ["first", "second", "disabled"]);
+    assert!(report.issues.is_empty());
+    assert_eq!(
+        serde_json::to_value(&report).unwrap()["proxyCommands"],
+        serde_json::json!([
+            {"host": "first", "command": command},
+            {"host": "second", "command": command},
+        ])
+    );
+    let reopened = HostStore::open(dir.path().join("hosts.json")).unwrap();
+    for name in ["first", "second"] {
+        assert_eq!(
+            find(&reopened, name).proxy,
+            HostProxy::ProxyCommand(command.clone())
+        );
+    }
+    assert_eq!(find(&reopened, "disabled").proxy, HostProxy::Inherit);
+
+    let repeated = import(&mut store, &format!("Host first\n  ProxyCommand {command}"));
+    assert_eq!(repeated.skipped, ["first"]);
+    assert!(repeated.proxy_commands.is_empty());
+    assert!(!marker.exists());
+}
+
+#[test]
 fn imported_hosts_keep_their_server_alive_interval() {
     let (dir, mut store) = store();
 

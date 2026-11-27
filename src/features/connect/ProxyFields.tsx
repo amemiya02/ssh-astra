@@ -24,6 +24,7 @@ export function ProxyFields({
   onChange(values: ProxyFormValues): void;
 }) {
   const { t } = useTranslation();
+  const commandId = `${id}-command`;
   const custom = values.mode === "socks5" || values.mode === "httpConnect";
   return (
     <div className="grid gap-2.5">
@@ -41,9 +42,28 @@ export function ProxyFields({
             <SelectItem value="direct">{t(global ? "proxy.none" : "proxy.direct")}</SelectItem>
             <SelectItem value="socks5">SOCKS5</SelectItem>
             <SelectItem value="httpConnect">HTTP CONNECT</SelectItem>
+            {!global && <SelectItem value="proxyCommand">ProxyCommand</SelectItem>}
           </SelectContent>
         </Select>
       </div>
+      {!global && values.mode === "proxyCommand" && (
+        <div className="grid gap-1.5">
+          <Label htmlFor={commandId} className="text-xs">{t("proxy.fields.command")}</Label>
+          <textarea
+            id={commandId}
+            className="border-input focus-visible:border-ring focus-visible:ring-ring/50 min-h-12 w-full rounded-md border bg-transparent px-3 py-2 font-mono text-xs outline-none focus-visible:ring-2"
+            autoCapitalize="off"
+            autoComplete="off"
+            spellCheck={false}
+            aria-invalid={errors.proxyCommand ? true : undefined}
+            aria-describedby={`${commandId}-hint${errors.proxyCommand ? ` ${commandId}-error` : ""}`}
+            value={values.command ?? ""}
+            onChange={(event) => onChange({ ...values, command: event.target.value })}
+          />
+          <p id={`${commandId}-hint`} className="text-muted-foreground text-xs">{t("proxy.commandHint")}</p>
+          {errors.proxyCommand && <p id={`${commandId}-error`} className="text-destructive text-xs">{t("proxy.errors.proxyCommand")}</p>}
+        </div>
+      )}
       {custom && proxyFields.map((entry) => {
         const { field, name } = entry;
         const fieldId = `${id}-${name}`;

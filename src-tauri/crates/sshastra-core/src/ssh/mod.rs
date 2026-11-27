@@ -29,6 +29,7 @@ mod held;
 mod host_keys;
 mod outbound_proxy;
 mod progress;
+mod proxy_command;
 mod remote_listen;
 mod remote_terminal;
 mod shell;
@@ -248,6 +249,14 @@ pub enum ConnectError {
     Unreachable(String),
     #[error(transparent)]
     Proxy(#[from] ProxyError),
+    #[error("the ProxyCommand is empty or invalid")]
+    ProxyCommandInvalid,
+    #[error("the Host address, port, or username is invalid for ProxyCommand substitution")]
+    ProxyCommandTarget,
+    #[error("cannot start the ProxyCommand: {0}")]
+    ProxyCommandStart(#[source] std::io::Error),
+    #[error("the ProxyCommand closed the SSH transport{separator}{stderr}", separator = if .stderr.is_empty() { "" } else { "\n" })]
+    ProxyCommandFailed { stderr: String },
     #[error("the host did not answer in time")]
     TimedOut,
     /// The server's key differs from the one recorded: possibly an attack.
@@ -306,6 +315,10 @@ impl ConnectError {
         match self {
             Self::Unreachable(_) => "unreachable",
             Self::Proxy(error) => error.kind(),
+            Self::ProxyCommandInvalid => "proxyCommandInvalid",
+            Self::ProxyCommandTarget => "proxyCommandTarget",
+            Self::ProxyCommandStart(_) => "proxyCommandStart",
+            Self::ProxyCommandFailed { .. } => "proxyCommandFailed",
             Self::TimedOut => "timedOut",
             Self::HostKeyMismatch { .. } => "hostKeyMismatch",
             Self::HostKeyRevoked { .. } => "hostKeyRevoked",
@@ -662,14 +675,24 @@ impl ConnectionManager {
                     log::info!("connection hop={} step=tcp result=starting", host.id);
                     let stream = self.open_first_hop(host, prompter.as_ref(), purpose).await;
                     log_hop(&host.id, "tcp", &stream);
-                    self.establish(
-                        progress,
-                        reach.finish(stream)?,
-                        prompter.clone(),
-                        None,
-                        purpose,
-                    )
-                    .await
+                    match reach.finish(stream)? {
+                        FirstHop::Socket(stream) => {
+                            self.establish(progress, stream, prompter.clone(), None, purpose)
+                                .await
+                        }
+                        FirstHop::Command(stream, process) => {
+                            match self
+                                .establish(progress, stream, prompter.clone(), None, purpose)
+                                .await
+                            {
+                                Ok(mut connection) => {
+                                    connection._proxy_command = Some(process);
+                                    Ok(connection)
+                                }
+                                Err(error) => Err(process.connect_error(error).await),
+                            }
+                        }
+                    }
                 }
                 Some(jump) => {
                     log::info!(
@@ -704,7 +727,7 @@ impl ConnectionManager {
         host: &Host,
         prompter: &dyn Prompter,
         purpose: ConnectionPurpose<'_>,
-    ) -> Result<BufReader<TcpStream>, ConnectError> {
+    ) -> Result<FirstHop, ConnectError> {
         let (proxy, owner) = match &host.proxy {
             HostProxy::Inherit => (
                 self.proxy.lock().unwrap_or_else(|p| p.into_inner()).clone(),
@@ -712,15 +735,23 @@ impl ConnectionManager {
             ),
             HostProxy::Direct => (None, None),
             HostProxy::Override(config) => (Some(config.clone()), Some(&host.id)),
+            HostProxy::ProxyCommand(command) => {
+                let (stream, process) = proxy_command::start(command, host)?;
+                return Ok(FirstHop::Command(stream, process));
+            }
         };
         match proxy {
             Some(config) => {
                 let can_save = matches!(purpose, ConnectionPurpose::Shared);
                 let credentials =
                     outbound_proxy::ProxyCredentials::new(&self.vault, owner, can_save);
-                outbound_proxy::dial(config, host, credentials, prompter).await
+                outbound_proxy::dial(config, host, credentials, prompter)
+                    .await
+                    .map(FirstHop::Socket)
             }
-            None => open_tcp(host).await.map(BufReader::new),
+            None => open_tcp(host)
+                .await
+                .map(|stream| FirstHop::Socket(BufReader::new(stream))),
         }
     }
 
@@ -830,7 +861,13 @@ impl ConnectionManager {
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
-        let deadline = handshake::Deadline::new(self.handshake_timeout);
+        let timeout = if via.is_none() && matches!(progress.host.proxy, HostProxy::ProxyCommand(_))
+        {
+            self.handshake_timeout.min(CONNECT_TIMEOUT)
+        } else {
+            self.handshake_timeout
+        };
+        let deadline = handshake::Deadline::new(timeout);
         let prompter: Arc<dyn Prompter> = Arc::new(handshake::Paused {
             inner: prompter,
             deadline: Arc::clone(&deadline),
@@ -937,6 +974,7 @@ impl ConnectionManager {
             routes,
             agent_forwarding,
             file_namespace,
+            _proxy_command: None,
             _via: via,
         })
     }
@@ -945,16 +983,25 @@ impl ConnectionManager {
 async fn disconnect_route(mut connection: Arc<Connection>) {
     // Private connections have one owner: the next hop, or the test itself.
     while let Some(Connection {
-        handle, _via: via, ..
+        handle,
+        _proxy_command: command,
+        _via: via,
+        ..
     }) = Arc::into_inner(connection)
     {
         let _ = handle
             .disconnect(russh::Disconnect::ByApplication, "", "en")
             .await;
         let _ = handle.await;
+        drop(command);
         let Some(jump) = via else { break };
         connection = jump;
     }
+}
+
+enum FirstHop {
+    Socket(BufReader<TcpStream>),
+    Command(proxy_command::Stream, proxy_command::Process),
 }
 
 async fn open_tcp(host: &Host) -> Result<TcpStream, ConnectError> {
@@ -980,6 +1027,7 @@ pub struct Connection {
     /// The Jump host's Connection this one is tunnelled through, kept open
     /// for as long as this one is.
     _via: Option<Arc<Connection>>,
+    _proxy_command: Option<proxy_command::Process>,
 }
 
 impl std::fmt::Debug for Connection {

@@ -196,6 +196,10 @@ impl From<ConnectError> for CommandError {
         match &err {
             Unreachable(_) => Self::new("unreachable", &err),
             Proxy(error) => Self::new(error.kind(), error),
+            ProxyCommandInvalid => Self::new("proxyCommandInvalid", &err),
+            ProxyCommandTarget => Self::new("proxyCommandTarget", &err),
+            ProxyCommandStart(_) => Self::new("proxyCommandStart", &err),
+            ProxyCommandFailed { .. } => Self::new("proxyCommandFailed", &err),
             TimedOut => Self::new("timedOut", &err),
             HostKeyMismatch {
                 host,

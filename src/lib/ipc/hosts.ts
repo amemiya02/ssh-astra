@@ -28,7 +28,8 @@ export interface ProxyConfig {
 
 export type HostProxy =
   | { mode: "inherit" | "direct" }
-  | { mode: "override"; config: ProxyConfig };
+  | { mode: "override"; config: ProxyConfig }
+  | { mode: "proxyCommand"; config: string };
 
 /** A Host's editable fields (`sshastra_core::hosts::HostDraft`). */
 export interface HostDraft {
@@ -181,6 +182,7 @@ export interface ImportReport {
   /** Already saved under that name, so left alone. */
   skipped: string[];
   issues: ImportIssue[];
+  proxyCommands: { host: string; command: string }[];
 }
 
 /**

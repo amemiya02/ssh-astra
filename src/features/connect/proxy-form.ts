@@ -1,19 +1,21 @@
 import type { HostProxy, ProxyConfig, ProxyKind } from "@/lib/ipc/hosts";
 
 export interface ProxyFormValues {
-  mode: "inherit" | "direct" | ProxyKind;
+  mode: "inherit" | "direct" | "proxyCommand" | ProxyKind;
   address: string;
   port: string;
   username: string;
+  command?: string;
 }
 
-export type ProxyField = "proxyAddress" | "proxyPort" | "proxyUsername";
+export type ProxyField = "proxyAddress" | "proxyPort" | "proxyUsername" | "proxyCommand";
 
 type ProxyFormResult =
   | { ok: true; proxy: HostProxy }
   | { ok: false; errors: Partial<Record<ProxyField, ProxyField>> };
 
 export function proxyFormFrom(proxy: HostProxy): ProxyFormValues {
+  if (proxy.mode === "proxyCommand") return { mode: proxy.mode, address: "", port: "", username: "", command: proxy.config };
   if (proxy.mode !== "override") return { mode: proxy.mode, address: "", port: "", username: "" };
   const { kind, address, port, username } = proxy.config;
   return { mode: kind, address, port: String(port), username: username ?? "" };
@@ -47,6 +49,11 @@ function validUsername(username: string, kind: ProxyKind): boolean {
 
 export function parseProxyForm(form: ProxyFormValues = inheritedProxyForm): ProxyFormResult {
   if (form.mode === "direct" || form.mode === "inherit") return { ok: true, proxy: { mode: form.mode } };
+  if (form.mode === "proxyCommand") {
+    const config = form.command?.trim();
+    if (!config || config.includes("\0")) return { ok: false, errors: { proxyCommand: "proxyCommand" } };
+    return { ok: true, proxy: { mode: "proxyCommand", config } };
+  }
   const address = form.address.trim();
   const portText = form.port.trim();
   const port = /^\d+$/.test(portText) ? Number(portText) : NaN;

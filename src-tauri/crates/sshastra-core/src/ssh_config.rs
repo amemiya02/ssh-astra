@@ -12,7 +12,7 @@
 //! `Port`, `User`, `IdentityFile` (the first one), `IdentitiesOnly`, `ForwardAgent`,
 //! `ServerAliveInterval`, `ProxyJump` (as Jump hosts), `Include`, `LocalForward`,
 //! `RemoteForward` and `DynamicForward` (as auto-start Port forward rules, since `ssh` sets
-//! them up on every connect). `ProxyCommand` Hosts are reported and skipped;
+//! them up on every connect), and `ProxyCommand` as shell command text;
 //! `Match` blocks are reported and ignored; other directives are ignored.
 
 use std::collections::{HashMap, HashSet};
@@ -22,6 +22,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use crate::forward::{ForwardDraft, ForwardKind, LOOPBACK, REMOTE_LOOPBACK};
+use crate::proxy::normalize_command;
 
 /// What the parse needs to know about the machine it runs on.
 #[derive(Debug, Clone)]
@@ -51,6 +52,7 @@ pub struct ConfigHost {
     pub forward_agent: bool,
     pub keepalive_seconds: Option<u32>,
     pub jump_host: Option<String>,
+    pub proxy_command: Option<String>,
     pub forwards: Vec<ForwardDraft>,
 }
 
@@ -212,11 +214,12 @@ struct Reader<'a> {
 impl Reader<'_> {
     fn read(&mut self, text: &str, depth: usize) {
         for line in text.lines() {
-            let Some((keyword, args)) = split_line(line) else {
+            let Some((keyword, raw)) = split_line(line) else {
                 continue;
             };
             match keyword.as_str() {
                 "host" => {
+                    let args = split_args(raw);
                     for pattern in &args {
                         let literal = !pattern.starts_with('!') && !pattern.contains(['*', '?']);
                         if literal && !self.aliases.contains(pattern) {
@@ -236,11 +239,19 @@ impl Reader<'_> {
                     self.start(Selector::Never);
                 }
                 "include" => {
-                    for pattern in &args {
+                    for pattern in &split_args(raw) {
                         self.include(pattern, depth);
                     }
                 }
-                _ => self.current().directives.push(Directive { keyword, args }),
+                _ => {
+                    // ProxyCommand's entire value is shell syntax, including its quotes.
+                    let args = if keyword == "proxycommand" {
+                        vec![raw.to_owned()]
+                    } else {
+                        split_args(raw)
+                    };
+                    self.current().directives.push(Directive { keyword, args });
+                }
             }
         }
     }
@@ -293,7 +304,7 @@ impl Reader<'_> {
 
 /// A config line as its lower-cased keyword and its arguments; `None` for
 /// blank lines and comments.
-fn split_line(line: &str) -> Option<(String, Vec<String>)> {
+fn split_line(line: &str) -> Option<(String, &str)> {
     let line = line.trim();
     if line.is_empty() || line.starts_with('#') {
         return None;
@@ -304,7 +315,7 @@ fn split_line(line: &str) -> Option<(String, Vec<String>)> {
     let keyword = line[..end].to_lowercase();
     let rest = line[end..].trim_start();
     let rest = rest.strip_prefix('=').unwrap_or(rest);
-    Some((keyword, split_args(rest)))
+    Some((keyword, rest.trim_start()))
 }
 
 /// Splits on whitespace; double quotes group (and are removed); a word
@@ -362,7 +373,7 @@ fn glob(pattern: &str, text: &str) -> bool {
 
 enum Proxy {
     Jump(String),
-    Command,
+    Command(String),
 }
 
 #[derive(Default)]
@@ -378,6 +389,22 @@ struct Settings {
     proxy: Option<Option<Proxy>>,
     /// In order, with their keyword.
     forwards: Vec<(&'static str, String)>,
+}
+
+impl Settings {
+    fn proxy_command(&self) -> Result<Option<String>, ImportProblem> {
+        match &self.proxy {
+            Some(Some(Proxy::Command(command))) => {
+                normalize_command(command)
+                    .map(Some)
+                    .map_err(|_| ImportProblem::InvalidValue {
+                        directive: "ProxyCommand".into(),
+                        value: command.clone(),
+                    })
+            }
+            _ => Ok(None),
+        }
+    }
 }
 
 fn yes_or_no(directive: &str, value: Option<&str>) -> Result<bool, ImportProblem> {
@@ -474,7 +501,7 @@ impl Config<'_> {
                         } else if d.keyword == "proxyjump" {
                             Some(Proxy::Jump(value))
                         } else {
-                            Some(Proxy::Command)
+                            Some(Proxy::Command(value))
                         });
                     }
                     "localforward" => s.forwards.push(("LocalForward", d.value())),
@@ -528,6 +555,7 @@ impl Config<'_> {
             forward_agent: yes_or_no("ForwardAgent", s.forward_agent.as_deref())?,
             keepalive_seconds: server_alive_interval(s.server_alive_interval.as_deref())?,
             jump_host: None,
+            proxy_command: s.proxy_command()?,
             forwards: Vec::new(),
         })
     }
@@ -538,11 +566,6 @@ impl Config<'_> {
         let s = self.settings(alias);
         let mut host = self.base(alias, &s)?;
         let proxy = match s.proxy {
-            Some(Some(Proxy::Command)) => {
-                return Err(ImportProblem::Unsupported {
-                    directive: "ProxyCommand".into(),
-                })
-            }
             Some(Some(Proxy::Jump(value))) => Some(value),
             _ => None,
         };
@@ -811,6 +834,7 @@ impl Hosts {
                             s.server_alive_interval.as_deref(),
                         )?,
                         jump_host: None,
+                        proxy_command: s.proxy_command()?,
                         forwards: Vec::new(),
                     }
                 }

@@ -77,6 +77,7 @@ const advancedFieldIds = {
   proxyAddress: "host-form-proxy-address",
   proxyPort: "host-form-proxy-port",
   proxyUsername: "host-form-proxy-username",
+  proxyCommand: "host-form-proxy-command",
 };
 
 type ConnectionTestState =
@@ -213,7 +214,7 @@ export function HostFormDialogContent({
             let message = error.message;
             if (error.kind === "temporaryHostUnavailable") message = t("quickConnect.noLongerAvailable");
             if (error.kind === "duplicateHostId") message = t("quickConnect.alreadySaved");
-            if (advancedField === "proxyAddress" || advancedField === "proxyPort" || advancedField === "proxyUsername") {
+            if (advancedField === "proxyAddress" || advancedField === "proxyPort" || advancedField === "proxyUsername" || advancedField === "proxyCommand") {
               setErrors({ [advancedField]: advancedField });
             } else {
               setSaveError({ message, field: advancedField });

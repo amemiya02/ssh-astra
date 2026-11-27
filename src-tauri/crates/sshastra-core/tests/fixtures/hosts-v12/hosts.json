@@ -1,0 +1,35 @@
+{
+  "version": 12,
+  "groups": [],
+  "hosts": [
+    {
+      "id": "h-proxy",
+      "name": "Proxy",
+      "address": "ssh.example.net",
+      "port": 22,
+      "user": "deploy",
+      "auth": { "type": "auto" },
+      "proxy": {
+        "mode": "override",
+        "config": { "kind": "socks5", "address": "relay.example.net", "port": 1080, "username": "relay" }
+      }
+    },
+    {
+      "id": "h-direct",
+      "name": "Direct",
+      "address": "direct.example.net",
+      "port": 22,
+      "user": "deploy",
+      "auth": { "type": "auto" },
+      "proxy": { "mode": "direct" }
+    },
+    {
+      "id": "h-inherit",
+      "name": "Inherited",
+      "address": "ssh.example.org",
+      "port": 22,
+      "user": "deploy",
+      "auth": { "type": "auto" }
+    }
+  ]
+}

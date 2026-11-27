@@ -21,7 +21,7 @@ pub use transfer::{ImportSummary, EXPORT_FORMAT};
 /// The file format version this build writes, to the store and to export
 /// files. Bump it together with a migration step in [`migrate`], which reads
 /// both.
-const CURRENT_VERSION: u32 = 12;
+const CURRENT_VERSION: u32 = 13;
 
 /// Identifies a Host across restarts and across the IPC boundary.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -414,6 +414,14 @@ pub struct ImportReport {
     pub skipped: Vec<String>,
     /// What could not be imported (or only in part), and why.
     pub issues: Vec<ImportIssue>,
+    /// Local shell commands assigned to newly imported Hosts.
+    pub proxy_commands: Vec<ImportedProxyCommand>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ImportedProxyCommand {
+    pub host: String,
+    pub command: String,
 }
 
 /// Saved Hosts and Groups, in the order the user arranged them.
@@ -612,7 +620,10 @@ impl HostStore {
                 auth,
                 identities_only: entry.identities_only,
                 forward_agent: entry.forward_agent,
-                proxy: HostProxy::Inherit,
+                proxy: entry
+                    .proxy_command
+                    .map(HostProxy::ProxyCommand)
+                    .unwrap_or_default(),
                 keepalive_seconds: entry.keepalive_seconds,
                 post_login_command: None,
                 terminal_charset: None,
@@ -628,6 +639,12 @@ impl HostStore {
                         .into_forward(ForwardId::generate())
                         .map_err(HostStoreError::Invalid)?,
                 );
+            }
+            if let HostProxy::ProxyCommand(command) = &host.proxy {
+                report.proxy_commands.push(ImportedProxyCommand {
+                    host: host.name.clone(),
+                    command: command.clone(),
+                });
             }
             library.hosts.push(host);
             report.imported.push(entry.name);
@@ -849,7 +866,8 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
         // adds a command sent after each shell opens. v11 adds the Terminal
         // character set and Backspace byte, defaulting to UTF-8 and DEL.
         // v12 adds outbound proxies; older Hosts inherit the global setting.
-        2 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | CURRENT_VERSION => {
+        // v13 adds a local shell command as an outbound proxy choice.
+        2 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | CURRENT_VERSION => {
             let FileV2 { groups, hosts } = serde_json::from_str(text).map_err(corrupt)?;
             Ok(Library { groups, hosts })
         }
@@ -867,9 +885,12 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
             host.post_login_command = None;
         }
     }
-    if version < 12 {
+    if version < CURRENT_VERSION {
+        // An older file could not authorize running a ProxyCommand.
         for host in &mut library.hosts {
-            host.proxy = HostProxy::Inherit;
+            if version < 12 || matches!(host.proxy, HostProxy::ProxyCommand(_)) {
+                host.proxy = HostProxy::Inherit;
+            }
         }
     }
     Ok(library)
