@@ -7,6 +7,7 @@ import { Terminal as XTerm } from "@xterm/xterm";
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { exposeTerminal } from "@/lib/e2e";
 import { notifyCopied } from "@/features/toasts/copyFeedback";
+import { externalLinkDestination } from "@/lib/external-link";
 import { openExternalUrl, readClipboardText, writeClipboardText } from "@/lib/ipc/system";
 import { useTheme } from "@/theme/theme-context";
 import { resolveTerminalTheme, terminalSearchDecorations } from "@/theme/terminal-themes";
@@ -16,7 +17,6 @@ import { BroadcastPaneContext, type Broadcast } from "@/features/workspace/broad
 import { getResolvedShortcuts } from "@/features/workspace/shortcut-settings";
 import { currentPlatform, matchTerminalShortcut } from "@/features/workspace/shortcuts";
 import { planPaste, type PendingPaste } from "./terminal-input";
-import { terminalLinkDestination } from "./terminal-links";
 import { zoomTerminalFont, type TerminalPrefs } from "./terminal-prefs";
 import { useTerminalPrefs } from "./terminal-prefs-context";
 import { attachTerminalHighlighting } from "./xterm-highlighting";
@@ -111,7 +111,7 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
     if (!container) return;
     const initial = prefsRef.current;
     const activateLink = (event: MouseEvent, uri: string) => {
-      const destination = terminalLinkDestination(uri);
+      const destination = externalLinkDestination(uri);
       if (!destination) return;
       event.preventDefault();
       void openExternalUrl(destination).catch(() => undefined);
@@ -124,7 +124,7 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
         // xterm's default permits only HTTP(S). Both callbacks enforce our allowlist.
         allowNonHttpProtocols: true,
         activate: activateLink,
-        hover: (_event, uri) => setLinkDestination(terminalLinkDestination(uri)),
+        hover: (_event, uri) => setLinkDestination(externalLinkDestination(uri)),
         leave: () => setLinkDestination(null),
       },
       scrollback: scrollbackLines,

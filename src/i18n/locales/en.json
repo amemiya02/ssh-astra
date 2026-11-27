@@ -1169,7 +1169,14 @@
     "downloadingPercent": "Downloading the update… {{percent}}%",
     "restarting": "Restarting into the new version…",
     "installFailed": "The update failed: {{reason}}",
-    "retry": "Try again",
+    "releaseNotes": "Release notes",
+    "noReleaseNotes": "No release notes are available for this version.",
+    "interruptions": "Restarting will interrupt the following activity.",
+    "connections_one": "{{count}} Connection",
+    "connections_other": "{{count}} Connections",
+    "transfers_one": "{{count}} transfer",
+    "transfers_other": "{{count}} transfers",
+    "later": "Later",
     "dismiss": "Dismiss"
   },
   "rail": {

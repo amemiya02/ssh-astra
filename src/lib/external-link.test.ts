@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { terminalLinkDestination } from "./terminal-links";
+import { externalLinkDestination } from "./external-link";
 
 it.each([
   ["http://example.com/report", "http://example.com/report"],
@@ -7,7 +7,7 @@ it.each([
   ["https://example.com/a;b", "https://example.com/a;b"],
   ["mailto:help@example.com?subject=SSH%20Astra", "mailto:help@example.com?subject=SSH%20Astra"],
 ])("returns the destination of an allowed link (%s)", (uri, destination) => {
-  expect(terminalLinkDestination(uri)).toBe(destination);
+  expect(externalLinkDestination(uri)).toBe(destination);
 });
 
 it.each([
@@ -27,5 +27,5 @@ it.each([
   "https://example.com/%E2%80%AEreport",
   "mailto://example.com",
 ])("rejects an unsupported, malformed, or deceptive link (%s)", (uri) => {
-  expect(terminalLinkDestination(uri)).toBeNull();
+  expect(externalLinkDestination(uri)).toBeNull();
 });

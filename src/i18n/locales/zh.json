@@ -1169,7 +1169,14 @@
     "downloadingPercent": "正在下载更新… {{percent}}%",
     "restarting": "正在重启到新版本…",
     "installFailed": "更新失败：{{reason}}",
-    "retry": "重试",
+    "releaseNotes": "发布说明",
+    "noReleaseNotes": "此版本暂无发布说明。",
+    "interruptions": "重启将中断以下活动。",
+    "connections_one": "{{count}} 个连接",
+    "connections_other": "{{count}} 个连接",
+    "transfers_one": "{{count}} 项传输",
+    "transfers_other": "{{count}} 项传输",
+    "later": "以后",
     "dismiss": "关闭"
   },
   "rail": {

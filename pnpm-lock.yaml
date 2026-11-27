@@ -220,6 +220,9 @@ importers:
       lucide-react:
         specifier: ^1.73.0
         version: 1.73.0(@types/react@19.3.0)(react@19.3.1)
+      marked-react:
+        specifier: 4.0.0
+        version: 4.0.0(react@19.3.1)
       radix-ui:
         specifier: ^1.8.1
         version: 1.8.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -2949,6 +2952,9 @@ packages:
     resolution: {integrity: sha512-UikN5yr7xsCDAq87Or5or0PAlD3HJJOKVzM05az588WnpDJ4Ux7a2A53Qi6gofGg2/EtvF/H4hCi/TXfCW4Y6w==}
     engines: {node: ^22.13.0 || >=24.0.0}
 
+  html-entities@2.6.0:
+    resolution: {integrity: sha512-kig+rMn/QOVRvr7c86gQ8lWXq+Hkv6CbAH1hLu+RG338StTpE8Z0b44SDVaqVu7HGKf27frdmUYEs9hTUX/cLQ==}
+
   html-parse-stringify@4.0.1:
     resolution: {integrity: sha512-0zHsZJrK7S3K2aucXWL6ycoYJ/iNtIcFHC/nYQgFklPtrv5LpJctIiSCroWZWeuoXvuyFdzp6KzjJQ+OT5MfFw==}
 
@@ -3329,6 +3335,16 @@ packages:
 
   magic-string@1.4.5:
     resolution: {integrity: sha512-oLLC2+YvQUfAa+vxoufE/yc1icb87M9iXIRqAoR/2EhE/8cb3SF/+Gi0c2By1B+5Vz2e2vQtUvHiu1+63Znh+w==}
+
+  marked-react@4.0.0:
+    resolution: {integrity: sha512-+Kp1FSK0gT6q6uKjXvwaIigj++BkyKFxiQlrhDTu10H/awBvs1K4K1Uenu/6N7Ci4u0FxYtFuZxtgAZkW6w8gg==}
+    peerDependencies:
+      react: ^16.8.0 || >=17.0.0
+
+  marked@17.0.6:
+    resolution: {integrity: sha512-gB0gkNafnonOw0obSTEGZTT86IuhILt2Wfx0mWH/1Au83kybTayroZ/V6nS25mN7u8ASy+5fMhgB3XPNrOZdmA==}
+    engines: {node: '>= 20'}
+    hasBin: true
 
   minimatch@10.2.6:
     resolution: {integrity: sha512-vpLQEs+VLCr1nU0BXS07maYoFwlDAH0gngQuuttxIwutDFEMHq2blX+8vpgxDdK3J1PwjCJiep77OitTZ4Ll1A==}
@@ -7089,6 +7105,8 @@ snapshots:
     transitivePeerDependencies:
       - '@noble/hashes'
 
+  html-entities@2.6.0: {}
+
   html-parse-stringify@4.0.1: {}
 
   htmlfy@0.8.1: {}
@@ -7437,6 +7455,14 @@ snapshots:
   magic-string@1.4.5:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.6.0
+
+  marked-react@4.0.0(react@19.3.1):
+    dependencies:
+      html-entities: 2.6.0
+      marked: 17.0.6
+      react: 19.3.1
+
+  marked@17.0.6: {}
 
   minimatch@10.2.6:
     dependencies:
