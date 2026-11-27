@@ -464,6 +464,12 @@ Settings lists every theme as a card (10px radius, 6px padding, auto-fill at min
 - **Focus:** border turns `ring` with a 3px `ring/50` halo.
 - **Error:** border turns `destructive` with a `destructive/20` halo; message below in `text-xs` red.
 
+### Resource panel
+
+The dock beside a remote Terminal has Files and Resources tabs in both dock positions. Each pane starts on Files and remembers its own selection in the current Window. The active pane supplies the dock content. Selecting Resources reads the Host over the Terminal's existing Connection every two seconds while the dock, tab, and Window are visible.
+
+The panel groups CPU usage and core count, 1-, 5-, and 15-minute load, memory, swap, uptime, up to five disk mount points, and receive and send rates for each non-loopback network interface. Rates appear after the second snapshot. The panel shows a status message while connecting or measuring and when the system lacks the required `/proc` files. Hiding the panel, moving or closing the Terminal, or losing its Connection clears the current snapshot and stops sampling.
+
 ### File panel path bar
 
 - Back, Forward and Up sit beside a compact `muted` field. Each monospaced breadcrumb opens that directory. Long paths scroll horizontally and show the current directory at the right.

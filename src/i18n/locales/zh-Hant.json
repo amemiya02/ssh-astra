@@ -456,6 +456,30 @@
       "hosts": "首頁 Host hosts"
     }
   },
+  "resources": {
+    "dock": "終端機面板",
+    "title": "資源",
+    "hide": "隱藏資源面板",
+    "connect": "連線至此終端機後可查看資源。",
+    "loading": "正在讀取資源…",
+    "unsupported": "此系統不支援。",
+    "unavailable": "無法讀取資源。",
+    "waiting": "正在測量…",
+    "cpu": "CPU",
+    "cpuValue_one": "{{usage}} · {{count}} 核心",
+    "cpuValue_other": "{{usage}} · {{count}} 核心",
+    "load": "負載（1 / 5 / 15 分鐘）",
+    "memory": "記憶體",
+    "swap": "交換空間",
+    "uptime": "運作時間",
+    "usage": "{{used}} / {{total}}",
+    "disks": "磁碟",
+    "emptyDisks": "沒有可用的磁碟用量。",
+    "network": "網路",
+    "emptyNetwork": "沒有非回送網路介面。",
+    "rate": "{{size}}/秒",
+    "networkValue": "接收 {{receive}} · 傳送 {{send}}"
+  },
   "files": {
     "title": "檔案",
     "empty": "在某個 Host 上開啟終端機後，可以在此瀏覽它的檔案。",

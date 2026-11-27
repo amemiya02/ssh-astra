@@ -11,6 +11,7 @@ import { terminalCwds } from "@/features/files/terminalCwds";
 import { TerminalPaneMenuContext } from "@/features/terminal/terminal-pane-menu";
 import { RemoteTerminalView } from "@/features/terminal/RemoteTerminalView";
 import type { Host } from "@/lib/ipc/hosts";
+import type { TerminalId } from "@/lib/ipc/terminal";
 import { cn } from "@/lib/utils";
 import { BroadcastPaneContext, isBroadcastRecipient, type Broadcast } from "./broadcast";
 import { PaneDivider } from "./PaneDivider";
@@ -33,7 +34,7 @@ interface TabPanelsProps {
   onConnectRestoredPane(paneId: string): void;
   /** A program in the pane set its title (empty string clears it). */
   onTitleChange(paneId: string, title: string): void;
-  onSavedHostTerminal?(paneId: string, available: boolean): void;
+  onRemoteTerminal?(paneId: string, id: TerminalId | null, savedHost: boolean): void;
   onLocalCwd(paneId: string, cwd: string): void;
   onStatusChange(paneId: string, status: ConnectionStatus, reconnecting?: ReconnectProgress): void;
   onResizeSplit(tabId: string, resize: SplitResize): void;
@@ -163,7 +164,7 @@ function PaneContent({
   onTitleChange,
   onLocalCwd,
   onStatusChange,
-  onSavedHostTerminal,
+  onRemoteTerminal,
   onClosePane,
   onEditHost,
   renderHome,
@@ -207,7 +208,7 @@ function PaneContent({
           onCwd={(path) => terminalCwds.report(pane.id, path)}
           onTerminal={(id, savedHost) => {
             terminalCwds.attach(pane.id, id);
-            onSavedHostTerminal?.(pane.id, id !== null && savedHost);
+            onRemoteTerminal?.(pane.id, id, savedHost);
           }}
         />
       );

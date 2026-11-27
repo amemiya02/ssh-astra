@@ -456,6 +456,30 @@
       "hosts": "主页 Host hosts"
     }
   },
+  "resources": {
+    "dock": "终端面板",
+    "title": "资源",
+    "hide": "隐藏资源面板",
+    "connect": "连接此终端后可查看资源。",
+    "loading": "正在读取资源…",
+    "unsupported": "此系统不支持。",
+    "unavailable": "无法读取资源。",
+    "waiting": "正在测量…",
+    "cpu": "CPU",
+    "cpuValue_one": "{{usage}} · {{count}} 核",
+    "cpuValue_other": "{{usage}} · {{count}} 核",
+    "load": "负载（1 / 5 / 15 分钟）",
+    "memory": "内存",
+    "swap": "交换区",
+    "uptime": "运行时间",
+    "usage": "{{used}} / {{total}}",
+    "disks": "磁盘",
+    "emptyDisks": "没有可用的磁盘用量。",
+    "network": "网络",
+    "emptyNetwork": "没有非回环网卡。",
+    "rate": "{{size}}/秒",
+    "networkValue": "接收 {{receive}} · 发送 {{send}}"
+  },
   "files": {
     "title": "文件",
     "empty": "在某个 Host 上打开终端后，可以在这里浏览它的文件。",

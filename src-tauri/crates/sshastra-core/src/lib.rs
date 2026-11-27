@@ -11,6 +11,7 @@ mod fs_util;
 pub mod host_import;
 pub mod hosts;
 pub mod known_hosts;
+pub mod monitor;
 pub mod proxy;
 pub mod settings;
 pub mod snippets;
