@@ -34,11 +34,11 @@ fn aggregate(bytes: impl IntoIterator<Item = (u64, u64)>) -> Progress {
         sum_done += u128::from(done.min(total));
         sum_total += u128::from(total);
     }
-    if sum_total == 0 {
-        Progress::Hidden
-    } else {
-        Progress::Percent((sum_done * 100 / sum_total) as u64)
-    }
+    (sum_done * 100)
+        .checked_div(sum_total)
+        .map_or(Progress::Hidden, |percent| {
+            Progress::Percent(percent as u64)
+        })
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
