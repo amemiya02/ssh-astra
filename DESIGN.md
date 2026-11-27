@@ -515,6 +515,12 @@ Show live counts for Connections, unfinished transfers (including paused transfe
 - **Advanced** is a full-width disclosure below Basic information. It starts collapsed and contains Identities only, Terminal colours, the File panel folder, and the action to clear a saved Host's credentials. A save error attached to an advanced field opens the section, displays the message by the field, and moves focus to it.
 - **Test connection** is an outlined action in the footer. The result appears above the footer with a muted progress message, a success message, or the standard Connection error panel.
 
+### Host import
+
+Import Hosts opens the same source picker from Home, the Hosts sidebar, and the command palette. The OpenSSH option reads `~/.ssh/config` directly. The CSV option opens the native file picker and shows the expected headers and Group path separator. Cancelling the native picker returns to the source picker.
+
+The report lists imported Hosts, skipped names, and problems. CSV problems identify the starting line of the record. The OpenSSH report shows each saved ProxyCommand as literal shell text beside its Host.
+
 ### Connection view
 A remote Terminal pane shows a scrollable Connection view on the workspace surface until its shell opens. The progress list groups steps by Host in route order, including each named Jump host. Reach server, Verify host key and Log in apply to each hop. Open shell applies to the destination. An extra step appears while this pane waits for another connection attempt.
 

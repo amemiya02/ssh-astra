@@ -3,7 +3,7 @@
 //! [`parse`] is a pure function: config text in, the Hosts it describes plus
 //! what could not be understood out. Reading `Include`d files is left to the
 //! caller's resolver ([`FsIncludes`] for the real file system), so tests feed
-//! it from memory. [`crate::hosts::HostStore::import_ssh_config`] then saves
+//! it from memory. [`crate::hosts::HostStore::import_config`] then saves
 //! the result, skipping Hosts whose name is already taken.
 //!
 //! Understood: `Host` blocks with patterns (`*`, `?`, `!`), settings before
@@ -19,10 +19,10 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
-
 use crate::forward::{ForwardDraft, ForwardKind, LOOPBACK, REMOTE_LOOPBACK};
 use crate::proxy::normalize_command;
+
+pub use crate::host_import::{ConfigHost, ImportIssue, ImportProblem, ParsedConfig};
 
 /// What the parse needs to know about the machine it runs on.
 #[derive(Debug, Clone)]
@@ -36,64 +36,6 @@ pub struct ParseContext {
 pub struct IncludedFile {
     pub name: String,
     pub text: String,
-}
-
-/// A Host as the config describes it, ready to save. `jump_host` names
-/// another `ConfigHost` (or an already saved Host) by name.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConfigHost {
-    pub name: String,
-    pub address: String,
-    pub port: u16,
-    pub user: String,
-    /// `~/` is kept as written; `HostAuth::Key` understands it.
-    pub identity_file: Option<PathBuf>,
-    pub identities_only: bool,
-    pub forward_agent: bool,
-    pub keepalive_seconds: Option<u32>,
-    pub jump_host: Option<String>,
-    pub proxy_command: Option<String>,
-    pub forwards: Vec<ForwardDraft>,
-}
-
-/// Something in the config that could not be imported as written.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ImportIssue {
-    /// The Host alias, or the `Include` / `Match` line, it concerns.
-    pub entry: String,
-    /// The Host was not imported at all (otherwise only this part of it).
-    pub dropped: bool,
-    pub problem: ImportProblem,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(
-    tag = "kind",
-    rename_all = "camelCase",
-    rename_all_fields = "camelCase"
-)]
-pub enum ImportProblem {
-    /// A directive's value could not be understood.
-    InvalidValue { directive: String, value: String },
-    /// A directive sshastra cannot do (yet).
-    Unsupported { directive: String },
-    /// An `Include` could not be read.
-    IncludeFailed { reason: String },
-    /// A `ProxyJump` chain goes through Host `hop`, which the config itself
-    /// reaches another way; a Host has one Jump host chain.
-    JumpChainConflict { hop: String },
-    /// The Jump hosts lead back to this Host.
-    JumpHostLoop,
-    /// The Jump host `hop` is not imported, so neither is this Host.
-    JumpHostUnavailable { hop: String },
-}
-
-/// The outcome of [`parse`].
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct ParsedConfig {
-    pub hosts: Vec<ConfigHost>,
-    pub issues: Vec<ImportIssue>,
 }
 
 /// OpenSSH's limit on nested `Include`s.
@@ -129,6 +71,7 @@ pub fn parse(
             Ok((host, notes)) => {
                 hosts.add(host.host, host.proxy, true);
                 issues.extend(notes.into_iter().map(|problem| ImportIssue {
+                    line: None,
                     entry: alias.clone(),
                     dropped: false,
                     problem,
@@ -137,6 +80,7 @@ pub fn parse(
             Err(problem) => {
                 hosts.dropped.insert(alias.clone());
                 issues.push(ImportIssue {
+                    line: None,
                     entry: alias.clone(),
                     dropped: true,
                     problem,
@@ -230,6 +174,7 @@ impl Reader<'_> {
                 }
                 "match" => {
                     self.issues.push(ImportIssue {
+                        line: None,
                         entry: line.trim().to_owned(),
                         dropped: false,
                         problem: ImportProblem::Unsupported {
@@ -271,6 +216,7 @@ impl Reader<'_> {
     /// belong to the block it stands in, even if the files opened new ones.
     fn include(&mut self, pattern: &str, depth: usize) {
         let failed = |reason: String| ImportIssue {
+            line: None,
             entry: format!("Include {pattern}"),
             dropped: false,
             problem: ImportProblem::IncludeFailed { reason },
@@ -557,6 +503,7 @@ impl Config<'_> {
             jump_host: None,
             proxy_command: s.proxy_command()?,
             forwards: Vec::new(),
+            group_path: Vec::new(),
         })
     }
 
@@ -836,6 +783,7 @@ impl Hosts {
                         jump_host: None,
                         proxy_command: s.proxy_command()?,
                         forwards: Vec::new(),
+                        group_path: Vec::new(),
                     }
                 }
                 Err(problem) => return Err(problem),
@@ -888,6 +836,7 @@ impl Hosts {
             self.list.remove(i);
             self.dropped.insert(name.to_owned());
             issues.push(ImportIssue {
+                line: None,
                 entry: name.to_owned(),
                 dropped: true,
                 problem,

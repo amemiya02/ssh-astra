@@ -8,7 +8,7 @@ interface HostsSidebarProps {
   actions?: ReactNode;
   /** The Host list. Omit to show the first-run empty state. */
   children?: ReactNode;
-  /** Shown under the first-run empty state (e.g. "Import ~/.ssh/config"). */
+  /** Shown under the first-run empty state (e.g. "Import Hosts"). */
   emptyAction?: ReactNode;
 }
 

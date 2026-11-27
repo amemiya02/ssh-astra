@@ -91,7 +91,7 @@ export function HostsPanel({
     <HostsSidebar
       emptyAction={
         <>
-          <Button variant="outline" size="sm" onClick={controller.importSshConfig}>
+          <Button variant="outline" size="sm" onClick={controller.openImport}>
             <FileInput aria-hidden />
             {t("hosts.import.action")}
           </Button>
@@ -111,7 +111,7 @@ export function HostsPanel({
             label={t("hosts.moreActions")}
             align="end"
             entries={[
-              { type: "item", label: t("hosts.import.action"), icon: <FileInput />, onSelect: controller.importSshConfig },
+              { type: "item", label: t("hosts.import.action"), icon: <FileInput />, onSelect: controller.openImport },
               {
                 type: "item",
                 label: t("hosts.transfer.import"),

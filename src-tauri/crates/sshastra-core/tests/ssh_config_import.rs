@@ -38,7 +38,7 @@ fn import(store: &mut HostStore, config: &str) -> ImportReport {
     let parsed = parse(config, &ctx(), &mut |p: &str| {
         Err(format!("{p}: unexpected"))
     });
-    store.import_ssh_config(parsed).unwrap()
+    store.import_config(parsed).unwrap()
 }
 
 fn names(store: &HostStore) -> Vec<&str> {
@@ -135,6 +135,7 @@ Host invalid
     assert_eq!(
         report.issues,
         [ImportIssue {
+            line: None,
             entry: "invalid".into(),
             dropped: true,
             problem: ImportProblem::InvalidValue {
@@ -206,6 +207,7 @@ fn imported_hosts_are_saved_with_their_settings_jump_hosts_and_forwards() {
     assert_eq!(
         report.issues,
         [ImportIssue {
+            line: None,
             entry: "bad".into(),
             dropped: true,
             problem: ImportProblem::InvalidValue {
