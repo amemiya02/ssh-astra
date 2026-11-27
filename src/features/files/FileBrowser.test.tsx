@@ -5,7 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { hostsStore } from "@/features/hosts/hostsStore";
 import { settingsPageSections } from "@/features/settings/sections";
 import { startI18n } from "@/i18n";
-import type { FileEntry, Listing } from "@/lib/ipc/files";
+import { dragFileOut, waitForFileDragExit, type FileEntry, type Listing } from "@/lib/ipc/files";
 import * as hostsIpc from "@/lib/ipc/hosts";
 import { pickOpenPath } from "@/lib/ipc/system";
 import { localStorageBackend, openSettings, setSetting, startSettings } from "@/lib/storage";
@@ -13,6 +13,13 @@ import { FileBrowser, type FileExchange } from "./FileBrowser";
 import { PermissionsDialog } from "./FileOperationDialogs";
 import { createFileBrowserStore, type FilesApi } from "./fileBrowserStore";
 import { filesSetting } from "./file-prefs";
+
+vi.mock("@/lib/ipc/files", async (original) => ({
+  ...(await original<typeof import("@/lib/ipc/files")>()),
+  waitForFileDragExit: vi.fn(() => Promise.resolve(false)),
+  cancelFileDragExit: vi.fn(() => Promise.resolve()),
+  dragFileOut: vi.fn(() => Promise.resolve(false)),
+}));
 
 vi.mock("@/lib/ipc/hosts", async (original) => ({
   ...(await original<typeof import("@/lib/ipc/hosts")>()),
@@ -484,6 +491,41 @@ describe("FileBrowser", () => {
     ]);
   });
 
+  it("hands one file to the OS only when the pointer leaves the window", async () => {
+    const { rows } = await render({ startPath: "/move", enableMove: true });
+    const [folder, file] = rows();
+    rows().forEach((row, index) => { row.getBoundingClientRect = () => new DOMRect(0, index * 26, 100, 26); });
+    const pointer = (target: EventTarget, type: string, x: number, y: number) => target.dispatchEvent(
+      new PointerEvent(type, {
+        bubbles: true, cancelable: true, button: 0, buttons: type === "pointerup" ? 0 : 1,
+        pointerType: "mouse", isPrimary: true, pointerId: 1, clientX: x, clientY: y,
+      }),
+    );
+    vi.useFakeTimers();
+    vi.stubGlobal("__sshastraFilePromises", true);
+    let leftWindow: (outside: boolean) => void = () => {};
+    vi.mocked(waitForFileDragExit).mockImplementationOnce(() => new Promise((resolve) => { leftWindow = resolve; }));
+    try {
+      act(() => pointer(file!, "pointerdown", 10, 36));
+      act(() => pointer(document, "pointermove", 10, 46));
+      act(() => pointer(folder!, "pointermove", 10, 10));
+      expect(dragFileOut).not.toHaveBeenCalled();
+
+      // WebKit can stop delivering pointer moves at the Window boundary.
+      await act(async () => leftWindow(true));
+      expect(dragFileOut).toHaveBeenCalledExactlyOnceWith({
+        id: 1, directory: "/move", name: "a.txt", size: 2048, modified: 1_704_164_645,
+      });
+      await act(async () => pointer(folder!, "pointerup", 10, 10));
+      expect(api.renameFile).not.toHaveBeenCalled();
+    } finally {
+      // The dnd-kit sensor deliberately keeps its click listener for one turn after cancellation.
+      act(() => vi.advanceTimersByTime(50));
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("offers Cut on a row and Paste in an empty destination's context menu", async () => {
     const { rows } = await render({ startPath: "/move", enableMove: true });
     const openMenu = (target: Element) => act(async () => {
@@ -493,6 +535,8 @@ describe("FileBrowser", () => {
       .find((item) => item.textContent?.startsWith(label))!;
     await openMenu(rows()[1]!);
     await act(async () => menuItem("Cut").click());
+    // The closed Radix menu restores focus on the next timer tick.
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
     await act(async () => rows()[0]!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
     await openMenu(container.querySelector('[role="grid"]')!);
     await act(async () => menuItem("Paste").click());

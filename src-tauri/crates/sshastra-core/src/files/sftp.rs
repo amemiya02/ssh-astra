@@ -36,6 +36,50 @@ pub struct SftpFs {
 }
 
 impl SftpFs {
+    /// Opens the file promised by a listing. SFTP v3 has no no-follow open flag,
+    /// so verify both the open handle and the current path before returning any bytes.
+    pub async fn open_regular_read_at(
+        &self,
+        path: &str,
+        offset: u64,
+        size: Option<u64>,
+        modified: Option<u64>,
+    ) -> FsResult<FileReader> {
+        let before = self.lstat(path).await?;
+        let changed = || FsError::Protocol("The remote file changed during the drag".into());
+        if before.kind != FileKind::File
+            || size.is_some_and(|size| before.size != size)
+            || modified.is_some_and(|time| before.modified != Some(time))
+        {
+            return Err(changed());
+        }
+
+        let file = self.open_file_at(path, offset).await?;
+        let opened = file.metadata().await.map_err(|e| self.error(path, e))?;
+        if stat(&opened) != before || self.lstat(path).await? != before {
+            return Err(changed());
+        }
+        Ok(Box::new(file))
+    }
+
+    async fn open_file_at(
+        &self,
+        path: &str,
+        offset: u64,
+    ) -> FsResult<russh_sftp::client::fs::File> {
+        let mut file = self
+            .session
+            .open(path)
+            .await
+            .map_err(|e| self.error(path, e))?;
+        if offset != 0 {
+            file.seek(SeekFrom::Start(offset))
+                .await
+                .map_err(|e| seek_error(path, e))?;
+        }
+        Ok(file)
+    }
+
     /// Lists one directory on the given Connection, stopping at the Agent access limits.
     pub async fn agent_list(
         connection: &Connection,
@@ -464,19 +508,7 @@ impl RemoteFs for SftpFs {
         path: &'a str,
         offset: u64,
     ) -> BoxFuture<'a, FsResult<FileReader>> {
-        Box::pin(async move {
-            let mut file = self
-                .session
-                .open(path)
-                .await
-                .map_err(|e| self.error(path, e))?;
-            if offset != 0 {
-                file.seek(SeekFrom::Start(offset))
-                    .await
-                    .map_err(|e| seek_error(path, e))?;
-            }
-            Ok(Box::new(file) as FileReader)
-        })
+        Box::pin(async move { Ok(Box::new(self.open_file_at(path, offset).await?) as FileReader) })
     }
 
     fn open_write_at<'a>(
