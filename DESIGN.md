@@ -408,6 +408,12 @@ While Broadcast is active, the first segment shows a warning-colour radio icon a
 
 The privacy toggle sits beside the theme menu. Its pressed state uses the `selected` surface and an eye-off icon. While active, Host cards, rows, tabs, and the status bar show Host names in place of connection details. Address search remains available and the Port forward count stays visible.
 
+### Toasts
+
+The lower-right corner of the workspace stacks up to three in-app toasts above the status bar. Cards use the raised surface, a 1px border, 10px radius and a status icon. They report completed or failed transfers while the Transfers panel is hidden or collapsed, Port forward failures, Remote edit upload failures, import results and explicit copy actions. Terminal copy on select is silent.
+
+Additional toasts queue in arrival order. A normal toast stays on screen for five seconds. An error stays until dismissed with its labeled close button. Persistent live regions announce normal messages politely and errors assertively without moving focus.
+
 ### Settings navigation
 
 The top search field filters settings across all categories. Results keep their category headings and the original controls. Search matches titles, descriptions, and keywords in both English and Simplified Chinese. Clearing the field returns to the selected category. Choosing a category clears the search and scrolls its rows to the top.

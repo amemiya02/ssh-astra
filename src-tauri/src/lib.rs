@@ -111,10 +111,14 @@ pub fn run() {
             let vault: Arc<dyn credentials::CredentialVault> = Arc::new(credentials::NoVault);
             app.manage(HostsState::new(hosts));
             app.manage(SettingsState::new(settings));
+            let transfers = app.state::<TransfersState>().queue();
             app.manage(
                 ConnectionManager::new(known_hosts)
                     .with_agent(Agent::System)
-                    .with_vault(vault.clone()),
+                    .with_vault(vault.clone())
+                    .with_connection_listener(move |host, live| {
+                        transfers.connection_restored(host, live);
+                    }),
             );
             app.manage(Vault(vault));
             Ok(())

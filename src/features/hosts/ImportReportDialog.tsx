@@ -2,26 +2,18 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { ImportIssue, ImportReport } from "@/lib/ipc/hosts";
+import { importReportSummary } from "./importReportSummary";
 
 /** What an `~/.ssh/config` import did: counts, then the names in each outcome and why. */
 export function ImportReportDialogContent({ report, onClose }: { report: ImportReport; onClose(): void }) {
   const { t } = useTranslation();
   const failed = report.issues.filter((i) => i.dropped);
   const partial = report.issues.filter((i) => !i.dropped);
-  const empty = report.imported.length + report.skipped.length + report.issues.length === 0;
   return (
     <DialogContent showCloseButton={false} className="max-w-[calc(100%-2rem)] p-5 sm:max-w-120">
       <DialogHeader>
         <DialogTitle>{t("hosts.import.title")}</DialogTitle>
-        <DialogDescription>
-          {empty
-            ? t("hosts.import.nothing")
-            : t("hosts.import.summary", {
-                imported: report.imported.length,
-                skipped: report.skipped.length,
-                failed: failed.length,
-              })}
-        </DialogDescription>
+        <DialogDescription>{importReportSummary(t, report)}</DialogDescription>
       </DialogHeader>
       <div className="grid max-h-80 gap-3 overflow-y-auto">
         <NameList heading={t("hosts.import.imported")} names={report.imported} />

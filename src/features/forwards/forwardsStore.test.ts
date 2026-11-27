@@ -27,7 +27,8 @@ const ask = () => Promise.reject(new Error("no prompts in this test"));
 describe("forwards store", () => {
   it("starts from the backend's list and follows its state changes", async () => {
     const { api, push } = fakeApi();
-    const store = createForwardsStore(api);
+    const failures: string[] = [];
+    const store = createForwardsStore(api, (failure) => failures.push(failure));
     await store.getState().watch();
     expect(statusOf(store.getState(), "a")).toEqual({ state: "running" });
 
@@ -40,6 +41,7 @@ describe("forwards store", () => {
       reason: "port 80 on 127.0.0.1 is already in use",
     });
     expect(statusOf(store.getState(), "never-started")).toEqual({ state: "stopped" });
+    expect(failures).toEqual(["port 80 on 127.0.0.1 is already in use"]);
   });
 
   it("keeps a rule stopped when its event arrives before an older running snapshot", async () => {
@@ -77,6 +79,22 @@ describe("forwards store", () => {
     await store.getState().stop("e");
     expect(api.stopForward).toHaveBeenCalledWith("e");
     expect(statusOf(store.getState(), "e")).toEqual({ state: "stopped" });
+  });
+
+  it("reports each failed start once when the backend event follows its command error", async () => {
+    const reason = "port 80 on 127.0.0.1 is already in use";
+    const { api, push } = fakeApi({
+      startForward: async () => { throw { kind: "portInUse", message: reason }; },
+    });
+    const failures: string[] = [];
+    const store = createForwardsStore(api, (failure) => failures.push(failure));
+    await store.getState().watch();
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await expect(store.getState().start("h1", "a", ask)).rejects.toMatchObject({ kind: "portInUse" });
+      push({ ...running("a"), status: { state: "failed", reason } });
+    }
+    expect(failures).toEqual([reason, reason]);
   });
 
   it("does not record a cancelled connect as an error", async () => {

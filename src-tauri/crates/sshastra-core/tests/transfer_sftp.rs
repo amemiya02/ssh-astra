@@ -8,9 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use sshastra_core::files::{
-    ConflictAnswer, DiskFs, OpenRemote, RemoteFs, Transfer, TransferQueue, TransferState,
-};
+use sshastra_core::files::{DiskFs, OpenRemote, RemoteFs, Transfer, TransferQueue, TransferState};
 use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::ssh::{
@@ -196,24 +194,12 @@ fn received_bytes(sshd: &Sshd) -> u64 {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn retry_resumes_an_upload_across_a_dropped_connection() {
+async fn reconnect_automatically_resumes_an_upload_from_its_partial() {
     let Some(sshd) = support::sshd(Service::Flaky) else {
         return;
     };
     let scratch = tempfile::tempdir().unwrap();
     let (manager, host) = endpoint(&sshd, scratch.path());
-    let manager = Arc::new(manager);
-    let prompts = Arc::new(Trusting(sshd.password));
-    let connection = manager.connect(&host, prompts.clone()).await.unwrap();
-    let fs = manager.live_sftp(&host.id).await.unwrap();
-    let remote_dir = format!("/home/tester/resume-{}", uuid::Uuid::new_v4());
-    fs.create_dir(&remote_dir).await.unwrap();
-    let destination = format!("{remote_dir}/large");
-    fs.write_file(&destination, b"original upload")
-        .await
-        .unwrap();
-    fs.set_permissions(&destination, 0o600).await.unwrap();
-
     // Distinct, incompressible blocks make both byte comparison and network
     // byte counts meaningful. Keep the file within read_file's size limit.
     const SIZE: usize = 8 * 1024 * 1024;
@@ -228,15 +214,6 @@ async fn retry_resumes_an_upload_across_a_dropped_connection() {
     let source = scratch.path().join("large");
     std::fs::write(&source, &bytes).unwrap();
 
-    let open: OpenRemote = {
-        let manager = manager.clone();
-        let id = host.id.clone();
-        Arc::new(move || {
-            let manager = manager.clone();
-            let id = id.clone();
-            Box::pin(async move { Ok(manager.live_sftp(&id).await? as Arc<dyn RemoteFs>) })
-        })
-    };
     let progress = Arc::new(Mutex::new(Vec::new()));
     let events = progress.clone();
     let (first_write, written) = tokio::sync::oneshot::channel();
@@ -256,12 +233,28 @@ async fn retry_resumes_an_upload_across_a_dropped_connection() {
         }
     });
 
-    let id = queue.upload(open, source, remote_dir.clone());
-    wait_until(&queue, |t| {
-        matches!(t.state, TransferState::Conflict { .. })
-    })
-    .await;
-    queue.answer(id, ConflictAnswer::Overwrite);
+    let queue_listener = queue.clone();
+    let manager = Arc::new(manager.with_connection_listener(move |host, live| {
+        queue_listener.connection_restored(host, live);
+    }));
+    let prompts = Arc::new(Trusting(sshd.password));
+    let connection = manager.connect(&host, prompts.clone()).await.unwrap();
+    let fs = manager.live_sftp(&host.id).await.unwrap();
+    let remote_dir = format!("/home/tester/resume-{}", uuid::Uuid::new_v4());
+    fs.create_dir(&remote_dir).await.unwrap();
+    let destination = format!("{remote_dir}/large");
+    let open: OpenRemote = {
+        let manager = Arc::downgrade(&manager);
+        let id = host.id.clone();
+        Arc::new(move || {
+            let manager = manager.clone();
+            let id = id.clone();
+            Box::pin(async move {
+                Ok(manager.upgrade().unwrap().live_sftp(&id).await? as Arc<dyn RemoteFs>)
+            })
+        })
+    };
+    queue.upload_to(host.id.clone(), open, source, remote_dir.clone());
     tokio::time::timeout(Duration::from_secs(10), written)
         .await
         .unwrap()
@@ -294,29 +287,18 @@ async fn retry_resumes_an_upload_across_a_dropped_connection() {
     })
     .await
     .expect("the dropped Connection is no longer live");
-    let reconnected = manager.connect(&host, prompts).await.unwrap();
-    assert!(!Arc::ptr_eq(&connection, &reconnected));
-    let fs = manager.live_sftp(&host.id).await.unwrap();
-    assert_eq!(
-        fs.read_file(&destination).await.unwrap(),
-        b"original upload"
-    );
-
-    let entries = fs.list_dir(&remote_dir).await.unwrap();
-    let partial = entries.iter().find(|e| e.name.starts_with('.')).unwrap();
-    assert!(
-        (65_536..bytes.len() as u64).contains(&partial.size),
-        "{partial:?}"
-    );
-    assert_eq!(partial.permissions, Some(0o600));
+    let partial: u64 = sshd
+        .run_as_tester(&format!(
+            "test ! -e {destination} && stat -c %s {remote_dir}/.sshastra-*.part"
+        ))
+        .trim()
+        .parse()
+        .unwrap();
+    assert!((65_536..bytes.len() as u64).contains(&partial), "{partial}");
     let before = received_bytes(&sshd);
     let events_before = progress.lock().unwrap().len();
-    queue.retry(id);
-    wait_until(&queue, |t| {
-        matches!(t.state, TransferState::Conflict { .. })
-    })
-    .await;
-    queue.answer(id, ConflictAnswer::Overwrite);
+    let reconnected = manager.connect(&host, prompts).await.unwrap();
+    assert!(!Arc::ptr_eq(&connection, &reconnected));
     settle(&queue).await;
     let received = received_bytes(&sshd) - before;
 
@@ -327,13 +309,10 @@ async fn retry_resumes_an_upload_across_a_dropped_connection() {
     );
     assert!(progress.lock().unwrap()[events_before..]
         .iter()
-        .any(|t| { t.state == TransferState::Running && t.bytes_done == partial.size }));
+        .any(|t| { t.state == TransferState::Running && t.bytes_done == partial }));
+    let fs = manager.live_sftp(&host.id).await.unwrap();
     assert_eq!(fs.read_file(&destination).await.unwrap(), bytes);
     assert_eq!(fs.list_dir(&remote_dir).await.unwrap().len(), 1);
-    assert_eq!(
-        fs.stat(&destination).await.unwrap().permissions,
-        Some(0o600)
-    );
     fs.remove_file(&destination).await.unwrap();
     fs.remove_dir(&remote_dir).await.unwrap();
     drop(reconnected);

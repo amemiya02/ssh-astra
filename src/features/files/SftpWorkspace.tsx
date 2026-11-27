@@ -177,7 +177,7 @@ export function SftpWorkspace({ id, host, active, showPrompts = active, onStatus
         </div>
       </DndContext>
       {transferError && <p role="alert" className="text-destructive border-t px-3 py-2 text-xs">{transferError}</p>}
-      <TransfersPanel dock="right" />
+      <TransfersPanel dock="right" visible={active} />
       {active && <EditQuestionDialog store={remote} onDownload={(path) => {
         if (localReady) download([path]);
         else setTransferError(t("sftp.localUnavailable"));

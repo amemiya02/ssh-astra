@@ -217,6 +217,11 @@ pub trait RemoteFs: Send + Sync {
         None
     }
 
+    /// Whether a streamed read or write failed because its Connection ended.
+    fn transfer_connection_lost(&self, _error: &std::io::Error) -> bool {
+        false
+    }
+
     /// The directory a new File panel opens in: the user's home directory.
     fn home(&self) -> BoxFuture<'_, FsResult<String>>;
     /// `path` made absolute (relative to the home directory), with `.`, `..`

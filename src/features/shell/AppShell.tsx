@@ -9,6 +9,7 @@ import { usePaletteActions, type PaletteAction } from "@/features/palette/palett
 import { currentPlatform } from "@/features/workspace/shortcuts";
 import { compactTabStripWidth, workspaceSetting } from "@/features/workspace/workspace-prefs";
 import { getSetting, setSetting, useSetting } from "@/lib/storage";
+import { ToastRegion } from "@/features/toasts/ToastRegion";
 import { cn } from "@/lib/utils";
 import { FilePanelDockContext } from "./file-panel-dock";
 import { NavRail, type NavRailProps } from "./NavRail";
@@ -194,7 +195,7 @@ export function AppShell({ sidebar, nav, tabs, workspace, filePanel, fullWorkspa
   return (
     <div className="flex h-full flex-col">
       <h1 className="sr-only">{t("app.name")}</h1>
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1">
         <NavRail
           {...nav}
           sidebarView={sidebarView}
@@ -310,6 +311,7 @@ export function AppShell({ sidebar, nav, tabs, workspace, filePanel, fullWorkspa
             </div>
           </ResizablePanel>
         </ResizablePanelGroup>
+        <ToastRegion />
       </div>
       <StatusBar info={status} onShowForwards={() => showSidebarView("forwards")} onOpenSettings={nav.onSettings} />
     </div>
