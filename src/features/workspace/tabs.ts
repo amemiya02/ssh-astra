@@ -3,6 +3,7 @@ import type { TerminalTitleSource } from "@/features/terminal/terminal-prefs";
 import type { Host } from "@/lib/ipc/hosts";
 import type { AnsiHue } from "@/theme/monogram-ink";
 import { paneNeighbors, resizePaneLayout, type PaneDirection, type SplitResize } from "./pane-layout";
+import { workspaceHostName } from "./privacy-mode";
 
 /** A remote Terminal's link to its Host, shown as the state dot on its tab. */
 export type ConnectionStatus = "connecting" | "connected" | "disconnected";
@@ -217,7 +218,7 @@ export function remoteTerminalPaneIds(state: TabsState): string[] {
  */
 export function tabTitle(
   tab: Tab,
-  t: (key: "tabs.home" | "tabs.localTerminal" | "tabs.settings" | "tabs.portForwards" | "tabs.sftp") => string,
+  t: (key: "tabs.home" | "tabs.localTerminal" | "tabs.settings" | "tabs.portForwards" | "tabs.sftp" | "quickConnect.temporaryHost") => string,
   ordinal: number,
   titleSource: TerminalTitleSource = "shell",
   privacyMode = false,
@@ -235,9 +236,9 @@ export function tabTitle(
       return ordinal > 1 ? `${name} ${ordinal}` : name;
     }
     case "remote-terminal":
-      return pane.host.name;
+      return workspaceHostName(pane.host, t, privacyMode);
     case "sftp":
-      return `${t("tabs.sftp")} · ${pane.host.name}`;
+      return `${t("tabs.sftp")} · ${workspaceHostName(pane.host, t, privacyMode)}`;
     case "settings":
       return t("tabs.settings");
     case "port-forwards":

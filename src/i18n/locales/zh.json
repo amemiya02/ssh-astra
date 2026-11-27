@@ -982,12 +982,18 @@
     "hosts": "Host 列表",
     "forwards": "端口转发"
   },
+  "quickConnect": {
+    "action": "快速连接",
+    "connectTo": "连接到 {{target}}",
+    "temporaryHost": "临时主机",
+    "failed": "无法打开临时主机。"
+  },
   "home": {
     "search": "按名称、地址或用户搜索 Host",
     "recent": "最近使用",
     "hosts": "Host",
     "ungrouped": "未分组",
     "emptyTitle": "还没有 Host",
-    "emptyBody": "添加一个 Host，或导入 ~/.ssh/config 里的 Host。每个 Host 在这里显示为一张卡片，点击即可打开终端。"
+    "emptyBody": "在上方输入 SSH 地址即可连接。也可以添加或导入 Host，以便下次打开。"
   }
 }

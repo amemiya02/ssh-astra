@@ -5,6 +5,7 @@ import { useStore } from "zustand";
 import { IconButton } from "@/components/IconButton";
 import { Button } from "@/components/ui/button";
 import { useFilePanelDock } from "@/features/shell/file-panel-dock";
+import { privacyModeSetting, workspaceHostName } from "@/features/workspace/privacy-mode";
 import type { ConnectionStatus } from "@/features/workspace/tabs";
 import { transfersStore } from "@/features/transfers/transfersStore";
 import { useOsFileDrop } from "@/features/transfers/use-os-file-drop";
@@ -38,6 +39,8 @@ export function FilePanelContent({ pane, onOpenSftp }: { pane?: FilePanelPane; o
 
 function RemoteFilePanel({ pane, onOpenSftp }: { pane: FilePanelPane; onOpenSftp?(host: Host): void }) {
   const { t } = useTranslation();
+  const [privacyMode] = useSetting(privacyModeSetting);
+  const hostName = workspaceHostName(pane.host, t, privacyMode);
   const { collapsed } = useFilePanelDock();
   const store = fileBrowsers.get(pane.id, pane.host.id, pane.host.defaultDirectory);
   const phase = useStore(store, (s) => s.phase);
@@ -111,14 +114,14 @@ function RemoteFilePanel({ pane, onOpenSftp }: { pane: FilePanelPane; onOpenSftp
   let body;
   if (pane.status === "disconnected") {
     body = (
-      <Notice icon={<Unplug />} text={t("files.disconnected", { host: pane.host.name })} />
+      <Notice icon={<Unplug />} text={t("files.disconnected", { host: hostName })} />
     );
   } else if (pane.status === "connecting") {
     body = <Notice icon={<LoaderCircle className="motion-safe:animate-spin" />} text={t("files.connecting")} />;
   } else if (ready) {
     body = (
       <div ref={dropZone} className="relative h-full">
-        <FileBrowser store={store} hostName={pane.host.name} onDownload={(names) => void download(names)} enableMove />
+        <FileBrowser store={store} hostName={hostName} onDownload={(names) => void download(names)} enableMove />
         {over && (
           <div className="bg-selected ring-ring pointer-events-none absolute inset-1 flex items-center justify-center rounded-lg ring-2 ring-inset">
             <p className="bg-surface shadow-panel rounded-md px-3 py-1.5 text-xs font-medium">
@@ -130,7 +133,7 @@ function RemoteFilePanel({ pane, onOpenSftp }: { pane: FilePanelPane; onOpenSftp
     );
   } else if (phase === "closed" && error) {
     body = (
-      <Notice icon={<Unplug />} text={errorText(t, error, pane.host.name)}>
+      <Notice icon={<Unplug />} text={errorText(t, error, hostName)}>
         <Button variant="outline" size="sm" onClick={() => void store.getState().connect()}>
           {t("files.retry")}
         </Button>
@@ -141,7 +144,7 @@ function RemoteFilePanel({ pane, onOpenSftp }: { pane: FilePanelPane; onOpenSftp
   }
 
   return (
-    <FilePanel actions={actions} footer={<RemoteEdits store={store} hostName={pane.host.name} />}>
+    <FilePanel actions={actions} footer={<RemoteEdits store={store} hostName={hostName} />}>
       {body}
       <EditQuestionDialog store={store} onDownload={(path) => void downloadPaths([path])} />
     </FilePanel>

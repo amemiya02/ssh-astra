@@ -10,11 +10,12 @@ import {
   CommandList,
   CommandShortcut,
 } from "@/components/ui/command";
+import { exactHostMatch, parseQuickConnect, quickConnectLabel } from "@/features/connect/quick-connect";
 import { HostMonogram } from "@/features/hosts/HostMonogram";
 import { recentHostIds, recentHostsSetting } from "@/features/hosts/host-history";
 import { useHosts } from "@/features/hosts/hostsStore";
 import { privacyModeSetting } from "@/features/workspace/privacy-mode";
-import type { Host } from "@/lib/ipc/hosts";
+import type { Host, QuickConnectTarget } from "@/lib/ipc/hosts";
 import { useSetting } from "@/lib/storage";
 import { useRegisteredActions } from "./palette-actions";
 import { rankPalette, type PaletteEntry, type RankedEntry } from "./palette-search";
@@ -30,6 +31,7 @@ export interface CommandPaletteProps {
   /** The open tabs, in strip order, with the titles the strip shows. */
   tabs: PaletteTab[];
   onOpenHost(host: Host): void;
+  onQuickConnect(target: QuickConnectTarget): void;
   onActivateTab(id: string): void;
 }
 
@@ -48,7 +50,7 @@ const icons = { hosts: Server, tabs: AppWindow, actions: Zap };
  * The ⌘K palette: find and open a Host, switch to a tab, or run an action from the registry
  * (`usePaletteActions`). Ranking is `rankPalette`; cmdk only handles the keyboard and list.
  */
-export function CommandPalette({ open, onOpenChange, tabs, onOpenHost, onActivateTab }: CommandPaletteProps) {
+export function CommandPalette({ open, onOpenChange, tabs, onOpenHost, onQuickConnect, onActivateTab }: CommandPaletteProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const hosts = useHosts((s) => s.tree.hosts);
@@ -86,6 +88,19 @@ export function CommandPalette({ open, onOpenChange, tabs, onOpenHost, onActivat
 
   const sections = useMemo(() => {
     const ranked = rankPalette(rows, query);
+    const exact = exactHostMatch(hosts, query);
+    const exactIndex = exact ? ranked.findIndex(({ entry }) => entry.host?.id === exact.id) : -1;
+    if (exactIndex > 0) ranked.unshift(ranked.splice(exactIndex, 1)[0]!);
+    const quick = exact ? undefined : parseQuickConnect(query);
+    if (quick) {
+      const entry: Row = {
+        id: "action:quickConnect",
+        group: "actions",
+        title: privacyMode ? t("quickConnect.action") : t("quickConnect.connectTo", { target: quickConnectLabel(quick) }),
+        run: () => onQuickConnect(quick),
+      };
+      ranked.unshift({ entry, id: entry.id, titleMatches: [] });
+    }
     const out: { section: Section; items: RankedEntry<Row>[] }[] = [];
     for (const item of ranked) {
       const section: Section = query.trim()
@@ -98,7 +113,7 @@ export function CommandPalette({ open, onOpenChange, tabs, onOpenHost, onActivat
       else out.push({ section, items: [item] });
     }
     return out;
-  }, [rows, query]);
+  }, [rows, query, hosts, onQuickConnect, privacyMode, t]);
 
   const changeOpen = (next: boolean) => {
     if (!next) setQuery("");

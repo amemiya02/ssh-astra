@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ConnectionView, type ObservedProgress } from "@/features/connect/ConnectionView";
 import { ConnectPromptDialog } from "@/features/connect/ConnectPromptDialog";
 import { DisconnectedOverlay } from "@/features/connect/DisconnectedOverlay";
+import { privacyModeSetting, workspaceHostName } from "@/features/workspace/privacy-mode";
 import {
   openRemoteTerminal,
   readCommandError,
@@ -10,8 +12,9 @@ import {
   type ConnectPrompt,
   type PromptAnswer,
 } from "@/lib/ipc/connect";
-import type { Host } from "@/lib/ipc/hosts";
+import { isTemporaryHost, type Host } from "@/lib/ipc/hosts";
 import { reconnectTerminal, type ConnectionState, type TerminalId } from "@/lib/ipc/terminal";
+import { useSetting } from "@/lib/storage";
 import type { ConnectionStatus, ReconnectProgress } from "@/features/workspace/tabs";
 import { TerminalSurface, type OpenTerminal } from "./TerminalSurface";
 
@@ -62,7 +65,7 @@ interface RemoteTerminalViewProps {
 }
 
 /**
- * A Terminal on a saved Host: connects (asking about host keys and the
+ * A remote Terminal: connects (asking about host keys and the
  * password in a dialog) and then shows the remote shell.
  */
 export function RemoteTerminalView({
@@ -78,6 +81,10 @@ export function RemoteTerminalView({
   onCwd,
   onTerminal,
 }: RemoteTerminalViewProps) {
+  const { t } = useTranslation();
+  const [privacyMode] = useSetting(privacyModeSetting);
+  const temporary = isTemporaryHost(host);
+  const displayHost = { id: host.id, name: workspaceHostName(host, t, privacyMode) };
   const [pending, setPending] = useState<PendingPrompt | null>(null);
   const [error, setError] = useState<CommandError | null>(null);
   const [opened, setOpened] = useState(false);
@@ -202,7 +209,7 @@ export function RemoteTerminalView({
               setRecovery(null);
               onStatusChange?.("disconnected");
             }}
-            label={host.name}
+            label={displayHost.name}
             active={active && opened}
             colorScheme={host.terminalScheme}
             onTitleChange={onTitleChange}
@@ -210,15 +217,16 @@ export function RemoteTerminalView({
         </div>
       )}
       {!opened && (
-        <ConnectionView host={host} steps={steps} error={error} onRetry={retry} onEditHost={onEditHost} onClose={onClose} />
+        <ConnectionView host={displayHost} steps={steps} error={error} onRetry={retry} onEditHost={temporary ? undefined : onEditHost} onClose={onClose} />
       )}
       {opened && recovery && (
-        <DisconnectedOverlay host={host} state={recovery.state} steps={recovery.steps} onReconnect={reconnect} />
+        <DisconnectedOverlay host={displayHost} state={recovery.state} steps={recovery.steps} onReconnect={reconnect} />
       )}
       {pending && (
         <ConnectPromptDialog
           prompt={pending.prompt}
           open={showPrompts}
+          hideCredentialSaving={temporary}
           onAnswer={(answer) => {
             setPending(null);
             pending.resolve(answer);

@@ -24,7 +24,7 @@ use sshastra_core::terminal::TerminalRegistry;
 use tauri::Manager;
 use tauri_plugin_window_state::StateFlags;
 
-use commands::connections::ConnectionsState;
+use commands::connections::{ConnectionsState, TemporaryHosts};
 use commands::credentials::Vault;
 use commands::edit::SystemOpener;
 use commands::forwards::ForwardsState;
@@ -122,6 +122,7 @@ pub fn run() {
         .manage(TerminalRegistry::default())
         .manage(ForwardsState::default())
         .manage(ConnectionsState::default())
+        .manage(TemporaryHosts::default())
         .manage(FsRegistry::default())
         // Temp files of remote edits: a folder per run under
         // $TMPDIR/sshastra-edit (one directory per Host), deleted on exit;
@@ -145,6 +146,8 @@ pub fn run() {
             commands::connections::host_connect,
             commands::connections::host_test_connection,
             commands::connections::host_disconnect,
+            commands::connections::temporary_host_create,
+            commands::connections::temporary_host_forget,
             commands::hosts::hosts_import_ssh_config,
             commands::hosts::hosts_export,
             commands::hosts::hosts_import,

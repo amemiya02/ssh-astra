@@ -430,6 +430,78 @@ async fn a_rejected_key_falls_back_to_the_password() {
     assert_eq!(prompter.asked(), ["password retry=false"]);
 }
 
+#[tokio::test]
+async fn an_explicit_key_logs_in_with_its_adjacent_user_certificate() {
+    let Some(sshd) = support::sshd(Service::Certificate) else {
+        return;
+    };
+    let fixture = Fixture::new();
+    let key = fixture.dir.path().join("explicit.key");
+    std::fs::copy(support::key("id_ed25519_certificate"), &key).unwrap();
+    let certificate = key.with_file_name("explicit.key-cert.pub");
+    std::fs::copy(
+        support::key("id_ed25519_certificate-cert.pub"),
+        &certificate,
+    )
+    .unwrap();
+    let prompter = ScriptedPrompter::silent();
+    let target = host(&sshd, key_auth(&key));
+
+    fixture
+        .manager()
+        .connect(&target, prompter.clone())
+        .await
+        .unwrap();
+    std::fs::remove_file(certificate).unwrap();
+    let result = fixture.manager().connect(&target, prompter.clone()).await;
+    assert!(
+        matches!(&result, Err(ConnectError::KeyRejected { path }) if path == &key),
+        "{result:?}"
+    );
+    assert!(prompter.asked().is_empty(), "{:?}", prompter.asked());
+}
+
+#[tokio::test]
+async fn a_default_rsa_key_logs_in_with_its_adjacent_user_certificate() {
+    let Some(sshd) = support::sshd(Service::Certificate) else {
+        return;
+    };
+    let fixture = Fixture::new();
+    fixture.default_key("id_rsa", "id_rsa");
+    fixture.default_key("id_rsa-cert.pub", "id_rsa_certificate.pub");
+    fixture
+        .manager()
+        .connect(&host(&sshd, HostAuth::Auto), ScriptedPrompter::silent())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn rejected_user_certificates_fail_at_authentication() {
+    let Some(sshd) = support::sshd(Service::Certificate) else {
+        return;
+    };
+    let fixture = Fixture::new();
+    let key = fixture.dir.path().join("identity");
+    std::fs::copy(support::key("id_ed25519_certificate"), &key).unwrap();
+    let certificate = key.with_file_name("identity-cert.pub");
+    for name in [
+        "id_ed25519_certificate-expired.pub",
+        "id_ed25519_certificate-untrusted.pub",
+        "id_rsa_certificate.pub",
+    ] {
+        std::fs::copy(support::key(name), &certificate).unwrap();
+        let result = fixture
+            .manager()
+            .connect(&host(&sshd, key_auth(&key)), ScriptedPrompter::silent())
+            .await;
+        assert!(
+            matches!(&result, Err(ConnectError::KeyRejected { path }) if path == &key),
+            "{name}: {result:?}"
+        );
+    }
+}
+
 /// A private `ssh-agent` holding some of the key fixtures, stopped on drop.
 #[cfg(unix)]
 struct TestAgent {
@@ -466,6 +538,11 @@ impl TestAgent {
             let copy = agent.dir.path().join(name);
             std::fs::copy(support::key(name), &copy).unwrap();
             std::fs::set_permissions(&copy, std::fs::Permissions::from_mode(0o600)).unwrap();
+            let certificate_name = format!("{name}-cert.pub");
+            let certificate = support::key(&certificate_name);
+            if certificate.is_file() {
+                std::fs::copy(certificate, agent.dir.path().join(certificate_name)).unwrap();
+            }
             let added = Command::new("ssh-add")
                 .arg(&copy)
                 .env("SSH_AUTH_SOCK", &socket)
@@ -488,6 +565,39 @@ impl Drop for TestAgent {
         let _ = self.process.kill();
         let _ = self.process.wait();
     }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_user_certificate_in_the_agent_logs_in_and_respects_identities_only() {
+    let Some(sshd) = support::sshd(Service::Certificate) else {
+        return;
+    };
+    let agent = TestAgent::holding(&["id_ed25519_unauthorized", "id_ed25519_certificate"]);
+    let fixture = Fixture::new();
+    let prompter = ScriptedPrompter::silent();
+    agent
+        .manager(&fixture)
+        .connect(&host(&sshd, HostAuth::Auto), prompter.clone())
+        .await
+        .unwrap();
+
+    // The named public key can filter agent identities but cannot sign itself.
+    let mut target = host(&sshd, key_auth(support::key("id_ed25519_certificate.pub")));
+    target.identities_only = true;
+    agent
+        .manager(&fixture)
+        .connect(&target, prompter.clone())
+        .await
+        .unwrap();
+    assert!(prompter.asked().is_empty(), "{:?}", prompter.asked());
+
+    target.auth = key_auth(support::key("id_ed25519_unauthorized"));
+    let result = agent.manager(&fixture).connect(&target, prompter).await;
+    assert!(
+        matches!(result, Err(ConnectError::KeyRejected { .. })),
+        "{result:?}"
+    );
 }
 
 #[cfg(unix)]
