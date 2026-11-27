@@ -109,27 +109,23 @@ impl RemoteTerminal {
         Self::open_inner(connect, options, size, sink, None).await
     }
 
-    /// Like [`open_with`](Self::open_with), reporting progress while opening
-    /// the initial shell. The `connect` callback reports the Connection steps.
+    /// Like [`open_with`](Self::open_with), reporting progress when opening
+    /// the initial shell and each replacement shell. The `connect` callback
+    /// reports the Connection steps.
     pub async fn open_with_progress<C, Fut, F>(
         connect: C,
         options: RemoteTerminalOptions,
         size: TerminalSize,
         sink: F,
-        host: &Host,
-        prompter: &dyn Prompter,
+        host: Host,
+        prompter: Arc<dyn Prompter>,
     ) -> Result<Self, ConnectError>
     where
         C: Fn() -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<Arc<Connection>, ConnectError>> + Send + 'static,
         F: FnMut(TerminalEvent) + Send + 'static,
     {
-        let progress = HopProgress {
-            host,
-            jump_host: false,
-            prompter,
-        };
-        Self::open_inner(connect, options, size, sink, Some(progress)).await
+        Self::open_inner(connect, options, size, sink, Some((host, prompter))).await
     }
 
     async fn open_inner<C, Fut, F>(
@@ -137,7 +133,7 @@ impl RemoteTerminal {
         options: RemoteTerminalOptions,
         size: TerminalSize,
         sink: F,
-        progress: Option<HopProgress<'_>>,
+        progress: Option<ShellProgress>,
     ) -> Result<Self, ConnectError>
     where
         C: Fn() -> Fut + Send + Sync + 'static,
@@ -147,15 +143,11 @@ impl RemoteTerminal {
         let integration = options.shell_integration;
         let (shell_tx, shell_events) = mpsc::unbounded_channel();
         let connection = connect().await?;
-        let step = progress.map(|progress| progress.start(ConnectStage::Shell));
-        let shell = start_shell(&connection, size, &shell_tx).await;
-        let shell = match step {
-            Some(step) => step.finish(shell)?,
-            None => shell?,
-        };
+        let shell = start_shell(&connection, size, &shell_tx, progress.as_ref()).await?;
         let (commands, command_rx) = mpsc::unbounded_channel();
         let runner = Runner {
             connect: Box::new(move || Box::pin(connect())),
+            progress,
             policy: options.reconnect,
             integration,
             size,
@@ -199,18 +191,32 @@ impl Terminal for RemoteTerminal {
 
 type Connect =
     Box<dyn Fn() -> super::BoxFuture<'static, Result<Arc<Connection>, ConnectError>> + Send + Sync>;
+type ShellProgress = (Host, Arc<dyn Prompter>);
 
 async fn start_shell(
     connection: &Arc<Connection>,
     size: TerminalSize,
     events: &mpsc::UnboundedSender<ShellEvent>,
+    progress: Option<&ShellProgress>,
 ) -> Result<RemoteShell, ConnectError> {
+    let step = progress.map(|(host, prompter)| {
+        HopProgress {
+            host,
+            jump_host: false,
+            prompter: prompter.as_ref(),
+        }
+        .start(ConnectStage::Shell)
+    });
     let events = events.clone();
-    connection
+    let shell = connection
         .start_shell(size, move |event| {
             let _ = events.send(event);
         })
-        .await
+        .await;
+    match step {
+        Some(step) => step.finish(shell),
+        None => shell,
+    }
 }
 
 /// How long output must pause at what looks like a prompt (not after a
@@ -280,6 +286,7 @@ enum Stop {
 /// replaces the shell when the Connection drops.
 struct Runner {
     connect: Connect,
+    progress: Option<ShellProgress>,
     policy: ReconnectPolicy,
     /// Type the ShellIntegration hook into every new shell.
     integration: bool,
@@ -485,7 +492,13 @@ impl Runner {
             }
         };
         // The size may have changed while connecting.
-        Ok(start_shell(&connection, self.size, &self.shell_tx).await)
+        Ok(start_shell(
+            &connection,
+            self.size,
+            &self.shell_tx,
+            self.progress.as_ref(),
+        )
+        .await)
     }
 }
 

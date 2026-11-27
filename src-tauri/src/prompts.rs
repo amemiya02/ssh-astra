@@ -12,6 +12,7 @@ use sshastra_core::ssh::{
     BoxFuture, ConnectProgress, HostKeyPrompt, KeyboardInteractivePrompt, PassphrasePrompt,
     PasswordPrompt, Prompter, Secret,
 };
+use sshastra_core::terminal::ConnectionState;
 use tauri::ipc::Channel;
 use tokio::sync::oneshot;
 
@@ -25,6 +26,9 @@ use tokio::sync::oneshot;
 pub enum PromptRequest {
     Progress {
         progress: ConnectProgress,
+    },
+    Reconnect {
+        state: ConnectionState,
     },
     HostKey {
         id: u64,
