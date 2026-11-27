@@ -89,6 +89,23 @@ impl RemoteFs for LiveHostFs {
         Box::pin(async move { self.fs().await?.rename(from, to).await })
     }
 
+    fn compress<'a>(
+        &'a self,
+        directory: &'a str,
+        names: &'a [String],
+        archive: &'a str,
+    ) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move { self.fs().await?.compress(directory, names, archive).await })
+    }
+
+    fn extract_archive<'a>(
+        &'a self,
+        directory: &'a str,
+        archive: &'a str,
+    ) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move { self.fs().await?.extract_archive(directory, archive).await })
+    }
+
     fn remove_file<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>> {
         Box::pin(async move { self.fs().await?.remove_file(path).await })
     }

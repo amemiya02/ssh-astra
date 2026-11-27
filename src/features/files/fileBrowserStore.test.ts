@@ -58,6 +58,8 @@ function fakeApi(overrides: Partial<FilesApi> = {}, dirs: Record<string, string[
       dirs[path] = [];
       return Promise.resolve();
     }),
+    compressFiles: vi.fn(() => Promise.resolve()),
+    extractArchive: vi.fn(() => Promise.resolve()),
     createEmptyFile: vi.fn((_id: number, path: string) => {
       const { dir, name, index } = find(path);
       if (index >= 0) return taken(path);

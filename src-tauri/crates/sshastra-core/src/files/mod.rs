@@ -5,6 +5,7 @@
 //! Connection (`Connection::open_sftp`), and tests may swap in an in-memory
 //! fake. Paths are POSIX strings as the server sees them.
 
+mod archive;
 mod live;
 mod local;
 mod registry;
@@ -141,6 +142,20 @@ pub enum FsError {
     /// Creating or renaming onto a name that is already taken.
     #[error("already exists: {0}")]
     AlreadyExists(String),
+    #[error("invalid file name")]
+    InvalidName,
+    #[error("archive operations require an SSH Connection")]
+    ArchiveUnavailable,
+    #[error("unsupported archive name: {0}")]
+    ArchiveUnsupported(String),
+    #[error("the archive is missing or is not a file")]
+    ArchiveNotAFile,
+    #[error("{0} is missing on the Host")]
+    ArchiveToolMissing(&'static str),
+    #[error("{0}")]
+    ArchiveFailed(String),
+    #[error("{message}")]
+    ArchiveIncomplete { path: String, message: String },
     /// A file bigger than a whole-file read allows ([`READ_FILE_LIMIT`]).
     #[error("{path} is larger than {limit} bytes")]
     TooLarge { path: String, limit: u64 },
@@ -165,6 +180,13 @@ impl FsError {
             Self::OwnershipUnavailable(_) => "ownershipUnavailable",
             Self::NotADirectory(_) => "notADirectory",
             Self::AlreadyExists(_) => "alreadyExists",
+            Self::InvalidName => "invalidName",
+            Self::ArchiveUnavailable => "archiveUnavailable",
+            Self::ArchiveUnsupported(_) => "archiveUnsupported",
+            Self::ArchiveNotAFile => "archiveNotAFile",
+            Self::ArchiveToolMissing(_) => "archiveToolMissing",
+            Self::ArchiveFailed(_) => "archiveFailed",
+            Self::ArchiveIncomplete { .. } => "archiveIncomplete",
             Self::TooLarge { .. } => "tooLarge",
             Self::TimedOut => "timedOut",
             Self::Protocol(_) => "protocol",
@@ -250,6 +272,27 @@ pub trait RemoteFs: Send + Sync {
     /// Renames (or moves) `from` to `to`; fails with
     /// [`FsError::AlreadyExists`] rather than replacing an existing `to`.
     fn rename<'a>(&'a self, from: &'a str, to: &'a str) -> BoxFuture<'a, FsResult<()>>;
+    /// Packs direct children of the absolute directory into a new `.tar.gz`.
+    /// Both the selected entries and the output are leaf names in that directory.
+    fn compress<'a>(
+        &'a self,
+        _directory: &'a str,
+        _names: &'a [String],
+        _archive: &'a str,
+    ) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async { Err(FsError::ArchiveUnavailable) })
+    }
+
+    /// Expands a named archive in the absolute directory into a new sibling
+    /// directory named for the archive without its extension.
+    fn extract_archive<'a>(
+        &'a self,
+        _directory: &'a str,
+        _archive: &'a str,
+    ) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async { Err(FsError::ArchiveUnavailable) })
+    }
+
     /// Deletes a file or symlink (never what it points to).
     fn remove_file<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>>;
     /// Deletes an empty directory; see [`remove_tree`] for a full one.

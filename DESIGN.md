@@ -432,6 +432,7 @@ Settings lists every theme as a card (10px radius, 6px padding, auto-fill at min
 - Right-align sizes, show modification time in the current locale, and show Unix permissions in monospace. Keep column headings above the scrolling rows and let narrow panels scroll sideways to reveal the enabled columns.
 - Use a folder icon in ANSI blue, link icons in cyan, archives in yellow, images in magenta, code in green, and audio and video in red. Documents and other files use muted foreground. Draw coloured icons with the theme's `--ansi-*-ink` tokens. Classify regular files by their extension and use the folder or link shape for those entry kinds.
 - F2 and the row menu’s Rename action edit the name within the row. Enter saves, and Escape cancels. Show validation and rename errors below the list and keep the name editable.
+- In the remote row menu, Compress takes the selection and opens a name dialog for a new .tar.gz in the current folder. Extract appears for a single supported archive and confirms the new sibling folder. Keep conflicts, missing tools and other operation errors in the dialog.
 - The footer shows item and selected counts after filtering. When selected entries are hidden, show their count alongside the visible selection.
 
 ### Menus, tooltips, dialogs

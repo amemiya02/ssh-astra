@@ -14,7 +14,8 @@ use sshastra_core::files::{
 use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::ssh::{
-    BoxFuture, ConnectionManager, HostKeyDecision, HostKeyPrompt, PasswordPrompt, Prompter, Secret,
+    BoxFuture, Connection, ConnectionManager, HostKeyDecision, HostKeyPrompt, PasswordPrompt,
+    Prompter, Secret,
 };
 use support::{Service, Sshd};
 
@@ -30,9 +31,7 @@ impl Prompter for Trusting {
     }
 }
 
-/// An SftpFs on the `ssh` server plus a fresh, empty scratch directory for
-/// this test (absolute path), and the temp dir holding the known_hosts.
-async fn scratch(sshd: &Sshd) -> (SftpFs, String, tempfile::TempDir) {
+async fn connect(sshd: &Sshd) -> (Arc<Connection>, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let manager = ConnectionManager::new(KnownHosts::new(dir.path().join("known_hosts")));
     let host = Host {
@@ -58,6 +57,13 @@ async fn scratch(sshd: &Sshd) -> (SftpFs, String, tempfile::TempDir) {
         .connect(&host, Arc::new(Trusting(sshd.password)))
         .await
         .unwrap();
+    (connection, dir)
+}
+
+/// An SftpFs on the `ssh` server plus a fresh, empty scratch directory for
+/// this test (absolute path), and the temp dir holding the known_hosts.
+async fn scratch(sshd: &Sshd) -> (SftpFs, String, tempfile::TempDir) {
+    let (connection, dir) = connect(sshd).await;
     let fs = connection.open_sftp().await.unwrap();
     let root = format!("/home/tester/ops-{}", uuid::Uuid::new_v4());
     fs.create_dir(&root).await.unwrap();
@@ -421,4 +427,169 @@ async fn execute_only_adds_selected_bits_to_directories_and_preserves_files() {
             Some(expected)
         );
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn exec_captures_stdout_stderr_and_status_on_the_existing_connection() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let (connection, _dir) = connect(&sshd).await;
+    let output = connection
+        .exec("cat; printf 'stdout\\n'; printf 'stderr\\n' >&2; exit 23")
+        .await
+        .unwrap();
+    assert_eq!(output.stdout, b"stdout\n");
+    assert_eq!(output.stderr, b"stderr\n");
+    assert_eq!(output.status, 23);
+
+    let fs = connection.open_sftp().await.unwrap();
+    assert_eq!(fs.home().await.unwrap(), "/home/tester");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn archive_round_trips_special_names_and_both_operations_refuse_conflicts() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let (fs, root, _dir) = scratch(&sshd).await;
+    let source_name = "-sp ace'\"\n$`[name]";
+    let archive_name = "archive ' $ ` [name].tar.gz";
+    let destination = files::join(&root, "archive ' $ ` [name]");
+    let archive = files::join(&root, archive_name);
+    let source = files::join(&root, source_name);
+    fs.write_file(&source, b"special contents\0").await.unwrap();
+    fs.create_dir(&files::join(&root, "dir")).await.unwrap();
+    fs.write_file(&files::join(&root, "dir/file"), b"nested")
+        .await
+        .unwrap();
+
+    fs.compress(&root, &[source_name.into(), "dir".into()], archive_name)
+        .await
+        .unwrap();
+    let compressed = fs.read_file(&archive).await.unwrap();
+
+    fs.write_file(&source, b"changed source").await.unwrap();
+    assert_eq!(
+        fs.compress(&root, &[source_name.into()], archive_name)
+            .await,
+        Err(FsError::AlreadyExists(archive.clone()))
+    );
+    assert_eq!(fs.read_file(&archive).await.unwrap(), compressed);
+
+    fs.extract_archive(&root, archive_name).await.unwrap();
+    let read = |name| files::join(&destination, name);
+    assert_eq!(
+        fs.read_file(&read(source_name)).await.unwrap(),
+        b"special contents\0"
+    );
+    assert_eq!(fs.read_file(&read("dir/file")).await.unwrap(), b"nested");
+
+    fs.write_file(&read("dir/file"), b"changed extracted file")
+        .await
+        .unwrap();
+    assert_eq!(
+        fs.extract_archive(&root, archive_name).await,
+        Err(FsError::AlreadyExists(destination.clone()))
+    );
+    assert_eq!(
+        fs.read_file(&read("dir/file")).await.unwrap(),
+        b"changed extracted file"
+    );
+    assert_eq!(fs.read_file(&archive).await.unwrap(), compressed);
+    assert_eq!(fs.list_dir(&root).await.unwrap().len(), 4);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn concurrent_compression_has_one_winner_and_leaves_only_its_archive() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let (fs, root, _dir) = scratch(&sshd).await;
+    fs.write_file(&files::join(&root, "first"), b"first")
+        .await
+        .unwrap();
+    fs.write_file(&files::join(&root, "second"), b"second")
+        .await
+        .unwrap();
+    let first = ["first".into()];
+    let second = ["second".into()];
+    let (a, b) = tokio::join!(
+        fs.compress(&root, &first, "race.tar.gz"),
+        fs.compress(&root, &second, "race.tar.gz")
+    );
+    let (winner, loser) = if a.is_ok() {
+        ("first", b)
+    } else {
+        b.unwrap();
+        ("second", a)
+    };
+    assert_eq!(
+        loser,
+        Err(FsError::AlreadyExists(files::join(&root, "race.tar.gz")))
+    );
+    assert_eq!(
+        names(&fs.list_dir(&root).await.unwrap()),
+        ["first", "race.tar.gz", "second"]
+    );
+
+    let (a, b) = tokio::join!(
+        fs.extract_archive(&root, "race.tar.gz"),
+        fs.extract_archive(&root, "race.tar.gz")
+    );
+    let loser = if a.is_ok() {
+        b
+    } else {
+        b.unwrap();
+        a
+    };
+    assert_eq!(
+        loser,
+        Err(FsError::AlreadyExists(files::join(&root, "race")))
+    );
+    assert_eq!(
+        fs.read_file(&files::join(&root, &format!("race/{winner}")))
+            .await
+            .unwrap(),
+        winner.as_bytes()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn missing_unzip_reports_the_tool_and_leaves_no_destination() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let (fs, root, _dir) = scratch(&sshd).await;
+    fs.write_file(&files::join(&root, "example.zip"), b"zip fixture")
+        .await
+        .unwrap();
+
+    assert_eq!(
+        fs.extract_archive(&root, "example.zip").await,
+        Err(FsError::ArchiveToolMissing("unzip"))
+    );
+    assert_eq!(names(&fs.list_dir(&root).await.unwrap()), ["example.zip"]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn failed_extraction_reports_the_new_folder_without_deleting_it() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let (fs, root, _dir) = scratch(&sshd).await;
+    let source = files::join(&root, "corrupt.tar");
+    let target = files::join(&root, "corrupt");
+    fs.write_file(&source, b"incomplete archive").await.unwrap();
+
+    assert!(matches!(
+        fs.extract_archive(&root, "corrupt.tar").await,
+        Err(FsError::ArchiveIncomplete { path, .. }) if path == target
+    ));
+    assert_eq!(fs.lstat(&target).await.unwrap().kind, FileKind::Dir);
+    assert_eq!(fs.read_file(&source).await.unwrap(), b"incomplete archive");
+    assert_eq!(
+        fs.extract_archive(&root, "corrupt.tar").await,
+        Err(FsError::AlreadyExists(target))
+    );
 }

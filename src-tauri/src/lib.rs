@@ -176,6 +176,8 @@ pub fn run() {
             commands::files::files_create_dir,
             commands::files::files_create_empty,
             commands::files::files_rename,
+            commands::files::files_compress,
+            commands::files::files_extract_archive,
             commands::files::files_count,
             commands::files::files_folder_size,
             commands::files::files_search_names,

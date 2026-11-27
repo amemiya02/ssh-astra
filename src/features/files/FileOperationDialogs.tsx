@@ -17,12 +17,14 @@ import type { FileEntry, PermissionChange } from "@/lib/ipc/files";
 import type { FileBrowserStore } from "./fileBrowsers";
 import type { MoveFailure } from "./fileBrowserStore";
 import { operationErrorText } from "./fileErrors";
-import { nameProblem, octalMode, parseOctalMode } from "./fileList";
+import { archiveFolderName, nameProblem, octalMode, parseOctalMode } from "./fileList";
 
 /** A file operation waiting for the user in a dialog. Names are entries of the directory shown. */
 export type FileOperation =
   | { kind: "newFile" }
   | { kind: "newFolder" }
+  | { kind: "compress"; directory: string; names: string[] }
+  | { kind: "extract"; directory: string; archive: string }
   | { kind: "delete"; names: string[] }
   | { kind: "permissions"; entry: FileEntry; directory: string };
 
@@ -40,6 +42,7 @@ export function FileOperationDialog({
 }) {
   const { t } = useTranslation();
   const entries = useStore(store, (s) => s.entries);
+  const path = useStore(store, (s) => s.path);
   const names = entries.map((e) => e.name);
   switch (operation.kind) {
     case "newFile":
@@ -54,6 +57,27 @@ export function FileOperationDialog({
         />
       );
     }
+    case "compress":
+      return (
+        <NameDialog
+          title={t("files.archive.compressTitle")}
+          description={t("files.archive.compressDescription")}
+          label={t("files.archive.name")}
+          confirmLabel={t("files.archive.compress")}
+          suffix=".tar.gz"
+          existing={path === operation.directory ? names : []}
+          onSubmit={(name) => store.getState().compress(operation.directory, operation.names, name)}
+          onClose={onClose}
+        />
+      );
+    case "extract":
+      return (
+        <ExtractDialog
+          archive={operation.archive}
+          onSubmit={() => store.getState().extractArchive(operation.directory, operation.archive)}
+          onClose={onClose}
+        />
+      );
     case "delete":
       return <DeleteDialog store={store} names={operation.names} onClose={onClose} />;
     case "permissions":
@@ -142,11 +166,19 @@ export function MoveFailureDialog({ failures, onClose }: { failures: readonly Mo
 /** Asks for the name of a new entry. */
 function NameDialog({
   title,
+  description,
+  label,
+  confirmLabel,
+  suffix,
   existing,
   onSubmit,
   onClose,
 }: {
   title: string;
+  description?: string;
+  label?: string;
+  confirmLabel?: string;
+  suffix?: string;
   existing: readonly string[];
   onSubmit(name: string): Promise<CommandError | null>;
   onClose(): void;
@@ -154,18 +186,19 @@ function NameDialog({
   const { t } = useTranslation();
   const [name, setName] = useState("");
   const { busy, failure, run } = useOperation(onClose);
-  const problem = nameProblem(name, existing);
+  const output = suffix && !name.endsWith(suffix) ? name + suffix : name;
+  const problem = name === suffix ? "empty" : nameProblem(name, []) ?? nameProblem(output, existing);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (problem === null) void run(() => onSubmit(name));
+    if (problem === null) void run(() => onSubmit(output));
   };
 
   return (
-    <OperationDialog title={title} onClose={onClose}>
+    <OperationDialog title={title} description={description} onClose={() => { if (!busy) onClose(); }}>
       <form className="flex flex-col gap-3" onSubmit={submit}>
         <Input
-          aria-label={t("files.name")}
+          aria-label={label ?? t("files.name")}
           value={name}
           autoFocus
           spellCheck={false}
@@ -175,18 +208,42 @@ function NameDialog({
           onChange={(event) => setName(event.target.value)}
         />
         {problem !== null && problem !== "empty" && (
-          <p className="text-destructive text-xs">{t(`files.nameProblem.${problem}`, { name })}</p>
+          <p className="text-destructive text-xs">{t(`files.nameProblem.${problem}`, { name: problem === "taken" ? output : name })}</p>
         )}
         <Failure error={failure} />
         <DialogFooter>
-          <Button type="button" variant="outline" size="sm" onClick={onClose}>
+          <Button type="button" variant="outline" size="sm" disabled={busy} onClick={onClose}>
             {t("files.cancel")}
           </Button>
           <Button type="submit" size="sm" disabled={problem !== null || busy}>
-            {t("files.create")}
+            {confirmLabel ?? t("files.create")}
           </Button>
         </DialogFooter>
       </form>
+    </OperationDialog>
+  );
+}
+
+function ExtractDialog({
+  archive, onSubmit, onClose,
+}: { archive: string; onSubmit(): Promise<CommandError | null>; onClose(): void }) {
+  const { t } = useTranslation();
+  const { busy, failure, run } = useOperation(onClose);
+  return (
+    <OperationDialog
+      title={t("files.archive.extractTitle", { name: archive })}
+      description={t("files.archive.extractDescription", { folder: archiveFolderName(archive) })}
+      onClose={() => { if (!busy) onClose(); }}
+    >
+      <Failure error={failure} />
+      <DialogFooter>
+        <Button type="button" variant="outline" size="sm" disabled={busy} onClick={onClose}>
+          {t("files.cancel")}
+        </Button>
+        <Button type="button" size="sm" disabled={busy} onClick={() => void run(onSubmit)}>
+          {t("files.archive.extract")}
+        </Button>
+      </DialogFooter>
     </OperationDialog>
   );
 }
