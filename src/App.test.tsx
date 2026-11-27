@@ -628,6 +628,7 @@ it("saves a Temporary Host in place after canceling and retrying the Host editor
   expect(calls("files_open")).toEqual([["files_open", { hostId: id }]]);
   const [tab] = tabIds();
   const terminals = [...testTerminals];
+  const fileCloses = calls("files_close");
 
   await clickButton("Privacy mode");
   expect(container?.innerHTML).not.toContain("deploy@lab");
@@ -663,7 +664,7 @@ it("saves a Temporary Host in place after canceling and retrying the Host editor
   expect(calls("remote_terminal_open")).toHaveLength(1);
   expect(terminalCloses()).toHaveLength(0);
   expect(calls("files_open")).toHaveLength(1);
-  expect(calls("files_close")).toHaveLength(0);
+  expect(calls("files_close")).toEqual(fileCloses);
   expect(calls("temporary_host_forget")).toHaveLength(0);
 });
 
