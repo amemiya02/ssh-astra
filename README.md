@@ -30,7 +30,7 @@ A modern, good-looking SSH & SFTP client for Windows, macOS and Linux.
 - **Security**: ssh-agent, private keys, OpenSSH user certificates, passwords and 2FA; secrets stay in the OS keychain; shares `known_hosts` with OpenSSH.
 - **Reconnects** on its own after a dropped Connection.
 - **System notifications** report finished transfer batches, failed reconnections, and requests from Terminal programs while the window is in the background. Choose categories in **Settings → Notifications**.
-- **Polish**: ⌘K command palette, light and dark themes, English and 简体中文, in-app updates.
+- **Polish**: ⌘K command palette, light and dark themes, English, 简体中文, and 繁體中文, in-app updates.
 
 <table>
   <tr>
