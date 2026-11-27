@@ -168,6 +168,32 @@ Host *
 }
 
 #[test]
+fn agent_forwarding_import_uses_the_first_matching_value_and_defaults_to_off() {
+    let (dir, mut store) = store();
+    let report = import(
+        &mut store,
+        "
+Host build
+    ForwardAgent YES
+Host login
+    ForwardAgent no
+Host build login
+    ForwardAgent yes
+Host plain
+    User dev
+",
+    );
+    assert_eq!(report.imported, ["build", "login", "plain"]);
+    assert!(report.issues.is_empty());
+
+    let saved = HostStore::open(dir.path().join("hosts.json")).unwrap();
+    for (name, expected) in [("build", true), ("login", false), ("plain", false)] {
+        let host = serde_json::to_value(find(&saved, name)).unwrap();
+        assert_eq!(host["forwardAgent"], expected, "{name}");
+    }
+}
+
+#[test]
 fn importing_again_adds_nothing_and_reports_every_host_as_skipped() {
     let (_dir, mut store) = store();
     import(&mut store, CONFIG);
@@ -195,6 +221,7 @@ fn a_host_with_a_taken_name_is_skipped_and_its_namesake_used_as_jump_host() {
                 jump_host: None,
                 terminal_scheme: None,
                 identities_only: false,
+                forward_agent: false,
                 default_directory: None,
             },
         )

@@ -270,6 +270,22 @@ export function HostFormDialogContent({
                   </p>
                 </div>
               </div>
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id="host-form-forward-agent"
+                  checked={values.forwardAgent}
+                  aria-describedby="host-form-forward-agent-hint"
+                  onCheckedChange={(checked) => setValues((v) => ({ ...v, forwardAgent: checked === true }))}
+                />
+                <div className="grid gap-1.5">
+                  <Label htmlFor="host-form-forward-agent" className="text-xs">
+                    {t("hosts.fields.forwardAgent")}
+                  </Label>
+                  <p id="host-form-forward-agent-hint" className="text-muted-foreground text-xs">
+                    {t("hosts.forwardAgentHint")}
+                  </p>
+                </div>
+              </div>
               <div className="grid gap-1.5">
                 <Label htmlFor={advancedFieldIds.terminalScheme} className="text-xs">
                   {t("hosts.fields.terminalScheme")}

@@ -42,6 +42,7 @@ fn host(sshd: &Sshd) -> Host {
         jump_host: None,
         terminal_scheme: None,
         identities_only: false,
+        forward_agent: false,
         default_directory: None,
         group_id: None,
         forwards: Vec::new(),

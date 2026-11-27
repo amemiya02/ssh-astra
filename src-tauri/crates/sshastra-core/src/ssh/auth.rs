@@ -47,10 +47,10 @@ pub enum Agent {
     Socket(PathBuf),
 }
 
-type DynAgent = AgentClient<Box<dyn AgentStream + Send + Unpin + 'static>>;
+pub(super) type DynAgent = AgentClient<Box<dyn AgentStream + Send + Unpin + 'static>>;
 
 impl Agent {
-    async fn connect(&self) -> Option<DynAgent> {
+    pub(super) async fn connect(&self) -> Option<DynAgent> {
         match self {
             Agent::None => None,
             #[cfg(unix)]

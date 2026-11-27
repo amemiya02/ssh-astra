@@ -21,6 +21,7 @@
 //! is noticed. A [`RemoteTerminal`] outlives its Connection dropping: it
 //! reconnects and starts a new shell.
 
+mod agent_forward;
 mod auth;
 mod handshake;
 mod held;
@@ -35,6 +36,7 @@ pub use progress::{AuthMethod, ConnectProgress, ConnectStage, ProgressStatus};
 pub use remote_terminal::{ReconnectPolicy, RemoteTerminal, RemoteTerminalOptions};
 pub use shell::RemoteShell;
 
+use agent_forward::AgentForwarding;
 use progress::HopProgress;
 pub(crate) use remote_listen::RemoteListener;
 use remote_listen::Routes;
@@ -609,8 +611,11 @@ impl ConnectionManager {
         let host_key = progress.start(ConnectStage::HostKey);
         let failure = Arc::new(Mutex::new(None));
         let routes = Routes::default();
+        let agent_forwarding = (host.forward_agent && self.agent != Agent::None)
+            .then(|| Arc::new(AgentForwarding::new(self.agent.clone())));
         let handler = ClientHandler {
             routes: routes.clone(),
+            agent_forwarding: agent_forwarding.clone(),
             id: host.id.clone(),
             host: host.address.clone(),
             port: host.port,
@@ -656,6 +661,7 @@ impl ConnectionManager {
         Ok(Connection {
             handle,
             routes,
+            agent_forwarding,
             file_namespace,
             _via: via,
         })
@@ -680,6 +686,7 @@ pub struct Connection {
     file_namespace: String,
     /// Ports the server listens on for us, and who gets their connections.
     routes: Routes,
+    agent_forwarding: Option<Arc<AgentForwarding>>,
     /// The Jump host's Connection this one is tunnelled through, kept open
     /// for as long as this one is.
     _via: Option<Arc<Connection>>,
@@ -769,7 +776,12 @@ impl Connection {
     where
         F: FnMut(ShellEvent) + Send + 'static,
     {
-        let channel = self.handle.channel_open_session().await?;
+        let mut channel = self.handle.channel_open_session().await?;
+        if let Some(forwarding) = &self.agent_forwarding {
+            forwarding
+                .request(&mut channel, self.handle.agent_session_binding())
+                .await?;
+        }
         shell::start(Arc::clone(self), channel, size, sink).await
     }
 
@@ -792,6 +804,7 @@ impl Connection {
 
 struct ClientHandler {
     routes: Routes,
+    agent_forwarding: Option<Arc<AgentForwarding>>,
     id: HostId,
     host: String,
     port: u16,
@@ -856,6 +869,22 @@ impl client::Handler for ClientHandler {
                 Ok(false)
             }
         }
+    }
+
+    async fn server_channel_open_agent_forward(
+        &mut self,
+        channel: russh::Channel<client::Msg>,
+        reply: client::ChannelOpenHandle,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        if let Some(forwarding) = &self.agent_forwarding {
+            forwarding.open(channel, reply).await;
+        } else {
+            reply
+                .reject(russh::ChannelOpenFailure::AdministrativelyProhibited)
+                .await;
+        }
+        Ok(())
     }
 
     /// A connection the server accepted on a port it listens on for us goes
