@@ -1266,6 +1266,10 @@
       "label": "Confirm Terminal close",
       "description": "Ask before closing a connected remote Terminal."
     },
+    "closeToTray": {
+      "label": "Close to tray",
+      "description": "Keep SSH Astra running when you close the last window if a system tray is available."
+    },
     "confirmQuit": {
       "label": "Confirm app quit",
       "description": "Ask before quitting while Connections, transfers, or Port forwards are active."
@@ -1660,6 +1664,11 @@
   "window": {
     "new": "New Window",
     "openFailed": "Could not open a new Window."
+  },
+  "tray": {
+    "showWindow": "Show Window",
+    "recentHosts": "Recent Hosts",
+    "runningForwards": "Running Port forwards: {{running}}"
   },
   "quit": {
     "title": "Quit SSH Astra?",

@@ -41,14 +41,18 @@ pub fn menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
 
 pub fn on_menu_event(app: &AppHandle, event: MenuEvent) {
     if event.id() == QUIT {
-        if let Some(window) = crate::windows::active(app) {
-            if let Err(error) = app.emit_to(
-                EventTarget::webview_window(window.label()),
-                "app-quit-requested",
-                (),
-            ) {
-                log::warn!("could not request app quit: {error}");
-            }
+        request(app);
+    }
+}
+
+pub(crate) fn request(app: &AppHandle) {
+    if let Some(window) = crate::windows::show_active(app) {
+        if let Err(error) = app.emit_to(
+            EventTarget::webview_window(window.label()),
+            "app-quit-requested",
+            (),
+        ) {
+            log::warn!("could not request app quit: {error}");
         }
     }
 }
