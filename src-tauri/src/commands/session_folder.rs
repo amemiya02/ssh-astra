@@ -26,7 +26,11 @@ pub(super) enum SkipReason {
     Limit,
 }
 
-pub(super) fn read_session_folder(path: &Path, extension: &str) -> io::Result<FolderSnapshot> {
+pub(super) fn read_session_folder(
+    path: &Path,
+    extension: &str,
+    ignored_files: &[&str],
+) -> io::Result<FolderSnapshot> {
     if !path.is_absolute() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -41,6 +45,7 @@ pub(super) fn read_session_folder(path: &Path, extension: &str) -> io::Result<Fo
     };
     let mut scan = Scan {
         extension,
+        ignored_files,
         snapshot: FolderSnapshot::default(),
         entries_left: MAX_ENTRIES,
         bytes_left: MAX_TOTAL_BYTES,
@@ -52,6 +57,7 @@ pub(super) fn read_session_folder(path: &Path, extension: &str) -> io::Result<Fo
 
 struct Scan<'a> {
     extension: &'a str,
+    ignored_files: &'a [&'a str],
     snapshot: FolderSnapshot,
     entries_left: usize,
     bytes_left: usize,
@@ -78,7 +84,12 @@ impl Scan<'_> {
             let is_session = path
                 .extension()
                 .and_then(|value| value.to_str())
-                .is_some_and(|value| value.eq_ignore_ascii_case(self.extension));
+                .is_some_and(|value| value.eq_ignore_ascii_case(self.extension))
+                && !name.to_str().is_some_and(|name| {
+                    self.ignored_files
+                        .iter()
+                        .any(|ignored| ignored.eq_ignore_ascii_case(name))
+                });
             match dir.symlink_metadata(&name) {
                 Ok(metadata) if metadata.is_dir() => {
                     if depth == MAX_DEPTH {

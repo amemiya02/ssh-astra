@@ -218,7 +218,7 @@
     "connectFailed": "无法连接到 {{name}}：{{message}}",
     "import": {
       "action": "导入 Host…",
-      "keywords": "ssh config openssh csv 导入 putty mobaxterm mxtsessions xshell xsh",
+      "keywords": "ssh config openssh csv 导入 putty mobaxterm mxtsessions xshell xsh securecrt ini",
       "pickerTitle": "导入 Host",
       "chooseSource": "选择要从哪里导入 Host。",
       "sshConfig": {
@@ -243,6 +243,14 @@
         "title": "Xshell 导入结果",
         "nothing": "Xshell 文件夹中没有可导入的主机。",
         "error": "无法导入 Xshell 文件夹：{{message}}"
+      },
+      "securecrt": {
+        "action": "SecureCRT 会话文件夹…",
+        "help": "选择包含 .ini 文件的 SecureCRT Sessions 文件夹。子文件夹将成为分组。",
+        "chooseFolder": "选择 SecureCRT 会话文件夹",
+        "title": "SecureCRT 导入结果",
+        "nothing": "SecureCRT 文件夹中没有可导入的主机。",
+        "error": "无法导入 SecureCRT 文件夹：{{message}}"
       },
       "mobaxterm": {
         "action": "MobaXterm 会话…",
@@ -308,7 +316,17 @@
         "xshellKeyPath": "请在主机编辑器中选择可访问的私钥。",
         "xshellUnsupportedSettings": "部分 Xshell 设置无法导入。",
         "xshellUnsupportedProxy": "无法导入此 Xshell 会话的代理。",
-        "xshellInvalidJumpHost": "Xshell 跳板机设置不完整或无效。"
+        "xshellInvalidJumpHost": "Xshell 跳板机设置不完整或无效。",
+        "securecrtCredentials": "已略过保存的凭据。",
+        "securecrtFile": "无法读取此 SecureCRT 会话，或其连接信息无效。",
+        "securecrtFolderLimit": "SecureCRT 文件夹超过导入大小或嵌套深度限制。",
+        "securecrtInvalidPort": "端口必须是 1 到 65535 之间的整数。",
+        "securecrtUnsupportedSession": "此 SecureCRT 会话使用的协议不是 SSH2。",
+        "securecrtDefaultUser": "SecureCRT 未保存用户名，已使用本地用户名。",
+        "securecrtKeyPath": "请在主机编辑器中选择可访问的私钥。",
+        "securecrtUnsupportedSettings": "部分 SecureCRT 设置无法导入。",
+        "securecrtUnsupportedFirewall": "无法导入此 SecureCRT 会话的防火墙设置。",
+        "securecrtJumpHostUnavailable": "SecureCRT 跳板机缺失、无法唯一确定，或其连接路径无效。"
       }
     },
     "transfer": {

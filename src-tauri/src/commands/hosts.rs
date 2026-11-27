@@ -6,7 +6,8 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use sshastra_core::agent::{OpenTerminal, TerminalOrigin};
 use sshastra_core::host_import::{
-    parse_csv, parse_mobaxterm, parse_putty, parse_xshell, ImportIssue, ImportProblem, ParsedConfig,
+    parse_csv, parse_mobaxterm, parse_putty, parse_securecrt, parse_xshell, ImportIssue,
+    ImportProblem, ParsedConfig, SECURECRT_NON_SESSION_FILES,
 };
 use sshastra_core::hosts::{
     Bookmark, Group, GroupId, Host, HostDraft, HostId, HostStore, HostTree, ImportReport,
@@ -278,6 +279,7 @@ pub enum HostImportSource {
     Putty { path: PathBuf },
     Mobaxterm { path: PathBuf },
     Xshell { path: PathBuf },
+    Securecrt { path: PathBuf },
 }
 
 /// Reads the selected source, then saves its parsed Hosts in one import.
@@ -310,17 +312,40 @@ fn read_import_source(source: HostImportSource) -> std::io::Result<ParsedConfig>
         HostImportSource::Mobaxterm { path } => {
             std::fs::read(path).map(|bytes| parse_mobaxterm(&bytes, &local_username()))
         }
-        HostImportSource::Xshell { path } => read_xshell_folder(&path),
+        HostImportSource::Xshell { path } => read_import_folder(&path, SessionFolderSource::Xshell),
+        HostImportSource::Securecrt { path } => {
+            read_import_folder(&path, SessionFolderSource::Securecrt)
+        }
     }
 }
 
-fn read_xshell_folder(path: &Path) -> std::io::Result<ParsedConfig> {
-    let snapshot = read_session_folder(path, "xsh")?;
+enum SessionFolderSource {
+    Xshell,
+    Securecrt,
+}
+
+fn read_import_folder(path: &Path, source: SessionFolderSource) -> std::io::Result<ParsedConfig> {
+    let (snapshot, unreadable, limit) = match source {
+        SessionFolderSource::Xshell => (
+            read_session_folder(path, "xsh", &[])?,
+            ImportProblem::XshellFile,
+            ImportProblem::XshellFolderLimit,
+        ),
+        SessionFolderSource::Securecrt => (
+            read_session_folder(path, "ini", &SECURECRT_NON_SESSION_FILES)?,
+            ImportProblem::SecurecrtFile,
+            ImportProblem::SecurecrtFolderLimit,
+        ),
+    };
     let files = snapshot
         .files
         .iter()
         .map(|(path, bytes)| (path.as_path(), bytes.as_slice()));
-    let mut parsed = parse_xshell(files, &local_username());
+    let local_user = local_username();
+    let mut parsed = match source {
+        SessionFolderSource::Xshell => parse_xshell(files, &local_user),
+        SessionFolderSource::Securecrt => parse_securecrt(files, &local_user),
+    };
     parsed
         .issues
         .extend(snapshot.skipped.into_iter().map(|(path, reason)| {
@@ -335,8 +360,8 @@ fn read_xshell_folder(path: &Path) -> std::io::Result<ParsedConfig> {
                 line: None,
                 dropped: true,
                 problem: match reason {
-                    SkipReason::Unreadable => ImportProblem::XshellFile,
-                    SkipReason::Limit => ImportProblem::XshellFolderLimit,
+                    SkipReason::Unreadable => unreadable.clone(),
+                    SkipReason::Limit => limit.clone(),
                 },
             }
         }));
@@ -397,6 +422,38 @@ mod source_import_tests {
             .iter()
             .any(|issue| issue.entry == "Linked.xsh" && issue.dropped));
         assert!(!format!("{parsed:?}").contains("Unselected"));
+    }
+
+    #[test]
+    fn securecrt_source_reads_ini_sessions_and_ignores_reserved_files() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("Work")).unwrap();
+        let session = "S:\"Protocol Name\"=SSH2\nS:\"Hostname\"=host.example.test\n";
+        fs::write(root.path().join("Work/Build.INI"), session).unwrap();
+        fs::write(root.path().join("Other.xsh"), session).unwrap();
+        fs::write(root.path().join("Work/__FolderData__.ini"), session).unwrap();
+        for file in ["DEFAULT.ini", "Oversized.ini"] {
+            fs::File::create(root.path().join(file))
+                .unwrap()
+                .set_len(1024 * 1024)
+                .unwrap();
+        }
+
+        let source =
+            serde_json::from_value(serde_json::json!({ "kind": "securecrt", "path": root.path() }))
+                .unwrap();
+        let parsed = read_import_source(source).unwrap();
+        assert_eq!(parsed.hosts.len(), 1);
+        assert_eq!(parsed.hosts[0].name, "Build");
+        assert_eq!(parsed.hosts[0].group_path, ["Work"]);
+        let skipped: Vec<_> = parsed.issues.iter().filter(|issue| issue.dropped).collect();
+        assert_eq!(skipped.len(), 1);
+        assert_eq!(skipped[0].entry, "Oversized.ini");
+        assert_eq!(skipped[0].problem, ImportProblem::SecurecrtFolderLimit);
+        assert_eq!(
+            serde_json::to_value(&skipped[0].problem).unwrap(),
+            serde_json::json!({ "kind": "securecrtFolderLimit" }),
+        );
     }
 
     #[test]
