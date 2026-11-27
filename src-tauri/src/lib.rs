@@ -282,8 +282,9 @@ pub fn run() {
                 tauri::RunEvent::Exit => {
                     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
                     drop(wake_listener.take());
-                    // Remote edits' temp files go with the app.
+                    // Remote edits and pasted images' temp files go with the app.
                     app.state::<RemoteEditor>().close_all();
+                    app.state::<ClipboardImages>().close();
                 }
                 _ => {}
             }

@@ -1,6 +1,7 @@
 //! Explicit Terminal paste is the only entry point for clipboard image reads.
 
 use std::io;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -23,6 +24,17 @@ pub struct ClipboardImages {
     /// At most one decoded image and one pending image upload.
     active: tokio::sync::Mutex<()>,
     directory: Arc<Mutex<Option<TempDir>>>,
+}
+
+impl ClipboardImages {
+    pub fn close(&self) {
+        let directory = self
+            .directory
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take();
+        drop(directory);
+    }
 }
 
 #[tauri::command]
@@ -54,16 +66,20 @@ pub async fn terminal_save_clipboard_image(
         let Some(image) = read_image_only()? else {
             return Ok::<_, io::Error>(None);
         };
-        let mut directory = directory
-            .lock()
-            .map_err(|_| io::Error::other("clipboard image directory unavailable"))?;
-        if directory.is_none() {
-            *directory = Some(Builder::new().prefix("sshastra-clipboard-").tempdir()?);
-        }
-        let directory = directory
-            .as_ref()
-            .expect("clipboard image directory was initialized");
-        Ok(Some(write_png(image, directory)?))
+        let path = {
+            let mut directory = directory
+                .lock()
+                .map_err(|_| io::Error::other("clipboard image directory unavailable"))?;
+            if directory.is_none() {
+                *directory = Some(Builder::new().prefix("sshastra-clipboard-").tempdir()?);
+            }
+            directory
+                .as_ref()
+                .expect("clipboard image directory was initialized")
+                .path()
+                .to_owned()
+        };
+        Ok(Some(write_png(image, &path)?))
     })
     .await
     .map_err(io::Error::other)??;
@@ -150,7 +166,7 @@ fn image_formats_only(clipboard: &mut Clipboard) -> io::Result<bool> {
         && missing(clipboard.get().file_list())?)
 }
 
-fn write_png(image: ImageData<'_>, directory: &TempDir) -> io::Result<NamedTempFile> {
+fn write_png(image: ImageData<'_>, directory: &Path) -> io::Result<NamedTempFile> {
     let pixels = image.width.checked_mul(image.height);
     if !matches!(pixels, Some(count) if count > 0 && count <= MAX_PIXELS && image.bytes.len() == count * 4)
     {
@@ -190,8 +206,8 @@ mod tests {
             height: 1,
             bytes: Cow::Borrowed(&pixels),
         };
-        let first = write_png(image.clone(), &directory).unwrap();
-        let second = write_png(image, &directory).unwrap();
+        let first = write_png(image.clone(), directory.path()).unwrap();
+        let second = write_png(image, directory.path()).unwrap();
         assert_ne!(first.path(), second.path());
         assert_eq!(first.path().extension().unwrap(), "png");
         assert_eq!(first.path().parent().unwrap(), directory.path());
@@ -222,7 +238,7 @@ mod tests {
                 bytes: Cow::Borrowed(&[]),
             };
             assert_eq!(
-                write_png(image, &directory).unwrap_err().kind(),
+                write_png(image, directory.path()).unwrap_err().kind(),
                 io::ErrorKind::InvalidData
             );
         }
