@@ -504,7 +504,12 @@ async fn zsh_split_accepts_literal_shell_metacharacters_and_trailing_newlines_in
     )
     .await;
     let directories = split.settle().await;
-    assert_eq!(directories.last().map(String::as_str), Some(cwd));
+    assert_eq!(
+        directories.last().map(String::as_str),
+        Some(cwd),
+        "{:?}",
+        split.text()
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

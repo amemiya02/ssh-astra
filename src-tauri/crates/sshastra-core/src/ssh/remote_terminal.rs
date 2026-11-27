@@ -230,7 +230,8 @@ fn split_startup_command(cwd: &str, post_login: Option<&str>) -> Option<String> 
     }
     // Command substitution trims trailing newlines. A directory can be addressed via its ".".
     let format = if cwd.ends_with('\n') { "%b/." } else { "%b" };
-    let cd = format!("command cd -- \"$(command printf '{format}' '{encoded}')\"");
+    // Escaping the command names bypasses aliases and lets zsh use its built-ins.
+    let cd = format!(r#"\cd -- "$(\printf '{format}' '{encoded}')""#);
     Some(match post_login {
         None => format!(" {cd}"),
         Some(login) => {
