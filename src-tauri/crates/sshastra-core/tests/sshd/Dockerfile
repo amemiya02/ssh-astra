@@ -21,6 +21,9 @@ RUN useradd -m -s /usr/bin/zsh zester && echo 'zester:testpass' | chpasswd \
  && printf "PROMPT='%%n@%%m:%%~%%# '\n" > /home/zester/.zshrc \
  && chown zester:zester /home/zester/.zshrc
 
+# An unsupported interactive shell for Shell integration tests.
+RUN useradd -m -s /bin/dash dashuser && echo 'dashuser:testpass' | chpasswd
+
 # Key login for tester with the public keys of the fixtures in keys/ (all
 # test-only; id_ed25519_unauthorized is deliberately left out).
 COPY --chown=tester:tester --chmod=600 keys/authorized_keys /home/tester/.ssh/authorized_keys

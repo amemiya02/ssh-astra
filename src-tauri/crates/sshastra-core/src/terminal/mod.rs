@@ -53,8 +53,41 @@ pub enum TerminalEvent {
     /// A remote Terminal's shell reported its current directory (ShellIntegration,
     /// OSC 7). Sent after the output that carried it.
     Cwd(String),
+    /// Prompt or command state from an interactive shell with Shell integration.
+    ShellIntegration(ShellIntegrationEvent),
     /// The shell ended. `code` is `None` when it was not available.
     Exit { code: Option<u32> },
+}
+
+/// Shell integration status for the current shell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ShellIntegrationStatus {
+    Available,
+    Disabled,
+    Unsupported,
+    TimedOut,
+}
+
+/// The ordered Shell integration events sent over the Terminal Channel.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum ShellIntegrationEvent {
+    Availability {
+        status: ShellIntegrationStatus,
+    },
+    PromptStart,
+    /// The command line can be unavailable when the shell omits it from history.
+    CommandStart {
+        command_line: Option<String>,
+    },
+    CommandEnd {
+        exit_code: u8,
+    },
 }
 
 /// Where a remote Terminal stands after its Connection dropped.

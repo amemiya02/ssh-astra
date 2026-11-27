@@ -29,6 +29,7 @@ interface PendingPrompt {
 }
 
 interface RemoteTerminalViewProps {
+  paneId: string;
   host: Host;
   /** Whether its tab is shown. A question asked while hidden waits until the tab is shown. */
   active?: boolean;
@@ -49,6 +50,7 @@ interface RemoteTerminalViewProps {
  * password in a dialog) and then shows the remote shell.
  */
 export function RemoteTerminalView({
+  paneId,
   host,
   active = true,
   onTitleChange,
@@ -93,7 +95,8 @@ export function RemoteTerminalView({
         (event) => {
           if (event.type === "cwd") return onCwdRef.current?.(event.path);
           if (event.type === "exit") onTerminalRef.current?.(null);
-          if (event.type !== "connection") return onEvent(event);
+          onEvent(event);
+          if (event.type !== "connection") return;
           const state = event.state;
           setLost(state.state === "connected" ? null : state);
           onStatusChangeRef.current?.(
@@ -126,6 +129,7 @@ export function RemoteTerminalView({
         <ConnectErrorPanel error={error} />
       ) : (
         <TerminalSurface
+          paneId={paneId}
           open={open}
           onOpenError={onOpenError}
           onOpened={() => onStatusChange?.("connected")}

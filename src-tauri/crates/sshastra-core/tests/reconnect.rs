@@ -19,7 +19,9 @@ use sshastra_core::ssh::{
     BoxFuture, ConnectError, ConnectionManager, HeldConnections, HostKeyPrompt, PasswordPrompt,
     Prompter, ReconnectPolicy, RemoteTerminal, RemoteTerminalOptions, Secret,
 };
-use sshastra_core::terminal::{ConnectionState, Terminal, TerminalEvent, TerminalSize};
+use sshastra_core::terminal::{
+    ConnectionState, ShellIntegrationEvent, Terminal, TerminalEvent, TerminalSize,
+};
 use support::{Service, Sshd};
 use tokio::sync::{mpsc, Mutex};
 
@@ -135,7 +137,9 @@ impl Events {
     async fn state(&mut self, within: Duration) -> ConnectionState {
         loop {
             match self.next(within).await {
-                TerminalEvent::Output(_) | TerminalEvent::Cwd(_) => {}
+                TerminalEvent::Output(_)
+                | TerminalEvent::Cwd(_)
+                | TerminalEvent::ShellIntegration(_) => {}
                 TerminalEvent::Connection(state) => return state,
                 exit @ TerminalEvent::Exit { .. } => panic!("the Terminal ended: {exit:?}"),
             }
@@ -146,9 +150,25 @@ impl Events {
     async fn cwd(&mut self, within: Duration) -> String {
         loop {
             match self.next(within).await {
-                TerminalEvent::Output(_) => {}
+                TerminalEvent::Output(_) | TerminalEvent::ShellIntegration(_) => {}
                 TerminalEvent::Cwd(path) => return path,
                 other => panic!("unexpected {other:?} while waiting for a directory report"),
+            }
+        }
+    }
+
+    async fn marker(&mut self) -> ShellIntegrationEvent {
+        let deadline = Instant::now() + EVENT_WAIT;
+        loop {
+            match self
+                .next(deadline.saturating_duration_since(Instant::now()))
+                .await
+            {
+                TerminalEvent::ShellIntegration(ShellIntegrationEvent::Availability { .. })
+                | TerminalEvent::Output(_)
+                | TerminalEvent::Cwd(_) => {}
+                TerminalEvent::ShellIntegration(marker) => return marker,
+                other => panic!("unexpected {other:?} while waiting for a shell marker"),
             }
         }
     }
@@ -169,7 +189,7 @@ impl Events {
             }
             match self.next(deadline - Instant::now()).await {
                 TerminalEvent::Output(bytes) => seen.push_str(&String::from_utf8_lossy(&bytes)),
-                TerminalEvent::Cwd(_) => {}
+                TerminalEvent::Cwd(_) | TerminalEvent::ShellIntegration(_) => {}
                 other => panic!("unexpected {other:?} while waiting for the shell; saw {seen:?}"),
             }
         }
@@ -293,10 +313,23 @@ async fn shell_integration_goes_into_the_new_shell_after_a_reconnect() {
     ));
     assert_eq!(events.state(EVENT_WAIT).await, ConnectionState::Connected);
 
-    // The new shell starts at home and reports it, and follows `cd` again.
+    // The new shell starts at home and resumes directory and command reports.
     assert_eq!(events.cwd(EVENT_WAIT).await, "/home/tester");
-    terminal.write(b"cd /srv/files/docs\r").unwrap();
+    assert_eq!(events.marker().await, ShellIntegrationEvent::PromptStart);
+    let line = "cd /srv/files/docs";
+    terminal.write(format!("{line}\r").as_bytes()).unwrap();
+    assert_eq!(
+        events.marker().await,
+        ShellIntegrationEvent::CommandStart {
+            command_line: Some(line.into())
+        }
+    );
+    assert_eq!(
+        events.marker().await,
+        ShellIntegrationEvent::CommandEnd { exit_code: 0 }
+    );
     assert_eq!(events.cwd(EVENT_WAIT).await, "/srv/files/docs");
+    assert_eq!(events.marker().await, ShellIntegrationEvent::PromptStart);
 }
 
 #[tokio::test(flavor = "multi_thread")]
