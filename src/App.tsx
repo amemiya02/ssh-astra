@@ -25,6 +25,7 @@ import { CommandPalette, type PaletteTab } from "@/features/palette/CommandPalet
 import { usePaletteActions, type PaletteAction } from "@/features/palette/palette-actions";
 import { DiagnosticsPaletteActions } from "@/features/settings/diagnostics-section";
 import { AppShell } from "@/features/shell/AppShell";
+import { SnippetsSidebar } from "@/features/snippets/SnippetsSidebar";
 import { zoomTerminalFont } from "@/features/terminal/terminal-prefs";
 import { useTerminalPrefs } from "@/features/terminal/terminal-prefs-context";
 import { terminalOutputKinds, terminalOutputs } from "@/features/terminal/terminal-outputs";
@@ -415,6 +416,12 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
         sidebar={{
           hosts: <HostsPanel controller={hostsController} connections={connections} />,
           forwards: <ForwardsSidebar onOpenForwards={openForwards} />,
+          snippets: <SnippetsSidebar
+            broadcast={broadcast}
+            paneId={hasFocusedTerminal ? focusedPaneId : undefined}
+            hostId={focusedPane?.kind === "remote-terminal" ? focusedPane.host.id : undefined}
+            hosts={hosts}
+          />,
         }}
         nav={{
           activeKind: focusedPane?.kind ?? null,

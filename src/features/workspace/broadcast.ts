@@ -1,9 +1,14 @@
 import { createContext } from "react";
 import { createStore } from "zustand/vanilla";
+import { terminalPasteInput } from "@/features/terminal/terminal-input";
 
 export type BroadcastScope = "tab" | "window";
 type Mode = { scope: BroadcastScope; tabId: string };
-type Writer = { tabId: string; write(data: string): void };
+type Writer = {
+  tabId: string;
+  write(data: string): void | Promise<void>;
+  bracketedPaste(): boolean;
+};
 
 interface State {
   mode: Mode | null;
@@ -23,6 +28,28 @@ export function createBroadcast() {
 
   const stop = () => store.setState({ mode: null });
 
+  function captureRoute(paneId: string) {
+    const state = store.getState();
+    const { mode, writers } = state;
+    const source = writers.get(paneId);
+    if (activePaneId !== paneId || !source || !openPanes.has(paneId)) return;
+    const peers = isBroadcastRecipient(state, paneId)
+      ? [...writers].filter(([id]) => id !== paneId && openPanes.has(id) && isBroadcastRecipient(state, id))
+      : [];
+    return {
+      source,
+      broadcasts: isBroadcastRecipient(state, paneId),
+      stillFocused: () => activePaneId === paneId && store.getState().writers.get(paneId) === source,
+      livePeers() {
+        const current = store.getState();
+        if (current.mode !== mode) return [];
+        return peers.flatMap(([id, writer]) =>
+          openPanes.has(id) && current.writers.get(id) === writer ? [writer] : [],
+        );
+      },
+    };
+  }
+
   return {
     store,
     stop,
@@ -37,8 +64,8 @@ export function createBroadcast() {
       if (mode?.scope === scope && (scope === "window" || mode.tabId === tabId)) stop();
       else store.setState({ mode: { scope, tabId } });
     },
-    register(tabId: string, paneId: string, write: Writer["write"]) {
-      const writer = { tabId, write };
+    register(tabId: string, paneId: string, write: Writer["write"], bracketedPaste = () => false) {
+      const writer: Writer = { tabId, write, bracketedPaste };
       store.setState(({ writers }) => ({ writers: new Map(writers).set(paneId, writer) }));
       return () => {
         const { writers } = store.getState();
@@ -50,19 +77,30 @@ export function createBroadcast() {
     },
     /** Freeze the audience before a paste can ask for approval. A reconnected shell is a new writer. */
     capture(paneId: string) {
-      const state = store.getState();
-      const { mode, writers } = state;
-      if (activePaneId !== paneId || !isBroadcastRecipient(state, paneId)) return;
-      const source = writers.get(paneId);
-      const peers = [...writers].filter(([id]) => id !== paneId && openPanes.has(id) && isBroadcastRecipient(state, id));
+      const route = captureRoute(paneId);
+      if (!route?.broadcasts) return;
       return {
-        canPaste: () => activePaneId === paneId && store.getState().writers.get(paneId) === source,
+        canPaste: route.stillFocused,
         send(data: string) {
-          const current = store.getState();
-          if (current.mode !== mode || activePaneId !== paneId || current.writers.get(paneId) !== source) return;
-          for (const [id, writer] of peers) {
-            if (openPanes.has(id) && current.writers.get(id) === writer) writer.write(data);
+          if (!route.stillFocused()) return;
+          for (const writer of route.livePeers()) {
+            void Promise.resolve(writer.write(data)).catch(() => undefined);
           }
+        },
+      };
+    },
+    /** Capture the focused shell and Broadcast audience before a Snippet can prompt for variables. */
+    captureInput(paneId: string) {
+      const route = captureRoute(paneId);
+      if (!route) return;
+      return {
+        async send(text: string, enter: boolean) {
+          if (!route.stillFocused()) return false;
+          await Promise.all([route.source, ...route.livePeers()].map(async (writer) => {
+            const data = terminalPasteInput(text, writer.bracketedPaste(), enter);
+            if (data) await writer.write(data);
+          }));
+          return true;
         },
       };
     },
