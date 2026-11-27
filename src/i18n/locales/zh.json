@@ -4,8 +4,10 @@
   },
   "shell": {
     "workspace": "终端",
-    "showSidebar": "显示 Host 列表",
-    "hideSidebar": "隐藏 Host 列表"
+    "navigation": "导航",
+    "sidebar": "侧边栏",
+    "showHosts": "显示 Host 列表",
+    "showForwards": "显示端口转发"
   },
   "hosts": {
     "title": "Hosts",
@@ -129,11 +131,8 @@
       "disconnected": "已断开"
     },
     "settings": "设置",
-    "portForwards": "端口转发"
-  },
-  "workspace": {
-    "emptyTitle": "没有打开的终端",
-    "emptyBody": "从列表中打开一个 Host，或在这台电脑上启动本地终端。"
+    "portForwards": "端口转发",
+    "home": "主页"
   },
   "palette": {
     "title": "命令面板",
@@ -148,11 +147,13 @@
     },
     "actions": {
       "openSettings": "打开设置",
-      "disconnectHost": "断开 {{name}}"
+      "disconnectHost": "断开 {{name}}",
+      "goHome": "前往主页"
     },
     "keywords": {
       "preferences": "偏好设置 preferences",
-      "theme": "主题"
+      "theme": "主题",
+      "hosts": "主页 Host hosts"
     }
   },
   "files": {
@@ -389,13 +390,20 @@
       "dynamic": "SOCKS5"
     },
     "autoStartHint": "每当这个 Host 连接时运行：打开终端、启动其他端口转发或「仅连接」。",
-    "autoStartBadge": "自动"
+    "autoStartBadge": "自动",
+    "sidebar": {
+      "emptyTitle": "还没有 Host 设置端口转发",
+      "emptyBody": "在 Host 列表中打开某个 Host 的菜单，选择“端口转发”并添加规则。有规则的 Host 会列在这里，并显示运行中的数量。",
+      "runningOf": "{{total}} 条中 {{running}} 条运行中"
+    }
   },
   "status": {
     "noConnections": "没有连接",
     "connectedTo": "已连接：{{hosts}}",
     "reconnecting": "正在重新连接 {{host}}（{{attempt}}/{{attempts}}）",
     "forwards": "端口转发：{{list}}",
+    "forwardsCount_one": "{{count}} 个端口转发",
+    "forwardsCount_other": "{{count}} 个端口转发",
     "forwardsLocal": "{{from}} → {{to}}",
     "forwardsRemote": "Host 上 {{from}} → {{to}}",
     "forwardsDynamic": "SOCKS {{from}}",
@@ -615,5 +623,18 @@
     "installFailed": "更新失败：{{reason}}",
     "retry": "重试",
     "dismiss": "关闭"
+  },
+  "rail": {
+    "home": "主页",
+    "hosts": "Host 列表",
+    "forwards": "端口转发"
+  },
+  "home": {
+    "search": "按名称、地址或用户搜索 Host",
+    "recent": "最近使用",
+    "hosts": "Host",
+    "ungrouped": "未分组",
+    "emptyTitle": "还没有 Host",
+    "emptyBody": "添加一个 Host，或导入 ~/.ssh/config 里的 Host。每个 Host 在这里显示为一张卡片，点击即可打开终端。"
   }
 }

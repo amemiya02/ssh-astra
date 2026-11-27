@@ -1,4 +1,4 @@
-import { ArrowRightLeft, Columns2, Plus, Rows2, Settings, SquareTerminal, X } from "lucide-react";
+import { Columns2, House, Plus, Rows2, Settings, SquareTerminal, Waypoints, X } from "lucide-react";
 import {
   DndContext,
   PointerSensor,
@@ -14,9 +14,21 @@ import {
 import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
+import { hostHue, hueClasses } from "@/features/hosts/hostHue";
 import { cn } from "@/lib/utils";
 import { shortcutLabel, type Platform } from "./shortcuts";
-import { activePane, tabId, tabPanelId, tabStatus, tabTitle, type ConnectionStatus, type SplitOrientation, type Tab } from "./tabs";
+import {
+  activePane,
+  canSplit,
+  tabId,
+  tabPanelId,
+  tabStatus,
+  tabTitle,
+  type ConnectionStatus,
+  type PaneKind,
+  type SplitOrientation,
+  type Tab,
+} from "./tabs";
 
 interface TabStripProps {
   tabs: Tab[];
@@ -27,7 +39,6 @@ interface TabStripProps {
   /** Drop the dragged tab `id` at index `to`. */
   onMove(id: string, to: number): void;
   onNewLocalTerminal(): void;
-  onOpenSftp?(): void;
   onSplit(orientation: SplitOrientation): void;
 }
 
@@ -43,10 +54,19 @@ interface DropTarget {
   side: "before" | "after";
 }
 
+const kindIcons = {
+  home: House,
+  "local-terminal": SquareTerminal,
+  "remote-terminal": SquareTerminal,
+  sftp: SquareTerminal,
+  settings: Settings,
+  "port-forwards": Waypoints,
+} satisfies Record<PaneKind["kind"], unknown>;
+
 /**
- * Tabs sit on the chrome; the active one is cut from the Terminal surface below it
- * (same colour, joined edge). Arrow keys move between tabs, Delete and middle-click close,
- * dragging reorders. A Host's tab shows its Connection state as a dot, named in the tooltip.
+ * Compact pill tabs on the window ground; the active one is raised (surface fill, 1px border).
+ * Arrow keys move between tabs, Delete and middle-click close, dragging reorders. A Host's tab
+ * shows its Connection state as a dot, named in the tooltip, and underlines itself in the Host's hue.
  */
 export function TabStrip({
   tabs,
@@ -56,7 +76,6 @@ export function TabStrip({
   onClose,
   onMove,
   onNewLocalTerminal,
-  onOpenSftp,
   onSplit,
 }: TabStripProps) {
   const { t } = useTranslation();
@@ -113,7 +132,7 @@ export function TabStrip({
   };
 
   return (
-    <div className="flex min-w-0 items-end gap-0.5">
+    <div className="flex h-full min-w-0 flex-1 items-center gap-1">
       <DndContext
         sensors={sensors}
         collisionDetection={pointerWithin}
@@ -127,7 +146,7 @@ export function TabStrip({
           ref={listRef}
           role="tablist"
           aria-label={t("tabs.listLabel")}
-          className="flex min-w-0 items-end gap-0.5 overflow-x-auto [scrollbar-width:none]"
+          className="flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]"
           onKeyDown={onKeyDown}
         >
           {tabs.map((tab, index) => {
@@ -137,23 +156,18 @@ export function TabStrip({
             const title = tabTitle(tab, t, ordinal);
             const status = tabStatus(tab);
             const label = status ? `${title} (${t(`tabs.status.${status}`)})` : title;
-            const TabIcon =
-              tab.panes.length > 1
-                ? tab.orientation === "horizontal"
-                  ? Columns2
-                  : Rows2
-                : kind === "settings"
-                  ? Settings
-                  : SquareTerminal;
+            const pane = activePane(tab);
+            const TabIcon = tab.panes.length > 1 ? (tab.orientation === "horizontal" ? Columns2 : Rows2) : kindIcons[kind];
+            const hue = "host" in pane ? hueClasses[hostHue(pane.host.id)].line : null;
             return (
               <DraggableTab
                 key={tab.id}
                 id={tab.id}
                 className={cn(
-                  "group/tab relative flex h-8 max-w-52 min-w-28 shrink-0 items-center rounded-t-lg transition-colors data-dragging:opacity-50",
+                  "group/tab relative flex h-7 max-w-52 min-w-28 shrink-0 items-center rounded-lg border transition-colors data-dragging:opacity-50",
                   active
-                    ? "bg-terminal-background text-foreground z-10 -mb-px h-[calc(2rem+1px)] border border-b-0"
-                    : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                    ? "bg-surface text-foreground border-border"
+                    : "text-muted-foreground hover:bg-accent/60 hover:text-foreground active:bg-accent border-transparent",
                 )}
                 onAuxClick={() => onClose(tab.id)}
               >
@@ -161,7 +175,7 @@ export function TabStrip({
                   <span
                     aria-hidden
                     className={cn(
-                      "bg-ring absolute inset-y-1.5 w-0.5 rounded-full",
+                      "bg-ring absolute inset-y-1 w-0.5 rounded-full",
                       drop.side === "before" ? "-left-0.5" : "-right-0.5",
                     )}
                   />
@@ -176,10 +190,9 @@ export function TabStrip({
                   aria-label={label}
                   tabIndex={active ? 0 : -1}
                   title={label}
-                  className="focus-visible:ring-ring/50 flex h-full min-w-0 flex-1 items-center gap-2 rounded-t-lg pr-1 pl-3 outline-none focus-visible:ring-[3px]"
+                  className="focus-visible:ring-ring/50 flex h-full min-w-0 flex-1 items-center gap-2 rounded-lg pr-1 pl-2.5 outline-none focus-visible:ring-[3px]"
                   onClick={() => onActivate(tab.id)}
                 >
-                  {kind === "sftp" && <ArrowRightLeft className="size-3.5 shrink-0 opacity-70" aria-hidden />}
                   {status ? (
                     <span className="grid size-3.5 shrink-0 place-items-center" aria-hidden>
                       <span
@@ -192,12 +205,18 @@ export function TabStrip({
                   )}
                   <span className="truncate">{title}</span>
                 </button>
+                {hue && (
+                  <span
+                    aria-hidden
+                    className={cn("pointer-events-none absolute inset-x-2.5 -bottom-px h-0.5 rounded-full", hue, !active && "opacity-40")}
+                  />
+                )}
                 <button
                   type="button"
                   tabIndex={-1}
                   aria-label={t("tabs.close", { title })}
                   className={cn(
-                    "text-muted-foreground hover:bg-accent hover:text-foreground mr-1.5 grid size-5 shrink-0 place-items-center rounded-md",
+                    "text-muted-foreground hover:bg-accent hover:text-foreground active:bg-accent/70 focus-visible:ring-ring/50 mr-1 grid size-5 shrink-0 place-items-center rounded-md outline-none focus-visible:opacity-100 focus-visible:ring-2",
                     !active && "opacity-0 group-hover/tab:opacity-100",
                   )}
                   onClick={() => onClose(tab.id)}
@@ -212,22 +231,16 @@ export function TabStrip({
       <IconButton
         label={t("tabs.newLocalTerminal")}
         shortcut={shortcutLabel("newTab", platform)}
-        className="mb-1.5"
         onClick={onNewLocalTerminal}
       >
         <Plus />
       </IconButton>
-      {onOpenSftp && (
-        <IconButton label={t("sftp.open")} className="mb-1.5" onClick={onOpenSftp}>
-          <ArrowRightLeft />
-        </IconButton>
-      )}
-      {selected && activePane(selected).kind !== "sftp" && (
+      <div data-tauri-drag-region className="h-full min-w-4 flex-1" />
+      {selected && canSplit(activePane(selected)) && (
         <>
           <IconButton
             label={t("tabs.splitRight")}
             shortcut={shortcutLabel("splitRight", platform)}
-            className="mb-1.5"
             onClick={() => onSplit("horizontal")}
           >
             <Columns2 />
@@ -235,7 +248,6 @@ export function TabStrip({
           <IconButton
             label={t("tabs.splitDown")}
             shortcut={shortcutLabel("splitDown", platform)}
-            className="mb-1.5"
             onClick={() => onSplit("vertical")}
           >
             <Rows2 />

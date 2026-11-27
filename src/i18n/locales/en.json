@@ -4,8 +4,10 @@
   },
   "shell": {
     "workspace": "Terminals",
-    "showSidebar": "Show Host list",
-    "hideSidebar": "Hide Host list"
+    "navigation": "Navigation",
+    "sidebar": "Sidebar",
+    "showHosts": "Show Hosts",
+    "showForwards": "Show Port forwards"
   },
   "hosts": {
     "title": "Hosts",
@@ -129,11 +131,8 @@
       "disconnected": "Disconnected"
     },
     "settings": "Settings",
-    "portForwards": "Port forwards"
-  },
-  "workspace": {
-    "emptyTitle": "No open Terminals",
-    "emptyBody": "Open a Host from the list, or start a Local terminal on this computer."
+    "portForwards": "Port forwards",
+    "home": "Home"
   },
   "palette": {
     "title": "Command palette",
@@ -148,11 +147,13 @@
     },
     "actions": {
       "openSettings": "Open Settings",
-      "disconnectHost": "Disconnect {{name}}"
+      "disconnectHost": "Disconnect {{name}}",
+      "goHome": "Go to Home"
     },
     "keywords": {
       "preferences": "preferences",
-      "theme": "theme"
+      "theme": "theme",
+      "hosts": "hosts vault start"
     }
   },
   "files": {
@@ -389,13 +390,20 @@
       "dynamic": "SOCKS5"
     },
     "autoStartHint": "Runs whenever this Host connects: opening a Terminal, starting another Port forward, or Connect only.",
-    "autoStartBadge": "Auto"
+    "autoStartBadge": "Auto",
+    "sidebar": {
+      "emptyTitle": "No Host has Port forwards",
+      "emptyBody": "Open a Host's menu in the Host list, choose Port forwards, and add a rule. Hosts with rules are listed here with how many are running.",
+      "runningOf": "{{running}} of {{total}} running"
+    }
   },
   "status": {
     "noConnections": "No Connections",
     "connectedTo": "Connected to {{hosts}}",
     "reconnecting": "Reconnecting to {{host}} ({{attempt}}/{{attempts}})",
     "forwards": "Port forwards: {{list}}",
+    "forwardsCount_one": "{{count}} Port forward",
+    "forwardsCount_other": "{{count}} Port forwards",
     "forwardsLocal": "{{from}} → {{to}}",
     "forwardsRemote": "on the Host {{from}} → {{to}}",
     "forwardsDynamic": "SOCKS {{from}}",
@@ -615,5 +623,18 @@
     "installFailed": "The update failed: {{reason}}",
     "retry": "Try again",
     "dismiss": "Dismiss"
+  },
+  "rail": {
+    "home": "Home",
+    "hosts": "Hosts",
+    "forwards": "Port forwards"
+  },
+  "home": {
+    "search": "Search Hosts by name, address or user",
+    "recent": "Recent",
+    "hosts": "Hosts",
+    "ungrouped": "Ungrouped",
+    "emptyTitle": "No Hosts yet",
+    "emptyBody": "Add a Host, or import the ones in ~/.ssh/config. Each one appears here as a card; click it to open a Terminal."
   }
 }
