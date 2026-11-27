@@ -60,45 +60,44 @@ pub fn parse_putty(bytes: &[u8], local_user: &str) -> ParsedConfig {
     let mut i = 0;
     while i < pending.len() {
         let session = pending[i].1;
-        let route =
-            match session.proxy_method() {
-                Ok(SSH_PORT_FORWARDING_PROXY) => session
-                    .jump(local_user, defaults, &aliases)
-                    .and_then(|jump| {
-                        let (source, mut hop, settings) = match jump {
-                            Jump::Saved(index, user) => {
-                                let (hop, settings) = &pending[index];
-                                let Some(user) = user.filter(|user| {
-                                    user != &hop.user && !settings.has_inline_user()
-                                }) else {
-                                    return Ok(Some(index));
-                                };
-                                let mut hop = hop.clone();
-                                hop.user = user;
-                                (Some(index), hop, *settings)
-                            }
-                            Jump::Direct(hop, settings) => (None, hop, settings),
-                        };
-                        let key = (source, hop.address.clone(), hop.port, hop.user.clone());
-                        let next = *generated.entry(key).or_insert_with(|| {
-                            let address = if hop.address.contains(':') {
-                                format!("[{}]", hop.address)
-                            } else {
-                                hop.address.clone()
+        let route = match session.proxy_method() {
+            Ok(SSH_PORT_FORWARDING_PROXY) => {
+                session.jump(local_user, defaults, &aliases).map(|jump| {
+                    let (source, mut hop, settings) = match jump {
+                        Jump::Saved(index, user) => {
+                            let (hop, settings) = &pending[index];
+                            let Some(user) = user
+                                .filter(|user| user != &hop.user && !settings.has_inline_user())
+                            else {
+                                return Some(index);
                             };
-                            let base = format!("{}@{}:{}", hop.user, address, hop.port);
-                            hop.name = unique_name(base, &mut host_names);
-                            hop.forward_agent = false;
-                            let index = pending.len();
-                            pending.push((hop, settings));
-                            index
-                        });
-                        Ok(Some(next))
-                    }),
-                // Invalid and unsupported proxy methods are already reported as
-                // omitted settings. Only the wire-level SSH forwarding is linked.
-                _ => Ok(None),
-            };
+                            let mut hop = hop.clone();
+                            hop.user = user;
+                            (Some(index), hop, *settings)
+                        }
+                        Jump::Direct(hop, settings) => (None, hop, settings),
+                    };
+                    let key = (source, hop.address.clone(), hop.port, hop.user.clone());
+                    let next = *generated.entry(key).or_insert_with(|| {
+                        let address = if hop.address.contains(':') {
+                            format!("[{}]", hop.address)
+                        } else {
+                            hop.address.clone()
+                        };
+                        let base = format!("{}@{}:{}", hop.user, address, hop.port);
+                        hop.name = unique_name(base, &mut host_names);
+                        hop.forward_agent = false;
+                        let index = pending.len();
+                        pending.push((hop, settings));
+                        index
+                    });
+                    Some(next)
+                })
+            }
+            // Invalid and unsupported proxy methods are already reported as
+            // omitted settings. Only the wire-level SSH forwarding is linked.
+            _ => Ok(None),
+        };
         links.push(route);
         i += 1;
     }
