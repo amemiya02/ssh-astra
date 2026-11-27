@@ -41,11 +41,16 @@ pub type OpenRemote =
 pub struct TransferSettings {
     /// How many transfers run at once.
     pub concurrency: u32,
+    /// Prevent automatic system sleep while transfers are running.
+    pub prevent_sleep: bool,
 }
 
 impl Default for TransferSettings {
     fn default() -> Self {
-        Self { concurrency: 3 }
+        Self {
+            concurrency: 3,
+            prevent_sleep: true,
+        }
     }
 }
 
