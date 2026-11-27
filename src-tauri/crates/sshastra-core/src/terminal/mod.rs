@@ -98,7 +98,11 @@ pub enum ShellIntegrationEvent {
 
 /// Where a remote Terminal stands after its Connection dropped.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "state", rename_all = "camelCase")]
+#[serde(
+    tag = "state",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum ConnectionState {
     /// Back, running a new shell (the old one's processes are gone).
     Connected,
@@ -106,7 +110,11 @@ pub enum ConnectionState {
     Reconnecting { attempt: u32, attempts: u32 },
     /// Disconnected, and no more automatic tries: only
     /// [`Terminal::reconnect`] tries again. `reason` is the last failure.
-    Disconnected { reason: String },
+    Disconnected {
+        reason: String,
+        /// True once per lost Connection when the transport itself fails to reconnect.
+        report_reconnect_failure: bool,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]

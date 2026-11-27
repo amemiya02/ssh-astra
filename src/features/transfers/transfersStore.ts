@@ -1,3 +1,4 @@
+import { notifySystem } from "@/features/notifications/system-notifications";
 import { showToast } from "@/features/toasts/toastStore";
 import { createSnapshotWatch } from "@/lib/ipc/watchSnapshot";
 import { useStore } from "zustand";
@@ -45,6 +46,17 @@ export interface TransfersState {
 /** How much a new speed sample moves the shown speed (the rest is the earlier speed). */
 const smoothing = 0.4;
 
+interface TransferBatchSummary {
+  completed: number;
+  failed: number;
+  cancelled: number;
+}
+
+interface TransferBatch {
+  remaining: number;
+  summary: TransferBatchSummary;
+}
+
 export function isFinished(t: Transfer): boolean {
   return t.state.type === "done" || t.state.type === "failed" || t.state.type === "cancelled";
 }
@@ -54,11 +66,49 @@ export function createTransfersStore(
   api: TransfersApi,
   now: () => number = () => performance.now(),
   onHiddenFinish?: (transfer: Transfer) => void,
+  onBatchFinish?: (summary: TransferBatchSummary) => void,
 ): StoreApi<TransfersState> {
   /** The latest progress seen of each transfer, to measure its speed. */
   const samples = new Map<TransferId, { at: number; bytes: number }>();
   const visiblePanels = new Set<symbol>();
   return createStore<TransfersState>()((set, get) => {
+    const pendingBatches = new Map<TransferId, TransferBatch>();
+    const dismissedDuringEnqueue = new Map<TransferId, Transfer>();
+    let enqueuing = 0;
+
+    const settleBatchMember = (transfer: Transfer) => {
+      const batch = pendingBatches.get(transfer.id);
+      if (!batch || !isFinished(transfer)) return;
+
+      pendingBatches.delete(transfer.id);
+      const { type } = transfer.state;
+      if (type === "done") batch.summary.completed++;
+      else if (type === "failed") batch.summary.failed++;
+      else batch.summary.cancelled++;
+      if (--batch.remaining === 0) onBatchFinish?.(batch.summary);
+    };
+
+    const enqueue = async (start: () => Promise<TransferId[]>) => {
+      if (!onBatchFinish) {
+        await start();
+        return;
+      }
+      enqueuing++;
+      try {
+        const ids = await start();
+        const batch: TransferBatch = { remaining: ids.length, summary: { completed: 0, failed: 0, cancelled: 0 } };
+        for (const id of ids) pendingBatches.set(id, batch);
+        // A short transfer can settle before the enqueue command returns its IDs.
+        for (const transfer of get().transfers) settleBatchMember(transfer);
+        for (const id of ids) {
+          const dismissed = dismissedDuringEnqueue.get(id);
+          if (dismissed) settleBatchMember(dismissed);
+        }
+      } finally {
+        if (--enqueuing === 0) dismissedDuringEnqueue.clear();
+      }
+    };
+
     const apply = (transfer: Transfer) => {
       const { transfers, speeds } = get();
       const index = transfers.findIndex((t) => t.id === transfer.id);
@@ -85,6 +135,7 @@ export function createTransfersStore(
       if (!visiblePanels.size && (type === "done" || type === "failed") && transfers[index]?.state.type !== type) {
         onHiddenFinish?.(transfer);
       }
+      settleBatchMember(transfer);
     };
 
     return {
@@ -100,6 +151,7 @@ export function createTransfersStore(
             if (t.state.type === "running") samples.set(t.id, { at, bytes: t.bytesDone });
           }
           set({ transfers: [...snapshot].sort((a, b) => a.id - b.id), speeds: {} });
+          for (const transfer of snapshot) settleBatchMember(transfer);
         },
         apply,
       ),
@@ -110,16 +162,16 @@ export function createTransfersStore(
         return () => { visiblePanels.delete(panel); };
       },
 
-      async upload(hostId, paths, remoteDir) {
-        await api.uploadFiles(hostId, paths, remoteDir);
+      upload(hostId, paths, remoteDir) {
+        return enqueue(() => api.uploadFiles(hostId, paths, remoteDir));
       },
 
-      async download(hostId, paths, localDir) {
-        await api.downloadFiles(hostId, paths, localDir);
+      download(hostId, paths, localDir) {
+        return enqueue(() => api.downloadFiles(hostId, paths, localDir));
       },
 
-      async copyRemote(source, paths, target, remoteDir) {
-        await api.copyRemoteFiles(source, paths, target, remoteDir);
+      copyRemote(source, paths, target, remoteDir) {
+        return enqueue(() => api.copyRemoteFiles(source, paths, target, remoteDir));
       },
 
       cancel: (id) => api.cancelTransfer(id),
@@ -129,9 +181,15 @@ export function createTransfersStore(
       answer: (id, answer) => api.answerConflict(id, answer),
 
       async dismiss(ids) {
-        const finished = new Set(get().transfers.filter((t) => ids.includes(t.id) && isFinished(t)).map((t) => t.id));
-        if (finished.size === 0) return;
-        set({ transfers: get().transfers.filter((t) => !finished.has(t.id)) });
+        const { transfers } = get();
+        const finished = new Set<TransferId>();
+        for (const transfer of transfers) {
+          if (!ids.includes(transfer.id) || !isFinished(transfer)) continue;
+          finished.add(transfer.id);
+          if (enqueuing > 0) dismissedDuringEnqueue.set(transfer.id, transfer);
+        }
+        if (!finished.size) return;
+        set({ transfers: transfers.filter((t) => !finished.has(t.id)) });
         await api.removeTransfers([...finished]);
       },
     };
@@ -180,6 +238,11 @@ export function transferSummary(
 export const transfersStore = createTransfersStore(ipc, undefined, ({ name, state }) => {
   if (state.type === "done") showToast((t) => t("toast.transferDone", { name }));
   if (state.type === "failed") showToast((t) => t("toast.transferFailed", { name, reason: state.message }), "error");
+}, (summary) => {
+  notifySystem({ category: "transfers" }, (t) => ({
+    title: t("notifications.transfers.title"),
+    body: t("notifications.transfers.body", { ...summary }),
+  }));
 });
 
 export function useTransfers<T>(selector: (state: TransfersState) => T): T {

@@ -1,6 +1,7 @@
 import type { Terminal as XTerm } from "@xterm/xterm";
 import { useCallback, useContext, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { notifySystem } from "@/features/notifications/system-notifications";
 import { BroadcastPaneContext } from "@/features/workspace/broadcast";
 import { TabActivityContext } from "@/features/workspace/tab-activity";
 import { e2eHooks } from "@/lib/e2e";
@@ -14,6 +15,7 @@ import {
 } from "@/lib/ipc/terminal";
 import { XtermView } from "./XtermView";
 import { shellIntegration, useShellIntegration } from "./shellIntegration";
+import { watchTerminalNotifications } from "./terminal-notifications";
 
 export type OpenTerminal = (
   size: TerminalSize,
@@ -79,6 +81,12 @@ export function TerminalSurface({
   const attach = useCallback((xterm: XTerm) => {
     let id: TerminalId | undefined;
     const lifetime = new AbortController();
+    const stopNotifications = watchTerminalNotifications(xterm, (body) => {
+      notifySystem({ category: "terminal", terminal: lifetime.signal }, (t) => ({
+        title: t("notifications.terminal.title"),
+        body,
+      }));
+    });
     let exited = false;
     let connected = true;
     let unregisterWriter: (() => void) | undefined;
@@ -173,6 +181,7 @@ export function TerminalSurface({
 
     return () => {
       lifetime.abort();
+      stopNotifications();
       removeWriter();
       onData.dispose();
       onResize.dispose();

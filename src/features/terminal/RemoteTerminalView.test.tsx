@@ -16,6 +16,7 @@ vi.mock("@tauri-apps/api/core", () => ({
     constructor(public onmessage: (message: T) => void) {}
   },
   invoke: vi.fn(async (command: string) => command === "remote_terminal_open" ? 7 : undefined),
+  isTauri: () => true,
 }));
 
 const host: Host = {
@@ -36,6 +37,7 @@ beforeAll(() => {
 });
 
 it("shows progress for each hop and keeps the failed attempt visible until Reconnect", async () => {
+  const focus = vi.spyOn(document, "hasFocus").mockReturnValue(false);
   const container = document.createElement("div");
   const root = createRoot(container);
   const terminal = new Terminal();
@@ -78,9 +80,13 @@ it("shows progress for each hop and keeps the failed attempt visible until Recon
     expect(reconnectButton()).toBeUndefined();
 
     progress({ ...jump, status: "failed" });
-    connection({ state: "disconnected", reason: "Bastion is unreachable" });
+    connection({ state: "disconnected", reason: "Bastion is unreachable", reportReconnectFailure: true });
     expect(jumpSteps()).toContain("Reach serverFailed");
     expect(container.textContent).toContain("Bastion is unreachable");
+    expect(invoke).toHaveBeenCalledWith("notification_show", {
+      title: "Connection lost",
+      body: "Could not reconnect to Production.",
+    });
     act(() => reconnectButton()!.click());
     expect(invoke).toHaveBeenCalledWith("terminal_reconnect", { id: 7 });
 
@@ -89,6 +95,7 @@ it("shows progress for each hop and keeps the failed attempt visible until Recon
     connection({ state: "connected" });
     expect(container.textContent).not.toContain("Disconnected");
   } finally {
+    focus.mockRestore();
     act(() => {
       detach?.();
       terminal.dispose();

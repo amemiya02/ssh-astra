@@ -26,7 +26,7 @@ const transfer = (id: number, patch: Partial<Transfer> = {}): Transfer => ({
   ...patch,
 });
 
-function setup(initial: Transfer[] = []) {
+function setup(initial: Transfer[] = [], onBatchFinish?: Parameters<typeof createTransfersStore>[3]) {
   let push: (t: Transfer) => void = () => {};
   const api: TransfersApi = {
     watchTransfers: vi.fn((onEvent: (t: Transfer) => void) => {
@@ -44,7 +44,7 @@ function setup(initial: Transfer[] = []) {
     removeTransfers: vi.fn(() => Promise.resolve()),
   };
   let clock = 0;
-  const store = createTransfersStore(api, () => clock);
+  const store = createTransfersStore(api, () => clock, undefined, onBatchFinish);
   return {
     api,
     store,
@@ -56,6 +56,36 @@ function setup(initial: Transfer[] = []) {
 }
 
 describe("transfers store", () => {
+  it("reports a batch once all paths in its request settle, independently of other batches", async () => {
+    const finished = vi.fn();
+    const { store, api, push } = setup([transfer(20, { state: { type: "done" } })], finished);
+    let acceptUpload: (ids: number[]) => void = () => {};
+    vi.mocked(api.uploadFiles).mockReturnValueOnce(new Promise((resolve) => { acceptUpload = resolve; }));
+    vi.mocked(api.downloadFiles).mockResolvedValueOnce([3]);
+    await store.getState().watch();
+    const hidePanel = store.getState().trackVisiblePanel();
+    const upload = store.getState().upload("h1", ["/a", "/b"], "/srv");
+    await store.getState().download("h1", ["/srv/c"], "/dl");
+    push(transfer(1, { state: { type: "done" } }));
+    await store.getState().dismiss([1]);
+    push(transfer(2));
+    acceptUpload([1, 2]);
+    await upload;
+    expect(finished).not.toHaveBeenCalled();
+
+    const failed = transfer(2, { state: { type: "failed", message: "Connection lost" } });
+    push(failed);
+    push(failed);
+    expect(finished.mock.calls).toEqual([[{ completed: 1, failed: 1, cancelled: 0 }]]);
+
+    push(transfer(3, { state: { type: "cancelled" } }));
+    expect(finished.mock.calls).toEqual([
+      [{ completed: 1, failed: 1, cancelled: 0 }],
+      [{ completed: 0, failed: 0, cancelled: 1 }],
+    ]);
+    hidePanel();
+  });
+
   it("starts from the backend's list and follows its changes, oldest first", async () => {
     const { store, push } = setup([transfer(2)]);
     await store.getState().watch();

@@ -1,6 +1,6 @@
 //! A remote Terminal: an interactive shell channel with a PTY.
 
-use std::sync::Arc;
+use std::sync::{atomic::AtomicBool, Arc};
 
 use russh::client::Msg;
 use russh::{Channel, ChannelMsg};
@@ -33,6 +33,7 @@ pub(super) enum ShellEvent {
 /// lives in the same TerminalRegistry as Local terminals.
 pub struct RemoteShell {
     commands: mpsc::UnboundedSender<Command>,
+    pub(super) reconnect_failure_reported: Arc<AtomicBool>,
 }
 
 pub(super) async fn start<F>(
@@ -83,6 +84,7 @@ where
     });
 
     let (commands, mut rx) = mpsc::unbounded_channel();
+    let reconnect_failure_reported = Arc::clone(&connection.reconnect_failure_reported);
     tokio::spawn(async move {
         // Holding the Connection keeps it open as long as this shell is.
         let _connection = connection;
@@ -111,7 +113,10 @@ where
         }
     });
 
-    Ok(RemoteShell { commands })
+    Ok(RemoteShell {
+        commands,
+        reconnect_failure_reported,
+    })
 }
 
 impl RemoteShell {
