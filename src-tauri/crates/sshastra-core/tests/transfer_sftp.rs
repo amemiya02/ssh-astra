@@ -8,7 +8,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use sshastra_core::files::{DiskFs, OpenRemote, RemoteFs, Transfer, TransferQueue, TransferState};
+use sshastra_core::files::{
+    DiskFs, OpenRemote, RemoteFs, RemoteTransfer, Transfer, TransferHost, TransferQueue,
+    TransferState,
+};
 use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::ssh::{
@@ -254,7 +257,15 @@ async fn reconnect_automatically_resumes_an_upload_from_its_partial() {
             })
         })
     };
-    queue.upload_to(host.id.clone(), open, source, remote_dir.clone());
+    let target = RemoteTransfer {
+        host: TransferHost {
+            id: host.id.clone(),
+            name: host.name.clone(),
+            temporary: false,
+        },
+        open,
+    };
+    queue.upload_to(target, source, remote_dir.clone());
     tokio::time::timeout(Duration::from_secs(10), written)
         .await
         .unwrap()

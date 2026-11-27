@@ -13,9 +13,10 @@ use sshastra_core::files::{
     ConflictAnswer, DiskFs, RemoteTransfer, Transfer, TransferHost, TransferId, TransferQueue,
     TransferSettings,
 };
-use sshastra_core::hosts::HostId;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, State};
+
+use crate::error::CommandResult;
 
 use super::files::live_sftp;
 
@@ -60,46 +61,45 @@ pub fn transfers_watch(
 }
 
 /// Queues uploading each local file or folder in `paths` into the remote
-/// directory `remote_dir` on Host `host_id`.
+/// directory `remote_dir` on `host`.
 #[tauri::command]
 pub async fn transfers_upload(
     app: AppHandle,
     transfers: State<'_, TransfersState>,
-    host_id: HostId,
+    host: TransferHost,
     paths: Vec<PathBuf>,
     remote_dir: String,
 ) -> Result<Vec<TransferId>, ()> {
-    let open = live_sftp(app, host_id.clone());
+    let open = live_sftp(app, host.id.clone());
+    let target = RemoteTransfer { host, open };
     Ok(paths
         .into_iter()
         .map(|path| {
             transfers
                 .queue
-                .upload_to(host_id.clone(), Arc::clone(&open), path, remote_dir.clone())
+                .upload_to(target.clone(), path, remote_dir.clone())
         })
         .collect())
 }
 
 /// Queues downloading each remote file or folder in `paths` (absolute) on
-/// Host `host_id` into the local directory `local_dir`.
+/// `host` into the local directory `local_dir`.
 #[tauri::command]
 pub async fn transfers_download(
     app: AppHandle,
     transfers: State<'_, TransfersState>,
-    host_id: HostId,
+    host: TransferHost,
     paths: Vec<String>,
     local_dir: PathBuf,
 ) -> Result<Vec<TransferId>, ()> {
-    let open = live_sftp(app, host_id.clone());
+    let open = live_sftp(app, host.id.clone());
+    let source = RemoteTransfer { host, open };
     Ok(paths
         .into_iter()
         .map(|path| {
-            transfers.queue.download_from(
-                host_id.clone(),
-                Arc::clone(&open),
-                path,
-                local_dir.clone(),
-            )
+            transfers
+                .queue
+                .download_from(source.clone(), path, local_dir.clone())
         })
         .collect())
 }
@@ -166,4 +166,23 @@ pub fn transfer_answer(
 #[tauri::command]
 pub fn transfers_remove(transfers: State<'_, TransfersState>, ids: Vec<TransferId>) {
     transfers.queue.remove(&ids);
+}
+
+/// Reveals a completed download through the native file manager.
+#[tauri::command]
+pub async fn transfer_reveal_download(
+    transfers: State<'_, TransfersState>,
+    id: TransferId,
+) -> CommandResult<()> {
+    let path = transfers.queue.completed_download_path(id).ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "the completed download is unavailable",
+        )
+    })?;
+    tauri::async_runtime::spawn_blocking(move || tauri_plugin_opener::reveal_item_in_dir(path))
+        .await
+        .map_err(std::io::Error::other)?
+        .map_err(std::io::Error::other)?;
+    Ok(())
 }

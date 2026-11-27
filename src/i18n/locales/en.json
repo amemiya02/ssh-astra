@@ -410,13 +410,31 @@
   },
   "transfers": {
     "title": "Transfers",
+    "open": "Open Transfers",
+    "filter": "Filter transfers",
+    "filters": {
+      "all": "All",
+      "inProgress": "In progress",
+      "failed": "Failed",
+      "completed": "Completed"
+    },
+    "empty": {
+      "all": "No transfers.",
+      "inProgress": "No unfinished transfers.",
+      "failed": "No failed transfers.",
+      "completed": "No completed transfers."
+    },
+    "unknownHost": "Unknown Host",
+    "reveal": "Show in file manager",
+    "revealFailed": "Could not show {{name}} in the file manager.",
+    "clearFailed": "Could not clear completed transfers.",
     "expand": "Show transfers",
     "collapse": "Hide transfers",
     "active": "Active {{count}}",
     "done": "Done {{count}}",
     "noneActive": "Nothing in progress.",
     "noneDone": "No finished transfers.",
-    "clearDone": "Clear finished",
+    "clearDone": "Clear completed",
     "retry": "Retry",
     "pause": "Pause",
     "resume": "Resume",

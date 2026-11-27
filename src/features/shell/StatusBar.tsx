@@ -43,16 +43,21 @@ const emptyStatus: StatusInfo = {
 export function StatusBar({
   info = emptyStatus,
   onShowForwards,
+  onOpenTransfers,
   onOpenSettings,
 }: {
   info?: StatusInfo;
   /** Shows the sidebar's Port forwards view. */
   onShowForwards(): void;
+  onOpenTransfers(): void;
   onOpenSettings(): void;
 }) {
   const { t } = useTranslation();
   const [privacyMode] = useSetting(privacyModeSetting);
   const { connected, reconnecting, forwards, transfers, activeRemote, saveTemporaryHost, broadcast } = info;
+  const transferStatus = transfers.bytesPerSecond > 0
+    ? t("status.transfersSpeed", { count: transfers.count, speed: formatSize(Math.round(transfers.bytesPerSecond)) })
+    : transfers.count > 0 ? t("status.transfers", { count: transfers.count }) : undefined;
   const activeRemoteLabel = activeRemote && (privacyMode ? workspaceHostName(activeRemote, t, true) : quickConnectLabel(activeRemote));
   const broadcastStatus = broadcast?.tabTitle
     ? t("broadcast.namedTabStatus", { title: broadcast.tabTitle })
@@ -100,21 +105,18 @@ export function StatusBar({
             <span className="tabular-nums">{t("status.forwardsCount", { count: forwards.length })}</span>
           </Segment>
         )}
-        {transfers.count > 0 && (
-          <Segment>
-            <ArrowDownUp className="size-3" aria-hidden />
-            <span className="tabular-nums">
-              {transfers.bytesPerSecond > 0
-                ? t("status.transfersSpeed", {
-                    count: transfers.count,
-                    speed: formatSize(Math.round(transfers.bytesPerSecond)),
-                  })
-                : t("status.transfers", { count: transfers.count })}
-            </span>
-          </Segment>
-        )}
         <UpdateNotice />
       </div>
+      <Segment
+        as="button"
+        title={t("transfers.open")}
+        label={t("transfers.open")}
+        description={transferStatus}
+        onClick={onOpenTransfers}
+      >
+        <ArrowDownUp className="size-3 shrink-0" aria-hidden />
+        <span className="truncate tabular-nums">{transferStatus ?? t("transfers.title")}</span>
+      </Segment>
       <div className="flex shrink-0 items-center gap-0.5 pr-1.5">
         {activeRemoteLabel && (
           <span className={cn("mr-1 truncate", !privacyMode && "font-mono")} title={activeRemoteLabel}>

@@ -19,6 +19,7 @@ export type PaneKind =
   | { kind: "remote-terminal"; host: Host; initialCwd?: string }
   | { kind: "sftp"; host: Host }
   | { kind: "settings" }
+  | { kind: "transfers" }
   /** A Host's Port forward rules; the panel reads the live Host by `host.id`. */
   | { kind: "port-forwards"; host: Host };
 
@@ -29,9 +30,9 @@ export type PaneKind =
 function singletonKey(pane: PaneKind): string | undefined {
   switch (pane.kind) {
     case "home":
-      return "home";
     case "settings":
-      return "settings";
+    case "transfers":
+      return pane.kind;
     case "sftp":
       return `sftp:${pane.host.id}`;
     case "port-forwards":
@@ -128,7 +129,8 @@ export function startupTabs(): TabsState {
 export function canSplit(tab: Tab, paneId = tab.activePaneId): boolean {
   const panes = tabPanes(tab);
   const pane = panes.find((candidate) => candidate.id === paneId);
-  return panes.length < maxPanesPerTab && pane !== undefined && pane.kind !== "sftp" && pane.kind !== "home";
+  return panes.length < maxPanesPerTab && pane !== undefined &&
+    pane.kind !== "sftp" && pane.kind !== "home" && pane.kind !== "transfers";
 }
 
 /** DOM ids linking a tab to its panel (aria-controls / aria-labelledby). */
@@ -219,7 +221,10 @@ export function remoteTerminalPaneIds(state: TabsState): string[] {
  */
 export function tabTitle(
   tab: Tab,
-  t: (key: "tabs.home" | "tabs.localTerminal" | "tabs.settings" | "tabs.portForwards" | "tabs.sftp" | "quickConnect.temporaryHost") => string,
+  t: (key:
+    | "tabs.home" | "tabs.localTerminal" | "tabs.settings" | "tabs.portForwards" | "tabs.sftp"
+    | "quickConnect.temporaryHost" | "transfers.title"
+  ) => string,
   ordinal: number,
   titleSource: TerminalTitleSource = "shell",
   privacyMode = false,
@@ -242,6 +247,8 @@ export function tabTitle(
       return `${t("tabs.sftp")} · ${workspaceHostName(pane.host, t, privacyMode)}`;
     case "settings":
       return t("tabs.settings");
+    case "transfers":
+      return t("transfers.title");
     case "port-forwards":
       return `${t("tabs.portForwards")} · ${pane.host.name}`;
   }
@@ -308,7 +315,7 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
     }
     case "split": {
       const tab = action.paneId === undefined ? activeTab(state) : tabOfPane(state, action.paneId);
-      if (!tab || !canSplit(tab, action.paneId) || tabOfPane(state, action.pane.id)) return state;
+      if (!tab || !canSplit(tab, action.paneId) || tabOfPane(state, action.pane.id) || action.pane.kind === "transfers") return state;
       const layout = replaceLeaf(tab.layout, action.paneId ?? tab.activePaneId, (pane) => ({
         type: "split",
         orientation: action.orientation,

@@ -7,7 +7,7 @@ import type { RestoreTabs } from "./workspace-prefs";
 type HostedPaneKind = Extract<Pane, { host: unknown }>["kind"];
 
 export type SavedPane = { id: string } & (
-  | { kind: "home" | "settings" }
+  | { kind: "home" | "settings" | "transfers" }
   | { kind: "local-terminal"; cwd?: string }
   | { kind: HostedPaneKind; hostId: string }
 );
@@ -53,12 +53,17 @@ export const workspaceLayoutSetting = defineSection<WorkspaceLayout>("workspace"
   const tabs: WorkspaceLayout["tabs"] = [];
   const tabIds = new Set<string>();
   const paneIds = new Set<string>();
+  let transfersSeen = false;
   for (const tab of raw.tabs) {
     if (!isRecord(tab) || !isId(tab.id) || tabIds.has(tab.id)) continue;
     let remaining = maxPanesPerTab;
     const readPane = (raw: unknown) => {
       const pane = parsePane(raw);
       if (!pane || remaining === 0 || paneIds.has(pane.id)) return undefined;
+      if (pane.kind === "transfers") {
+        if (transfersSeen) return undefined;
+        transfersSeen = true;
+      }
       remaining--;
       paneIds.add(pane.id);
       return { type: "pane" as const, pane };
@@ -87,6 +92,7 @@ function parsePane(raw: unknown): SavedPane | undefined {
   switch (kind) {
     case "home":
     case "settings":
+    case "transfers":
       return { id, kind };
     case "local-terminal": {
       const { cwd } = raw;

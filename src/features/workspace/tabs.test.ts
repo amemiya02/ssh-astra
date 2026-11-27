@@ -561,7 +561,7 @@ describe("reconnectingHosts", () => {
 });
 
 describe("tabTitle", () => {
-  const names = { "tabs.home": "Home", "tabs.localTerminal": "Local terminal", "tabs.settings": "Settings", "tabs.portForwards": "Port forwards", "tabs.sftp": "SFTP", "quickConnect.temporaryHost": "Temporary Host" };
+  const names = { "tabs.home": "Home", "tabs.localTerminal": "Local terminal", "tabs.settings": "Settings", "tabs.portForwards": "Port forwards", "tabs.sftp": "SFTP", "quickConnect.temporaryHost": "Temporary Host", "transfers.title": "Transfers" };
   const t = (key: keyof typeof names) => names[key];
 
   it("names the Home tab", () => {
