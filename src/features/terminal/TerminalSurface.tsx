@@ -1,6 +1,7 @@
 import type { Terminal as XTerm } from "@xterm/xterm";
 import { useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { e2eHooks } from "@/lib/e2e";
 import {
   closeTerminal,
   resizeTerminal,
@@ -71,7 +72,8 @@ export function TerminalSurface({
     openRef
       .current(size(), (event) => {
         if (event.type === "output") {
-          xterm.write(event.data);
+          if (e2eHooks) e2eHooks.trackOutput(xterm, event.data);
+          else xterm.write(event.data);
           return;
         }
         // Remote Terminal views handle their Connection and directory before events reach here.
@@ -100,7 +102,9 @@ export function TerminalSurface({
       );
 
     const onData = xterm.onData((data) => {
-      if (id !== undefined) void writeTerminal(id, data);
+      if (id === undefined) return;
+      const write = writeTerminal(id, data);
+      if (e2eHooks) void write.then(() => e2eHooks?.trackInput(xterm, data.length));
     });
     const onResize = xterm.onResize((next) => {
       if (id !== undefined) void resizeTerminal(id, next);

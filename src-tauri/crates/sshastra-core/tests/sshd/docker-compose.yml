@@ -24,6 +24,8 @@
 #             (`Sshd::pause`) to make Connections drop.
 #   silent    published: accepts TCP connections on port 22 but never says
 #             anything (no SSH banner), for the handshake timeout test.
+#   delayed   benchmark-only OpenSSH server with 100 ms added round-trip
+#             delay. Enabled explicitly via the performance profile.
 #   echo      on the public network only, not published: a TCP echo server
 #             on port 7777 (`support::ECHO`), the target of Port forward
 #             tests, reached through an sshd as `echo:7777`.
@@ -101,6 +103,16 @@ services:
       interval: 1s
       timeout: 2s
       retries: 30
+
+  delayed:
+    <<: *sshd
+    hostname: delayed
+    profiles: [performance]
+    ports: ["127.0.0.1::22"]
+    networks: [public]
+    cap_add: [NET_ADMIN]
+    # Delay the reply by the whole 100 ms to add 100 ms to each round trip.
+    command: [sh, -ec, "tc qdisc replace dev eth0 root netem delay 100ms limit 100000; exec /usr/sbin/sshd -D -e"]
 
   flaky:
     <<: *sshd

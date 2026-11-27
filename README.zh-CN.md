@@ -65,6 +65,8 @@ pnpm tauri build    # 打包
 
 欢迎提 Issue 和 PR。项目结构与开发约定见 [`CLAUDE.md`](CLAUDE.md)，领域术语见 [`GLOSSARY.md`](GLOSSARY.md)。
 
+在 macOS 上启动 Docker 后运行 `pnpm performance`，即可重跑[性能基线](docs/baseline.md)。
+
 ## 许可证
 
 [MIT](LICENSE)

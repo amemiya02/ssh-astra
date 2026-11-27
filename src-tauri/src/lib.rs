@@ -6,7 +6,8 @@ mod commands;
 mod error;
 mod prompts;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use sshastra_core::credentials;
 use sshastra_core::edit::RemoteEditor;
@@ -32,9 +33,31 @@ use prompts::PendingPrompts;
 #[cfg(all(feature = "e2e", not(debug_assertions)))]
 compile_error!("the `e2e` feature is for debug builds only");
 
+struct StartupMeasurement(Mutex<Option<Instant>>);
+
+#[tauri::command]
+fn home_first_paint(app: tauri::AppHandle) {
+    if let Some(measurement) = app.try_state::<StartupMeasurement>() {
+        if let Some(start) = measurement.0.lock().unwrap().take() {
+            eprintln!(
+                "SSHASTRA_HOME_FIRST_PAINT_MS={:.3}",
+                start.elapsed().as_secs_f64() * 1000.0
+            );
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let start = Instant::now();
     let builder = tauri::Builder::default();
+    let builder = if std::env::var_os("SSHASTRA_MEASURE_STARTUP").is_some() {
+        builder
+            .manage(StartupMeasurement(Mutex::new(Some(start))))
+            .append_invoke_initialization_script("window.__sshastraMeasureStartup = true;")
+    } else {
+        builder
+    };
     // Lets the E2E smoke test (`e2e/`) drive the webview over WebDriver.
     #[cfg(feature = "e2e")]
     let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
@@ -101,6 +124,7 @@ pub fn run() {
         .manage(TransfersState::default())
         .manage(Arc::new(PendingPrompts::default()))
         .invoke_handler(tauri::generate_handler![
+            home_first_paint,
             commands::hosts::hosts_list,
             commands::hosts::host_save,
             commands::hosts::host_delete,
