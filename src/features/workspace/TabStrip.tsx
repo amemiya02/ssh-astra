@@ -31,7 +31,7 @@ import {
   type PaneKind,
   type SplitOrientation,
   type Tab,
-  type TabCustomizationAction,
+  type TabMenuAction,
 } from "./tabs";
 
 interface TabStripProps {
@@ -39,8 +39,7 @@ interface TabStripProps {
   activeId: string | null;
   platform: Platform;
   onActivate(id: string): void;
-  onClose(id: string): void;
-  onCustomize(action: TabCustomizationAction): void;
+  onTabAction(action: TabMenuAction): void;
   /** Drop the dragged tab `id` at index `to`. */
   onMove(id: string, to: number): void;
   onNewLocalTerminal(): void;
@@ -78,8 +77,7 @@ export function TabStrip({
   activeId,
   platform,
   onActivate,
-  onClose,
-  onCustomize,
+  onTabAction,
   onMove,
   onNewLocalTerminal,
   onSplit,
@@ -94,7 +92,7 @@ export function TabStrip({
     if (!(event.target instanceof Element) || !event.currentTarget.contains(event.target)) return;
     if (event.key === "Delete" && selected) {
       event.preventDefault();
-      if (!selected.locked) onClose(selected.id);
+      if (!selected.locked) onTabAction({ type: "close", id: selected.id });
       return;
     }
     const index = tabs.findIndex((tab) => tab.id === activeId);
@@ -179,8 +177,8 @@ export function TabStrip({
                     ? "bg-surface text-foreground border-border"
                     : "text-muted-foreground hover:bg-accent/60 hover:text-foreground active:bg-accent border-transparent",
                 )}
-                onAuxClick={() => !tab.locked && onClose(tab.id)}
-                menu={<TabMenu tab={tab} title={title} onCustomize={onCustomize} />}
+                onAuxClick={() => !tab.locked && onTabAction({ type: "close", id: tab.id })}
+                menu={<TabMenu tab={tab} title={title} onAction={onTabAction} />}
               >
                 {drop?.id === tab.id && dragging !== tab.id && (
                   <span
@@ -240,7 +238,7 @@ export function TabStrip({
                       "text-muted-foreground hover:bg-accent hover:text-foreground active:bg-accent/70 focus-visible:ring-ring/50 mr-1 grid size-5 shrink-0 place-items-center rounded-md outline-none focus-visible:opacity-100 focus-visible:ring-2",
                       !active && "opacity-0 group-hover/tab:opacity-100",
                     )}
-                    onClick={() => onClose(tab.id)}
+                    onClick={() => onTabAction({ type: "close", id: tab.id })}
                   >
                     <X className="size-3.5" aria-hidden />
                   </button>

@@ -85,17 +85,18 @@ export interface TabsState {
   activeId: string | null;
 }
 
-export type TabCustomizationAction =
+export type TabMenuAction =
   | { type: "renameTab"; id: string; title: string }
   | { type: "setTabColor"; id: string; color: AnsiHue | undefined }
-  | { type: "setTabLocked"; id: string; locked: boolean };
-
-export type TabsAction =
-  | TabCustomizationAction
-  | { type: "open"; tabId: string; pane: Pane }
+  | { type: "setTabLocked"; id: string; locked: boolean }
+  | { type: "duplicateTab"; id: string; tabId: string; paneIds: string[] }
   | { type: "close"; id: string }
   | { type: "closeOthers"; id: string }
-  | { type: "closeRight"; id: string }
+  | { type: "closeRight"; id: string };
+
+export type TabsAction =
+  | TabMenuAction
+  | { type: "open"; tabId: string; pane: Pane }
   | { type: "activate"; id: string }
   | { type: "cycle"; step: 1 | -1 }
   | { type: "move"; id: string; to: number }
@@ -140,6 +141,11 @@ export function layoutPanes<P>(layout: PaneLayout<P>): P[] {
 
 export function tabPanes(tab: Tab): Pane[] {
   return layoutPanes(tab.layout);
+}
+
+/** A Tab containing a singleton view cannot be duplicated. */
+export function canDuplicateTab(tab: Tab): boolean {
+  return tabPanes(tab).every((pane) => singletonKey(pane) === undefined);
 }
 
 /** The next restored remote pane connects only after the previous attempt settles. */
@@ -246,6 +252,8 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
       };
       return { tabs: [...state.tabs, tab], activeId: tab.id };
     }
+    case "duplicateTab":
+      return duplicateTab(state, action);
     case "close":
     case "closeOthers":
     case "closeRight":
@@ -354,6 +362,34 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
         reconnecting: action.reconnecting,
       }));
   }
+}
+
+function duplicateTab(state: TabsState, { id, tabId, paneIds }: Extract<TabsAction, { type: "duplicateTab" }>): TabsState {
+  const index = state.tabs.findIndex((tab) => tab.id === id);
+  const source = state.tabs[index];
+  if (!source || !canDuplicateTab(source) || state.tabs.some((tab) => tab.id === tabId)) return state;
+
+  const panes = tabPanes(source);
+  const usedIds = new Set(state.tabs.flatMap(tabPanes).map((pane) => pane.id));
+  if (paneIds.length !== panes.length || new Set(paneIds).size !== paneIds.length || paneIds.some((id) => usedIds.has(id))) {
+    return state;
+  }
+
+  const copies = new Map(panes.map((pane, index) => [
+    pane.id,
+    newPane(pane.kind === "remote-terminal" ? { kind: pane.kind, host: pane.host } : { kind: "local-terminal" }, paneIds[index]!),
+  ]));
+  const layout = mapLeaves(source.layout, (leaf) => ({ type: "pane", pane: copies.get(leaf.pane.id)! }))!;
+  const copy: Tab = {
+    id: tabId,
+    layout,
+    activePaneId: copies.get(activePane(source).id)!.id,
+    customTitle: source.customTitle,
+    color: source.color,
+  };
+  const tabs = [...state.tabs];
+  tabs.splice(index + 1, 0, copy);
+  return { tabs, activeId: tabId };
 }
 
 function closeTabs(state: TabsState, id: string, mode: "close" | "closeOthers" | "closeRight"): TabsState {
