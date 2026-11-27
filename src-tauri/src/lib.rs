@@ -10,6 +10,8 @@ mod macos_menu;
 mod prompts;
 #[cfg(desktop)]
 mod quit;
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+mod wake;
 
 #[cfg(test)]
 mod diagnostics_tests;
@@ -65,6 +67,8 @@ pub fn run() {
     let builder = builder.menu(quit::menu).on_menu_event(quit::on_menu_event);
     #[cfg(target_os = "macos")]
     let builder = builder.on_menu_event(macos_menu::on_menu_event);
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    let mut wake_listener = None;
     builder
         // Restores the main window's size, position and maximized state, and
         // saves them on exit (`.window-state.json` in the app config dir).
@@ -159,6 +163,11 @@ pub fn run() {
         .manage(remote_editor())
         .manage(TransfersState::default())
         .manage(Arc::new(PendingPrompts::default()))
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Focused(true) = event {
+                window.state::<TerminalRegistry>().reconnect_disconnected();
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             #[cfg(target_os = "macos")]
             macos_menu::macos_menu_set,
@@ -261,10 +270,17 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building sshastra")
-        .run(|app, event| {
-            if let tauri::RunEvent::Exit = event {
-                // Remote edits' temp files go with the app.
-                app.state::<RemoteEditor>().close_all();
+        .run(move |app, event| {
+            match event {
+                #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+                tauri::RunEvent::Ready => wake_listener = wake::Listener::start(app.clone()),
+                tauri::RunEvent::Exit => {
+                    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+                    drop(wake_listener.take());
+                    // Remote edits' temp files go with the app.
+                    app.state::<RemoteEditor>().close_all();
+                }
+                _ => {}
             }
         });
 }
