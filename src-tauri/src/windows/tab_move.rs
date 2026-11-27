@@ -9,7 +9,7 @@ use tauri::ipc::{Channel, InvokeResponseBody, JavaScriptChannelId};
 use tauri::{AppHandle, Manager, Webview, WebviewWindow};
 use tokio::sync::watch;
 
-use super::{build, forget, prompts, remember, reserve_label, Windows};
+use super::{build, forget, prompts, remember, reserve_label, Presentation, Windows};
 use crate::prompts::PromptEndpoint;
 use crate::terminal_handoff::{MoveResult, TerminalDelivery, TerminalRoute};
 
@@ -121,7 +121,7 @@ pub(crate) async fn window_open_tab_move(
     };
 
     remember(app, &label, next_id);
-    if let Err(error) = build(app, &label, true) {
+    if let Err(error) = build(app, &label, Presentation::Focused) {
         cancel(app, &token, window.label());
         forget(app, &label);
         return Err(error.to_string());

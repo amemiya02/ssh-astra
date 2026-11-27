@@ -9,6 +9,8 @@ use sshastra_core::agent::AgentSettings;
 use sshastra_core::files::TransferSettings;
 use sshastra_core::settings::SettingsStore;
 use sshastra_core::ssh::ConnectionSettings;
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+use tauri::Manager;
 use tauri::{ipc::Channel, State, WebviewWindow};
 
 use super::hosts::HostsState;
@@ -18,6 +20,8 @@ use super::watch::Watcher;
 
 use crate::agent_transport::AgentService;
 use crate::error::{CommandError, CommandResult};
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+use crate::login_launch;
 use crate::windows::{is_window_section, save_window_setting, window_settings, SESSION};
 
 /// The SettingsStore, or why it could not be loaded at startup (a damaged or
@@ -96,6 +100,11 @@ fn snapshot(
         json!({"enabled": agent.enabled()}),
     );
     sections.insert(OpenSshSettings::SECTION.into(), json!(open_ssh));
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    sections.insert(
+        login_launch::SECTION.into(),
+        login_launch::status(window.app_handle()),
+    );
     sections
 }
 
@@ -149,6 +158,16 @@ pub fn settings_set(
 ) -> CommandResult<SettingsChange> {
     settings.with(|store| {
         let window_local = is_window_section(&section);
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        if section == login_launch::SECTION {
+            value = login_launch::set_enabled(window.app_handle(), &value)?;
+            return Ok(settings.changes.publish(section, value, None));
+        }
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        if section == login_launch::PREFERENCES {
+            value = login_launch::set_preferences(store, &value)?;
+            return Ok(settings.changes.publish(section, value, None));
+        }
         if window_local {
             save_window_setting(store, window.label(), &section, value.clone())?;
         } else if section == AgentSettings::SECTION {

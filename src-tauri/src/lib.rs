@@ -8,6 +8,8 @@ mod diagnostics;
 mod error;
 #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
 mod launch;
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+mod login_launch;
 #[cfg(target_os = "macos")]
 mod macos_menu;
 mod prompts;
@@ -231,7 +233,11 @@ pub fn run() {
             app.manage(remote_editor());
             #[cfg(desktop)]
             tray::setup(app.handle());
-            windows::restore(app)?;
+            #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+            let visible = !login_launch::should_hide(app.handle());
+            #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+            let visible = true;
+            windows::restore(app, visible)?;
             Ok(())
         })
         .manage(windows::Windows::default())

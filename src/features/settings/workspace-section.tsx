@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { restoreTabsOptions, tabOrientations, workspaceSetting } from "@/features/workspace/workspace-prefs";
 import { useSetting } from "@/lib/storage";
+import { LoginLaunchSetting } from "./login-launch-setting";
 import { SettingRow } from "./SettingRow";
 import { settingRows } from "./setting-rows";
 import { SettingsViewContext } from "./settings-view";
@@ -87,6 +88,7 @@ export function WorkspaceSection() {
           />
         </SettingRow>
       )}
+      {isTauri() && <LoginLaunchSetting />}
     </>
   );
 }

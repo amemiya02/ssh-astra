@@ -18,6 +18,10 @@ pub(super) fn startup() -> PendingLaunches {
 }
 
 pub(super) fn forward(app: &AppHandle, argv: Vec<String>, _cwd: String) {
+    // The system may deliver its scheduled launch after SSH Astra is already running.
+    if crate::login_launch::requested(&argv) {
+        return;
+    }
     if app.state::<PendingLaunches>().forward(cli_link(argv)) {
         schedule_activation(app);
     }
