@@ -36,7 +36,7 @@ export const emptyHostForm: HostFormValues = {
   port: "22",
   user: "",
   jumpHost: "",
-  authType: "password",
+  authType: "auto",
   identityFile: "",
 };
 
@@ -73,7 +73,7 @@ export function parseHostForm(values: HostFormValues): HostFormResult {
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   const jumpHost = values.jumpHost || null;
-  const auth: HostAuth = values.authType === "key" ? { type: "key", identityFile } : { type: "password" };
+  const auth: HostAuth = values.authType === "key" ? { type: "key", identityFile } : { type: values.authType };
   const draft: HostDraft = { name, address, port, user, auth, jumpHost };
   if (values.terminalScheme) draft.terminalScheme = values.terminalScheme;
   const defaultDirectory = values.defaultDirectory?.trim();

@@ -88,7 +88,7 @@ fn imported_hosts_are_saved_with_their_settings_jump_hosts_and_forwards() {
     // ssh_config has no default directory: Hosts open in the home directory.
     assert_eq!(bastion.default_directory, None);
     let app = find(&store, "app");
-    assert_eq!(app.auth, HostAuth::Password);
+    assert_eq!(app.auth, HostAuth::Auto);
     assert_eq!(app.jump_host.as_ref(), Some(&bastion.id));
     assert_eq!(app.forwards.len(), 1);
     assert_eq!(

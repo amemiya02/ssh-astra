@@ -86,7 +86,7 @@ impl Prompter for ScriptedPrompter {
 }
 
 struct Fixture {
-    _dir: tempfile::TempDir,
+    dir: tempfile::TempDir,
     known_hosts: PathBuf,
 }
 
@@ -94,15 +94,18 @@ impl Fixture {
     fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
         let known_hosts = dir.path().join("known_hosts");
-        Self {
-            _dir: dir,
-            known_hosts,
-        }
+        Self { dir, known_hosts }
     }
 
-    /// A manager that never consults the system ssh-agent.
+    /// A manager that never consults the system ssh-agent or `~/.ssh`.
     fn manager(&self) -> ConnectionManager {
-        ConnectionManager::new(KnownHosts::new(&self.known_hosts))
+        ConnectionManager::new(KnownHosts::new(&self.known_hosts)).with_home_dir(self.dir.path())
+    }
+
+    fn default_key(&self, name: &str, fixture: &str) {
+        let ssh_dir = self.dir.path().join(".ssh");
+        std::fs::create_dir_all(&ssh_dir).unwrap();
+        std::fs::copy(support::key(fixture), ssh_dir.join(name)).unwrap();
     }
 }
 
@@ -152,6 +155,93 @@ async fn connect_with_key_answering(
 
 fn docker() -> bool {
     support::sshd(Service::KeyOnly).is_some()
+}
+
+#[tokio::test]
+async fn automatic_auth_logs_in_with_a_default_key() {
+    let Some(sshd) = support::sshd(Service::KeyOnly) else {
+        return;
+    };
+    let fx = Fixture::new();
+    fx.default_key("id_ed25519", "id_ed25519");
+    let prompter = ScriptedPrompter::silent();
+    fx.manager()
+        .connect(&host(&sshd, HostAuth::Auto), prompter.clone())
+        .await
+        .unwrap();
+    assert!(prompter.asked().is_empty(), "{:?}", prompter.asked());
+}
+
+#[tokio::test]
+async fn automatic_auth_prefers_ed25519_then_ecdsa_then_rsa() {
+    let Some(sshd) = support::sshd(Service::KeyOnly) else {
+        return;
+    };
+    for (first, second) in [("id_ed25519", "id_ecdsa"), ("id_ecdsa", "id_rsa")] {
+        let fx = Fixture::new();
+        // The first path has an encrypted key, so its prompt reveals which
+        // of the two authorized keys was tried first.
+        fx.default_key(first, "id_ed25519_passphrase");
+        fx.default_key(second, second);
+        let prompter = ScriptedPrompter::answering(&[Some(&[support::KEY_PASSPHRASE])]);
+        fx.manager()
+            .connect(&host(&sshd, HostAuth::Auto), prompter.clone())
+            .await
+            .unwrap();
+        assert_eq!(
+            prompter.asked(),
+            [format!("passphrase {first} retry=false")]
+        );
+    }
+}
+
+#[tokio::test]
+async fn automatic_auth_skips_rejected_and_missing_defaults_before_rsa() {
+    let Some(sshd) = support::sshd(Service::KeyOnly) else {
+        return;
+    };
+    let fx = Fixture::new();
+    fx.default_key("id_ed25519", "id_ed25519_unauthorized");
+    fx.default_key("id_rsa", "id_rsa");
+    fx.manager()
+        .connect(&host(&sshd, HostAuth::Auto), ScriptedPrompter::silent())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn automatic_auth_reports_no_usable_method_when_all_defaults_are_missing() {
+    let Some(sshd) = support::sshd(Service::KeyOnly) else {
+        return;
+    };
+    let prompter = ScriptedPrompter::silent();
+    let result = Fixture::new()
+        .manager()
+        .connect(&host(&sshd, HostAuth::Auto), prompter.clone())
+        .await;
+    assert!(
+        matches!(&result, Err(ConnectError::NoSupportedMethod { methods }) if methods == &["publickey"]),
+        "{result:?}"
+    );
+    assert!(prompter.asked().is_empty(), "{:?}", prompter.asked());
+}
+
+#[tokio::test]
+async fn a_rejected_named_key_never_falls_back_to_default_keys() {
+    let Some(sshd) = support::sshd(Service::KeyOnly) else {
+        return;
+    };
+    let fx = Fixture::new();
+    fx.default_key("id_ed25519", "id_ed25519");
+    let named = support::key("id_ed25519_unauthorized");
+    let result = fx
+        .manager()
+        .connect(&host(&sshd, key_auth(&named)), ScriptedPrompter::silent())
+        .await;
+    assert!(
+        matches!(&result, Err(ConnectError::KeyRejected { path }) if path == &named),
+        "{result:?}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -299,12 +389,14 @@ async fn a_missing_or_malformed_key_file_is_reported() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_key_only_server_without_a_key_names_the_methods_it_accepts() {
+async fn password_auth_skips_default_keys_on_a_key_only_server() {
     let Some(sshd) = support::sshd(Service::KeyOnly) else {
         return;
     };
     let prompter = ScriptedPrompter::silent();
-    let result = Fixture::new()
+    let fx = Fixture::new();
+    fx.default_key("id_ed25519", "id_ed25519");
+    let result = fx
         .manager()
         .connect(&host(&sshd, HostAuth::Password), prompter.clone())
         .await;
@@ -409,21 +501,26 @@ async fn a_key_in_the_agent_logs_in_without_asking_anything() {
 
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
-async fn agent_keys_are_tried_before_the_key_file() {
+async fn agent_keys_are_tried_before_named_and_default_key_files() {
     let Some(sshd) = support::sshd(Service::KeyOnly) else {
         return;
     };
     let agent = TestAgent::holding(&["id_ed25519"]);
     let fx = Fixture::new();
-    // The file would need a passphrase; the agent key gets there first.
-    let prompter = ScriptedPrompter::silent();
-    let auth = key_auth(support::key("id_ed25519_passphrase"));
-    agent
-        .manager(&fx)
-        .connect(&host(&sshd, auth), prompter.clone())
-        .await
-        .unwrap();
-    assert!(prompter.asked().is_empty(), "{:?}", prompter.asked());
+    fx.default_key("id_ed25519", "id_ed25519_passphrase");
+    // The files would need a passphrase; the agent key gets there first.
+    for auth in [
+        key_auth(support::key("id_ed25519_passphrase")),
+        HostAuth::Auto,
+    ] {
+        let prompter = ScriptedPrompter::silent();
+        agent
+            .manager(&fx)
+            .connect(&host(&sshd, auth), prompter.clone())
+            .await
+            .unwrap();
+        assert!(prompter.asked().is_empty(), "{:?}", prompter.asked());
+    }
 }
 
 #[cfg(unix)]
