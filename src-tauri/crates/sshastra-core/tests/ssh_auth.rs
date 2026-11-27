@@ -119,6 +119,7 @@ fn host(sshd: &Sshd, auth: HostAuth) -> Host {
         auth,
         jump_host: None,
         terminal_scheme: None,
+        identities_only: false,
         default_directory: None,
         forwards: Vec::new(),
         group_id: None,
@@ -158,15 +159,17 @@ fn docker() -> bool {
 }
 
 #[tokio::test]
-async fn automatic_auth_logs_in_with_a_default_key() {
+async fn automatic_auth_uses_default_keys_even_with_identities_only_when_no_key_is_selected() {
     let Some(sshd) = support::sshd(Service::KeyOnly) else {
         return;
     };
     let fx = Fixture::new();
     fx.default_key("id_ed25519", "id_ed25519");
     let prompter = ScriptedPrompter::silent();
+    let mut target = host(&sshd, HostAuth::Auto);
+    target.identities_only = true;
     fx.manager()
-        .connect(&host(&sshd, HostAuth::Auto), prompter.clone())
+        .connect(&target, prompter.clone())
         .await
         .unwrap();
     assert!(prompter.asked().is_empty(), "{:?}", prompter.asked());
@@ -519,6 +522,104 @@ async fn agent_keys_are_tried_before_named_and_default_key_files() {
             .connect(&host(&sshd, auth), prompter.clone())
             .await
             .unwrap();
+        assert!(prompter.asked().is_empty(), "{:?}", prompter.asked());
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn identities_only_reaches_the_selected_agent_key_before_the_server_disconnects() {
+    let Some(sshd) = support::sshd(Service::LimitedAuth) else {
+        return;
+    };
+    let agent = TestAgent::holding(&["id_ecdsa", "id_rsa", "id_ed25519"]);
+    let fx = Fixture::new();
+    // With just the public file selected, only the agent can sign for it.
+    let public_key = fx.dir.path().join("selected.pub");
+    let text = std::fs::read_to_string(support::key("id_ed25519.pub")).unwrap();
+    // Comments aren't part of the identity and need not agree with the agent.
+    let key_fields = text
+        .split_whitespace()
+        .take(2)
+        .collect::<Vec<_>>()
+        .join(" ");
+    std::fs::write(&public_key, format!("{key_fields} selected-key\n")).unwrap();
+    let mut target = host(&sshd, key_auth("~/selected.pub"));
+    assert!(agent
+        .manager(&fx)
+        .connect(&target, ScriptedPrompter::silent())
+        .await
+        .is_err());
+
+    target.identities_only = true;
+    let prompter = ScriptedPrompter::silent();
+    agent
+        .manager(&fx)
+        .connect(&target, prompter.clone())
+        .await
+        .unwrap();
+    assert!(prompter.asked().is_empty(), "{:?}", prompter.asked());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn identities_only_skips_unrelated_agent_and_default_keys() {
+    let Some(sshd) = support::sshd(Service::KeyOnly) else {
+        return;
+    };
+    let fx = Fixture::new();
+    fx.default_key("id_ed25519", "id_ed25519");
+    let named = fx.dir.path().join("named");
+    std::fs::copy(support::key("id_ed25519_unauthorized"), &named).unwrap();
+    // A stale .pub file must not replace the selected file's public key.
+    std::fs::copy(support::key("id_ed25519.pub"), named.with_extension("pub")).unwrap();
+    let mut target = host(&sshd, key_auth(&named));
+    target.identities_only = true;
+    let agent = TestAgent::holding(&["id_ed25519"]);
+    let result = agent
+        .manager(&fx)
+        .connect(&target, ScriptedPrompter::silent())
+        .await;
+    assert!(
+        matches!(&result, Err(ConnectError::KeyRejected { path }) if path == &named),
+        "{result:?}"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn identities_only_uses_the_agent_for_encrypted_openssh_and_putty_keys() {
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::Command;
+
+    let Some(sshd) = support::sshd(Service::LimitedAuth) else {
+        return;
+    };
+    let agent = TestAgent::holding(&["id_ecdsa", "id_rsa", "id_ed25519"]);
+    let fx = Fixture::new();
+    let openssh = fx.dir.path().join("encrypted-openssh");
+    std::fs::copy(support::key("id_ed25519"), &openssh).unwrap();
+    std::fs::set_permissions(&openssh, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let encrypted = Command::new("ssh-keygen")
+        .args(["-p", "-P", "", "-N", support::KEY_PASSPHRASE, "-f"])
+        .arg(&openssh)
+        .output()
+        .unwrap();
+    assert!(encrypted.status.success(), "{encrypted:?}");
+
+    for path in [
+        openssh,
+        support::key("ed25519-v2-protected.ppk"),
+        support::key("ed25519-v3-protected.ppk"),
+    ] {
+        let mut target = host(&sshd, key_auth(&path));
+        target.identities_only = true;
+        let prompter = ScriptedPrompter::silent();
+        agent
+            .manager(&fx)
+            .connect(&target, prompter.clone())
+            .await
+            .unwrap_or_else(|error| panic!("{path:?}: {error}"));
         assert!(prompter.asked().is_empty(), "{:?}", prompter.asked());
     }
 }

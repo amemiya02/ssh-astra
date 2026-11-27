@@ -28,6 +28,11 @@ let container: HTMLDivElement;
 beforeAll(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   HTMLElement.prototype.scrollIntoView ??= () => {};
+  globalThis.ResizeObserver ??= class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
   startI18n();
 });
 
@@ -83,6 +88,26 @@ describe("Host editor", () => {
     expect(directory.closest("[hidden]")).not.toBeNull();
   });
 
+  it.each([false, true])("opens Identities only in Advanced and saves when toggled from %s", async (enabled) => {
+    const keyHost: Host = {
+      ...host,
+      auth: { type: "key", identityFile: "~/.ssh/build" },
+      identitiesOnly: enabled,
+    };
+    const save = vi.fn<EditorProps["save"]>().mockResolvedValue(keyHost);
+    await renderEditor({ host: keyHost, save });
+
+    const identitiesOnly = field("Identities only");
+    expect(identitiesOnly.closest("[hidden]")).not.toBeNull();
+    act(() => button("Advanced").click());
+    expect(identitiesOnly.closest("[hidden]")).toBeNull();
+    expect(identitiesOnly.getAttribute("aria-checked")).toBe(String(enabled));
+
+    act(() => identitiesOnly.click());
+    await act(async () => button("Save").click());
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ identitiesOnly: !enabled }), "prod");
+  });
+
   it.each([
     ["defaultDirectory", "File panel folder"],
     ["terminalScheme", "Terminal colours"],
@@ -132,6 +157,7 @@ describe("Host editor", () => {
       jumpHost: null,
       terminalScheme: "dark",
       defaultDirectory: "~/release",
+      identitiesOnly: false,
     }, "prod");
   });
 });

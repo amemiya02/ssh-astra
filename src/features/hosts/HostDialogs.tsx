@@ -2,6 +2,7 @@ import { ChevronRight } from "lucide-react";
 import { useLayoutEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DialogContent,
   DialogDescription,
@@ -253,6 +254,22 @@ export function HostFormDialogContent({
           </Button>
           <div id="host-form-advanced" hidden={!advancedOpen}>
             <div className="grid gap-3.5 pt-2">
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id="host-form-identities-only"
+                  checked={values.identitiesOnly}
+                  aria-describedby="host-form-identities-only-hint"
+                  onCheckedChange={(checked) => setValues((v) => ({ ...v, identitiesOnly: checked === true }))}
+                />
+                <div className="grid gap-1.5">
+                  <Label htmlFor="host-form-identities-only" className="text-xs">
+                    {t("hosts.fields.identitiesOnly")}
+                  </Label>
+                  <p id="host-form-identities-only-hint" className="text-muted-foreground text-xs">
+                    {t("hosts.identitiesOnlyHint")}
+                  </p>
+                </div>
+              </div>
               <div className="grid gap-1.5">
                 <Label htmlFor={advancedFieldIds.terminalScheme} className="text-xs">
                   {t("hosts.fields.terminalScheme")}

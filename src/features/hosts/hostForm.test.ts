@@ -8,6 +8,7 @@ const valid = {
   user: " deploy ",
   jumpHost: "",
   authType: "password" as const,
+  identitiesOnly: false,
   identityFile: "",
 };
 
@@ -15,7 +16,7 @@ describe("parseHostForm", () => {
   it("turns the form into a trimmed HostDraft with password auth", () => {
     expect(parseHostForm(valid)).toEqual({
       ok: true,
-      draft: { name: "web", address: "10.0.0.5", port: 2222, user: "deploy", auth: { type: "password" }, jumpHost: null },
+      draft: { name: "web", address: "10.0.0.5", port: 2222, user: "deploy", auth: { type: "password" }, jumpHost: null, identitiesOnly: false },
     });
   });
 
@@ -63,15 +64,16 @@ describe("hostFormFrom", () => {
       jumpHost: "2",
       authType: "password",
       identityFile: "",
+      identitiesOnly: false,
     });
-    expect(parseHostForm(form)).toEqual({ ok: true, draft: { ...host, id: undefined, groupId: undefined, forwards: undefined } });
+    expect(parseHostForm(form)).toEqual({ ok: true, draft: { ...host, id: undefined, groupId: undefined, forwards: undefined, identitiesOnly: false } });
   });
 
   it("round-trips a key Host through the form", () => {
     const auth = { type: "key" as const, identityFile: "/keys/id_rsa" };
-    const host = { id: "2", name: "db", address: "db.local", port: 22, user: "root", auth, jumpHost: null, groupId: null, forwards: [] };
+    const host = { id: "2", name: "db", address: "db.local", port: 22, user: "root", auth, identitiesOnly: true, jumpHost: null, groupId: null, forwards: [] };
     const form = hostFormFrom(host);
-    expect(form).toMatchObject({ authType: "key", identityFile: "/keys/id_rsa" });
+    expect(form).toMatchObject({ authType: "key", identityFile: "/keys/id_rsa", identitiesOnly: true });
     expect(parseHostForm(form)).toEqual({ ok: true, draft: { ...host, id: undefined, groupId: undefined, forwards: undefined } });
   });
 
@@ -90,7 +92,7 @@ describe("hostFormFrom", () => {
     };
     const form = hostFormFrom(host);
     expect(form.terminalScheme).toBe("ember");
-    expect(parseHostForm(form)).toEqual({ ok: true, draft: { ...host, id: undefined, groupId: undefined, forwards: undefined } });
+    expect(parseHostForm(form)).toEqual({ ok: true, draft: { ...host, id: undefined, groupId: undefined, forwards: undefined, identitiesOnly: false } });
   });
 
   it("round-trips a Host's default directory, and a blank one opens the home directory", () => {

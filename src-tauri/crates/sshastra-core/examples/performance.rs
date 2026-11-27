@@ -44,6 +44,7 @@ async fn connect(port: &str, scratch: &Path) -> Arc<dyn RemoteFs> {
         jump_host: None,
         group_id: None,
         terminal_scheme: None,
+        identities_only: false,
         default_directory: None,
         forwards: Vec::new(),
     };
