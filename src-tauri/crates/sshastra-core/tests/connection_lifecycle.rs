@@ -100,6 +100,7 @@ impl Fixture {
             terminal_backspace: None,
             default_directory: None,
             forwards: Vec::new(),
+            bookmarks: Vec::new(),
         };
         Self {
             manager: ConnectionManager::new(KnownHosts::new(dir.path().join("known_hosts"))),
@@ -416,6 +417,7 @@ fn behind(name: &str, jump: &Host) -> Host {
         terminal_backspace: None,
         default_directory: None,
         forwards: Vec::new(),
+        bookmarks: Vec::new(),
     }
 }
 

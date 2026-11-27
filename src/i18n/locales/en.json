@@ -339,6 +339,17 @@
     "editPath": "Edit path",
     "path": "Path",
     "copyPath": "Copy path",
+    "bookmarks": {
+      "star": "Bookmark this folder",
+      "menu": "Bookmarks",
+      "empty": "No Bookmarks for this Host",
+      "manage": "Edit Bookmarks",
+      "edit": "Edit Bookmark",
+      "name": "Name (optional)",
+      "remove": "Remove Bookmark",
+      "save": "Save",
+      "saveFailed": "Could not save the Bookmark change."
+    },
     "showHidden": "Show hidden files",
     "open": "Open",
     "listLabel": "Files in {{path}}",

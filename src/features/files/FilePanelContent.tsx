@@ -237,7 +237,7 @@ function RemoteFilePanel({ pane, onOpenSftp, onCopy, embedded, extraActions, pee
   } else if (ready) {
     body = (
       <div ref={setDropZone} className="relative h-full">
-        <FileBrowser store={store} hostName={hostName} onDownload={(names) => void download(names)} enableMove
+        <FileBrowser store={store} hostName={hostName} bookmarkHostId={pane.host.id} onDownload={(names) => void download(names)} enableMove
           remoteClipboard={{
             paneId: pane.id,
             copy: (paths) => fileClipboard.setState({ host: transferHost(pane.host), paths }, true),

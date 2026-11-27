@@ -110,6 +110,7 @@ impl Shell {
             terminal_backspace,
             default_directory: None,
             forwards: Vec::new(),
+            bookmarks: Vec::new(),
         };
         let mut options = RemoteTerminalOptions::for_host(&host, shell_integration);
         options.initial_cwd = initial_cwd.map(str::to_owned);

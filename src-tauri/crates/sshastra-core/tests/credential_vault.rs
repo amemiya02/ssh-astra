@@ -131,6 +131,7 @@ fn host(sshd: &Sshd, auth: HostAuth) -> Host {
         default_directory: None,
         group_id: None,
         forwards: Vec::new(),
+        bookmarks: Vec::new(),
     }
 }
 

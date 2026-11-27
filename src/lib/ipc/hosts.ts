@@ -80,6 +80,12 @@ export interface HostDraft {
   defaultDirectory?: string | null;
 }
 
+/** A saved remote folder (`sshastra_core::hosts::Bookmark`). */
+export interface Bookmark {
+  path: string;
+  name?: string;
+}
+
 /** A saved Host (`sshastra_core::hosts::Host`). */
 export interface Host extends HostDraft {
   id: HostId;
@@ -89,6 +95,8 @@ export interface Host extends HostDraft {
   groupId: GroupId | null;
   /** Port forward rules, in the order added. Changed only through `saveForward` / `deleteForward`. */
   forwards: PortForward[];
+  /** Bookmarks in the order added. Changed only through the Bookmark commands. */
+  bookmarks?: Bookmark[];
 }
 
 /** The address parsed from Home or the command palette. The app supplies the local user. */
@@ -156,6 +164,18 @@ export function redetectHostOs(id: HostId): Promise<void> {
 /** Adds a Host (at the top level), or replaces the Host with `id`. */
 export function saveHost(draft: HostDraft, id?: HostId): Promise<Host> {
   return invoke<Host>("host_save", { id: id ?? null, draft });
+}
+
+export function addBookmark(hostId: HostId, path: string): Promise<Bookmark> {
+  return invoke("host_bookmark_add", { hostId, path });
+}
+
+export function renameBookmark(hostId: HostId, path: string, name: string): Promise<Bookmark> {
+  return invoke("host_bookmark_rename", { hostId, path, name });
+}
+
+export function deleteBookmark(hostId: HostId, path: string): Promise<void> {
+  return invoke("host_bookmark_delete", { hostId, path });
 }
 
 export function deleteHost(id: HostId): Promise<void> {
@@ -234,7 +254,7 @@ export interface ImportSummary {
   skippedHosts: string[];
 }
 
-/** Writes the whole Host list (Groups, Hosts, Port forwards; never credentials) to an export file at `path`. */
+/** Writes the Host list and its Groups, Bookmarks and Port forwards to an export file at `path`. */
 export function exportHosts(path: string): Promise<void> {
   return invoke("hosts_export", { path });
 }
