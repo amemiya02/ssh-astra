@@ -1,3 +1,4 @@
+import type { TFunction } from "i18next";
 import { ArrowRight, ArrowRightLeft, Pencil, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -271,10 +272,8 @@ function ForwardRow({ rule, status, starting, startError, onStart, onStop, onEdi
   );
 }
 
-type T = ReturnType<typeof useTranslation>["t"];
-
 /** Readable copy for a failure: specific advice where the cause is known, else the backend's reason. */
-function failureText(t: T, reason: string, error?: CommandError): string {
+function failureText(t: TFunction, reason: string, error?: CommandError): string {
   if (error?.kind === "portInUse" || error?.kind === "permissionDenied" || error?.kind === "remoteRefused") {
     return t(`forwards.startErrors.${error.kind}`, error.details ?? {});
   }

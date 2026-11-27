@@ -7,6 +7,7 @@ import { SettingRow } from "./SettingRow";
 import { settingRows } from "./setting-rows";
 import { useSettingRowVisible } from "./settings-view";
 import { ThemeGallery } from "./theme-gallery";
+import { WorkspaceSection } from "./workspace-section";
 
 export function AppearanceSection() {
   const { t } = useTranslation();
@@ -33,7 +34,7 @@ export function AppearanceSection() {
   );
 }
 
-export function LanguageSection() {
+function LanguageSection() {
   const { t } = useTranslation();
   const [general, setGeneral] = useSetting(generalSetting);
   const label = t(settingRows.language.title);
@@ -46,5 +47,15 @@ export function LanguageSection() {
         onChange={(language) => setGeneral({ ...general, language })}
       />
     </SettingRow>
+  );
+}
+
+export function AppearanceCategory() {
+  return (
+    <>
+      <AppearanceSection />
+      <WorkspaceSection />
+      <LanguageSection />
+    </>
   );
 }

@@ -3,22 +3,11 @@ import type { ComponentType } from "react";
 import { ConnectionSection } from "./connection-section";
 import { DiagnosticsSection } from "./diagnostics-section";
 import { FilesSection } from "./files-section";
-import { AppearanceSection, LanguageSection } from "./general-sections";
+import { AppearanceCategory } from "./general-sections";
 import type { SettingsCategory } from "./setting-rows";
 import { TerminalSection } from "./terminal-section";
 import { TransfersSection } from "./transfers-section";
 import { UpdatesSection } from "./updates-section";
-import { WorkspaceSection } from "./workspace-section";
-
-function AppearanceCategory() {
-  return (
-    <>
-      <AppearanceSection />
-      <WorkspaceSection />
-      <LanguageSection />
-    </>
-  );
-}
 
 /** Register a category once its settings are available in the app. */
 export const settingsPageSections: readonly { id: SettingsCategory; Component: ComponentType }[] = [
