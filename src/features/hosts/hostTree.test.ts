@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Group, Host, HostTree } from "@/lib/ipc/hosts";
 import { buildTree, dropMove, fuzzyMatch, searchTree, type TreeNode } from "./hostTree";
+import { sortHostTree } from "./host-sort";
 
 const host = (id: string, groupId: string | null = null, extra: Partial<Host> = {}): Host => ({
   id,
@@ -33,6 +34,37 @@ describe("buildTree", () => {
   it("shows Hosts and Groups whose parent is missing at the top level rather than losing them", () => {
     const tree = { groups: [group("orphan", "gone")], hosts: [host("h", "gone")] };
     expect(shape(buildTree(tree))).toEqual([{ orphan: [] }, "h"]);
+  });
+});
+
+describe("sortHostTree", () => {
+  it("sorts Hosts within each Group by name or address and preserves the manual order on return", () => {
+    const tree = {
+      groups: [group("prod"), group("dev")],
+      hosts: [
+        host("p1", "prod", { name: "Web 10", address: "10.0.0.2" }),
+        host("dev1", "dev", { name: "Admin" }),
+        host("p2", "prod", { name: "web 2", address: "10.0.0.10" }),
+      ],
+    };
+
+    expect(shape(buildTree(sortHostTree(tree, "name")))).toEqual([{ prod: ["p2", "p1"] }, { dev: ["dev1"] }]);
+    expect(shape(buildTree(sortHostTree(tree, "address")))).toEqual([{ prod: ["p1", "p2"] }, { dev: ["dev1"] }]);
+    expect(shape(buildTree(sortHostTree(tree, "manual")))).toEqual([{ prod: ["p1", "p2"] }, { dev: ["dev1"] }]);
+  });
+
+  it("puts the latest successful Connections first and keeps untouched manual positions for ties", () => {
+    const tree = { groups: [], hosts: [host("never"), host("older"), host("failed"), host("newer"), host("same-time")] };
+    const history = {
+      older: { connectedAt: 100 },
+      failed: { openedAt: 300 },
+      newer: { connectedAt: 200 },
+      "same-time": { connectedAt: 200 },
+    };
+
+    expect(sortHostTree(tree, "recent", history).hosts.map((host) => host.id)).toEqual([
+      "newer", "same-time", "older", "never", "failed",
+    ]);
   });
 });
 

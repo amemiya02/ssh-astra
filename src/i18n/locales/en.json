@@ -75,6 +75,14 @@
     "noResultsTitle": "No matching Hosts",
     "noResultsBody": "Search looks at names, addresses and users.",
     "emptyGroup": "Drag Hosts here",
+    "emptyGroupSorted": "No Hosts in this Group",
+    "sort": {
+      "label": "Sort Hosts ({{order}})",
+      "manual": "Manual order",
+      "name": "Name",
+      "address": "Address",
+      "recent": "Last connected"
+    },
     "actionFailed": "Could not save the change: {{message}}",
     "auth": {
       "auto": "Automatic",

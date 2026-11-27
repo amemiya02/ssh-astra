@@ -75,6 +75,14 @@
     "noResultsTitle": "没有匹配的 Host",
     "noResultsBody": "按名称、地址和用户名搜索。",
     "emptyGroup": "把 Host 拖到这里",
+    "emptyGroupSorted": "此分组中没有 Host",
+    "sort": {
+      "label": "Host 排序（{{order}}）",
+      "manual": "手动排序",
+      "name": "名称",
+      "address": "地址",
+      "recent": "最近连接"
+    },
     "actionFailed": "无法保存更改：{{message}}",
     "auth": {
       "auto": "自动",

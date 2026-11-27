@@ -6,9 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { HostConnection } from "@/features/connect/hostConnection";
 import type { HostId } from "@/lib/ipc/hosts";
+import { useSetting } from "@/lib/storage";
 import { HostList } from "./HostList";
+import { HostSortMenu } from "./HostSortMenu";
 import { HostsSidebar } from "./HostsSidebar";
 import { RowMoreMenu } from "./RowMenu";
+import { recentHostsSetting } from "./host-history";
+import { hostSortSetting, sortHostTree } from "./host-sort";
 import { searchTree } from "./hostTree";
 import { useHosts } from "./hostsStore";
 import type { HostsController } from "./useHostsController";
@@ -31,10 +35,14 @@ export function HostsPanel({
   const status = useHosts((s) => s.status);
   const loadError = useHosts((s) => s.error);
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useSetting(hostSortSetting);
+  const [history] = useSetting(recentHostsSetting);
   const { messages, selected, selectedGroupId } = controller;
 
   const searching = query.trim() !== "";
-  const nodes = useMemo(() => searchTree(tree, query), [tree, query]);
+  const sortHistory = sort === "recent" ? history : undefined;
+  const sortedTree = useMemo(() => sortHostTree(tree, sort, sortHistory), [tree, sort, sortHistory]);
+  const nodes = useMemo(() => searchTree(sortedTree, query), [sortedTree, query]);
 
   let list;
   if (status === "error") {
@@ -63,6 +71,7 @@ export function HostsPanel({
               tree={tree}
               nodes={nodes}
               searching={searching}
+              manualOrder={sort === "manual"}
               selected={selected}
               onSelect={controller.setSelected}
               renamingGroupId={controller.renamingGroupId}
@@ -88,6 +97,7 @@ export function HostsPanel({
       }
       actions={
         <>
+          {(tree.hosts.length > 0 || tree.groups.length > 0) && <HostSortMenu order={sort} onChange={setSort} />}
           <IconButton label={t("hosts.newGroup")} onClick={() => void controller.createGroup(selectedGroupId)}>
             <FolderPlus />
           </IconButton>
