@@ -1,9 +1,11 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ffi::CStr;
 use std::io::{ErrorKind, Write};
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::ptr::NonNull;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use block2::StackBlock;
@@ -23,7 +25,7 @@ use objc2_foundation::{
     NSSize, NSString, NSURL,
 };
 use sshastra_core::files::{FsError, FsResult};
-use tauri::WebviewWindow;
+use tauri::{AppHandle, Manager, WebviewWindow};
 
 use super::{PointerState, RemoteRead, Report, Source, CHUNK_SIZE};
 
@@ -31,6 +33,7 @@ thread_local! {
     static MONITOR: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
     static MOUSE_DOWN: RefCell<Option<Retained<NSEvent>>> = const { RefCell::new(None) };
     static DRAG: RefCell<Option<Retained<DragSource>>> = const { RefCell::new(None) };
+    static PROMISES: RefCell<HashMap<usize, Retained<NSFilePromiseProvider>>> = RefCell::default();
 }
 
 pub(crate) fn capture_mouse_events() {
@@ -53,6 +56,22 @@ pub(crate) fn capture_mouse_events() {
 struct PromiseState {
     source: Arc<Source>,
     report: Arc<Report>,
+    queue: Retained<NSOperationQueue>,
+    delivery: Option<Delivery>,
+}
+
+#[derive(Clone)]
+struct Delivery {
+    app: AppHandle,
+    started: Arc<AtomicBool>,
+}
+
+fn promise_id(report: &Arc<Report>) -> usize {
+    Arc::as_ptr(report) as usize
+}
+
+fn release_promise(id: usize) -> bool {
+    PROMISES.with_borrow_mut(|pending| pending.remove(&id).is_some())
 }
 
 define_class!(
@@ -70,12 +89,16 @@ define_class!(
             _provider: &NSFilePromiseProvider,
             _file_type: &NSString,
         ) -> Retained<NSString> {
+            #[cfg(feature = "e2e")]
+            log::info!("file drag AppKit requested the promise name");
             NSString::from_str(&self.ivars().source.name)
         }
 
         #[unsafe(method_id(operationQueueForFilePromiseProvider:))]
         fn queue(&self, _provider: &NSFilePromiseProvider) -> Retained<NSOperationQueue> {
-            NSOperationQueue::new()
+            #[cfg(feature = "e2e")]
+            log::info!("file drag AppKit requested the promise queue");
+            self.ivars().queue.clone()
         }
 
         #[unsafe(method(filePromiseProvider:writePromiseToURL:completionHandler:))]
@@ -85,22 +108,44 @@ define_class!(
             url: &NSURL,
             complete: &block2::DynBlock<dyn Fn(*mut NSError)>,
         ) {
+            #[cfg(feature = "e2e")]
+            log::info!("file drag AppKit requested the file contents");
+            let state = self.ivars();
+            if let Some(delivery) = &state.delivery {
+                delivery.started.store(true, Ordering::Release);
+            }
             let mut error = None;
-            let result = coordinate_copy(url, self.ivars().source.clone(), &mut error);
+            let result = coordinate_copy(url, state.source.clone(), &mut error);
             if error.is_none() {
                 error = result.as_ref().err().map(promise_error);
             }
             complete.call((error.as_ref().map_or(std::ptr::null_mut(), |error| {
                 Retained::as_ptr(error).cast_mut()
             }),));
-            self.ivars().report.finish(result.map(|()| true));
+            #[cfg(feature = "e2e")]
+            log::info!(
+                "file drag AppKit finished writing success={}",
+                result.is_ok()
+            );
+            state.report.finish(result.map(|()| true));
+            if let Some(delivery) = &state.delivery {
+                let id = promise_id(&state.report);
+                let _ = delivery.app.run_on_main_thread(move || {
+                    release_promise(id);
+                });
+            }
         }
     }
 );
 
 impl PromiseDelegate {
-    fn new(source: Arc<Source>, report: Arc<Report>) -> Retained<Self> {
-        let this = Self::alloc().set_ivars(PromiseState { source, report });
+    fn new(source: Arc<Source>, report: Arc<Report>, delivery: Option<Delivery>) -> Retained<Self> {
+        let this = Self::alloc().set_ivars(PromiseState {
+            source,
+            report,
+            delivery,
+            queue: NSOperationQueue::new(),
+        });
         unsafe { msg_send![super(this), init] }
     }
 }
@@ -142,18 +187,27 @@ pub(super) async fn sample_pointer(window: &WebviewWindow) -> Option<(isize, Poi
     receive.await.ok().flatten()
 }
 
+struct DragState {
+    delivery: Delivery,
+    report: Arc<Report>,
+}
+
 define_class!(
     // The dragging source is only called on the AppKit thread.
     #[unsafe(super(NSObject))]
     #[thread_kind = MainThreadOnly]
-    #[ivars = Arc<Report>]
+    #[ivars = DragState]
     struct DragSource;
 
     unsafe impl NSObjectProtocol for DragSource {}
 
     unsafe impl NSDraggingSource for DragSource {
         #[unsafe(method(draggingSession:sourceOperationMaskForDraggingContext:))]
-        fn allowed(&self, _session: &NSDraggingSession, context: NSDraggingContext) -> NSDragOperation {
+        fn allowed(
+            &self,
+            _session: &NSDraggingSession,
+            context: NSDraggingContext,
+        ) -> NSDragOperation {
             if context == NSDraggingContext::OutsideApplication {
                 NSDragOperation::Copy
             } else {
@@ -165,8 +219,24 @@ define_class!(
         fn ended(&self, _session: &NSDraggingSession, _point: NSPoint, operation: NSDragOperation) {
             #[cfg(feature = "e2e")]
             log::info!("file drag ended AppKit session operation={}", operation.0);
-            if !operation.contains(NSDragOperation::Copy) {
-                self.ivars().finish(Ok(false));
+            let state = self.ivars();
+            if operation.contains(NSDragOperation::Copy) {
+                let Delivery { app, started } = state.delivery.clone();
+                let report = state.report.clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                    let _ = app.run_on_main_thread(move || {
+                        if !started.load(Ordering::Acquire) && release_promise(promise_id(&report))
+                        {
+                            report.finish(Err(FsError::Io(
+                                "The drop target did not request the file".into(),
+                            )));
+                        }
+                    });
+                });
+            } else {
+                release_promise(promise_id(&state.report));
+                state.report.finish(Ok(false));
             }
             DRAG.with_borrow_mut(|active| *active = None);
         }
@@ -178,6 +248,7 @@ pub(super) fn start(
     source: Arc<Source>,
     report: Arc<Report>,
 ) -> tauri::Result<()> {
+    let app = window.app_handle().clone();
     window.with_webview(move |webview| {
         let Some(mtm) = MainThreadMarker::new() else {
             return;
@@ -194,7 +265,11 @@ pub(super) fn start(
         let Some(event) = MOUSE_DOWN.with_borrow_mut(Option::take) else {
             return;
         };
-        let delegate = PromiseDelegate::new(source, report.clone());
+        let delivery = Delivery {
+            app,
+            started: Arc::new(AtomicBool::new(false)),
+        };
+        let delegate = PromiseDelegate::new(source, report.clone(), Some(delivery.clone()));
         let provider = NSFilePromiseProvider::initWithFileType_delegate(
             NSFilePromiseProvider::alloc(),
             ns_string!("public.data"),
@@ -213,9 +288,13 @@ pub(super) fn start(
         );
         let icon = NSImage::imageNamed(unsafe { NSImageNameMultipleDocuments });
         unsafe { item.setDraggingFrame_contents(frame, icon.as_deref().map(|icon| icon.as_ref())) };
-        let this = DragSource::alloc(mtm).set_ivars(report.clone());
+        let this = DragSource::alloc(mtm).set_ivars(DragState {
+            delivery,
+            report: report.clone(),
+        });
         let drag_source: Retained<DragSource> = unsafe { msg_send![super(this), init] };
         DRAG.with_borrow_mut(|active| *active = Some(drag_source.clone()));
+        PROMISES.with_borrow_mut(|pending| pending.insert(promise_id(&report), provider));
         let items = NSArray::from_retained_slice(&[item]);
         let source: &ProtocolObject<dyn NSDraggingSource> = ProtocolObject::from_ref(&*drag_source);
         // AppKit requires the original mouse-down event. The method can return nil
@@ -225,6 +304,7 @@ pub(super) fn start(
         };
         let Some(session) = session else {
             DRAG.with_borrow_mut(|active| *active = None);
+            release_promise(promise_id(&report));
             report.finish(Err(FsError::Io(
                 "AppKit could not start the file drag".into(),
             )));
@@ -349,7 +429,7 @@ mod tests {
         });
         let (sender, mut result) = tokio::sync::oneshot::channel();
         let report = Arc::new(Report(std::sync::Mutex::new(Some(sender))));
-        let delegate = PromiseDelegate::new(file, report);
+        let delegate = PromiseDelegate::new(file, report, None);
         let delegate: &ProtocolObject<dyn NSFilePromiseProviderDelegate> =
             ProtocolObject::from_ref(&*delegate);
         let provider = NSFilePromiseProvider::initWithFileType_delegate(
