@@ -1,9 +1,9 @@
-//! Export files: the whole Host list, including Bookmarks and Port forwards,
+//! Export files: Hosts and Groups, including Bookmarks and Port forwards,
 //! in the HostStore's own versioned format, marked with [`EXPORT_FORMAT`], so
 //! importing an older one runs the same migrations as opening an old store.
 //! Credentials are never part of it: they live only in the CredentialVault.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
@@ -39,28 +39,41 @@ struct FileFormat {
 impl HostStore {
     /// The whole Host list as an export file (JSON), without credentials or local Agent access.
     pub fn export(&self) -> String {
-        let mut hosts = self.library.hosts.clone();
-        for host in &mut hosts {
-            host.agent_access = AgentPermission::Off;
-            host.open_ssh_source = None;
-        }
-        serde_json::to_string_pretty(&FileRef {
-            format: Some(EXPORT_FORMAT),
-            version: super::CURRENT_VERSION,
-            groups: &self.library.groups,
-            hosts: &hosts,
-        })
-        .expect("the Host list always serializes")
+        encode_export(self.groups(), self.list().to_vec())
     }
 
     /// Writes [`HostStore::export`] to `path`, replacing it atomically.
     pub fn export_to(&self, path: &Path) -> Result<(), HostStoreError> {
-        write_atomically(path, self.export().as_bytes())
-            .map_err(|source| HostStoreError::Io {
-                path: path.to_owned(),
-                source,
-            })
-            .inspect_err(|error| error.log_file_error("export"))
+        write_export(path, &self.export())
+    }
+
+    /// Exports the selection, its Jump hosts and their Group ancestry.
+    pub fn export_selection_to(&self, ids: &[HostId], path: &Path) -> Result<(), HostStoreError> {
+        self.validate_selection(ids)?;
+        let mut included = HashSet::new();
+        for id in ids {
+            if !included.contains(id) {
+                included.extend(self.jump_chain(id)?.into_iter().map(|host| host.id));
+            }
+        }
+        let hosts: Vec<_> = self
+            .list()
+            .iter()
+            .filter(|host| included.contains(&host.id))
+            .cloned()
+            .collect();
+        let ancestry: HashSet<_> = hosts
+            .iter()
+            .filter_map(|host| host.group_id.as_ref())
+            .flat_map(|group| self.library.ancestors_and_self(group))
+            .collect();
+        let groups: Vec<_> = self
+            .groups()
+            .iter()
+            .filter(|group| ancestry.contains(&group.id))
+            .cloned()
+            .collect();
+        write_export(path, &encode_export(&groups, hosts))
     }
 
     /// [`HostStore::import`] of the file at `path`.
@@ -139,6 +152,29 @@ impl HostStore {
             skipped_hosts,
         })
     }
+}
+
+fn encode_export(groups: &[Group], mut hosts: Vec<Host>) -> String {
+    for host in &mut hosts {
+        host.agent_access = AgentPermission::Off;
+        host.open_ssh_source = None;
+    }
+    serde_json::to_string_pretty(&FileRef {
+        format: Some(EXPORT_FORMAT),
+        version: super::CURRENT_VERSION,
+        groups,
+        hosts: &hosts,
+    })
+    .expect("the Host list always serializes")
+}
+
+fn write_export(path: &Path, json: &str) -> Result<(), HostStoreError> {
+    write_atomically(path, json.as_bytes())
+        .map_err(|source| HostStoreError::Io {
+            path: path.to_owned(),
+            source,
+        })
+        .inspect_err(|error| error.log_file_error("export"))
 }
 
 /// Adds `incoming` Groups to `groups`, in the file's order (their sibling

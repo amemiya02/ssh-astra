@@ -194,6 +194,23 @@ export function deleteHost(id: HostId): Promise<void> {
   return invoke("host_delete", { id });
 }
 
+export type HostBatchEdit =
+  | { kind: "move"; groupId: GroupId | null }
+  | { kind: "tag"; change: "add" | "remove"; tag: string }
+  | { kind: "delete" };
+
+/** Commits an edit to all selected Hosts and returns the saved tree. */
+export function editHosts(ids: readonly HostId[], edit: HostBatchEdit): Promise<HostTree> {
+  switch (edit.kind) {
+    case "move":
+      return invoke("hosts_batch_move", { ids, groupId: edit.groupId });
+    case "tag":
+      return invoke("hosts_batch_tag", { ids, change: edit.change, tag: edit.tag });
+    case "delete":
+      return invoke("hosts_batch_delete", { ids });
+  }
+}
+
 /** Saves a copy of a Host as `name`, right after the original in its Group. */
 export function duplicateHost(id: HostId, name: string): Promise<Host> {
   return invoke<Host>("host_duplicate", { id, name });
@@ -286,9 +303,9 @@ export interface ImportSummary {
   skippedHosts: string[];
 }
 
-/** Writes the Host list and its Groups, Bookmarks and Port forwards to an export file at `path`. */
-export function exportHosts(path: string): Promise<void> {
-  return invoke("hosts_export", { path });
+/** Writes the Host list, or a selection with its Jump hosts, to an export file. */
+export function exportHosts(path: string, ids?: readonly HostId[]): Promise<void> {
+  return invoke("hosts_export", { path, ids: ids ?? null });
 }
 
 /** Adds the Groups and Hosts of the export file at `path`; returns what changed and the new tree. */

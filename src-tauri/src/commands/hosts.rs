@@ -1,6 +1,6 @@
 //! Host commands: the saved Host list (HostStore) with its Groups.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -11,8 +11,8 @@ use sshastra_core::host_import::{
     ImportProblem, ParsedConfig, SECURECRT_NON_SESSION_FILES,
 };
 use sshastra_core::hosts::{
-    Bookmark, Group, GroupId, Host, HostDraft, HostId, HostStore, HostTree, ImportReport,
-    ImportSummary,
+    Bookmark, Group, GroupId, Host, HostDraft, HostId, HostStore, HostTagChange, HostTree,
+    ImportReport, ImportSummary,
 };
 use sshastra_core::terminal::{CommandHistory, TerminalRegistry};
 use tauri::{ipc::Channel, State, WebviewWindow};
@@ -206,22 +206,56 @@ pub fn host_delete(
     history: State<'_, CommandHistory>,
     id: HostId,
 ) -> CommandResult<()> {
-    hosts.edit(|store| {
-        store.delete(&id)?;
-        if let Err(error) = history.clear(&id) {
-            log::warn!(
-                "Could not remove Command history for a deleted Host: {:?}",
-                error.kind()
-            );
-        }
-        Ok(())
-    })?;
-    forwards.forwarder.forget_host(&id);
-    connections.release(&id);
-    let vault = Vault::clone(&vault);
-    // Best effort: an entry left behind is unreachable, never shown again.
-    tauri::async_runtime::spawn(async move { vault.clear(id).await });
+    delete_saved_hosts(&hosts, &forwards, &connections, &vault, &history, vec![id])?;
     Ok(())
+}
+
+#[tauri::command]
+pub fn hosts_batch_delete(
+    hosts: State<'_, HostsState>,
+    forwards: State<'_, ForwardsState>,
+    connections: State<'_, ConnectionsState>,
+    vault: State<'_, Vault>,
+    history: State<'_, CommandHistory>,
+    ids: Vec<HostId>,
+) -> CommandResult<HostTree> {
+    delete_saved_hosts(&hosts, &forwards, &connections, &vault, &history, ids)
+}
+
+fn delete_saved_hosts(
+    hosts: &HostsState,
+    forwards: &ForwardsState,
+    connections: &ConnectionsState,
+    vault: &Vault,
+    history: &CommandHistory,
+    mut ids: Vec<HostId>,
+) -> CommandResult<HostTree> {
+    let mut seen = HashSet::new();
+    ids.retain(|id| seen.insert(id.clone()));
+    let tree = hosts.edit(|store| {
+        let tree = store.delete_hosts(&ids)?;
+        for id in &ids {
+            if let Err(error) = history.clear(id) {
+                log::warn!(
+                    "Could not remove Command history for a deleted Host: {:?}",
+                    error.kind()
+                );
+            }
+        }
+        Ok(tree)
+    })?;
+    for id in &ids {
+        forwards.forwarder.forget_host(id);
+        connections.release(id);
+    }
+    let vault = vault.clone();
+    // Best effort: an entry left behind is unreachable, never shown again.
+    tauri::async_runtime::spawn(async move {
+        for id in ids {
+            vault.clear(id).await;
+        }
+    });
+    Ok(tree)
 }
 
 /// Every Group and Host, siblings in display order.
@@ -269,6 +303,25 @@ pub fn host_move(
         store.move_host(&id, group_id, index)?;
         Ok(store.tree())
     })
+}
+
+#[tauri::command]
+pub fn hosts_batch_move(
+    hosts: State<'_, HostsState>,
+    ids: Vec<HostId>,
+    group_id: Option<GroupId>,
+) -> CommandResult<HostTree> {
+    hosts.edit(|store| Ok(store.move_hosts(&ids, group_id)?))
+}
+
+#[tauri::command]
+pub fn hosts_batch_tag(
+    hosts: State<'_, HostsState>,
+    ids: Vec<HostId>,
+    change: HostTagChange,
+    tag: String,
+) -> CommandResult<HostTree> {
+    hosts.edit(|store| Ok(store.edit_host_tags(&ids, change, &tag)?))
 }
 
 #[tauri::command]
@@ -534,10 +587,17 @@ mod source_import_tests {
     }
 }
 
-/// Writes the whole Host list (no credentials) as an export file at `path`.
+/// Writes the whole Host list or a selection as a credential-free export file.
 #[tauri::command]
-pub fn hosts_export(hosts: State<'_, HostsState>, path: PathBuf) -> CommandResult<()> {
-    hosts.with(|store| Ok(store.export_to(&path)?))
+pub fn hosts_export(
+    hosts: State<'_, HostsState>,
+    path: PathBuf,
+    ids: Option<Vec<HostId>>,
+) -> CommandResult<()> {
+    hosts.with(|store| match ids {
+        Some(ids) => Ok(store.export_selection_to(&ids, &path)?),
+        None => Ok(store.export_to(&path)?),
+    })
 }
 
 /// What `hosts_import` added, and the Host list afterwards.
