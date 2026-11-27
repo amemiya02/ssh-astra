@@ -17,6 +17,26 @@ const run = randomUUID().slice(0, 8);
 const scratch = `/home/${sshd.USER}/e2e-${run}`;
 const uploadName = `upload-${run}.txt`;
 const uploadContent = `uploaded by the sshastra E2E test ${run}\n`;
+const isolatedLinux = process.platform === "linux" && Boolean(process.env.DBUS_SESSION_BUS_ADDRESS);
+const linkUser = "link-check";
+const linkPassword = "ignore-link-password";
+const warmLink = { address: "2001:db8::140", port: 2022 };
+const coldLink = { address: "cold.example.test", port: 2222 };
+
+const tabIds = () => $$('[role="tab"]').map((tab) => tab.getAttribute("id"));
+
+async function cancelSshLink({ address, port }: typeof coldLink, tabsBeforeLink: (string | null)[]): Promise<void> {
+  const prompt = $('[role="dialog"]');
+  await expect(prompt.$("h2")).toHaveText("Open SSH link?");
+  const details = await prompt.getText();
+  expect(details).toContain(address);
+  expect(details).toContain(String(port));
+  expect(details).toContain(linkUser);
+  expect(details).not.toContain(linkPassword);
+  expect(await tabIds()).toEqual(tabsBeforeLink);
+  await prompt.$("button=Cancel").click();
+  await expect(prompt).not.toExist();
+}
 
 /** All open Terminals' text, read through the test-only hook (`src/lib/e2e.ts`). */
 async function terminalText(): Promise<string> {
@@ -138,10 +158,15 @@ describe("sshastra", () => {
     await waitForTerminalText(new RegExp(`^e2e-42-${run}$`, "m"), "the command's output");
 
     // CI runs Linux smoke cases inside a separate D-Bus session.
-    if (process.platform === "linux" && process.env.DBUS_SESSION_BUS_ADDRESS) {
+    if (isolatedLinux) {
       await relaunchSmokeApp();
       await expect(tab).toHaveAttribute("aria-controls", panelId);
       await expect(pane.$(".xterm")).toBeDisplayed();
+      const tabsBeforeLink = await tabIds();
+      await relaunchSmokeApp([`ssh://${linkUser}:${linkPassword}@[${warmLink.address}]:${warmLink.port}`]);
+      await cancelSshLink(warmLink, tabsBeforeLink);
+      // The next command still belongs to the Terminal that was open before the link.
+      await browser.execute((textarea) => textarea.focus(), input);
     }
 
     // cd: the File panel follows the shell.
@@ -188,7 +213,7 @@ describe("sshastra", () => {
     await activeTab().$('[data-status="connected"]').waitForExist();
     await $('button[aria-label="Split right"]').click();
     await activeTab().$('[data-status="connected"]').waitForExist();
-    const tabs = await $$('[role="tab"]').map((tab) => tab.getAttribute("id"));
+    const tabs = await tabIds();
     const tab = await activeTab().getAttribute("id");
     const panel = await activeTab().getAttribute("aria-controls");
     if (!panel || !tab) throw new Error("The active tab has no saved identity.");
@@ -205,6 +230,7 @@ describe("sshastra", () => {
       }, tab.replace(/^tab-/, ""), focus);
     }, { timeoutMsg: "The active tab and split focus were never saved." });
 
+    const startupArgs = isolatedLinux ? [`ssh://${linkUser}@${coldLink.address}:${coldLink.port}`] : [];
     await restartSmokeApp(browser, async () => {
       const quitDialog = $('[role="dialog"]');
       await expect(quitDialog.$("h2")).toHaveText("Quit SSH Astra?");
@@ -213,10 +239,11 @@ describe("sshastra", () => {
       await expect(quitDialog.$(`li=${connectionCount}`)).toBeDisplayed();
       // The quit can stop WebDriver before the click response arrives.
       await quitDialog.$("button=Quit").click().catch(() => undefined);
-    });
+    }, startupArgs);
     await prepareWindow();
+    if (isolatedLinux) await cancelSshLink(coldLink, tabs);
     await expect(activeTab()).toHaveAttribute("id", tab);
-    expect(await $$('[role="tab"]').map((tab) => tab.getAttribute("id"))).toEqual(tabs);
+    expect(await tabIds()).toEqual(tabs);
     await expect(focusedPane()).toHaveAttribute("id", focus);
     await expect($(`#${panel} [role="separator"][aria-orientation="vertical"]`)).toBeDisplayed();
     const connect = await $$(`#${panel} button`).filter(async (button) => await button.getText() === "Connect");
