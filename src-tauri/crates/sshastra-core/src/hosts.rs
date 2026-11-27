@@ -187,7 +187,11 @@ pub struct Host {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub open_on_startup: bool,
     /// Agent access authorized locally for this saved Host.
-    #[serde(default, skip_serializing_if = "AgentPermission::is_off")]
+    #[serde(
+        default,
+        deserialize_with = "AgentPermission::deserialize_saved",
+        skip_serializing_if = "AgentPermission::is_off"
+    )]
     pub agent_access: AgentPermission,
     /// Outbound proxy choice for this Host when it is the first TCP hop.
     #[serde(default, skip_serializing_if = "HostProxy::is_inherit")]

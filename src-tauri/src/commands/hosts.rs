@@ -60,24 +60,27 @@ impl HostsState {
             let Ok(store) = guard.as_ref() else {
                 return Vec::new();
             };
-            registry.saved_terminals().into_iter().filter_map(|(id, metadata)| {
-                let host = store.get(&metadata.host)?;
-                if host.agent_access.is_off() {
-                    return None;
-                }
-                let state = metadata.snapshot();
-                Some(OpenTerminal {
-                    id,
-                    origin: TerminalOrigin::Saved {
-                        host: host.id.clone(),
-                        name: host.name.clone(),
-                        permission: host.agent_access,
-                    },
-                    title: state.title,
-                    cwd: state.cwd,
-                    status: state.status?,
+            registry
+                .saved_terminals()
+                .into_iter()
+                .filter_map(|(id, metadata)| {
+                    let host = store.get(&metadata.host)?;
+                    if host.agent_access.is_off() {
+                        return None;
+                    }
+                    let state = metadata.snapshot();
+                    Some(OpenTerminal {
+                        id,
+                        origin: TerminalOrigin::Saved {
+                            name: host.name.clone(),
+                            permission: host.agent_access,
+                        },
+                        title: state.title,
+                        cwd: state.cwd,
+                        status: state.status?,
+                    })
                 })
-            }).collect()
+                .collect()
         }
     }
 

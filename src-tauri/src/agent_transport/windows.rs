@@ -7,12 +7,12 @@ use std::time::Duration;
 use tokio::net::windows::named_pipe::{
     ClientOptions, NamedPipeClient, NamedPipeServer, ServerOptions,
 };
-use windows_sys::Win32::Foundation::{ERROR_PIPE_BUSY, HANDLE, HLOCAL, LocalFree};
+use windows_sys::Win32::Foundation::{LocalFree, ERROR_PIPE_BUSY, HANDLE, HLOCAL};
 use windows_sys::Win32::Security::Authorization::{
     ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
 };
 use windows_sys::Win32::Security::{
-    GetTokenInformation, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER, TokenUser,
+    GetTokenInformation, TokenUser, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER,
 };
 use windows_sys::Win32::Storage::FileSystem::SECURITY_IDENTIFICATION;
 use windows_sys::Win32::System::Pipes::GetNamedPipeServerProcessId;
@@ -42,13 +42,18 @@ impl Endpoint {
     pub fn isolated(directory: &std::path::Path) -> Self {
         let mut endpoint = Self::current_user().unwrap();
         endpoint.name.push('-');
-        endpoint.name.push_str(&directory.file_name().unwrap().to_string_lossy());
+        endpoint
+            .name
+            .push_str(&directory.file_name().unwrap().to_string_lossy());
         endpoint
     }
 
     pub async fn connect(&self) -> io::Result<NamedPipeClient> {
         loop {
-            match ClientOptions::new().security_qos_flags(SECURITY_IDENTIFICATION).open(&self.name) {
+            match ClientOptions::new()
+                .security_qos_flags(SECURITY_IDENTIFICATION)
+                .open(&self.name)
+            {
                 Ok(client) => {
                     verify_server(&client, &self.sid)?;
                     return Ok(client);
@@ -62,12 +67,18 @@ impl Endpoint {
     }
 
     fn create(&self, first: bool) -> io::Result<NamedPipeServer> {
-        let sddl: Vec<u16> = format!("D:P(A;;GA;;;{})", self.sid).encode_utf16().chain([0]).collect();
+        let sddl: Vec<u16> = format!("D:P(A;;GA;;;{})", self.sid)
+            .encode_utf16()
+            .chain([0])
+            .collect();
         let mut descriptor = null_mut();
         // Convert copies the SDDL into its own allocation.
         check(unsafe {
             ConvertStringSecurityDescriptorToSecurityDescriptorW(
-                sddl.as_ptr(), SDDL_REVISION_1, &mut descriptor, null_mut(),
+                sddl.as_ptr(),
+                SDDL_REVISION_1,
+                &mut descriptor,
+                null_mut(),
             )
         })?;
         let descriptor = LocalAllocation(descriptor);
@@ -84,7 +95,10 @@ impl Endpoint {
                 .max_instances(MAX_CLIENTS + 1)
                 .in_buffer_size(16 * 1024)
                 .out_buffer_size(16 * 1024)
-                .create_with_security_attributes_raw(&self.name, (&mut attributes as *mut SECURITY_ATTRIBUTES).cast())
+                .create_with_security_attributes_raw(
+                    &self.name,
+                    (&mut attributes as *mut SECURITY_ATTRIBUTES).cast(),
+                )
         }
     }
 }
@@ -127,7 +141,10 @@ fn verify_server(client: &NamedPipeClient, sid: &str) -> io::Result<()> {
     // OpenProcess returned an owned handle.
     let process = unsafe { OwnedHandle::from_raw_handle(process) };
     if user_sid(process.as_raw_handle())? != sid {
-        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "Agent access pipe belongs to another user"));
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "Agent access pipe belongs to another user",
+        ));
     }
     Ok(())
 }
@@ -155,7 +172,11 @@ fn user_sid(process: HANDLE) -> io::Result<String> {
     let mut data = vec![0usize; (len as usize).div_ceil(size_of::<usize>())];
     check(unsafe {
         GetTokenInformation(
-            token.as_raw_handle(), TokenUser, data.as_mut_ptr().cast(), size_of_val(data.as_slice()) as u32, &mut len,
+            token.as_raw_handle(),
+            TokenUser,
+            data.as_mut_ptr().cast(),
+            size_of_val(data.as_slice()) as u32,
+            &mut len,
         )
     })?;
     let mut string = null_mut();
@@ -171,7 +192,10 @@ fn user_sid(process: HANDLE) -> io::Result<String> {
         while *end != 0 {
             end = end.add(1);
         }
-        let text = String::from_utf16_lossy(std::slice::from_raw_parts(string, end.offset_from(string) as usize));
+        let text = String::from_utf16_lossy(std::slice::from_raw_parts(
+            string,
+            end.offset_from(string) as usize,
+        ));
         drop(allocation);
         Ok(text)
     }

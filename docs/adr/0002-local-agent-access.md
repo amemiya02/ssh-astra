@@ -4,7 +4,7 @@ SSH Astra remains a desktop SSH client. Users can bring an MCP client they alrea
 
 Agent access depends on the running window. The application owns the listener and the Terminal lifecycle, displays which tabs are shared, and lets the user revoke access from the status bar. The approval seam is designed for a decision in the window for an individual action. Permission follows the Host chosen by the user. A command's text alone cannot establish its effect on a particular Host, so the design leaves the decision with the user.
 
-Both the global switch and the per-Host permission default to Off. Each saved Host can use Off, Read only, or Approval required. Both enabled levels currently expose the same read-only metadata tool. The approval interface has no tool wired to it. Imports and duplicates start at Off. A Terminal opened through Quick connect remains private for its lifetime, including after its Temporary Host is saved. Terminals subsequently opened on the saved Host can be opted in.
+Both the global switch and the per-Host permission default to Off. Each saved Host can use Off, Read only, or Approval required. Both enabled levels currently expose the same read-only metadata tool. The approval interface is reserved for a future tool that asks the user to decide. Imports and duplicates start at Off. A Terminal opened through Quick connect remains private for its lifetime, including after its Temporary Host is saved. Terminals subsequently opened on the saved Host can be opted in.
 
 ## Local transport
 

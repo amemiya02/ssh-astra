@@ -71,6 +71,7 @@ describe("hostFormFrom", () => {
     const host = {
       id: "1", name: "db", tags: ["Database"], address: "db.local", port: 22, user: "root",
       auth: { type: "password" as const }, jumpHost: "2", groupId: null, forwards: [],
+      agentAccess: "approval" as const,
     };
     const form = hostFormFrom(host);
     expect(form).toEqual({
@@ -84,10 +85,13 @@ describe("hostFormFrom", () => {
       identityFile: "",
       identitiesOnly: false,
       forwardAgent: false, allowLegacyAlgorithms: false, openOnStartup: false,
+      agentAccess: "approval",
       terminalCharset: "utf8",
       terminalBackspace: "del",
     });
     expect(parseHostForm(form)).toEqual({ ok: true, draft: { ...host, id: undefined, groupId: undefined, forwards: undefined, identitiesOnly: false, forwardAgent: false, allowLegacyAlgorithms: false, openOnStartup: false } });
+    const revoked = parseHostForm({ ...form, agentAccess: "off" });
+    expect(revoked.ok && revoked.draft.agentAccess).toBeUndefined();
   });
 
   it("round-trips a key Host through the form", () => {

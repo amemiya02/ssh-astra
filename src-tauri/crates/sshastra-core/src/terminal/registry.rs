@@ -86,7 +86,9 @@ impl SavedTerminalMetadata {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, SavedTerminalState> {
-        self.state.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
 
@@ -139,7 +141,11 @@ impl TerminalRegistry {
     }
 
     pub fn set_title(&self, id: TerminalId, title: String) {
-        if let Some(saved) = self.lock().get(&id).and_then(|terminal| terminal.saved.clone()) {
+        if let Some(saved) = self
+            .lock()
+            .get(&id)
+            .and_then(|terminal| terminal.saved.clone())
+        {
             saved.set_title(title);
         }
     }
@@ -151,7 +157,14 @@ impl TerminalRegistry {
         saved: Option<Arc<SavedTerminalMetadata>>,
     ) -> TerminalId {
         let id = TerminalId(self.0.next_id.fetch_add(1, Ordering::Relaxed) + 1);
-        self.lock().insert(id, OpenTerminal { input, output, saved });
+        self.lock().insert(
+            id,
+            OpenTerminal {
+                input,
+                output,
+                saved,
+            },
+        );
         id
     }
 
@@ -240,7 +253,8 @@ impl TerminalRegistry {
 
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<TerminalId, OpenTerminal>> {
         // A panic while holding the lock leaves the map itself intact.
-        self.0.terminals
+        self.0
+            .terminals
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }

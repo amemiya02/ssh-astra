@@ -14,7 +14,10 @@ impl Endpoint {
     pub fn current_user() -> io::Result<Self> {
         // Shared with the CLI even when an app launcher and the client have
         // different TMPDIRs. Keep within the Unix-domain pathname limit.
-        Ok(Self(PathBuf::from(format!("/tmp/sshastra-{}", geteuid().as_raw()))))
+        Ok(Self(PathBuf::from(format!(
+            "/tmp/sshastra-{}",
+            geteuid().as_raw()
+        ))))
     }
 
     #[cfg(test)]
@@ -59,7 +62,10 @@ fn verify_peer(stream: &UnixStream) -> io::Result<()> {
 }
 
 fn permission_denied() -> io::Error {
-    io::Error::new(io::ErrorKind::PermissionDenied, "Agent access endpoint is not private")
+    io::Error::new(
+        io::ErrorKind::PermissionDenied,
+        "Agent access endpoint is not private",
+    )
 }
 
 pub struct Listener {
@@ -97,7 +103,9 @@ impl Listener {
 
         let path = endpoint.socket();
         match fs::symlink_metadata(&path) {
-            Ok(metadata) if metadata.file_type().is_socket() && owned_and_private(&metadata) => {
+            Ok(metadata)
+                if metadata.file_type().is_socket() && metadata.uid() == geteuid().as_raw() =>
+            {
                 fs::remove_file(&path)?;
             }
             Ok(_) => return Err(permission_denied()),
@@ -107,7 +115,11 @@ impl Listener {
         let listener = UnixListener::bind(&path)?;
         let socket = SocketFile(path);
         fs::set_permissions(&socket.0, fs::Permissions::from_mode(0o600))?;
-        Ok(Self { listener, _socket: socket, _lock: lock })
+        Ok(Self {
+            listener,
+            _socket: socket,
+            _lock: lock,
+        })
     }
 
     pub async fn accept(&mut self) -> io::Result<UnixStream> {

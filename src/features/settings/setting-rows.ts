@@ -2,7 +2,7 @@ import type { ParseKeys } from "i18next";
 import type { Language, resources } from "@/i18n/resources";
 import { shortcutNames } from "@/features/workspace/shortcuts";
 
-type SettingMessage = Extract<ParseKeys, `settings.${string}`>;
+type SettingMessage = Extract<ParseKeys, `settings.${string}` | "agentAccess.title" | "agentAccess.description">;
 type SettingsCopy = (typeof resources)["en"]["translation"]["settings"];
 export type SettingsCategory = keyof SettingsCopy["sections"];
 

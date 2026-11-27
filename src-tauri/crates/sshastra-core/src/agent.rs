@@ -1,7 +1,7 @@
 //! Local Agent access policy and MCP tool dispatch. The desktop shell owns the
 //! local transport and supplies the current Terminal and Host state.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{json, Value};
 
 use crate::hosts::HostId;
@@ -20,6 +20,16 @@ pub enum AgentPermission {
 impl AgentPermission {
     pub fn is_off(&self) -> bool {
         *self == Self::Off
+    }
+
+    // Host files can contain unknown settings from earlier editors. Only
+    // recognized values can grant access, so malformed ones read as Off.
+    pub(crate) fn deserialize_saved<'de, D: Deserializer<'de>>(input: D) -> Result<Self, D::Error> {
+        Ok(match Value::deserialize(input)?.as_str() {
+            Some("read") => Self::Read,
+            Some("approval") => Self::Approval,
+            _ => Self::Off,
+        })
     }
 }
 
@@ -57,7 +67,6 @@ pub enum TerminalStatus {
 
 pub enum TerminalOrigin {
     Saved {
-        host: HostId,
         name: String,
         permission: AgentPermission,
     },
@@ -90,7 +99,10 @@ struct TerminalMetadata {
 
 impl OpenTerminal {
     fn exposed(self) -> Option<TerminalMetadata> {
-        let TerminalOrigin::Saved { name, permission, .. } = self.origin else {
+        let TerminalOrigin::Saved {
+            name, permission, ..
+        } = self.origin
+        else {
             return None;
         };
         if permission.is_off() {
@@ -99,7 +111,9 @@ impl OpenTerminal {
         let host = bound_metadata(name, 512);
         Some(TerminalMetadata {
             id: self.id,
-            title: self.title.map_or_else(|| host.clone(), |title| bound_metadata(title, 512)),
+            title: self
+                .title
+                .map_or_else(|| host.clone(), |title| bound_metadata(title, 512)),
             host,
             cwd: self.cwd.map(|cwd| bound_metadata(cwd, 4096)),
             status: self.status,
@@ -149,7 +163,11 @@ pub fn dispatch(
             let Some(requested) = params["protocolVersion"].as_str() else {
                 return Some(rpc_error(id, -32602, "Invalid protocolVersion"));
             };
-            let version = if PROTOCOL_VERSIONS.contains(&requested) { requested } else { PROTOCOL_VERSIONS[0] };
+            let version = if PROTOCOL_VERSIONS.contains(&requested) {
+                requested
+            } else {
+                PROTOCOL_VERSIONS[0]
+            };
             json!({
                 "protocolVersion": version,
                 "capabilities": {"tools": {}},
@@ -170,12 +188,16 @@ pub fn dispatch(
             "annotations": { "readOnlyHint": true, "openWorldHint": false },
         }]}),
         "tools/call" if params["name"].as_str() == Some(TOOL_NAME) => {
-            let arguments = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
+            let arguments = params
+                .get("arguments")
+                .cloned()
+                .unwrap_or_else(|| json!({}));
             let Ok(arguments) = serde_json::from_value::<ListArguments>(arguments) else {
                 return Some(rpc_error(id, -32602, "Invalid list_terminals arguments"));
             };
             let mut listed: Vec<_> = if enabled {
-                snapshot().into_iter()
+                snapshot()
+                    .into_iter()
                     .filter(|terminal| arguments.after_id.is_none_or(|after| terminal.id > after))
                     .filter_map(OpenTerminal::exposed)
                     .collect()

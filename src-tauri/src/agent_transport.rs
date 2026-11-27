@@ -40,7 +40,9 @@ impl AgentService {
     }
 
     pub fn enabled(&self) -> bool {
-        self.lock().as_ref().is_some_and(|server| server.is_running())
+        self.lock()
+            .as_ref()
+            .is_some_and(|server| server.is_running())
     }
 
     pub fn apply(
@@ -92,12 +94,20 @@ impl Server {
         let active_on_thread = Arc::clone(&active);
         let thread = thread::Builder::new()
             .name("sshastra-agent".into())
-            .spawn(move || runtime.block_on(serve(listener, active_on_thread, snapshot, stopped)))?;
-        Ok(Self { active, stop: Some(stop), thread: Some(thread) })
+            .spawn(move || {
+                runtime.block_on(serve(listener, active_on_thread, snapshot, stopped))
+            })?;
+        Ok(Self {
+            active,
+            stop: Some(stop),
+            thread: Some(thread),
+        })
     }
 
     fn is_running(&self) -> bool {
-        self.thread.as_ref().is_some_and(|thread| !thread.is_finished())
+        self.thread
+            .as_ref()
+            .is_some_and(|thread| !thread.is_finished())
     }
 }
 
@@ -114,7 +124,10 @@ impl Drop for Server {
 }
 
 fn runtime() -> io::Result<Runtime> {
-    Builder::new_current_thread().enable_io().enable_time().build()
+    Builder::new_current_thread()
+        .enable_io()
+        .enable_time()
+        .build()
 }
 
 async fn serve(
@@ -162,13 +175,19 @@ async fn converse(
     let response = dispatch(&frame, active.load(Ordering::Acquire), snapshot);
     if let Some(response) = response.filter(|_| active.load(Ordering::Acquire)) {
         stream.write_all(&json_line(&response)).await?;
+        // The proxy closes once it has the whole reply. Keep the pipe open
+        // until then so Windows can deliver the last buffered bytes.
+        let _ = stream.read_u8().await;
     }
     Ok(())
 }
 
 async fn read_frame(reader: impl AsyncRead + Unpin, limit: usize) -> io::Result<Option<Vec<u8>>> {
     let mut frame = Vec::new();
-    BufReader::new(reader).take((limit + 1) as u64).read_until(b'\n', &mut frame).await?;
+    BufReader::new(reader)
+        .take((limit + 1) as u64)
+        .read_until(b'\n', &mut frame)
+        .await?;
     validate_frame(frame, limit)
 }
 
@@ -177,7 +196,10 @@ fn validate_frame(frame: Vec<u8>, limit: usize) -> io::Result<Option<Vec<u8>>> {
         return Ok(None);
     }
     if frame.last() != Some(&b'\n') || frame.len() > limit {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid MCP frame"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid MCP frame",
+        ));
     }
     Ok(Some(frame))
 }
@@ -203,7 +225,11 @@ pub fn run_stdio() -> io::Result<()> {
     proxy_stdio(&endpoint, io::stdin().lock(), io::stdout().lock())
 }
 
-fn proxy_stdio(endpoint: &Endpoint, mut input: impl BufRead, mut output: impl Write) -> io::Result<()> {
+fn proxy_stdio(
+    endpoint: &Endpoint,
+    mut input: impl BufRead,
+    mut output: impl Write,
+) -> io::Result<()> {
     let runtime = runtime()?;
     loop {
         let mut frame = Vec::new();
@@ -212,11 +238,19 @@ fn proxy_stdio(endpoint: &Endpoint, mut input: impl BufRead, mut output: impl Wr
         let Some(frame) = validate_frame(frame, MAX_REQUEST_BYTES)? else {
             return Ok(());
         };
-        let response = runtime.block_on(forward(endpoint, &frame)).ok().flatten().or_else(|| {
-            let request: Value = serde_json::from_slice(&frame).ok()?;
-            let id = request.get("id")?.clone();
-            Some(json_line(&rpc_error(id, -32000, "SSH Astra Agent access is unavailable")))
-        });
+        let response = runtime
+            .block_on(forward(endpoint, &frame))
+            .ok()
+            .flatten()
+            .or_else(|| {
+                let request: Value = serde_json::from_slice(&frame).ok()?;
+                let id = request.get("id")?.clone();
+                Some(json_line(&rpc_error(
+                    id,
+                    -32000,
+                    "SSH Astra Agent access is unavailable",
+                )))
+            });
         if let Some(response) = response {
             output.write_all(&response)?;
             output.flush()?;

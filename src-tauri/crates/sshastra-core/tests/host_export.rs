@@ -544,4 +544,12 @@ fn agent_access_is_local_to_the_host_store() {
     provided["hosts"][0]["agentAccess"] = "approval".into();
     target.import(&provided.to_string()).unwrap();
     assert_eq!(target.list()[0].agent_access, AgentPermission::Off);
+
+    provided["hosts"][0]["agentAccess"] = serde_json::json!({"enabled": true});
+    let (_dir, mut target) = store();
+    target.import(&provided.to_string()).unwrap();
+    assert_eq!(target.list()[0].agent_access, AgentPermission::Off);
+
+    let duplicate = source.duplicate_host(&host.id, "Build copy").unwrap();
+    assert_eq!(duplicate.agent_access, AgentPermission::Off);
 }

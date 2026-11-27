@@ -42,7 +42,10 @@ pub fn settings_load(
 ) -> CommandResult<Map<String, Value>> {
     settings.with(|store| {
         let mut sections = store.sections().clone();
-        sections.insert(AgentSettings::SECTION.into(), json!({"enabled": agent.enabled()}));
+        sections.insert(
+            AgentSettings::SECTION.into(),
+            json!({"enabled": agent.enabled()}),
+        );
         Ok(sections)
     })
 }
@@ -59,8 +62,13 @@ pub fn settings_set(
 ) -> CommandResult<()> {
     settings.with(|store| {
         if section == AgentSettings::SECTION {
-            let enabled = value.get("enabled").and_then(Value::as_bool).unwrap_or(false);
-            return agent.apply(enabled, || Ok(store.set(&section, json!({"enabled": enabled}))?));
+            let enabled = value
+                .get("enabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            return agent.apply(enabled, || {
+                Ok(store.set(&section, json!({"enabled": enabled}))?)
+            });
         }
         store.set(&section, value)?;
         if section == TransferSettings::SECTION {
