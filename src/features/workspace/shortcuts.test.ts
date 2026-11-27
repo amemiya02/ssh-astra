@@ -111,6 +111,24 @@ describe("shortcutLabel", () => {
   });
 });
 
+describe("Terminal font zoom shortcuts", () => {
+  it.each([
+    ["mac", { metaKey: true }, "⌘"],
+    ["other", { ctrlKey: true }, "Ctrl+"],
+  ] as const)("zooms with the platform modifier and the plus or minus key on %s", (platform, mods, prefix) => {
+    const increase = { type: "zoomTerminalFont", step: 1 };
+    expect(matchShortcut(chord("+", { ...mods, shiftKey: true }, "Equal"), platform)).toEqual(increase);
+    expect(matchShortcut(chord("+", mods, "NumpadAdd"), platform)).toEqual(increase);
+    expect(matchShortcut(chord("=", mods, "Equal"), platform)).toEqual(increase);
+    expect(matchShortcut(chord("-", mods, "Minus"), platform)).toEqual({ type: "zoomTerminalFont", step: -1 });
+    expect(matchShortcut(chord("_", { ...mods, shiftKey: true }, "Minus"), platform)).toBeNull();
+    expect(matchShortcut(chord("+", { ...mods, altKey: true }, "NumpadAdd"), platform)).toBeNull();
+    expect(matchShortcut(chord("-", {}, "Minus"), platform)).toBeNull();
+    expect(shortcutLabel("terminalZoomIn", platform)).toBe(prefix + "+");
+    expect(shortcutLabel("terminalZoomOut", platform)).toBe(prefix + "-");
+  });
+});
+
 describe("File panel history shortcuts", () => {
   it("leaves Alt+Left and Alt+Right available to the focused panel", () => {
     const back = chord("ArrowLeft", { altKey: true });

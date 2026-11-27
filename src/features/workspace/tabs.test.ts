@@ -563,6 +563,21 @@ describe("tabTitle", () => {
     expect(tabTitle(titled, t, 1)).toBe("Local terminal");
   });
 
+  it("can show Host names without losing existing shell titles or overriding a custom name", () => {
+    let state: TabsState = {
+      tabs: [tab("a", [remote("a.1", host("web", "web-1")), { ...local("a.2"), title: "htop" }])],
+      activeId: "a",
+    };
+    state = tabsReducer(state, { type: "retitle", paneId: "a.1", title: "Deploy shell" });
+    expect(tabTitle(state.tabs[0]!, t, 1, "host")).toBe("web-1");
+    expect(tabTitle(state.tabs[0]!, t, 1, "shell")).toBe("Deploy shell");
+
+    state = tabsReducer(state, { type: "focusPane", paneId: "a.2" });
+    expect(tabTitle(state.tabs[0]!, t, 2, "host")).toBe("Local terminal 2");
+    state = tabsReducer(state, { type: "renameTab", id: "a", title: "Operations" });
+    expect(tabTitle(state.tabs[0]!, t, 2, "host")).toBe("Operations");
+  });
+
   it("keeps a custom title while pane focus and shell titles change, then restores the current automatic title", () => {
     let state: TabsState = { tabs: [tab("a", [local("a.1"), local("a.2")])], activeId: "a" };
     state = tabsReducer(state, { type: "renameTab", id: "a", title: "  Deploy  " });

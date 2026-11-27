@@ -14,6 +14,7 @@ import { TerminalSearchBar, type SearchDirection, type SearchResults } from "./T
 import { currentPlatform, matchTerminalShortcut } from "@/features/workspace/shortcuts";
 import { planPaste, type PendingPaste } from "./terminal-input";
 import { terminalLinkDestination } from "./terminal-links";
+import { zoomTerminalFont, type TerminalPrefs } from "./terminal-prefs";
 import { useTerminalPrefs } from "./terminal-prefs-context";
 
 export const scrollbackLines = 10_000;
@@ -31,6 +32,12 @@ interface XtermViewProps {
    * teardown. Read later-changing values through refs: it is never called again.
    */
   attach(xterm: XTerm): () => void;
+}
+
+function appearanceOptions(
+  { fontFamily, fontSize, fontWeight, lineHeight, letterSpacing, cursorStyle, cursorBlink, wordSeparator }: TerminalPrefs,
+) {
+  return { fontFamily, fontSize, fontWeight, lineHeight, letterSpacing, cursorStyle, cursorBlink, wordSeparator };
 }
 
 /**
@@ -71,6 +78,12 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
     else xtermRef.current?.paste(plan.paste);
   }, []);
 
+  const fitIfVisible = useCallback(() => {
+    // A hidden pane has no size. Fitting it would shrink the shell to a sliver.
+    const container = containerRef.current;
+    if (container && container.clientWidth > 0 && container.clientHeight > 0) fitRef.current?.fit();
+  }, []);
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -84,10 +97,7 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
 
     const xterm = new XTerm({
       allowProposedApi: true, // search highlights use decorations
-      cursorBlink: true,
-      fontFamily: initial.fontFamily,
-      fontSize: initial.fontSize,
-      lineHeight: 1.2,
+      ...appearanceOptions(initial),
       linkHandler: {
         // xterm's default permits only HTTP(S). Both callbacks enforce our allowlist.
         allowNonHttpProtocols: true,
@@ -110,10 +120,6 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
     const renderer = loadRenderer(xterm, initial.ligatures);
     rendererRef.current = renderer;
 
-    // A hidden tab has no size; fitting it would shrink the shell to a sliver.
-    const fitIfVisible = () => {
-      if (container.clientWidth > 0 && container.clientHeight > 0) fit.fit();
-    };
     fitIfVisible();
 
     const platform = currentPlatform();
@@ -149,8 +155,15 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
       event.preventDefault();
       readClipboardText().then(requestPaste, () => undefined);
     };
+    const onZoomWheel = (event: WheelEvent) => {
+      if ((!event.ctrlKey && !event.metaKey) || event.altKey || event.shiftKey || event.deltaY === 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      zoomTerminalFont(event.deltaY < 0 ? 1 : -1);
+    };
     container.addEventListener("paste", onPaste, true);
     container.addEventListener("contextmenu", onContextMenu);
+    container.addEventListener("wheel", onZoomWheel, { capture: true, passive: false });
 
     const detach = attachRef.current(xterm);
     const unexpose = exposeTerminal(xterm);
@@ -162,6 +175,7 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
       clearTimeout(copyTimer);
       container.removeEventListener("paste", onPaste, true);
       container.removeEventListener("contextmenu", onContextMenu);
+      container.removeEventListener("wheel", onZoomWheel, true);
       onResults.dispose();
       onSelection.dispose();
       onTitle.dispose();
@@ -173,18 +187,16 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
       searchRef.current = null;
       rendererRef.current = null;
     };
-  }, [requestPaste]);
+  }, [fitIfVisible, requestPaste]);
 
-  // Font, size and colours apply to the running Terminal at once.
   useEffect(() => {
     const xterm = xtermRef.current;
-    if (!xterm) return;
-    xterm.options.theme = xtermTheme;
-    xterm.options.fontFamily = prefs.fontFamily;
-    xterm.options.fontSize = prefs.fontSize;
-    const container = containerRef.current;
-    if (container && container.clientWidth > 0) fitRef.current?.fit();
-  }, [xtermTheme, prefs.fontFamily, prefs.fontSize]);
+    if (xterm) xterm.options = { ...appearanceOptions(prefs), theme: xtermTheme };
+  }, [prefs, xtermTheme]);
+
+  useEffect(() => {
+    fitIfVisible();
+  }, [fitIfVisible, prefs.fontFamily, prefs.fontSize, prefs.fontWeight, prefs.lineHeight, prefs.letterSpacing]);
 
   useEffect(() => {
     const xterm = xtermRef.current;
@@ -196,9 +208,9 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
 
   useEffect(() => {
     if (!active) return;
-    fitRef.current?.fit();
+    fitIfVisible();
     if (!searching) xtermRef.current?.focus();
-  }, [active, searching]);
+  }, [active, fitIfVisible, searching]);
 
   const find = useCallback((query: string, direction: SearchDirection, incremental = false) => {
     const search = searchRef.current;

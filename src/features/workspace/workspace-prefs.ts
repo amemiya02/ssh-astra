@@ -5,9 +5,17 @@ export type RestoreTabs = (typeof restoreTabsOptions)[number];
 
 interface WorkspacePrefs {
   restoreTabs: RestoreTabs;
+  confirmClose: boolean;
 }
 
-export const workspaceSetting = defineSection<WorkspacePrefs>("workspacePreferences", { restoreTabs: "layout" }, (raw) => {
-  const value = raw && typeof raw === "object" && "restoreTabs" in raw ? raw.restoreTabs : undefined;
-  return { restoreTabs: restoreTabsOptions.find((option) => option === value) ?? "layout" };
-});
+export const workspaceSetting = defineSection<WorkspacePrefs>(
+  "workspacePreferences",
+  { restoreTabs: "layout", confirmClose: true },
+  (raw) => {
+    const prefs = raw && typeof raw === "object" ? raw as Partial<Record<keyof WorkspacePrefs, unknown>> : {};
+    return {
+      restoreTabs: restoreTabsOptions.find((option) => option === prefs.restoreTabs) ?? "layout",
+      confirmClose: prefs.confirmClose !== false,
+    };
+  },
+);

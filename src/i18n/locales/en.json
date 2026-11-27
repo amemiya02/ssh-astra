@@ -135,6 +135,13 @@
     "localTerminal": "Local terminal",
     "newLocalTerminal": "New Local terminal",
     "close": "Close {{title}}",
+    "confirmClose": {
+      "title_one": "Close {{count}} connected Terminal?",
+      "title_other": "Close {{count}} connected Terminals?",
+      "description": "Programs running in the remote Terminals may stop.",
+      "skip": "Don't ask again",
+      "confirm": "Close"
+    },
     "closeTab": "Close tab",
     "closeOthers": "Close other tabs",
     "closeRight": "Close tabs to the right",
@@ -629,6 +636,10 @@
       "updates": "Updates",
       "diagnostics": "Diagnostics"
     },
+    "confirmClose": {
+      "label": "Confirm Terminal close",
+      "description": "Ask before closing a connected remote Terminal."
+    },
     "restoreTabs": {
       "label": "Restore tabs",
       "description": "Choose what happens to your tabs and panes the next time SSH Astra starts.",
@@ -668,6 +679,18 @@
         "label": "Font size",
         "description": "In pixels, from {{min}} to {{max}}."
       },
+      "fontWeight": {
+        "label": "Font weight",
+        "description": "Regular text weight from {{min}} to {{max}}. The default is 400."
+      },
+      "lineHeight": {
+        "label": "Line height",
+        "description": "Line height as a multiple of the font’s height, from {{min}} to {{max}}."
+      },
+      "letterSpacing": {
+        "label": "Letter spacing",
+        "description": "Extra space between character cells, from {{min}} to {{max}} pixels."
+      },
       "ligatures": {
         "label": "Ligatures",
         "description": "Joins character pairs such as -> and != when the font supports it."
@@ -675,6 +698,31 @@
       "colorScheme": {
         "label": "Colour scheme",
         "description": "Used by every Terminal unless its Host sets its own."
+      },
+      "cursorStyle": {
+        "label": "Cursor shape",
+        "description": "Default shape of the Terminal cursor.",
+        "options": {
+          "block": "Block",
+          "bar": "Bar",
+          "underline": "Underline"
+        }
+      },
+      "cursorBlink": {
+        "label": "Blink cursor",
+        "description": "Blink the Terminal cursor by default."
+      },
+      "wordSeparator": {
+        "label": "Word separators",
+        "description": "Characters that split words when you double-click text. Clear the field to restore the defaults."
+      },
+      "titleSource": {
+        "label": "Tab title source",
+        "description": "Use the shell title or the Host name. In Host mode, Local terminals use their default names. Custom tab names take priority.",
+        "options": {
+          "shell": "Shell title",
+          "host": "Host name"
+        }
       },
       "copyOnSelect": {
         "label": "Copy on select",

@@ -42,6 +42,23 @@
   </tr>
 </table>
 
+## 终端快捷键
+
+| 操作 | macOS | Windows 和 Linux |
+| --- | --- | --- |
+| 增大字号 | `⌘+` | `Ctrl++` |
+| 减小字号 | `⌘-` | `Ctrl+-` |
+| 用滚轮缩放字号 | 按住 Command 或 Control，在终端上滚动 | 按住 Ctrl，在终端上滚动 |
+
+缩放会保存所有终端共用的字号，范围为 8–32 像素。增大字号的快捷键也支持 `=` 键。
+
+### 终端协议支持
+
+SSH Astra 使用 xterm.js 6.0.0。
+
+- **同步刷新（DECSET 2026）**已支持。xterm.js 会积累屏幕重绘请求，等程序复位该模式后一次刷新。如果程序没有复位，xterm.js 会在一秒后恢复刷新。[6.0.0 发布说明](https://github.com/xtermjs/xterm.js/releases/tag/6.0.0) · [6.0.0 渲染服务源码](https://github.com/xtermjs/xterm.js/blob/6.0.0/src/browser/services/RenderService.ts#L320-L352)
+- **Kitty 键盘协议**在 6.0.0 中尚不支持。该版本的 CSI 处理器缺少 Kitty 键盘协议协商，键盘编码器使用传统转义序列。[6.0.0 CSI 处理器源码](https://github.com/xtermjs/xterm.js/blob/6.0.0/src/common/InputHandler.ts#L219-L268) · [6.0.0 键盘编码器源码](https://github.com/xtermjs/xterm.js/blob/6.0.0/src/common/input/Keyboard.ts)
+
 ## 安装
 
 从 [Releases](https://github.com/amemiya02/ssh-astra/releases) 下载：`.msi`（Windows）、通用 `.dmg`（macOS）、`.AppImage` / `.deb`（Linux）。

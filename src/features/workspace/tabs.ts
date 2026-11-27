@@ -1,4 +1,5 @@
 import { hostHue } from "@/features/hosts/hostHue";
+import type { TerminalTitleSource } from "@/features/terminal/terminal-prefs";
 import type { Host } from "@/lib/ipc/hosts";
 import type { AnsiHue } from "@/theme/monogram-ink";
 import { paneNeighbors, resizePaneLayout, type PaneDirection, type SplitResize } from "./pane-layout";
@@ -111,6 +112,8 @@ export type TabsAction =
   | { type: "retitle"; paneId: string; title: string }
   | { type: "status"; paneId: string; status: ConnectionStatus; reconnecting?: ReconnectProgress };
 
+export type CloseAction = Extract<TabsAction, { type: "close" | "closeOthers" | "closeRight" | "closePane" }>;
+
 export const emptyTabs: TabsState = { tabs: [], activeId: null };
 
 /** What the app opens with: the Home tab, no Terminal. */
@@ -207,18 +210,18 @@ export function remoteTerminalPaneIds(state: TabsState): string[] {
 }
 
 /**
- * The tab's custom title or its focused pane's automatic label: the program's own title,
- * else the kind's name. `ordinal` is 1-based among tabs of the same kind. A remote Terminal
- * uses its Host's name and a Port forwards tab adds it to the kind's name.
+ * The tab's custom title or its focused pane's automatic label. In shell mode, a program's title
+ * takes priority over the kind's name. `ordinal` is 1-based among tabs of the same kind.
  */
 export function tabTitle(
   tab: Tab,
   t: (key: "tabs.home" | "tabs.localTerminal" | "tabs.settings" | "tabs.portForwards" | "tabs.sftp") => string,
   ordinal: number,
+  titleSource: TerminalTitleSource = "shell",
 ): string {
   if (tab.customTitle) return tab.customTitle;
   const pane = activePane(tab);
-  if (pane.title) return pane.title;
+  if (titleSource === "shell" && pane.title) return pane.title;
   switch (pane.kind) {
     case "home":
       return t("tabs.home");
@@ -390,6 +393,16 @@ function duplicateTab(state: TabsState, { id, tabId, paneIds }: Extract<TabsActi
   const tabs = [...state.tabs];
   tabs.splice(index + 1, 0, copy);
   return { tabs, activeId: tabId };
+}
+
+/** Preview the same close the workspace will apply, including its locked-tab guards. */
+export function countTerminalsClosing(state: TabsState, action: CloseAction): number {
+  const next = tabsReducer(state, action);
+  if (next === state) return 0;
+  const remaining = new Set(next.tabs.flatMap(tabPanes).map((pane) => pane.id));
+  return state.tabs.flatMap(tabPanes).filter((pane) =>
+    pane.kind === "remote-terminal" && pane.status === "connected" && !remaining.has(pane.id),
+  ).length;
 }
 
 function closeTabs(state: TabsState, id: string, mode: "close" | "closeOthers" | "closeRight"): TabsState {

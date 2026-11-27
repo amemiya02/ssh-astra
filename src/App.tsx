@@ -22,22 +22,27 @@ import { usePaletteActions, type PaletteAction } from "@/features/palette/palett
 import { rememberHostOpened } from "@/features/palette/recent-hosts";
 import { DiagnosticsPaletteActions } from "@/features/settings/diagnostics-section";
 import { AppShell } from "@/features/shell/AppShell";
+import { zoomTerminalFont } from "@/features/terminal/terminal-prefs";
+import { useTerminalPrefs } from "@/features/terminal/terminal-prefs-context";
 import { paneNeighbors } from "@/features/workspace/pane-layout";
 import { currentPlatform, paneSwapShortcuts, shortcutLabel, type WorkspaceCommand } from "@/features/workspace/shortcuts";
 import { TabPanels } from "@/features/workspace/TabPanels";
 import { ConflictDialog } from "@/features/transfers/ConflictDialog";
 import { transferSummary, transfersStore, useTransfers } from "@/features/transfers/transfersStore";
+import { CloseTerminalsDialog } from "@/features/workspace/CloseTerminalsDialog";
 import { TabStrip } from "@/features/workspace/TabStrip";
 import {
   activePane,
   activeTab,
   canSplit,
   connectedHosts,
+  countTerminalsClosing,
   newPane,
   reconnectingHosts,
   remoteTerminalPaneIds,
   tabTitle,
   tabsReducer,
+  type CloseAction,
   type ConnectionStatus,
   type PaneKind,
   type ReconnectProgress,
@@ -46,6 +51,7 @@ import {
 } from "@/features/workspace/tabs";
 import { useWorkspaceShortcuts } from "@/features/workspace/use-workspace-shortcuts";
 import { serializeWorkspaceLayout, workspaceLayoutSetting } from "@/features/workspace/workspace-layout";
+import { workspaceSetting } from "@/features/workspace/workspace-prefs";
 import type { Host } from "@/lib/ipc/hosts";
 import { getSetting, setSetting } from "@/lib/storage";
 
@@ -60,8 +66,18 @@ const updatable = isTauri() && import.meta.env.VITE_E2E !== "1";
  */
 export function App({ initialTabs }: { initialTabs: TabsState }) {
   const { t } = useTranslation();
+  const { prefs: { titleSource } } = useTerminalPrefs();
   const [state, dispatch] = useReducer(tabsReducer, initialTabs);
   const { tabs, activeId } = state;
+  const [pendingClose, setPendingClose] = useState<{ action: CloseAction; count: number } | null>(null);
+
+  function requestClose(action: CloseAction) {
+    if (pendingClose) return;
+    const count = getSetting(workspaceSetting).confirmClose ? countTerminalsClosing(state, action) : 0;
+    if (count > 0) setPendingClose({ action, count });
+    else dispatch(action);
+  }
+
   const focused = activeTab(state);
   const canSplitFocused = focused !== undefined && canSplit(focused);
   const focusedLayout = focused?.layout;
@@ -137,9 +153,9 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
       tabs.map((tab, index) => {
         const kind = activePane(tab).kind;
         const ordinal = tabs.slice(0, index + 1).filter((other) => activePane(other).kind === kind).length;
-        return { id: tab.id, title: tabTitle(tab, t, ordinal) };
+        return { id: tab.id, title: tabTitle(tab, t, ordinal, titleSource) };
       }),
-    [tabs, t],
+    [tabs, t, titleSource],
   );
   usePaletteActions(
     useMemo(
@@ -212,12 +228,13 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
   );
 
   useWorkspaceShortcuts(platform, (command: WorkspaceCommand) => {
+    if (pendingClose) return;
     const tab = activeTab(state);
     switch (command.type) {
       case "newTab":
         return openLocalTerminal();
       case "closePane":
-        if (tab) dispatch({ type: "closePane", paneId: tab.activePaneId });
+        if (tab) requestClose({ type: "closePane", paneId: tab.activePaneId });
         return;
       case "split":
         return split(command.orientation);
@@ -235,6 +252,8 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
         return setPaletteOpen((open) => !open);
       case "openSettings":
         return openSettings();
+      case "zoomTerminalFont":
+        return zoomTerminalFont(command.step);
       case "goToTab": {
         const target = tabs.at(command.index);
         if (target) dispatch({ type: "activate", id: target.id });
@@ -296,8 +315,19 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
             tabs={tabs}
             activeId={activeId}
             platform={platform}
+            titleSource={titleSource}
             onActivate={(id) => dispatch({ type: "activate", id })}
-            onTabAction={dispatch}
+            onTabAction={(action) => {
+              switch (action.type) {
+                case "close":
+                case "closeOthers":
+                case "closeRight":
+                  requestClose(action);
+                  break;
+                default:
+                  dispatch(action);
+              }
+            }}
             onMove={(id, to) => dispatch({ type: "move", id, to })}
             onNewLocalTerminal={openLocalTerminal}
             onSplit={split}
@@ -316,7 +346,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
               />
             )}
             onFocusPane={(paneId) => dispatch({ type: "focusPane", paneId })}
-            onClosePane={(paneId) => dispatch({ type: "closePane", paneId })}
+            onClosePane={(paneId) => requestClose({ type: "closePane", paneId })}
             onEditHost={(host) => hostsController.actions.edit(hosts.find((saved) => saved.id === host.id) ?? host)}
             onConnectRestoredPane={(paneId) => dispatch({ type: "connectRestoredPane", paneId })}
             onTitleChange={retitle}
@@ -336,6 +366,19 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
       />
       {hostsController.dialogs}
       <ConflictDialog />
+      {pendingClose && (
+        <CloseTerminalsDialog
+          count={pendingClose.count}
+          onCancel={() => setPendingClose(null)}
+          onConfirm={(skipConfirmation) => {
+            if (skipConfirmation) {
+              setSetting(workspaceSetting, { ...getSetting(workspaceSetting), confirmClose: false });
+            }
+            dispatch(pendingClose.action);
+            setPendingClose(null);
+          }}
+        />
+      )}
       <CommandDialog
         open={sftpPickerOpen}
         onOpenChange={setSftpPickerOpen}

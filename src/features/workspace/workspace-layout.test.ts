@@ -256,10 +256,14 @@ describe("workspace startup", () => {
     }
   });
 
-  it("defaults to layout-only restoration and repairs unknown options", () => {
-    expect(workspaceSetting.parse(undefined)).toEqual({ restoreTabs: "layout" });
-    expect(workspaceSetting.parse({ restoreTabs: "unknown" })).toEqual({ restoreTabs: "layout" });
-    expect(workspaceSetting.parse({ restoreTabs: "connect" })).toEqual({ restoreTabs: "connect" });
-    expect(workspaceSetting.parse({ restoreTabs: "none" })).toEqual({ restoreTabs: "none" });
+  it("defaults to layout-only restoration and confirmation and repairs unknown options", () => {
+    expect(workspaceSetting.parse(undefined)).toEqual({ restoreTabs: "layout", confirmClose: true });
+    expect(workspaceSetting.parse({ restoreTabs: "unknown", confirmClose: "false" })).toEqual({
+      restoreTabs: "layout", confirmClose: true,
+    });
+    expect(workspaceSetting.parse({ restoreTabs: "connect" })).toEqual({ restoreTabs: "connect", confirmClose: true });
+    expect(workspaceSetting.parse({ restoreTabs: "none", confirmClose: false })).toEqual({
+      restoreTabs: "none", confirmClose: false,
+    });
   });
 });

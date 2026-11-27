@@ -135,6 +135,13 @@
     "localTerminal": "本地终端",
     "newLocalTerminal": "新建本地终端",
     "close": "关闭 {{title}}",
+    "confirmClose": {
+      "title_one": "关闭 {{count}} 个已连接的终端？",
+      "title_other": "关闭 {{count}} 个已连接的终端？",
+      "description": "这些远程终端中运行的程序可能会停止。",
+      "skip": "不再询问",
+      "confirm": "关闭"
+    },
     "closeTab": "关闭标签",
     "closeOthers": "关闭其他标签",
     "closeRight": "关闭右侧标签",
@@ -629,6 +636,10 @@
       "updates": "更新",
       "diagnostics": "诊断"
     },
+    "confirmClose": {
+      "label": "关闭终端前确认",
+      "description": "关闭已连接的远程终端前询问。"
+    },
     "restoreTabs": {
       "label": "恢复标签",
       "description": "选择下次启动 SSH Astra 时如何恢复标签和分屏。",
@@ -668,6 +679,18 @@
         "label": "字号",
         "description": "单位为像素，范围 {{min}} 到 {{max}}。"
       },
+      "fontWeight": {
+        "label": "字重",
+        "description": "常规文字的字重，范围 {{min}} 到 {{max}}，默认为 400。"
+      },
+      "lineHeight": {
+        "label": "行高",
+        "description": "以字体高度为基准的行高倍数，范围 {{min}} 到 {{max}}。"
+      },
+      "letterSpacing": {
+        "label": "字间距",
+        "description": "字符单元之间额外增加的间距，范围 {{min}} 到 {{max}} 像素。"
+      },
       "ligatures": {
         "label": "连字",
         "description": "字体支持时，将 -> 和 != 等字符组合显示为连字。"
@@ -675,6 +698,31 @@
       "colorScheme": {
         "label": "配色",
         "description": "所有终端都使用此配色，除非其 Host 单独设置了配色。"
+      },
+      "cursorStyle": {
+        "label": "光标样式",
+        "description": "终端光标的默认形状。",
+        "options": {
+          "block": "方块",
+          "bar": "竖线",
+          "underline": "下划线"
+        }
+      },
+      "cursorBlink": {
+        "label": "光标闪烁",
+        "description": "默认让终端光标闪烁。"
+      },
+      "wordSeparator": {
+        "label": "分词符",
+        "description": "双击选词时用于划分单词的字符。清空输入框可恢复默认值。"
+      },
+      "titleSource": {
+        "label": "标签标题来源",
+        "description": "使用 Shell 标题或 Host 名称。选择 Host 名称时，本地终端使用默认名称。自定义标签名优先。",
+        "options": {
+          "shell": "Shell 标题",
+          "host": "Host 名称"
+        }
       },
       "copyOnSelect": {
         "label": "选中即复制",
