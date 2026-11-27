@@ -10,6 +10,13 @@ A modern desktop SSH/SFTP client: saved hosts, terminals and a file panel in one
 A saved, named set of connection settings (address, port, user, authentication, jump host) that the user opens to start working on a machine.
 _Avoid_: Session, bookmark, server, profile
 
+**Quick connect**:
+Opens a Terminal directly from an SSH address entered in Home or the command palette.
+
+**Temporary Host**:
+The in-memory connection settings created by Quick connect. It is discarded when its last tab closes.
+_Avoid_: Ad-hoc connection, session
+
 **Group**:
 A user-defined folder that organizes Hosts in the host list.
 _Avoid_: Folder, category, tag

@@ -951,12 +951,18 @@
     "hosts": "Hosts",
     "forwards": "Port forwards"
   },
+  "quickConnect": {
+    "action": "Quick connect",
+    "connectTo": "Connect to {{target}}",
+    "temporaryHost": "Temporary Host",
+    "failed": "Could not open a Temporary Host."
+  },
   "home": {
     "search": "Search Hosts by name, address or user",
     "recent": "Recent",
     "hosts": "Hosts",
     "ungrouped": "Ungrouped",
     "emptyTitle": "No Hosts yet",
-    "emptyBody": "Add a Host, or import the ones in ~/.ssh/config. Each one appears here as a card; click it to open a Terminal."
+    "emptyBody": "Enter an SSH address above to connect, or add or import Hosts to open them again later."
   }
 }

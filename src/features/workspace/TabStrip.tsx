@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
 import { TabMenu } from "./TabMenu";
 import { shortcutLabel, type Platform } from "./shortcuts";
 import type { TabActivity } from "./tab-activity";
-import { privacyModeSetting } from "./privacy-mode";
+import { privacyModeSetting, workspaceHostName } from "./privacy-mode";
 import { groupTabsByHost, type TabGroup } from "./tab-groups";
 import { workspaceSetting } from "./workspace-prefs";
 import {
@@ -345,7 +345,8 @@ export function TabStrip({
             const hasUnread = closed && group.tabs.some(({ id }) => id !== activeId && unread.has(id));
             const bellRang = closed && group.tabs.some(({ id }) => flashing.has(id));
             const current = closed && group.tabs.some(({ id }) => id === activeId);
-            const title = t("tabs.hostGroup", { name: group.host.name });
+            const name = workspaceHostName(group.host, t, privacyMode);
+            const title = t("tabs.hostGroup", { name });
             const label = [
               title,
               hasUnread && t("tabs.unreadOutput"),
@@ -368,7 +369,7 @@ export function TabStrip({
                 onClick={() => toggleHost(group.host.id)}
               >
                 <ChevronRight aria-hidden className={cn("shrink-0", compact ? "size-3" : "size-3.5", !closed && "rotate-90")} />
-                {compact ? <HostMonogram host={group.host} /> : <span className="truncate">{group.host.name}</span>}
+                {compact ? <HostMonogram host={{ ...group.host, name }} /> : <span className="truncate">{name}</span>}
                 {hasUnread && <span aria-hidden data-unread-output className={cn(
                   "bg-primary size-1.5 shrink-0 rounded-full",
                   compact && "absolute top-1 right-1",

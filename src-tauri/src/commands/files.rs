@@ -17,9 +17,8 @@ use tokio::sync::oneshot;
 
 use crate::prompts::{ChannelPrompter, PendingPrompts, PromptRequest};
 
-use super::connections::connect_host;
+use super::connections::HostRoute;
 use super::edit::SystemOpener;
-use super::hosts::HostsState;
 
 use crate::error::{CommandError, CommandResult};
 
@@ -39,19 +38,17 @@ pub async fn files_open(
 #[tauri::command]
 pub async fn files_connect(
     app: AppHandle,
-    hosts: State<'_, HostsState>,
     pending: State<'_, Arc<PendingPrompts>>,
     registry: State<'_, FsRegistry>,
     host_id: HostId,
     on_prompt: Channel<PromptRequest>,
 ) -> CommandResult<FsId> {
-    let mut hops = hosts.with(|store| Ok(store.jump_chain(&host_id)?))?;
-    let host = hops.pop().expect("a jump chain ends with the Host itself");
+    let route = HostRoute::lookup(&app, &host_id)?;
     let prompter = Arc::new(ChannelPrompter {
         pending: Arc::clone(&pending),
         channel: on_prompt,
     });
-    let connection = connect_host(&app, &hops, &host, prompter).await?;
+    let connection = route.connect(&app, prompter).await?;
     Ok(registry.insert(Arc::new(connection.open_sftp().await?)))
 }
 

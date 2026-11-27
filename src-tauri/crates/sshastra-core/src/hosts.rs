@@ -28,7 +28,7 @@ const CURRENT_VERSION: u32 = 11;
 pub struct HostId(String);
 
 impl HostId {
-    fn generate() -> Self {
+    pub(crate) fn generate() -> Self {
         Self(uuid::Uuid::new_v4().to_string())
     }
 }
@@ -186,7 +186,7 @@ pub struct HostDraft {
 }
 
 impl HostDraft {
-    fn into_host(self, id: HostId) -> Result<Host, HostStoreError> {
+    pub(crate) fn into_host(self, id: HostId) -> Result<Host, HostStoreError> {
         let required = [
             ("name", &self.name),
             ("address", &self.address),

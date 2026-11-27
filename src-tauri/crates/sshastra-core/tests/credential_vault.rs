@@ -12,12 +12,13 @@ use std::sync::{Arc, Mutex};
 use sshastra_core::credentials::{
     CredentialKind, CredentialVault, MemoryVault, NoVault, VaultError,
 };
+use sshastra_core::files::browse;
 use sshastra_core::hosts::{Host, HostAuth, HostDraft, HostId, HostStore};
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::settings::SettingsStore;
 use sshastra_core::ssh::{
     BoxFuture, ConnectError, ConnectionManager, HostKeyDecision, HostKeyPrompt, PassphrasePrompt,
-    PasswordPrompt, Prompter, Secret,
+    PasswordPrompt, Prompter, QuickConnectTarget, Secret,
 };
 use support::{Service, Sshd};
 
@@ -27,13 +28,14 @@ use support::{Service, Sshd};
 struct ScriptedPrompter {
     answers: Mutex<VecDeque<Secret>>,
     asked: Mutex<Vec<String>>,
+    trust_for_run: bool,
 }
 
 impl ScriptedPrompter {
     fn answering(answers: impl IntoIterator<Item = Secret>) -> Arc<Self> {
         Arc::new(Self {
             answers: Mutex::new(answers.into_iter().collect()),
-            asked: Mutex::default(),
+            ..Self::default()
         })
     }
 
@@ -53,7 +55,14 @@ impl ScriptedPrompter {
 
 impl Prompter for ScriptedPrompter {
     fn confirm_host_key(&self, _: HostKeyPrompt) -> BoxFuture<'_, HostKeyDecision> {
-        Box::pin(async { HostKeyDecision::SaveAndTrust })
+        Box::pin(async {
+            if self.trust_for_run {
+                self.asked.lock().unwrap().push("host key".into());
+                HostKeyDecision::TrustForRun
+            } else {
+                HostKeyDecision::SaveAndTrust
+            }
+        })
     }
 
     fn password(&self, prompt: PasswordPrompt) -> BoxFuture<'_, Option<Secret>> {
@@ -307,6 +316,81 @@ async fn without_a_keychain_saving_is_not_offered_and_connects_still_work() {
         connect(&fx, &vault, &host, prompter.clone()).await.unwrap();
         assert_eq!(prompter.asked(), ["password retry=false can_save=false"]);
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_temporary_host_shares_its_connection_with_sftp_and_leaves_no_saved_credentials() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let fx = Fixture::new();
+    let vault = memory_vault();
+    let manager = fx.manager(&vault);
+    let target = || QuickConnectTarget {
+        address: sshd.host.clone(),
+        port: sshd.port,
+        user: None,
+    };
+    let temporary = manager.temporary_host(target(), sshd.user).unwrap();
+    let id = temporary.host().id.clone();
+    assert_eq!(temporary.host().user, sshd.user);
+    assert_eq!(temporary.host().auth, HostAuth::Auto);
+
+    let first = Arc::new(ScriptedPrompter {
+        answers: Mutex::new(VecDeque::from([
+            Secret::saved(sshd.password),
+            Secret::new(sshd.password),
+            Secret::new(sshd.password),
+        ])),
+        trust_for_run: true,
+        ..ScriptedPrompter::default()
+    });
+    let connection = manager
+        .connect_temporary(&temporary, first.clone())
+        .await
+        .unwrap();
+    let password_prompt = "password retry=false can_save=false";
+    assert_eq!(first.asked(), ["host key", password_prompt]);
+    assert_eq!(vault.get(&id, CredentialKind::Password), Ok(None));
+    let second = manager
+        .connect_temporary(&temporary, ScriptedPrompter::silent())
+        .await
+        .unwrap();
+    assert!(Arc::ptr_eq(&connection, &second));
+    let panel = manager.open_sftp(&id).await.unwrap();
+    assert!(browse(&panel, "/srv/files").await.is_ok());
+
+    drop((panel, connection, second));
+    assert!(manager.live(&id).await.is_none());
+    drop(
+        manager
+            .connect_temporary(&temporary, first.clone())
+            .await
+            .unwrap(),
+    );
+    assert_eq!(
+        first.asked(),
+        ["host key", password_prompt, password_prompt]
+    );
+
+    drop(temporary);
+    let fresh = manager.temporary_host(target(), sshd.user).unwrap();
+    assert_ne!(fresh.host().id, id);
+    manager
+        .connect_temporary(&fresh, first.clone())
+        .await
+        .unwrap();
+    assert_eq!(
+        first.asked(),
+        [
+            "host key",
+            password_prompt,
+            password_prompt,
+            "host key",
+            password_prompt
+        ]
+    );
+    assert!(!fx.path().join("known_hosts").exists());
 }
 
 /// A keychain that fails every call, like a Secret Service that went away.

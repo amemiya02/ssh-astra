@@ -48,6 +48,7 @@ use remote_listen::Routes;
 
 use std::collections::HashMap;
 use std::future::Future;
+use std::net::Ipv6Addr;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, Weak};
@@ -60,7 +61,7 @@ use tokio::net::TcpStream;
 
 use crate::credentials::{CredentialVault, NoVault};
 use crate::files::{FsError, SftpFs};
-use crate::hosts::{Host, HostId};
+use crate::hosts::{Host, HostAuth, HostDraft, HostId, HostStoreError};
 use crate::known_hosts::{KnownHosts, KnownHostsError};
 use crate::terminal::{TerminalEvent, TerminalSize};
 use shell::ShellEvent;
@@ -317,7 +318,7 @@ fn log_hop<T>(id: &HostId, step: &str, result: &Result<T, ConnectError>) {
 /// anything (a Terminal, …) holds it, and disconnects when the last holder
 /// drops it. Concurrent connects to the same Host coalesce: the first one
 /// connects, the others wait for it and share its Connection.
-/// Temporary host key trust lasts for the lifetime of the manager.
+/// Saved Hosts' temporary key trust lasts for the lifetime of the manager.
 pub struct ConnectionManager {
     host_keys: Arc<HostKeys>,
     agent: Agent,
@@ -339,9 +340,31 @@ type SharedSftp = (Weak<Connection>, Weak<SftpFs>);
 /// second connect to the Host waits for the first instead of racing it.
 type Slot = tokio::sync::Mutex<Weak<Connection>>;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum ConnectionPurpose {
+/// An SSH destination supplied by Quick connect. An omitted user means the local user.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickConnectTarget {
+    pub address: String,
+    pub port: u16,
+    pub user: Option<String>,
+}
+
+/// Ephemeral connection settings and key trust, held while their tabs are open.
+pub struct TemporaryHost {
+    host: Host,
+    keys: Arc<HostKeys>,
+}
+
+impl TemporaryHost {
+    pub fn host(&self) -> &Host {
+        &self.host
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ConnectionPurpose<'a> {
     Shared,
+    Temporary(&'a Arc<HostKeys>),
     Test,
 }
 
@@ -448,6 +471,75 @@ impl ConnectionManager {
             .await
     }
 
+    /// Allocates a fresh identity without touching the Host store or credential vault.
+    pub fn temporary_host(
+        &self,
+        target: QuickConnectTarget,
+        local_user: &str,
+    ) -> Result<TemporaryHost, HostStoreError> {
+        let QuickConnectTarget {
+            address,
+            port,
+            user,
+        } = target;
+        let user = user.unwrap_or_else(|| local_user.to_owned());
+        let endpoint = if address.contains(':') {
+            address
+                .parse::<Ipv6Addr>()
+                .map_err(|_| HostStoreError::Invalid("address"))?;
+            format!("[{address}]")
+        } else if address
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-'))
+        {
+            address.clone()
+        } else {
+            return Err(HostStoreError::Invalid("address"));
+        };
+        let name = if port == 22 {
+            format!("{user}@{endpoint}")
+        } else {
+            format!("{user}@{endpoint}:{port}")
+        };
+        let host = HostDraft {
+            name,
+            address,
+            port,
+            user,
+            auth: HostAuth::Auto,
+            identities_only: false,
+            forward_agent: false,
+            keepalive_seconds: None,
+            post_login_command: None,
+            terminal_charset: None,
+            terminal_backspace: None,
+            jump_host: None,
+            terminal_scheme: None,
+            default_directory: None,
+        }
+        .into_host(HostId::generate())?;
+        Ok(TemporaryHost {
+            host,
+            keys: Arc::new(self.host_keys.scoped()),
+        })
+    }
+
+    /// Shares the Temporary Host's live Connection, with key trust scoped to
+    /// this Host and no credential lookup or saving.
+    pub async fn connect_temporary(
+        &self,
+        temporary: &TemporaryHost,
+        prompter: Arc<dyn Prompter>,
+    ) -> Result<Arc<Connection>, ConnectError> {
+        self.connect_route(
+            &[],
+            temporary.host(),
+            prompter,
+            ConnectionPurpose::Temporary(&temporary.keys),
+        )
+        .await
+    }
+
     /// Authenticates on a private Connection at every hop, without using the
     /// credential vault or opening a shell, then closes the route.
     pub async fn test_connection(
@@ -470,7 +562,7 @@ impl ConnectionManager {
         jump_hosts: &[Host],
         host: &Host,
         prompter: Arc<dyn Prompter>,
-        purpose: ConnectionPurpose,
+        purpose: ConnectionPurpose<'_>,
     ) -> Result<Arc<Connection>, ConnectError> {
         let mut via = None;
         for jump in jump_hosts {
@@ -491,20 +583,22 @@ impl ConnectionManager {
         via: Option<Arc<Connection>>,
         prompter: Arc<dyn Prompter>,
         jump_host: bool,
-        purpose: ConnectionPurpose,
+        purpose: ConnectionPurpose<'_>,
     ) -> Result<Arc<Connection>, ConnectError> {
         let progress = HopProgress {
             host,
             jump_host,
             prompter: prompter.as_ref(),
         };
-        log::info!(
-            "connection identity {}",
-            serde_json::json!({
-                "id": host.id, "name": host.name, "address": host.address, "user": host.user,
-                "port": host.port,
-            })
-        );
+        if !matches!(purpose, ConnectionPurpose::Temporary(_)) {
+            log::info!(
+                "connection identity {}",
+                serde_json::json!({
+                    "id": host.id, "name": host.name, "address": host.address, "user": host.user,
+                    "port": host.port,
+                })
+            );
+        }
         let open = || async {
             let reach = progress.start(ConnectStage::Reach);
             match via {
@@ -540,7 +634,9 @@ impl ConnectionManager {
             }
         };
         let result = match purpose {
-            ConnectionPurpose::Shared => self.shared(progress, open).await,
+            ConnectionPurpose::Shared | ConnectionPurpose::Temporary(_) => {
+                self.shared(progress, open).await
+            }
             ConnectionPurpose::Test => open().await.map(Arc::new),
         };
         log_hop(&host.id, "connect", &result);
@@ -637,7 +733,7 @@ impl ConnectionManager {
         stream: S,
         prompter: Arc<dyn Prompter>,
         via: Option<Arc<Connection>>,
-        purpose: ConnectionPurpose,
+        purpose: ConnectionPurpose<'_>,
     ) -> Result<Connection, ConnectError>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -667,7 +763,7 @@ impl ConnectionManager {
         prompter: Arc<dyn Prompter>,
         via: Option<Arc<Connection>>,
         deadline: Arc<handshake::Deadline>,
-        purpose: ConnectionPurpose,
+        purpose: ConnectionPurpose<'_>,
     ) -> Result<Connection, ConnectError>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -676,7 +772,7 @@ impl ConnectionManager {
         let host_key = progress.start(ConnectStage::HostKey);
         let failure = Arc::new(Mutex::new(None));
         let routes = Routes::default();
-        let agent_forwarding = (purpose == ConnectionPurpose::Shared
+        let agent_forwarding = (matches!(purpose, ConnectionPurpose::Shared)
             && host.forward_agent
             && self.agent != Agent::None)
             .then(|| Arc::new(AgentForwarding::new(self.agent.clone())));
@@ -690,7 +786,10 @@ impl ConnectionManager {
             routes: routes.clone(),
             agent_forwarding: agent_forwarding.clone(),
             endpoint: Arc::clone(&endpoint),
-            host_keys: Arc::clone(&self.host_keys),
+            host_keys: match purpose {
+                ConnectionPurpose::Temporary(keys) => Arc::clone(keys),
+                _ => Arc::clone(&self.host_keys),
+            },
             prompter: prompter.clone(),
             failure: failure.clone(),
         };
@@ -707,7 +806,7 @@ impl ConnectionManager {
         let mut login = progress.start(ConnectStage::Authenticate);
         let vault: Arc<dyn CredentialVault> = match purpose {
             ConnectionPurpose::Shared => Arc::clone(&self.vault),
-            ConnectionPurpose::Test => Arc::new(NoVault),
+            ConnectionPurpose::Temporary(_) | ConnectionPurpose::Test => Arc::new(NoVault),
         };
         let authenticated = auth::authenticate(
             &mut handle,

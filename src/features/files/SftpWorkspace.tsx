@@ -11,11 +11,12 @@ import { ConnectPromptDialog } from "@/features/connect/ConnectPromptDialog";
 import { TransfersPanel } from "@/features/transfers/TransfersPanel";
 import { transfersStore } from "@/features/transfers/transfersStore";
 import { useOsFileDrop } from "@/features/transfers/use-os-file-drop";
+import { privacyModeSetting, workspaceHostName } from "@/features/workspace/privacy-mode";
 import type { ConnectionStatus } from "@/features/workspace/tabs";
 import { readCommandError, refusal, type ConnectPrompt, type PromptAnswer } from "@/lib/ipc/connect";
 import * as edit from "@/lib/ipc/edit";
 import * as files from "@/lib/ipc/files";
-import type { Host } from "@/lib/ipc/hosts";
+import { isTemporaryHost, type Host } from "@/lib/ipc/hosts";
 import { useSetting } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import { EditQuestionDialog } from "./EditQuestionDialog";
@@ -47,6 +48,7 @@ export function SftpWorkspace({ id, host, active, showPrompts = active, onStatus
   onStatusChange(id: string, status: ConnectionStatus): void;
 }) {
   const { t } = useTranslation();
+  const [privacyMode] = useSetting(privacyModeSetting);
   const [pending, setPending] = useState<PendingPrompt | null>(null);
   const [transferError, setTransferError] = useState<string | null>(null);
   const [local] = useState(() => createFileBrowserStore({
@@ -166,7 +168,7 @@ export function SftpWorkspace({ id, host, active, showPrompts = active, onStatus
             <ResizableHandle />
             <ResizablePanel id="remote" minSize="32%">
               <div ref={remoteDrop} className="h-full">
-                <WorkspaceColumn store={remote} side="remote" name={host.name} copy={copyRemote}
+                <WorkspaceColumn store={remote} side="remote" name={workspaceHostName(host, t, privacyMode)} copy={copyRemote}
                   dragSide={dragSide} osOver={osDrop.over && remoteReady} reconnect={reconnect}
                   connectionError={connectionError} />
               </div>
@@ -180,7 +182,9 @@ export function SftpWorkspace({ id, host, active, showPrompts = active, onStatus
         if (localReady) download([path]);
         else setTransferError(t("sftp.localUnavailable"));
       }} />}
-      {pending && <ConnectPromptDialog prompt={pending.prompt} open={showPrompts} onAnswer={pending.resolve} />}
+      {pending && (
+        <ConnectPromptDialog prompt={pending.prompt} open={showPrompts} hideCredentialSaving={isTemporaryHost(host)} onAnswer={pending.resolve} />
+      )}
     </div>
   );
 }
