@@ -73,6 +73,7 @@ const fields: { field: Exclude<HostFormField, ProxyField>; inputMode?: "numeric"
 /** Sentinel for "no Jump host": Radix Select reserves the empty string for clearing. */
 const NO_JUMP_HOST = "none";
 const AUTOMATIC_ICON = "automatic";
+const HOST_ICON_CHOICES = [AUTOMATIC_ICON, ...hostIcons] as const;
 
 const advancedFieldIds = {
   terminalScheme: "host-form-terminal-scheme",
@@ -333,7 +334,7 @@ export function HostFormDialogContent({
                 <SelectValue>{t(`hosts.icons.${values.icon ?? AUTOMATIC_ICON}`)}</SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {[AUTOMATIC_ICON, ...hostIcons].map((choice) => {
+                {HOST_ICON_CHOICES.map((choice) => {
                   const label = t(`hosts.icons.${choice}`);
                   const icon = choice === AUTOMATIC_ICON ? undefined : choice;
                   return (
