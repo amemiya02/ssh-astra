@@ -41,6 +41,7 @@ async fn log_files_record_an_ssh_connection_without_password_or_terminal_data() 
     let host = Host {
         id: HostId::from("logging-test".to_owned()),
         name: "Logging test host".to_owned(),
+        tags: Vec::new(),
         address: sshd.host,
         port: sshd.port,
         user: "logtester".to_owned(),

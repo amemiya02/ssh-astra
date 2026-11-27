@@ -8,6 +8,7 @@ export interface HostFormValues {
   address: string;
   port: string;
   user: string;
+  tags: string[];
   /** The Jump host's id, or "" to connect directly. */
   jumpHost: string;
   authType: HostAuth["type"];
@@ -32,7 +33,7 @@ export interface HostFormValues {
 type HostInputField = Exclude<
   keyof HostFormValues,
   "jumpHost" | "authType" | "identitiesOnly" | "forwardAgent" | "terminalScheme" | "defaultDirectory" |
-  "postLoginCommand" | "terminalCharset" | "terminalBackspace" | "proxy"
+  "postLoginCommand" | "terminalCharset" | "terminalBackspace" | "proxy" | "tags"
 >;
 /** Error codes; the UI maps them to copy under `hosts.errors.*`. */
 export type HostFormError = "required" | "port" | "keepaliveSeconds";
@@ -48,6 +49,7 @@ export const emptyHostForm: HostFormValues = {
   address: "",
   port: "22",
   user: "",
+  tags: [],
   jumpHost: "",
   authType: "auto",
   identityFile: "",
@@ -63,6 +65,7 @@ export function hostFormFrom(host: Host, importedSchemes: readonly ImportedTermi
     address: host.address,
     port: String(host.port),
     user: host.user,
+    tags: host.tags ?? [],
     jumpHost: host.jumpHost ?? "",
     authType: host.auth.type,
     identityFile: host.auth.type === "key" ? host.auth.identityFile : "",
@@ -110,6 +113,7 @@ export function parseHostForm(values: HostFormValues, purpose: "save" | "test" =
     identitiesOnly: values.identitiesOnly,
     forwardAgent: values.forwardAgent,
   };
+  if (values.tags.length > 0) draft.tags = values.tags;
   if (proxy.proxy.mode !== "inherit") draft.proxy = proxy.proxy;
   if (values.terminalScheme) draft.terminalScheme = values.terminalScheme;
   if (keepaliveText) draft.keepaliveSeconds = keepaliveSeconds;

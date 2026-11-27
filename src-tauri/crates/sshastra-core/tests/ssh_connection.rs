@@ -91,6 +91,7 @@ fn host_at(address: &str, port: u16, user: &str) -> Host {
     Host {
         id: HostId::from(format!("it-{port}")),
         name: "docker sshd".into(),
+        tags: Vec::new(),
         address: address.into(),
         port,
         user: user.into(),
@@ -408,6 +409,7 @@ async fn an_unreachable_address_is_reported() {
     let mut target = Host {
         id: HostId::from("nowhere".to_owned()),
         name: "nowhere".into(),
+        tags: Vec::new(),
         address: "127.0.0.1".into(),
         port,
         user: "x".into(),
@@ -970,6 +972,7 @@ fn behind(name: &str, jump: &Host) -> Host {
     Host {
         id: HostId::from(format!("it-{name}")),
         name: name.into(),
+        tags: Vec::new(),
         address: name.into(),
         port: 22,
         user: support::USER.into(),

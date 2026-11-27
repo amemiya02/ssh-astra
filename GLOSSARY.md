@@ -19,7 +19,10 @@ _Avoid_: Ad-hoc connection, session
 
 **Group**:
 A user-defined folder that organizes Hosts in the host list.
-_Avoid_: Folder, category, tag
+_Avoid_: Folder, category
+
+**Tag**:
+A user-defined label used to find and filter Hosts. A Host can have up to ten Tags and can share Tags with Hosts in any Group.
 
 **Jump host**:
 A Host that a connection is tunnelled through to reach another Host.

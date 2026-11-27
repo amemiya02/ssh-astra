@@ -25,6 +25,8 @@ import { TerminalSchemeSelect } from "@/features/terminal/TerminalSchemeSelect";
 import { useTerminalPrefs } from "@/features/terminal/terminal-prefs-context";
 import { isTerminalColorScheme } from "@/theme/terminal-themes";
 import { ClearCredentialsButton } from "./ClearCredentialsButton";
+import { HostTagInput } from "./HostTagInput";
+import { appendHostTag } from "./host-tags";
 import { emptyHostForm, hostFormFrom, parseHostForm, type HostFormField, type HostFormResult, type HostFormValues } from "./hostForm";
 
 export type Removal = { kind: "host"; host: Host } | { kind: "group"; group: Group };
@@ -113,6 +115,7 @@ export function HostFormDialogContent({
     const initial = hostFormFrom(host, importedSchemes);
     return temporary ? { ...initial, name: "" } : initial;
   });
+  const [tagInput, setTagInput] = useState("");
   const [errors, setErrors] = useState<Extract<HostFormResult, { ok: false }>["errors"]>({});
   const [saveError, setSaveError] = useState<{ message: string; field?: keyof typeof advancedFieldIds } | null>(null);
   const [saving, setSaving] = useState(false);
@@ -146,6 +149,7 @@ export function HostFormDialogContent({
     const { terminalScheme } = values;
     const result = parseHostForm({
       ...values,
+      tags: appendHostTag(values.tags, tagInput),
       terminalScheme: isTerminalColorScheme(terminalScheme, importedSchemes) ? terminalScheme : undefined,
     }, purpose);
     setErrors(result.ok ? {} : result.errors);
@@ -308,6 +312,13 @@ export function HostFormDialogContent({
             <dt>{t("hosts.fields.group")}</dt>
             <dd className="text-muted-foreground break-all">{groupName ?? t("hosts.topLevel")}</dd>
           </dl>
+          <HostTagInput
+            hosts={hosts}
+            tags={values.tags}
+            value={tagInput}
+            onInput={setTagInput}
+            onChange={(tags) => setValues((current) => ({ ...current, tags }))}
+          />
           <div className="grid gap-1.5">
             <Label htmlFor="host-form-jumpHost" className="text-xs">
               {t("hosts.fields.jumpHost")}

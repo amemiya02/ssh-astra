@@ -757,7 +757,7 @@ async function enter(input: HTMLElement) {
   })));
 }
 
-const homeSearch = () => document.querySelector<HTMLInputElement>('input[aria-label="Search Hosts by name, address or user"]')!;
+const homeSearch = () => document.querySelector<HTMLInputElement>('input[aria-label="Search Hosts by name, address, user or Tag"]')!;
 const paletteSearch = () => dialog()!.querySelector<HTMLInputElement>('input[placeholder="Search Hosts, tabs and actions"]')!;
 const paletteOptions = () => [...dialog()!.querySelectorAll<HTMLElement>('[role="option"]')];
 
@@ -887,6 +887,39 @@ it("puts an exact saved Host ahead of Quick connect in Home and the palette", as
   });
 });
 
+it("filters the Host list and Home by Tag and keeps the selection when narrowing by search", async () => {
+  savedHosts = [
+    { ...host, name: "Production Gateway", tags: ["East Coast"] },
+    { ...host, id: "backup", name: "Backup Node", tags: ["east coast", "24"] },
+    { ...host, id: "west", name: "Development Gateway", tags: ["West Coast"] },
+  ];
+  await hostsStore.getState().load();
+  await render(workspace({ type: "open", tabId: "home", pane: newPane({ kind: "home" }) }));
+
+  const sidebar = document.querySelector<HTMLElement>('section[aria-label="Hosts"]')!;
+  const home = document.querySelector<HTMLElement>("#tabpanel-home")!;
+  for (const section of [sidebar, home]) {
+    expect(section.querySelector('[role="group"][aria-label="Filter Hosts by Tag"]')).not.toBeNull();
+    await clickButton("East Coast", section);
+    expect(section.textContent).toContain("Production Gateway");
+    expect(section.textContent).toContain("Backup Node");
+    expect(section.textContent).not.toContain("Development Gateway");
+
+    await search(section.querySelector<HTMLInputElement>('input[type="search"]')!, "tag:24");
+    expect(section.textContent).not.toContain("Production Gateway");
+    expect(section.textContent).toContain("Backup Node");
+    expect(section.textContent).not.toContain("Connect to tag:24");
+
+    await search(section.querySelector<HTMLInputElement>('input[type="search"]')!, "");
+    await clickButton("All Tags", section);
+    expect(section.textContent).toContain("Development Gateway");
+  }
+
+  await openPalette();
+  await search(paletteSearch(), "tag:24");
+  expect(paletteOptions().map((option) => option.textContent)).toEqual([expect.stringContaining("Backup Node")]);
+});
+
 it("saves a Temporary Host in place after canceling and retrying the Host editor", async () => {
   await hostsStore.getState().load();
   await render(emptyTabs);
@@ -969,8 +1002,8 @@ it("masks Host details and tab titles while raw address searches still find the 
     expect(tab.title).toContain(host.name);
   }
 
-  for (const label of ["Search Hosts", "Search Hosts by name, address or user"]) {
-    await search(document.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!, host.address);
+  for (const input of [document.querySelector<HTMLInputElement>('input[aria-label="Search Hosts"]')!, homeSearch()]) {
+    await search(input, host.address);
   }
   expect(document.querySelector('[title="Double-click to connect"]')?.textContent).toContain(host.name);
   expect(document.querySelector("#tabpanel-home")?.textContent).toContain(host.name);

@@ -6,12 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ConnectionDot } from "@/features/connect/ConnectionDot";
 import type { HostConnection } from "@/features/connect/hostConnection";
-import { exactHostMatch, parseQuickConnect, quickConnectLabel } from "@/features/connect/quick-connect";
+import { connectionSearch, quickConnectLabel } from "@/features/connect/quick-connect";
 import { HostMonogram } from "@/features/hosts/HostMonogram";
 import { Highlighted } from "@/features/hosts/HostList";
 import { HostSortMenu } from "@/features/hosts/HostSortMenu";
+import { HostTagFilter } from "@/features/hosts/HostTagFilter";
 import { recentHostIds, recentHostsSetting } from "@/features/hosts/host-history";
 import { hostSortSetting, sortHostTree } from "@/features/hosts/host-sort";
+import { hasHostTag } from "@/features/hosts/host-tags";
 import { hostMenuEntries } from "@/features/hosts/hostMenu";
 import { RowContextMenu, RowMoreMenu } from "@/features/hosts/RowMenu";
 import { useHosts } from "@/features/hosts/hostsStore";
@@ -48,6 +50,7 @@ export function HomeView({ active, controller, connections, onOpenLocalTerminal,
   const [recent] = useSetting(recentHostsSetting);
   const [sort, setSort] = useSetting(hostSortSetting);
   const [query, setQuery] = useState("");
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const search = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -72,13 +75,14 @@ export function HomeView({ active, controller, connections, onOpenLocalTerminal,
   }, [active]);
 
   const searching = query.trim() !== "";
-  const exact = exactHostMatch(tree.hosts, query);
-  const quick = exact ? undefined : parseQuickConnect(query);
+  const filtering = searching || selectedTag !== null;
+  const { exact: exactHost, quick } = connectionSearch(tree.hosts, query);
+  const exact = selectedTag === null || hasHostTag(exactHost?.tags, selectedTag) ? exactHost : undefined;
   const sortHistory = sort === "recent" ? recent : undefined;
   const sortedTree = useMemo(() => sortHostTree(tree, sort, sortHistory), [tree, sort, sortHistory]);
   const sections = useMemo(() => homeSections(exact
     ? { ...sortedTree, hosts: sortedTree.hosts.filter((host) => host.id !== exact.id) }
-    : sortedTree, query), [sortedTree, query, exact]);
+    : sortedTree, query, selectedTag), [sortedTree, query, exact, selectedTag]);
   const recents = useMemo(() => recentHostsOf(tree.hosts, recentHostIds(recent), recentLimit), [tree.hosts, recent]);
   const { actions, messages } = controller;
   const runQuickConnect = (target: QuickConnectTarget) => {
@@ -142,6 +146,7 @@ export function HomeView({ active, controller, connections, onOpenLocalTerminal,
             </Button>
           </div>
         </div>
+        <HostTagFilter hosts={tree.hosts} value={selectedTag} onChange={setSelectedTag} />
         {messages}
         {quick && (
           <Button variant="outline" className="w-fit" onClick={() => runQuickConnect(quick)}>
@@ -158,7 +163,7 @@ export function HomeView({ active, controller, connections, onOpenLocalTerminal,
           <p role="alert" className="text-destructive text-xs">
             {loadError}
           </p>
-        ) : empty && !searching ? (
+        ) : empty && !filtering ? (
           status === "ready" && (
             <div className="flex flex-col items-start gap-2 py-8">
               <Server className="text-muted-foreground size-6" aria-hidden />
@@ -174,7 +179,7 @@ export function HomeView({ active, controller, connections, onOpenLocalTerminal,
           </div>
         ) : (
           <>
-            {!searching && recents.length > 0 && (
+            {!filtering && recents.length > 0 && (
               <section aria-labelledby="home-recent" className="flex flex-col gap-2">
                 <h2 id="home-recent" className="text-sm font-semibold">
                   {t("home.recent")}

@@ -64,6 +64,21 @@ describe("rankPalette with a query", () => {
     expect(ids(rankPalette(entries, "db"))).toEqual(["host:byName", "host:byAddress"]);
   });
 
+  it("finds Host Tags after ordinary matches and reserves tag: for Hosts with that exact Tag", () => {
+    const entries = [
+      { ...host("byTag", "Gateway", "", 0), tags: ["East Coast"] },
+      host("byAddress", "Relay", "east coast.example"),
+      host("byName", "East Coast"),
+      { ...host("preview", "Preview"), tags: ["East Coast Preview"] },
+      tab("1", "tag:East Coast"),
+    ];
+    expect(ids(rankPalette(entries, "East Coast"))).toEqual([
+      "host:byName", "tab:1", "host:byAddress", "host:byTag", "host:preview",
+    ]);
+    expect(ids(rankPalette(entries, "TAG: east coast"))).toEqual(["host:byTag"]);
+    expect(rankPalette(entries, "tag:")).toEqual([]);
+  });
+
   it("finds actions by their keywords", () => {
     const entries = [action("settings", "Open Settings", ["preferences"]), action("local", "New Local terminal")];
     expect(ids(rankPalette(entries, "prefer"))).toEqual(["action:settings"]);
