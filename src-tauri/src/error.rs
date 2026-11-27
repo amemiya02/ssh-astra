@@ -9,6 +9,7 @@ use sshastra_core::known_hosts::KnownHostsError;
 use sshastra_core::settings::SettingsError;
 use sshastra_core::snippets::SnippetStoreError;
 use sshastra_core::ssh::{ConnectError, HostKeyRecord};
+use sshastra_core::ssh_config_export::ExportError;
 use sshastra_core::terminal::TerminalError;
 
 /// The error every command returns. Serialized to the front end as
@@ -54,9 +55,26 @@ impl CommandError {
         )
     }
 
+    pub fn open_ssh_home_unavailable() -> Self {
+        Self::new(
+            "homeUnavailable",
+            "the OpenSSH home directory is unavailable",
+        )
+    }
+
+    pub fn open_ssh_approval_expired() -> Self {
+        Self::new("configChanged", "the OpenSSH Include approval has expired")
+    }
+
     fn with_details(mut self, details: Value) -> Self {
         self.details = Some(details);
         self
+    }
+}
+
+impl From<ExportError> for CommandError {
+    fn from(err: ExportError) -> Self {
+        Self::new(err.kind(), err)
     }
 }
 

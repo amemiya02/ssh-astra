@@ -41,6 +41,17 @@ fn is_background(window: &WebviewWindow) -> bool {
 }
 
 #[tauri::command]
+pub async fn notification_request_attention(window: WebviewWindow) {
+    if cfg!(feature = "e2e") || !matches!(window.is_focused(), Ok(false)) {
+        return;
+    }
+    if let Err(error) = window.request_user_attention(Some(tauri::UserAttentionType::Informational))
+    {
+        log::debug!("could not request Window attention: {error}");
+    }
+}
+
+#[tauri::command]
 pub async fn notification_show(window: WebviewWindow, title: String, body: String) {
     // Never put notifications on a desktop running the automated E2E smoke tests.
     if cfg!(feature = "e2e") || !is_background(&window) {

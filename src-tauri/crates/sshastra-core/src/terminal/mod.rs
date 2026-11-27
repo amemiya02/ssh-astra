@@ -154,6 +154,9 @@ pub enum TerminalError {
 
 pub type Result<T, E = TerminalError> = std::result::Result<T, E>;
 
+/// The current positively identified idle prompt, if available.
+pub type IdlePrompt = tokio::sync::watch::Receiver<Option<u64>>;
+
 /// The input side of a Terminal. Output is delivered through the event sink
 /// given when the Terminal was started.
 pub trait Terminal: Send {
@@ -162,6 +165,10 @@ pub trait Terminal: Send {
     /// The running remote shell's transport and generation, if any.
     fn connection(&self) -> Option<(u64, std::sync::Arc<crate::ssh::Connection>)> {
         None
+    }
+    /// Observes the idle prompt after previously queued Terminal input.
+    fn observe_idle_prompt(&self) -> crate::ssh::BoxFuture<'static, Option<IdlePrompt>> {
+        Box::pin(async { None })
     }
     /// Sends input only to the captured generation of a remote shell.
     fn write_for_connection(&mut self, _generation: u64, _data: &[u8]) -> Result<()> {

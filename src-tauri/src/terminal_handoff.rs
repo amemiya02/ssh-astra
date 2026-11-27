@@ -29,6 +29,7 @@ pub(crate) struct Route {
     running: bool,
     resource_subscription: Option<(u32, oneshot::Sender<()>)>,
     resource_channel: Arc<AsyncMutex<()>>,
+    review_changes: watch::Sender<()>,
 }
 
 pub(crate) struct ResourceSubscription {
@@ -51,6 +52,7 @@ impl TerminalRoute {
             running: true,
             resource_subscription: None,
             resource_channel: Arc::default(),
+            review_changes: watch::Sender::new(()),
         })))
     }
 
@@ -71,6 +73,7 @@ impl TerminalRoute {
                 // reconnect that starts during the move entirely with the source.
                 if !route.running {
                     route.stop_resources();
+                    route.invalidate_reviews();
                     route.abort();
                 }
                 if let Some(prompts) = &route.delivery.prompts {
@@ -82,6 +85,7 @@ impl TerminalRoute {
             TerminalEvent::Exit { .. } => {
                 route.running = false;
                 route.stop_resources();
+                route.invalidate_reviews();
                 route.abort();
             }
             _ => {}
@@ -116,10 +120,20 @@ impl Route {
         self.resource_subscription = None;
     }
 
+    pub(crate) fn review_delivery(&self) -> Option<(TerminalDelivery, watch::Receiver<()>)> {
+        (self.running && self.pending.is_none())
+            .then(|| (self.delivery.clone(), self.review_changes.subscribe()))
+    }
+
+    pub(crate) fn invalidate_reviews(&self) {
+        self.review_changes.send_replace(());
+    }
+
     pub(crate) fn prepare(&mut self, token: &str, result: &MoveResult) -> bool {
         if !self.running || self.pending.is_some() {
             return false;
         }
+        self.invalidate_reviews();
         let fence = json!({ "moveFence": token }).to_string();
         if self
             .delivery

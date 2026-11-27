@@ -4,7 +4,7 @@ use std::time::{Duration, UNIX_EPOCH};
 use serde_json::{json, Value};
 use sshastra_core::agent::{
     dispatch, AgentBackend, AgentPermission, DirectoryRead, OpenTerminal, ReadError, ReadTarget,
-    TerminalOrigin, TerminalScreen, TerminalStatus,
+    ReviewOutcome, TerminalOrigin, TerminalScreen, TerminalStatus,
 };
 use sshastra_core::agent::{dispatch_recording, AgentActivityLog};
 use sshastra_core::files::{FileEntry, FileKind};
@@ -16,6 +16,8 @@ struct TestBackend<F> {
     host_is_shared: AtomicBool,
     revoke_during_read: bool,
     generation: AtomicU64,
+    permission: AgentPermission,
+    review: Option<ReviewOutcome>,
 }
 
 impl<F> TestBackend<F> {
@@ -25,6 +27,8 @@ impl<F> TestBackend<F> {
             host_is_shared: AtomicBool::new(true),
             revoke_during_read: false,
             generation: AtomicU64::new(0),
+            permission: AgentPermission::Read,
+            review: Some(ReviewOutcome::Unavailable),
         }
     }
 }
@@ -39,9 +43,26 @@ impl<F: Fn() -> Vec<OpenTerminal> + Send + Sync> AgentBackend for TestBackend<F>
             terminal: id,
             host: String::from("build").into(),
             host_name: "Build".into(),
-            permission: AgentPermission::Read,
+            permission: self.permission,
             status: TerminalStatus::Connected,
             generation: Some(self.generation.load(Ordering::Relaxed)),
+        })
+    }
+
+    fn request_command_review<'a>(
+        &'a self,
+        _target: &'a ReadTarget,
+        command: String,
+        _enabled: &'a (dyn Fn() -> bool + Sync),
+        _deadline: tokio::time::Instant,
+    ) -> BoxFuture<'a, ReviewOutcome> {
+        assert_eq!(self.permission, AgentPermission::Approval);
+        assert_eq!(command, "  printf '中文'  ");
+        Box::pin(async move {
+            match self.review {
+                Some(outcome) => outcome,
+                None => std::future::pending().await,
+            }
         })
     }
 
@@ -195,7 +216,7 @@ async fn lists_only_terminals_on_opted_in_saved_hosts() {
 }
 
 #[tokio::test]
-async fn advertises_only_read_tools() {
+async fn advertises_read_tools_and_command_review() {
     let request = br#"{"jsonrpc":"2.0","id":"mcp","method":"tools/list"}"#;
     let backend = TestBackend::new(Vec::new);
     let response = dispatch(request, || true, &backend).await.unwrap();
@@ -210,12 +231,14 @@ async fn advertises_only_read_tools() {
             "list_terminals",
             "read_terminal",
             "list_directory",
-            "read_file"
+            "read_file",
+            "request_command_review",
         ]
     );
-    assert!(tools
+    assert!(tools[..4]
         .iter()
         .all(|tool| tool["annotations"]["readOnlyHint"] == true));
+    assert_eq!(tools[4]["annotations"]["readOnlyHint"], false);
 
     let request =
         br#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"write_file"}}"#;
@@ -414,6 +437,95 @@ async fn activity_omits_unapproved_targets_and_unknown_tool_names() {
             {"timestamp":1_790_000_000_000_u64,"tool":"read_file","outcome":"denied"}
         ])
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn command_review_returns_only_the_single_request_outcome() {
+    let mut backend = TestBackend::new(Vec::new);
+    let arguments = json!({"terminalId":4,"command":"  printf '中文'  "});
+    let review = "request_command_review";
+    assert_eq!(
+        response_data(&call(&backend, review, arguments.clone()).await),
+        json!({"outcome":"unavailable"})
+    );
+    backend.permission = AgentPermission::Approval;
+    assert_eq!(
+        response_data(&call(&backend, review, arguments.clone()).await),
+        json!({"outcome":"unavailable"})
+    );
+
+    backend.review = Some(ReviewOutcome::Copied);
+    assert_eq!(
+        response_data(&call(&backend, review, arguments.clone()).await),
+        json!({"outcome":"copied"})
+    );
+    backend.review = Some(ReviewOutcome::Rejected);
+    assert_eq!(
+        response_data(&call(&backend, review, arguments.clone()).await),
+        json!({"outcome":"rejected"})
+    );
+
+    backend.review = None;
+    let started = tokio::time::Instant::now();
+    assert_eq!(
+        response_data(&call(&backend, review, arguments).await),
+        json!({"outcome":"timedOut"})
+    );
+    assert_eq!(started.elapsed(), std::time::Duration::from_secs(120));
+}
+
+#[tokio::test]
+async fn records_a_review_without_recording_the_proposed_command() {
+    let directory = tempfile::tempdir().unwrap();
+    let log = AgentActivityLog::new(directory.path().join("agent-activity"));
+    let now = UNIX_EPOCH + Duration::from_secs(1_790_000_000);
+    let mut backend = TestBackend::new(Vec::new);
+    backend.permission = AgentPermission::Approval;
+    backend.review = Some(ReviewOutcome::Copied);
+    let request = json!({"jsonrpc":"2.0","id":9,"method":"tools/call","params":{
+        "name":"request_command_review","arguments":{"terminalId":4,"command":"  printf '中文'  "}
+    }});
+    let mut activity = None;
+    let response = dispatch_recording(
+        request.to_string().as_bytes(),
+        || true,
+        &backend,
+        &mut activity,
+    )
+    .await
+    .unwrap();
+    assert_eq!(response_data(&response), json!({"outcome":"copied"}));
+    log.record(activity.unwrap(), now).unwrap();
+    assert_eq!(
+        serde_json::to_value(log.list(now, None).unwrap().records).unwrap(),
+        json!([{"timestamp":1_790_000_000_000_u64,"tool":"request_command_review","host":"Build",
+                "outcome":"allowed"}])
+    );
+}
+
+#[tokio::test]
+async fn rejects_invisible_multiline_or_over_budget_command_proposals() {
+    let mut backend = TestBackend::new(Vec::new);
+    backend.permission = AgentPermission::Approval;
+    for command in [
+        "   ".into(),
+        "pwd\u{2028}".into(),
+        "pwd\u{200b}".into(),
+        "pwd\u{202e}".into(),
+        "pwd\n".into(),
+        "pwd\r".into(),
+        "a\tb".into(),
+        "pwd\u{1b}".into(),
+        "界".repeat(1366),
+    ] {
+        let reply = call(
+            &backend,
+            "request_command_review",
+            json!({"terminalId":4,"command":command}),
+        )
+        .await;
+        assert_eq!(reply["error"]["code"], -32602);
+    }
 }
 
 #[tokio::test]

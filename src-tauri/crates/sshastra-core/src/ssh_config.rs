@@ -39,7 +39,7 @@ pub struct IncludedFile {
 }
 
 /// OpenSSH's limit on nested `Include`s.
-const MAX_INCLUDE_DEPTH: usize = 16;
+pub(crate) const MAX_INCLUDE_DEPTH: usize = 16;
 
 /// Parses config `text`. `includes` resolves one `Include` pattern to the
 /// files it matches (none is fine), or says why it cannot.
@@ -250,7 +250,7 @@ impl Reader<'_> {
 
 /// A config line as its lower-cased keyword and its arguments; `None` for
 /// blank lines and comments.
-fn split_line(line: &str) -> Option<(String, &str)> {
+pub(crate) fn split_line(line: &str) -> Option<(String, &str)> {
     let line = line.trim();
     if line.is_empty() || line.starts_with('#') {
         return None;
@@ -264,9 +264,8 @@ fn split_line(line: &str) -> Option<(String, &str)> {
     Some((keyword, rest.trim_start()))
 }
 
-/// Splits on whitespace; double quotes group (and are removed); a word
-/// starting with `#` begins a comment.
-fn split_args(text: &str) -> Vec<String> {
+/// Splits OpenSSH arguments on whitespace, respecting quotes, escapes, and comments.
+pub(crate) fn split_args(text: &str) -> Vec<String> {
     let mut args = Vec::new();
     let mut chars = text.chars().peekable();
     loop {
@@ -276,16 +275,24 @@ fn split_args(text: &str) -> Vec<String> {
             _ => {}
         }
         let mut arg = String::new();
-        let mut quoted = false;
-        while let Some(&c) = chars.peek() {
-            if c == '"' {
-                quoted = !quoted;
-            } else if c.is_whitespace() && !quoted {
+        let mut quote = None;
+        while let Some(c) = chars.next() {
+            if c == '\\' {
+                match chars.next_if(|next| {
+                    matches!(next, '\'' | '"' | '\\') || (quote.is_none() && *next == ' ')
+                }) {
+                    Some(escaped) => arg.push(escaped),
+                    None => arg.push(c),
+                }
+            } else if quote == Some(c) {
+                quote = None;
+            } else if quote.is_none() && matches!(c, '\'' | '"') {
+                quote = Some(c);
+            } else if quote.is_none() && c.is_whitespace() {
                 break;
             } else {
                 arg.push(c);
             }
-            chars.next();
         }
         args.push(arg);
     }

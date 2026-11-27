@@ -18,6 +18,7 @@ pub mod resources;
 mod session_folder;
 pub mod settings;
 pub mod snippets;
+pub mod ssh_config_export;
 pub mod terminal;
 pub mod transfers;
 mod watch;

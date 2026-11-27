@@ -161,6 +161,15 @@ pub(crate) fn with_resources<T>(
         .ok_or_else(CommandError::window_closed)
 }
 
+pub(crate) fn terminal_route(app: &AppHandle, terminal: TerminalId) -> Option<Arc<TerminalRoute>> {
+    app.state::<Windows>()
+        .resources
+        .lock()
+        .unwrap()
+        .values()
+        .find_map(|resources| resources.terminals.get(&terminal).cloned())
+}
+
 pub(crate) fn forget_temporary_host(window: &WebviewWindow, id: &HostId) {
     let windows = window.state::<Windows>();
     let mut all = windows.resources.lock().unwrap();
@@ -432,7 +441,9 @@ pub(crate) fn destroyed(app: &AppHandle, label: &str) {
     if let Some(resources) = resources {
         resources.prompts.close();
         for route in resources.terminals.values() {
-            route.lock().stop_resources();
+            let mut route = route.lock();
+            route.stop_resources();
+            route.invalidate_reviews();
         }
         let app = app.clone();
         tauri::async_runtime::spawn(async move {

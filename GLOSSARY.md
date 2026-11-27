@@ -46,7 +46,7 @@ One interactive shell running over a Connection, shown as a tab or a split pane.
 _Avoid_: Session, console, shell tab
 
 **Agent access**:
-Allows a local external MCP client to observe selected open Terminals on saved Hosts. It is off by default and enabled per Host.
+Allows a local external MCP client to observe selected open Terminals on saved Hosts and, with Approval required, ask the user to review individual command proposals. It is off by default and enabled per Host.
 _Avoid_: AI assistant, automation
 
 **Snippet**:

@@ -1,10 +1,11 @@
 //! Host commands: the saved Host list (HostStore) with its Groups.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
-use sshastra_core::agent::{OpenTerminal, TerminalOrigin};
+use sshastra_core::agent::{AgentPermission, OpenTerminal, TerminalOrigin};
 use sshastra_core::host_import::{
     parse_csv, parse_mobaxterm, parse_putty, parse_securecrt, parse_xshell, ImportIssue,
     ImportProblem, ParsedConfig, SECURECRT_NON_SESSION_FILES,
@@ -16,10 +17,12 @@ use sshastra_core::hosts::{
 use sshastra_core::ssh_config::{parse_user_config, ParseContext};
 use sshastra_core::terminal::{CommandHistory, TerminalRegistry};
 use tauri::{ipc::Channel, State, WebviewWindow};
+use tokio::sync::watch;
 
 use super::connections::ConnectionsState;
 use super::forwards::ForwardsState;
 use super::session_folder::{read_session_folder, SkipReason};
+use super::ssh_config_export::OpenSshSync;
 use super::watch::Watcher;
 use crate::commands::credentials::Vault;
 use crate::error::{CommandError, CommandResult};
@@ -30,6 +33,8 @@ use crate::error::{CommandError, CommandResult};
 pub struct HostsState {
     store: Arc<Mutex<Result<HostStore, CommandError>>>,
     changes: Arc<Watcher<HostTreeChange>>,
+    open_ssh: Arc<OpenSshSync>,
+    approvals: Arc<Mutex<HashMap<HostId, watch::Sender<()>>>>,
 }
 
 #[derive(Clone, Serialize)]
@@ -45,11 +50,22 @@ pub struct SharedHostTree {
 }
 
 impl HostsState {
-    pub fn new(store: Result<HostStore, CommandError>) -> Self {
+    pub fn new(store: Result<HostStore, CommandError>, open_ssh: OpenSshSync) -> Self {
         Self {
             store: Arc::new(Mutex::new(store)),
             changes: Arc::default(),
+            open_ssh: Arc::new(open_ssh),
+            approvals: Arc::default(),
         }
+    }
+
+    pub(super) fn open_ssh(&self) -> &OpenSshSync {
+        &self.open_ssh
+    }
+
+    pub(super) fn with_export_hosts<T>(&self, f: impl FnOnce(Option<&[Host]>) -> T) -> T {
+        let guard = self.store.lock().unwrap_or_else(|p| p.into_inner());
+        f(guard.as_ref().ok().map(HostStore::list))
     }
 
     pub fn with<T>(&self, f: impl FnOnce(&mut HostStore) -> CommandResult<T>) -> CommandResult<T> {
@@ -67,13 +83,46 @@ impl HostsState {
     ) -> CommandResult<T> {
         self.with(|store| {
             let result = f(store)?;
+            self.approvals
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .retain(|id, pending| {
+                    pending.receiver_count() != 0
+                        && store
+                            .get(id)
+                            .is_some_and(|host| host.agent_access == AgentPermission::Approval)
+                });
             self.changes.send(HostTreeChange { tree: store.tree() });
+            self.open_ssh.rebuild(store.list(), None);
             Ok(result)
         })
     }
 
+    /// A revocation closes the receiver even if permission is then granted again.
+    pub(super) fn watch_agent_approval(&self, id: &HostId) -> Option<watch::Receiver<()>> {
+        self.with(|store| {
+            if !store
+                .get(id)
+                .is_some_and(|host| host.agent_access == AgentPermission::Approval)
+            {
+                return Ok(None);
+            }
+            let mut pending = self.approvals.lock().unwrap_or_else(|p| p.into_inner());
+            pending.retain(|_, watch| watch.receiver_count() != 0);
+            Ok(Some(
+                pending
+                    .entry(id.clone())
+                    .or_insert_with(|| watch::Sender::new(()))
+                    .subscribe(),
+            ))
+        })
+        .ok()
+        .flatten()
+    }
+
     pub(crate) fn unwatch(&self, label: &str) {
         self.changes.unsubscribe(label);
+        self.open_ssh.forget_preview(label);
     }
 
     pub(crate) fn agent_terminals(&self, registry: &TerminalRegistry) -> Vec<OpenTerminal> {
