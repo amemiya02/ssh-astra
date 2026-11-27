@@ -51,6 +51,7 @@ export function createFileBrowsers(api: FilesApi, editsForPanel = createSharedRe
       visible = paneId;
       if (pane) followConnection(pane.store, pane.status ?? initialStatus, true);
       return () => {
+        pane?.store.getState().clearSearch();
         if (visible === paneId) visible = null;
       };
     },

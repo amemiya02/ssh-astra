@@ -413,6 +413,7 @@ Settings lists every theme as a card (10px radius, 6px padding, auto-fill at min
 - Back, Forward and Up sit beside a compact `muted` field. Each monospaced breadcrumb opens that directory. Long paths scroll horizontally and show the current directory at the right.
 - Click the blank space or edit icon to select the path for editing. Enter opens an absolute path, `~` or `~/x`. Escape or leaving the field restores the breadcrumbs. Navigation errors appear below the path bar.
 - New file opens a name dialog and creates an empty file in the current directory. Show conflicts in the dialog.
+- Find by name opens an inline search below the remote path bar. Match a substring or a wildcard pattern with `*` and `?`. Show each result's parent path and report when only part of the tree could be searched. Selecting a result returns to the file list with the entry selected and in view.
 - Alt+Left and Alt+Right browse history when focus is in the File panel outside text fields. Each panel keeps its own history in memory. Opening a different directory from a previous point in history replaces the forward entries.
 
 ### File panel list

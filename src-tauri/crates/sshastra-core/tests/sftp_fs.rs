@@ -7,7 +7,9 @@ mod support;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use sshastra_core::files::{self, FileKind, FsError, FsRegistry, RemoteFs, SftpFs};
+use sshastra_core::files::{
+    self, FileKind, FsError, FsRegistry, NameMatch, NameSearchMode, RemoteFs, SftpFs,
+};
 use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::ssh::{
@@ -68,6 +70,126 @@ async fn home_is_the_users_home_directory() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn searching_names_finds_substrings_and_wildcards_without_following_links() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let (fs, _dir) = sftp(&sshd).await;
+    let (_cancel, cancelled) = tokio::sync::oneshot::channel();
+    let result = fs
+        .search_names("/srv/files", "ell", NameSearchMode::Substring, cancelled)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        result.matches,
+        [NameMatch {
+            parent: "/srv/files".into(),
+            name: "hello.txt".into()
+        }]
+    );
+
+    let (_cancel, cancelled) = tokio::sync::oneshot::channel();
+    let result = fs
+        .search_names(
+            "/srv/files/docs/../docs",
+            ".*ote?",
+            NameSearchMode::Wildcard,
+            cancelled,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        result.matches,
+        [NameMatch {
+            parent: "/srv/files/docs/nested".into(),
+            name: ".notes".into()
+        }]
+    );
+    assert!(!result.limit_reached);
+    assert!(
+        !result.skipped_directories,
+        "the link to locked/ was not followed"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_search_stops_at_its_entry_limit_even_inside_a_single_folder() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let (fs, _dir) = sftp(&sshd).await;
+    let (_cancel, cancelled) = tokio::sync::oneshot::channel();
+    let result = fs
+        .search_names("/srv/files/many", "f*", NameSearchMode::Wildcard, cancelled)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(result.limit_reached);
+    assert_eq!(result.visited, 1_000);
+    assert_eq!(result.matches.len(), 1_000);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn cancelling_searches_leaves_the_file_panel_session_usable() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let (fs, _dir) = sftp(&sshd).await;
+    let registry = FsRegistry::default();
+    let id = registry.insert(Arc::new(fs));
+
+    // Cancel while opening each scan channel. A leaked channel would reach
+    // OpenSSH's ten concurrent session limit.
+    for _ in 0..12 {
+        let (request, fs, cancelled) = registry.start_scan(id).unwrap();
+        let mut scan =
+            fs.search_names("/srv/files/many", "f*", NameSearchMode::Wildcard, cancelled);
+        tokio::select! {
+            biased;
+            result = &mut scan => panic!("search finished before cancellation: {result:?}"),
+            _ = std::future::ready(()) => {}
+        }
+        registry.cancel_scan(id, request);
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(5), scan)
+                .await
+                .unwrap()
+                .unwrap(),
+            None
+        );
+    }
+    let (cancel, cancelled) = tokio::sync::oneshot::channel();
+    drop(cancel);
+    assert_eq!(
+        registry
+            .get(id)
+            .unwrap()
+            .search_names("/missing", "f*", NameSearchMode::Wildcard, cancelled)
+            .await
+            .unwrap(),
+        None
+    );
+    let (_cancel, cancelled) = tokio::sync::oneshot::channel();
+    let fs = registry.get(id).unwrap();
+    assert_eq!(
+        fs.search_names(
+            "/srv/files/docs",
+            "readme",
+            NameSearchMode::Substring,
+            cancelled
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .matches
+        .len(),
+        1
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn folder_size_totals_nested_files_and_ignores_symlinks() {
     let Some(sshd) = support::sshd(Service::Ssh) else {
         return;
@@ -99,14 +221,14 @@ async fn cancelling_folder_sizes_leaves_the_file_panel_session_usable() {
     // Repeatedly cancel after the scan has started opening its SFTP channel.
     // OpenSSH allows ten concurrent session channels on this Connection.
     for _ in 0..12 {
-        let (request, fs, cancelled) = registry.start_folder_size(id).unwrap();
+        let (request, fs, cancelled) = registry.start_scan(id).unwrap();
         let mut scan = fs.folder_size("/srv/files/many", cancelled);
         tokio::select! {
             biased;
             finished = &mut scan => panic!("scan finished before cancellation: {finished:?}"),
             _ = std::future::ready(()) => {}
         }
-        registry.cancel_folder_size(id, request);
+        registry.cancel_scan(id, request);
         assert_eq!(
             tokio::time::timeout(Duration::from_secs(5), scan)
                 .await

@@ -23,6 +23,7 @@ const api: FilesApi = {
   renameFile: () => Promise.resolve(),
   countFiles: () => Promise.resolve(0),
   folderSize: () => Promise.resolve(0),
+  searchNames: () => Promise.resolve(null),
   deleteFiles: () => Promise.resolve(),
   chmodFile: () => Promise.resolve(),
 };

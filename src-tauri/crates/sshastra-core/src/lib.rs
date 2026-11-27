@@ -13,3 +13,4 @@ pub mod settings;
 pub mod ssh;
 pub mod ssh_config;
 pub mod terminal;
+mod wildcard;

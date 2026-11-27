@@ -31,6 +31,20 @@ export interface Listing {
   entries: FileEntry[];
 }
 
+export type NameSearchMode = "substring" | "wildcard";
+
+export interface NameMatch {
+  parent: string;
+  name: string;
+}
+
+export interface NameSearchResult {
+  matches: NameMatch[];
+  visited: number;
+  limitReached: boolean;
+  skippedDirectories: boolean;
+}
+
 /** Mirrors `sshastra_core::files::PermissionChange`. */
 export interface PermissionChange {
   mode?: number;
@@ -98,18 +112,31 @@ export function countFiles(id: FsId, paths: string[]): Promise<number> {
 }
 
 /** Totals the bytes in a real folder. An aborted scan returns `null`. */
-export async function folderSize(id: FsId, path: string, signal: AbortSignal): Promise<number | null> {
+export function folderSize(id: FsId, path: string, signal: AbortSignal): Promise<number | null> {
+  return scanFiles("files_folder_size", id, { path }, signal);
+}
+
+/** Searches descendant names on SFTP. An aborted scan returns `null`. */
+export function searchNames(
+  id: FsId, path: string, query: string, mode: NameSearchMode, signal: AbortSignal,
+): Promise<NameSearchResult | null> {
+  return scanFiles("files_search_names", id, { path, query, mode }, signal);
+}
+
+async function scanFiles<T>(
+  command: string, id: FsId, args: Record<string, unknown>, signal: AbortSignal,
+): Promise<T | null> {
   if (signal.aborted) return null;
   const finished = new AbortController();
   const onStart = new Channel<number>();
   onStart.onmessage = (requestId) => {
     if (finished.signal.aborted) return;
-    const cancel = () => { void invoke("files_cancel_folder_size", { id, requestId }).catch(() => {}); };
+    const cancel = () => { void invoke("files_cancel_scan", { id, requestId }).catch(() => {}); };
     if (signal.aborted) cancel();
     else signal.addEventListener("abort", cancel, { once: true, signal: finished.signal });
   };
   try {
-    return await invoke<number | null>("files_folder_size", { id, path, onStart });
+    return await invoke<T | null>(command, { ...args, id, onStart });
   } finally {
     finished.abort();
   }

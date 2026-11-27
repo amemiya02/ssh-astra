@@ -30,6 +30,7 @@ const listings: Record<string, Listing> = {
   "/counts": { path: "/counts", entries: [entry(".env"), entry("a.txt"), entry("b.txt")] },
   "/move": { path: "/move", entries: [entry("sub", "dir"), entry("a.txt"), entry("b.txt"), entry("c.txt")] },
   "/move/sub": { path: "/move/sub", entries: [] },
+  "/big/alias ": { path: "/big/sub", entries: [entry(".hidden-match")] },
 };
 
 const api: FilesApi = {
@@ -47,6 +48,7 @@ const api: FilesApi = {
   renameFile: vi.fn(() => Promise.resolve()),
   countFiles: vi.fn(() => Promise.resolve(2)),
   folderSize: vi.fn(() => Promise.resolve(3072)),
+  searchNames: vi.fn(() => Promise.resolve(null)),
   deleteFiles: vi.fn(() => Promise.resolve()),
   chmodFile: vi.fn(() => Promise.resolve()),
 };
@@ -112,6 +114,60 @@ const pathButton = (label: string) =>
 const pathInput = () => container.querySelector<HTMLInputElement>('input[aria-label="Path"]')!;
 
 describe("FileBrowser", () => {
+  it("searches beneath the current path and reveals a hidden result in its canonical parent", async () => {
+    vi.mocked(api.searchNames).mockResolvedValueOnce({
+      matches: [{ parent: "/big/alias ", name: ".hidden-match" }],
+      visited: 1_000,
+      limitReached: true,
+      skippedDirectories: false,
+    });
+    const { store, rows } = await render();
+    await act(async () => pathButton("Find by name").click());
+    const query = container.querySelector<HTMLInputElement>('input[aria-label="File or folder name"]')!;
+    expect(document.activeElement).toBe(query);
+    const form = query.form!;
+    await act(async () => {
+      type(query, "hidden");
+      form.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
+    });
+    expect(api.searchNames).toHaveBeenCalledExactlyOnceWith(1, "/big", "hidden", "substring", expect.any(AbortSignal));
+    expect(container.textContent).toContain("Search stopped after checking 1,000 entries.");
+
+    const result = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes(".hidden-match"))!;
+    await act(async () => result.click());
+    expect(api.listFiles).toHaveBeenLastCalledWith(1, "/big/alias ");
+    expect(store.getState().path).toBe("/big/sub");
+    expect(store.getState().selection).toEqual(new Set([".hidden-match"]));
+    expect(rows().find((row) => row.textContent?.includes(".hidden-match"))?.getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("cancels a wildcard search and ignores results arriving after cancellation", async () => {
+    let finish!: () => void;
+    const { rows } = await render({ startPath: "/move" });
+    vi.mocked(api.searchNames).mockImplementationOnce(() => new Promise((resolve) => {
+      finish = () => resolve({ matches: [{ parent: "/move", name: "late.txt" }], visited: 1, limitReached: false, skippedDirectories: false });
+    }));
+    expect(rows().length).toBeGreaterThan(0);
+    await act(async () => pathButton("Find by name").click());
+    const query = container.querySelector<HTMLInputElement>('input[aria-label="File or folder name"]')!;
+    const mode = container.querySelector<HTMLSelectElement>('select[aria-label="Match name by"]')!;
+    await act(async () => {
+      mode.value = "wildcard";
+      mode.dispatchEvent(new Event("change", { bubbles: true }));
+      type(query, "*.txt");
+    });
+    await act(async () => query.form!.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true })));
+    const [id, path, name, kind, signal] = vi.mocked(api.searchNames).mock.calls[0]!;
+    expect([id, path, name, kind]).toEqual([1, "/move", "*.txt", "wildcard"]);
+    const cancel = [...container.querySelectorAll("button")].find((button) => button.textContent === "Cancel search")!;
+    await act(async () => cancel.click());
+    expect(signal.aborted).toBe(true);
+    await act(async () => finish());
+    expect(container.textContent).toContain("Search cancelled.");
+    expect(container.textContent).not.toContain("late.txt");
+  });
+
   it("calculates a folder on demand and shows the result in its Size cell until leaving the directory", async () => {
     const { rows, store } = await render({ startPath: "/move" });
     const sizeCell = () => rows()[0]!.querySelectorAll('[role="gridcell"]')[1]!;

@@ -1,25 +1,28 @@
 //! [`RemoteFs`] over SFTP subsystem channels on a Host's shared Connection.
 
+use std::collections::VecDeque;
+use std::future::Future;
 use std::io::SeekFrom;
 use std::sync::Arc;
 
 use russh_sftp::client::error::Error as SftpError;
 use russh_sftp::client::fs::Metadata;
 use russh_sftp::client::{RawSftpSession, SftpSession};
-use russh_sftp::protocol::{OpenFlags, Packet, StatusCode};
+use russh_sftp::protocol::{File, OpenFlags, Packet, StatusCode};
 use tokio::io::AsyncSeekExt;
 use tokio::sync::{oneshot, OnceCell};
 use tokio::task::JoinSet;
 
 use super::{
-    cancellable_folder_scan, join, publish_by_plain_rename, sum_folder, FileEntry, FileKind,
-    FileReader, FileStat, FileWriter, FsError, FsResult, RemoteFs,
+    cancellable_scan, join, publish_by_plain_rename, sum_folder, FileEntry, FileKind, FileReader,
+    FileStat, FileWriter, FsError, FsResult, NameMatch, NameSearchMode, NameSearchResult, RemoteFs,
 };
 use crate::ssh::{BoxFuture, Connection};
 
 /// Seconds to wait for each SFTP reply; slow links list big directories.
 const REQUEST_TIMEOUT_SECS: u64 = 30;
 const POSIX_RENAME: &str = "posix-rename@openssh.com";
+const NAME_SEARCH_LIMIT: usize = 1_000;
 
 /// A Host's files over SFTP. Keeps its Connection open while it lives;
 /// dropping it closes the SFTP channel (not the Connection, which Terminals
@@ -31,6 +34,50 @@ pub struct SftpFs {
 }
 
 impl SftpFs {
+    async fn scan<T, F>(
+        &self,
+        mut cancelled: oneshot::Receiver<()>,
+        run: impl FnOnce(russh::ChannelStream<russh::client::Msg>) -> F,
+    ) -> FsResult<Option<T>>
+    where
+        F: Future<Output = FsResult<T>>,
+    {
+        if !matches!(
+            cancelled.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ) {
+            return Ok(None);
+        }
+        // Each scan owns its channel so cancellation also releases any directory
+        // handle on the server. Wait for the SSH channel ID before closing.
+        let channel = self.connection.open_session_channel().await;
+        let channel = match channel {
+            Ok(channel) => channel,
+            Err(_)
+                if !matches!(
+                    cancelled.try_recv(),
+                    Err(oneshot::error::TryRecvError::Empty)
+                ) =>
+            {
+                return Ok(None)
+            }
+            Err(error) => return Err(FsError::Protocol(error.to_string())),
+        };
+        let started = tokio::select! {
+            biased;
+            _ = &mut cancelled => {
+                let _ = channel.close().await;
+                return Ok(None);
+            }
+            result = Self::request_sftp(&channel) => result,
+        };
+        if let Err(error) = started {
+            let _ = channel.close().await;
+            return Err(error);
+        }
+        cancellable_scan(cancelled, run(channel.into_stream())).await
+    }
+
     pub(crate) async fn start(
         connection: Arc<Connection>,
         channel: russh::Channel<russh::client::Msg>,
@@ -158,11 +205,7 @@ impl RemoteFs for SftpFs {
                 .map_err(|e| error(path, e))?
                 .map(|item| {
                     let name = item.file_name();
-                    if name.is_empty() || name.contains(['/', '\0']) {
-                        return Err(FsError::Protocol(
-                            "SFTP returned an invalid directory entry name".into(),
-                        ));
-                    }
+                    validate_name(&name)?;
                     Ok(entry(name, &item.metadata()))
                 })
                 .collect()
@@ -172,38 +215,27 @@ impl RemoteFs for SftpFs {
     fn folder_size<'a>(
         &'a self,
         path: &'a str,
-        mut cancelled: oneshot::Receiver<()>,
+        cancelled: oneshot::Receiver<()>,
     ) -> BoxFuture<'a, FsResult<Option<u64>>> {
-        Box::pin(async move {
-            if !matches!(
-                cancelled.try_recv(),
-                Err(oneshot::error::TryRecvError::Empty)
-            ) {
-                return Ok(None);
-            }
-            // The scan owns its channel. Dropping read_dir can leave a remote
-            // directory handle open, so cancellation closes the whole scan channel.
-            // Wait for the SSH channel ID before closing an aborted open.
-            let channel = self
-                .connection
-                .open_session_channel()
-                .await
-                .map_err(|e| FsError::Protocol(e.to_string()))?;
-            tokio::select! {
-                biased;
-                _ = &mut cancelled => {
-                    let _ = channel.close().await;
-                    return Ok(None);
-                }
-                result = Self::request_sftp(&channel) => result?,
-            }
-            let stream = channel.into_stream();
-            cancellable_folder_scan(cancelled, async move {
-                let scan = Self::from_stream(Arc::clone(&self.connection), stream).await?;
-                sum_folder(&scan, path).await
-            })
-            .await
-        })
+        Box::pin(self.scan(cancelled, |stream| async move {
+            let scan = Self::from_stream(Arc::clone(&self.connection), stream).await?;
+            sum_folder(&scan, path).await
+        }))
+    }
+
+    fn search_names<'a>(
+        &'a self,
+        path: &'a str,
+        query: &'a str,
+        mode: NameSearchMode,
+        cancelled: oneshot::Receiver<()>,
+    ) -> BoxFuture<'a, FsResult<Option<NameSearchResult>>> {
+        Box::pin(self.scan(cancelled, |stream| async move {
+            let scan = RawSftpSession::new(stream);
+            scan.set_timeout(REQUEST_TIMEOUT_SECS);
+            scan.init().await.map_err(|e| error(path, e))?;
+            search_names(&scan, path, query, mode).await
+        }))
     }
 
     fn stat<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileStat>> {
@@ -413,6 +445,131 @@ impl RemoteFs for SftpFs {
                 .map_err(|e| error(path, e))
         })
     }
+}
+
+async fn search_names(
+    session: &RawSftpSession,
+    path: &str,
+    query: &str,
+    mode: NameSearchMode,
+) -> FsResult<NameSearchResult> {
+    // A trailing slash makes lstat follow a symlink to a directory.
+    let trimmed = path.trim_end_matches('/');
+    let path = if trimmed.is_empty() { path } else { trimmed };
+    require_directory(session, path).await?;
+    let root = session
+        .realpath(path)
+        .await
+        .map_err(|e| error(path, e))?
+        .files
+        .into_iter()
+        .next()
+        .ok_or_else(|| FsError::Protocol("SFTP returned no canonical path".into()))?
+        .filename;
+    let wildcard: Vec<char> = match mode {
+        NameSearchMode::Substring => Vec::new(),
+        NameSearchMode::Wildcard => query.chars().collect(),
+    };
+
+    let mut result = NameSearchResult::default();
+    let mut pending = VecDeque::from([root.clone()]);
+    while let Some(parent) = pending.pop_front() {
+        let handle = match open_search_directory(session, &parent).await {
+            Ok(handle) => handle,
+            Err(
+                FsError::PermissionDenied(_) | FsError::NotFound(_) | FsError::NotADirectory(_),
+            ) if parent != root => {
+                result.skipped_directories = true;
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
+        // Read one SFTP NAME packet at a time. The high-level read_dir would
+        // fetch the whole directory before the visit limit could be enforced.
+        loop {
+            let batch = match read_search_batch(session, &parent, &handle).await {
+                Ok(Some(batch)) => batch,
+                Ok(None) => break,
+                Err(FsError::PermissionDenied(_) | FsError::NotFound(_)) if parent != root => {
+                    result.skipped_directories = true;
+                    break;
+                }
+                Err(error) => return Err(error),
+            };
+            for File {
+                filename: name,
+                attrs,
+                ..
+            } in batch
+            {
+                if matches!(name.as_str(), "." | "..") {
+                    continue;
+                }
+                validate_name(&name)?;
+                if kind(&attrs) == FileKind::Dir {
+                    pending.push_back(join(&parent, &name));
+                }
+                let matched = match mode {
+                    NameSearchMode::Substring => name.contains(query),
+                    NameSearchMode::Wildcard => crate::wildcard::matches(&wildcard, &name),
+                };
+                if matched {
+                    result.matches.push(NameMatch {
+                        parent: parent.clone(),
+                        name,
+                    });
+                }
+                result.visited += 1;
+                if result.visited == NAME_SEARCH_LIMIT {
+                    result.limit_reached = true;
+                    return Ok(result);
+                }
+            }
+        }
+        session.close(handle).await.map_err(|e| error(&parent, e))?;
+    }
+    Ok(result)
+}
+
+async fn require_directory(session: &RawSftpSession, path: &str) -> FsResult<()> {
+    let attrs = session.lstat(path).await.map_err(|e| error(path, e))?.attrs;
+    if kind(&attrs) != FileKind::Dir {
+        return Err(FsError::NotADirectory(path.to_owned()));
+    }
+    Ok(())
+}
+
+async fn open_search_directory(session: &RawSftpSession, path: &str) -> FsResult<String> {
+    require_directory(session, path).await?;
+    Ok(session
+        .opendir(path)
+        .await
+        .map_err(|e| error(path, e))?
+        .handle)
+}
+
+async fn read_search_batch(
+    session: &RawSftpSession,
+    path: &str,
+    handle: &str,
+) -> FsResult<Option<Vec<File>>> {
+    match session.readdir(handle).await {
+        Ok(batch) if !batch.files.is_empty() => Ok(Some(batch.files)),
+        Ok(_) => Err(FsError::Protocol(
+            "SFTP returned an empty directory packet".into(),
+        )),
+        Err(SftpError::Status(status)) if status.status_code == StatusCode::Eof => Ok(None),
+        Err(err) => Err(error(path, err)),
+    }
+}
+
+fn validate_name(name: &str) -> FsResult<()> {
+    if name.is_empty() || name.contains(['/', '\0']) {
+        return Err(FsError::Protocol(
+            "SFTP returned an invalid directory entry name".into(),
+        ));
+    }
+    Ok(())
 }
 
 fn kind(meta: &Metadata) -> FileKind {

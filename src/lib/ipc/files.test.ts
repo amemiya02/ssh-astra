@@ -14,7 +14,7 @@ it("delivers a folder size cancellation requested before the backend registers t
       onStart = (args as { onStart: Channel<number> }).onStart;
       return new Promise<null>((resolve) => { finish = resolve; });
     }
-    expect(command).toBe("files_cancel_folder_size");
+    expect(command).toBe("files_cancel_scan");
     cancel(args);
     finish(null);
   });
