@@ -20,6 +20,7 @@ import { BroadcastPaneContext, type Broadcast } from "@/features/workspace/broad
 import { getResolvedShortcuts } from "@/features/workspace/shortcut-settings";
 import { currentPlatform, matchTerminalShortcut } from "@/features/workspace/shortcuts";
 import { planPaste, type PendingPaste } from "./terminal-input";
+import { selectAllEvent } from "./terminal-selection";
 import { zoomTerminalFont, type TerminalPrefs } from "./terminal-prefs";
 import { useTerminalPrefs } from "./terminal-prefs-context";
 import { attachTerminalHighlighting } from "./xterm-highlighting";
@@ -175,6 +176,15 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
     const onCopy = (event: ClipboardEvent) => {
       if (event.defaultPrevented && event.clipboardData && xterm.hasSelection()) notifyCopied();
     };
+    // WebKit's edit command enables Copy for xterm's selection even when the
+    // hidden textarea has no native selection.
+    const onBeforeCopy = (event: Event) => {
+      if (xterm.hasSelection()) event.preventDefault();
+    };
+    const onSelectAll = (event: Event) => {
+      event.preventDefault();
+      xterm.selectAll();
+    };
     const onTitle = xterm.onTitleChange((title) => onTitleChangeRef.current?.(title));
 
     const captureRecipients = () => paneId === undefined ? undefined : broadcast?.capture(paneId);
@@ -200,6 +210,10 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
       zoomTerminalFont(event.deltaY < 0 ? 1 : -1);
     };
     container.addEventListener("copy", onCopy);
+    if (platform === "mac") {
+      container.addEventListener("beforecopy", onBeforeCopy);
+      container.addEventListener(selectAllEvent, onSelectAll);
+    }
     container.addEventListener("paste", onPaste, true);
     container.addEventListener("contextmenu", onContextMenu);
     container.addEventListener("wheel", onZoomWheel, { capture: true, passive: false });
@@ -215,6 +229,8 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
       clearTimeout(copyTimer);
       stopBroadcastInput?.();
       container.removeEventListener("copy", onCopy);
+      container.removeEventListener("beforecopy", onBeforeCopy);
+      container.removeEventListener(selectAllEvent, onSelectAll);
       container.removeEventListener("paste", onPaste, true);
       container.removeEventListener("contextmenu", onContextMenu);
       container.removeEventListener("wheel", onZoomWheel, true);

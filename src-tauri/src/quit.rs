@@ -6,7 +6,7 @@ const QUIT: &str = "app-quit";
 
 pub struct QuitMenu {
     file: Option<Submenu<tauri::Wry>>,
-    quit: MenuItem<tauri::Wry>,
+    pub(crate) quit: MenuItem<tauri::Wry>,
 }
 
 pub fn menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
