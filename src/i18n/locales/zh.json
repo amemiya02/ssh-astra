@@ -546,6 +546,11 @@
     "turnOff": "关闭广播",
     "recipient": "接收广播输入"
   },
+  "privacyMode": {
+    "label": "隐私模式",
+    "turnOn": "开启隐私模式",
+    "turnOff": "关闭隐私模式"
+  },
   "status": {
     "noConnections": "没有连接",
     "connectedTo": "已连接：{{hosts}}",

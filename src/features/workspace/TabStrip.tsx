@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { TabMenu } from "./TabMenu";
 import { shortcutLabel, type Platform } from "./shortcuts";
 import type { TabActivity } from "./tab-activity";
+import { privacyModeSetting } from "./privacy-mode";
 import { groupTabsByHost, type TabGroup } from "./tab-groups";
 import { workspaceSetting } from "./workspace-prefs";
 import {
@@ -95,6 +96,7 @@ export function TabStrip({
 }: TabStripProps) {
   const { t } = useTranslation();
   const { unread, flashing } = useStore(activity.store);
+  const [privacyMode] = useSetting(privacyModeSetting);
   const [{ tabOrientation, verticalTabsCompact, groupTabsByHost: grouping }] = useSetting(workspaceSetting);
   const vertical = tabOrientation === "vertical";
   const compact = vertical && verticalTabsCompact;
@@ -189,7 +191,7 @@ export function TabStrip({
   function renderTab(tab: Tab, grouped = false, hidden = false) {
     const active = tab.id === activeId;
     const kind = activePane(tab).kind;
-    const title = tabTitle(tab, t, ordinals.get(tab.id)!, titleSource);
+    const title = tabTitle(tab, t, ordinals.get(tab.id)!, titleSource, privacyMode);
     const status = tabStatus(tab);
     const hasUnreadOutput = !active && unread.has(tab.id);
     const bellRang = flashing.has(tab.id);

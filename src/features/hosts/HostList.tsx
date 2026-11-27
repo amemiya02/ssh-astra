@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { dropMove, type DragItem, type DropPosition, type DropTarget, type MoveOp, type TreeNode } from "./hostTree";
 import { ConnectionDot } from "@/features/connect/ConnectionDot";
 import type { HostConnection } from "@/features/connect/hostConnection";
+import { privacyModeSetting } from "@/features/workspace/privacy-mode";
 import { HostMonogram } from "./HostMonogram";
 import { hostMenuEntries } from "./hostMenu";
 import { RowContextMenu, RowMoreMenu, type MenuEntry } from "./RowMenu";
@@ -111,6 +112,7 @@ export function HostList({
   actions,
 }: HostListProps) {
   const { t } = useTranslation();
+  const [privacyMode] = useSetting(privacyModeSetting);
   const { collapsed, toggle } = useCollapsedGroups();
   const [dragging, setDragging] = useState<DragData | null>(null);
   const [drop, setDrop] = useState<DropState | null>(null);
@@ -186,6 +188,7 @@ export function HostList({
             >
               <HostRowButton
                 host={host}
+                privacyMode={privacyMode}
                 matches={node.matches}
                 connection={connections.get(host.id)}
                 selected={selected?.kind === "host" && selected.id === host.id}
@@ -366,6 +369,7 @@ const rowButton =
 
 function HostRowButton({
   host,
+  privacyMode,
   matches,
   connection,
   selected,
@@ -375,6 +379,7 @@ function HostRowButton({
   onDelete,
 }: {
   host: Host;
+  privacyMode: boolean;
   matches?: Extract<TreeNode, { kind: "host" }>["matches"];
   connection?: HostConnection;
   selected: boolean;
@@ -406,7 +411,7 @@ function HostRowButton({
       }}
     >
       <HostMonogram host={host} />
-      <span className="flex max-w-[65%] shrink-0 items-center gap-1.5">
+      <span className={cn("flex items-center gap-1.5", privacyMode ? "min-w-0" : "max-w-[65%] shrink-0")}>
         <span className="truncate font-medium">
           <Highlighted text={host.name} indexes={matches?.name} />
         </span>
@@ -417,11 +422,13 @@ function HostRowButton({
           </>
         )}
       </span>
-      <span className="text-muted-foreground min-w-0 flex-1 truncate font-mono text-xs">
-        <Highlighted text={host.user} indexes={matches?.user} />@
-        <Highlighted text={host.address} indexes={matches?.address} />
-        {host.port === 22 ? "" : `:${host.port}`}
-      </span>
+      {!privacyMode && (
+        <span className="text-muted-foreground min-w-0 flex-1 truncate font-mono text-xs">
+          <Highlighted text={host.user} indexes={matches?.user} />@
+          <Highlighted text={host.address} indexes={matches?.address} />
+          {host.port === 22 ? "" : `:${host.port}`}
+        </span>
+      )}
     </button>
   );
 }

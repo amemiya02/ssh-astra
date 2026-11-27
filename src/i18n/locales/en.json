@@ -546,6 +546,11 @@
     "turnOff": "Turn off Broadcast",
     "recipient": "Receives Broadcast input"
   },
+  "privacyMode": {
+    "label": "Privacy mode",
+    "turnOn": "Turn on privacy mode",
+    "turnOff": "Turn off privacy mode"
+  },
   "status": {
     "noConnections": "No Connections",
     "connectedTo": "Connected to {{hosts}}",

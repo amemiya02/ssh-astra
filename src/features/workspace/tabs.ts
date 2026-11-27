@@ -212,17 +212,21 @@ export function remoteTerminalPaneIds(state: TabsState): string[] {
 
 /**
  * The tab's custom title or its focused pane's automatic label. In shell mode, a program's title
- * takes priority over the kind's name. `ordinal` is 1-based among tabs of the same kind.
+ * takes priority over the kind's name. Privacy mode uses only automatic labels because
+ * custom and shell titles can contain connection details. `ordinal` is 1-based among tabs of the same kind.
  */
 export function tabTitle(
   tab: Tab,
   t: (key: "tabs.home" | "tabs.localTerminal" | "tabs.settings" | "tabs.portForwards" | "tabs.sftp") => string,
   ordinal: number,
   titleSource: TerminalTitleSource = "shell",
+  privacyMode = false,
 ): string {
-  if (tab.customTitle) return tab.customTitle;
   const pane = activePane(tab);
-  if (titleSource === "shell" && pane.title) return pane.title;
+  if (!privacyMode) {
+    if (tab.customTitle) return tab.customTitle;
+    if (titleSource === "shell" && pane.title) return pane.title;
+  }
   switch (pane.kind) {
     case "home":
       return t("tabs.home");
