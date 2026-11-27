@@ -76,7 +76,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
           proxyCommands: [{ host: "Imported Host", command: 'nc "%h" %p' }],
         },
       };
-      if (command === "host_tree") return { hosts: savedHosts, groups: [] };
+      if (command === "host_tree" || command === "host_tree_watch") return { hosts: savedHosts, groups: [] };
     }),
   };
 });
@@ -1103,7 +1103,7 @@ it("shows the same manual or detected icon in the Host list, Home and an open Te
   const tabChrome = document.querySelector("#tab-work")!.parentElement!;
   expect(tabChrome.querySelector(".bg-ansi-cyan")).not.toBeNull();
 
-  const watch = vi.mocked(invoke).mock.calls.filter(([command]) => command === "host_tree").at(-1)?.[1] as {
+  const watch = vi.mocked(invoke).mock.calls.filter(([command]) => command === "host_tree_watch").at(-1)?.[1] as {
     onOsChange: { onmessage(event: HostOsChange): void };
   };
   act(() => watch.onOsChange.onmessage({ hostId: host.id, detectedOs: "debian" }));

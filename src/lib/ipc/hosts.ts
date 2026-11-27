@@ -142,7 +142,9 @@ export interface HostOsChange {
 }
 
 export function loadHostTree(onOsChange?: (event: HostOsChange) => void): Promise<HostTree> {
-  return invoke<HostTree>("host_tree", { onOsChange: onOsChange ? new Channel(onOsChange) : null });
+  return onOsChange
+    ? invoke<HostTree>("host_tree_watch", { onOsChange: new Channel(onOsChange) })
+    : invoke<HostTree>("host_tree");
 }
 
 export function redetectHostOs(id: HostId): Promise<void> {

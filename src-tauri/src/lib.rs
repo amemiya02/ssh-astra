@@ -173,6 +173,7 @@ pub fn run() {
             commands::hosts::host_save,
             commands::hosts::host_delete,
             commands::hosts::host_tree,
+            commands::hosts::host_tree_watch,
             commands::hosts::host_duplicate,
             commands::hosts::host_move,
             commands::hosts::group_create,

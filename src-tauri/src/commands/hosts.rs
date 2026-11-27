@@ -24,7 +24,7 @@ pub struct HostsState {
     os_changes: Watcher<HostOsChange>,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HostOsChange {
     host_id: HostId,
@@ -89,18 +89,19 @@ pub fn host_delete(
     Ok(())
 }
 
-/// Every Group and Host, siblings in display order, with optional live OS changes.
+/// Every Group and Host, siblings in display order.
 #[tauri::command]
-pub fn host_tree(
+pub fn host_tree(hosts: State<'_, HostsState>) -> CommandResult<HostTree> {
+    hosts.with(|store| Ok(store.tree()))
+}
+
+/// Returns the Host tree and streams subsequent changes to its detected operating systems.
+#[tauri::command]
+pub fn host_tree_watch(
     hosts: State<'_, HostsState>,
-    on_os_change: Option<Channel<HostOsChange>>,
+    on_os_change: Channel<HostOsChange>,
 ) -> CommandResult<HostTree> {
-    hosts.with(|store| {
-        Ok(match on_os_change {
-            Some(channel) => hosts.os_changes.subscribe(channel, || store.tree()),
-            None => store.tree(),
-        })
-    })
+    hosts.with(|store| Ok(hosts.os_changes.subscribe(on_os_change, || store.tree())))
 }
 
 /// Saves a copy of a Host as `name`, right after the original.

@@ -34,7 +34,6 @@ pub async fn connect_host(
 ) -> Result<Arc<Connection>, ConnectError> {
     let connections = configured_connections(app);
     let connection = connections.connect_through(hops, host, prompter).await?;
-    schedule_os_detection(app, &host.id, &connection);
     let saved = app
         .state::<HostsState>()
         .with(|store| Ok(store.get(&host.id).cloned()))
@@ -59,20 +58,19 @@ fn os_detection_enabled(app: &AppHandle) -> bool {
         .unwrap_or(false)
 }
 
-fn schedule_os_detection(app: &AppHandle, id: &HostId, connection: &Arc<Connection>) {
-    let enabled = os_detection_enabled(app);
-    let reserved = app
-        .state::<HostsState>()
-        .with(|store| Ok(store.begin_os_detection(id, enabled)))
-        .unwrap_or(false);
-    if !reserved {
-        return;
-    }
-
+pub(super) fn schedule_os_detection(app: &AppHandle, id: &HostId, connection: &Arc<Connection>) {
     let (app, id, connection) = (app.clone(), id.clone(), Arc::clone(connection));
     tauri::async_runtime::spawn(async move {
-        let detected_os = connection.detect_os().await;
+        let enabled = os_detection_enabled(&app);
         let hosts = app.state::<HostsState>();
+        let reserved = hosts
+            .with(|store| Ok(store.begin_os_detection(&id, enabled)))
+            .unwrap_or(false);
+        if !reserved {
+            return;
+        }
+
+        let detected_os = connection.detect_os().await;
         let _ = hosts.with(|store| {
             if store.finish_os_detection(&id, detected_os)? {
                 hosts.publish_os_change(id, Some(detected_os));
@@ -82,7 +80,7 @@ fn schedule_os_detection(app: &AppHandle, id: &HostId, connection: &Arc<Connecti
     });
 }
 
-fn detect_os_on_current_connection(app: AppHandle, id: HostId) {
+pub(super) fn detect_os_on_current_connection(app: AppHandle, id: HostId) {
     if os_detection_enabled(&app) {
         tauri::async_runtime::spawn(async move {
             if let Some(connection) = app.state::<ConnectionManager>().live(&id).await {
@@ -292,6 +290,7 @@ pub async fn host_connect(
         channel: on_prompt,
     });
     let connection = connect_host(&app, &hops, &host, prompter).await?;
+    schedule_os_detection(&app, &host.id, &connection);
     connections.held.hold(&host.id, connection);
     Ok(())
 }
