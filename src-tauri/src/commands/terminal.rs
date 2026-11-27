@@ -113,6 +113,7 @@ pub async fn local_terminal_open(
 /// hosts, if any) if needed. Progress and questions for the user arrive on
 /// `on_prompt`. Answer questions with `prompt_answer`. If the Connection drops later, the Terminal
 /// reconnects on its own, sending attempt states alongside progress and questions on `on_prompt`.
+/// A split can supply the working directory for its initial shell.
 /// See `terminal_reconnect`.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // Tauri injects each managed state as an argument.
@@ -126,6 +127,7 @@ pub async fn remote_terminal_open(
     size: TerminalSize,
     on_event: Channel<InvokeResponseBody>,
     on_prompt: Channel<PromptRequest>,
+    cwd: Option<String>,
 ) -> CommandResult<TerminalId> {
     // The Host last, after its Jump hosts (outermost first).
     let mut hops = hosts.with(|store| Ok(store.jump_chain(&host_id)?))?;
@@ -144,7 +146,8 @@ pub async fn remote_terminal_open(
         .with(|store| Ok(store.section::<TerminalSettings>(TerminalSettings::SECTION)))
         .unwrap_or_default()
         .shell_integration;
-    let options = RemoteTerminalOptions::for_host(&host, shell_integration);
+    let mut options = RemoteTerminalOptions::for_host(&host, shell_integration);
+    options.initial_cwd = cwd;
     let terminal = RemoteTerminal::open_with_progress(
         connect,
         options,
