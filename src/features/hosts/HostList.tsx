@@ -52,6 +52,8 @@ interface HostListProps {
   nodes: TreeNode[];
   /** While searching every Group is open and dragging is off. */
   searching: boolean;
+  /** Only the saved manual order supports drag and drop. */
+  manualOrder: boolean;
   selected: DragItem | null;
   onSelect(item: DragItem): void;
   renamingGroupId: GroupId | null;
@@ -101,6 +103,7 @@ export function HostList({
   tree,
   nodes,
   searching,
+  manualOrder,
   selected,
   onSelect,
   renamingGroupId,
@@ -111,10 +114,12 @@ export function HostList({
   const { collapsed, toggle } = useCollapsedGroups();
   const [dragging, setDragging] = useState<DragData | null>(null);
   const [drop, setDrop] = useState<DropState | null>(null);
+  const canDrag = manualOrder && !searching;
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
   /** Where the pointer is over the row it hovers, as a drop (null: not allowed here). */
   const dropAt = (event: DragMoveEvent): DropState | null => {
+    if (!canDrag) return null;
     const data = event.active.data.current as DragData | undefined;
     const over = event.over;
     if (!data || !over) return null;
@@ -174,8 +179,8 @@ export function HostList({
             <TreeRow
               item={item}
               label={host.name}
-              disabled={searching}
-              dropPosition={drop?.key === key ? drop.position : undefined}
+              disabled={!canDrag}
+              dropPosition={canDrag && drop?.key === key ? drop.position : undefined}
               entries={entries}
               moreLabel={t("hosts.moreActions")}
             >
@@ -224,8 +229,8 @@ export function HostList({
           <TreeRow
             item={item}
             label={group.name}
-            disabled={searching || renamingGroupId === group.id}
-            dropPosition={drop?.key === key ? drop.position : undefined}
+            disabled={!canDrag || renamingGroupId === group.id}
+            dropPosition={canDrag && drop?.key === key ? drop.position : undefined}
             entries={entries}
             moreLabel={t("hosts.moreActions")}
           >
@@ -254,7 +259,9 @@ export function HostList({
               {node.children.length > 0 ? (
                 render(node.children)
               ) : (
-                <li className="text-muted-foreground px-2 py-1 text-xs">{t("hosts.emptyGroup")}</li>
+                <li className="text-muted-foreground px-2 py-1 text-xs">
+                  {t(canDrag ? "hosts.emptyGroup" : "hosts.emptyGroupSorted")}
+                </li>
               )}
             </ul>
           )}
@@ -276,10 +283,10 @@ export function HostList({
         <ul aria-label={t("hosts.title")} className="grid grid-cols-[minmax(0,1fr)] gap-0.5">
           {render(nodes)}
         </ul>
-        {!searching && <RootDropZone active={drop?.key === "root"} />}
+        {canDrag && <RootDropZone active={drop?.key === "root"} />}
       </div>
       <DragOverlay dropAnimation={null}>
-        {dragging && (
+        {canDrag && dragging && (
           <div className="bg-popover shadow-overlay w-fit max-w-56 truncate rounded-md border px-2.5 py-1 font-medium">
             {dragging.label}
           </div>

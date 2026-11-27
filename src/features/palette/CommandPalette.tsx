@@ -11,12 +11,12 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 import { HostMonogram } from "@/features/hosts/HostMonogram";
+import { recentHostIds, recentHostsSetting } from "@/features/hosts/host-history";
 import { useHosts } from "@/features/hosts/hostsStore";
 import type { Host } from "@/lib/ipc/hosts";
 import { useSetting } from "@/lib/storage";
 import { useRegisteredActions } from "./palette-actions";
 import { rankPalette, type PaletteEntry, type RankedEntry } from "./palette-search";
-import { recentHostsSetting } from "./recent-hosts";
 
 export interface PaletteTab {
   id: string;
@@ -55,7 +55,7 @@ export function CommandPalette({ open, onOpenChange, tabs, onOpenHost, onActivat
   const actions = useRegisteredActions();
 
   const rows = useMemo((): Row[] => {
-    const recency = new Map(recent.map((id, i) => [id, i]));
+    const recency = new Map(recentHostIds(recent).map((id, i) => [id, i]));
     return [
       ...hosts.map(
         (host): Row => ({

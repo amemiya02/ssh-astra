@@ -12,7 +12,9 @@
 //! every shell it starts, the first and each after a reconnect, gets the
 //! prompt hook typed in. It reports the current directory and shell markers.
 //! The configured post-login command runs in each new shell after startup.
+//! A split Terminal also changes to its inherited directory in its first shell.
 
+use std::fmt::Write as _;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
@@ -59,6 +61,8 @@ pub struct RemoteTerminalOptions {
     pub shell_integration: bool,
     /// Command typed once into every new shell after startup.
     pub post_login_command: Option<String>,
+    /// Working directory inherited when a new Terminal is split from another.
+    pub initial_cwd: Option<String>,
     /// Character set for the shell's input and output.
     pub charset: TerminalCharset,
     /// Byte sent for the Backspace key.
@@ -162,14 +166,21 @@ impl RemoteTerminal {
         Fut: Future<Output = Result<Arc<Connection>, ConnectError>> + Send + 'static,
         F: FnMut(TerminalEvent) + Send + 'static,
     {
-        let post_login_input = options
+        let post_login = options
             .post_login_command
-            .filter(|command| !command.trim().is_empty())
-            .map(|command| {
-                let mut line = options.charset.encode_input(command.as_bytes());
-                line.push(b'\r');
-                line
-            });
+            .as_deref()
+            .filter(|command| !command.trim().is_empty());
+        let startup_line = |command: &str| {
+            let mut line = options.charset.encode_input(command.as_bytes());
+            line.push(b'\r');
+            line
+        };
+        let post_login_input = post_login.map(startup_line);
+        let split_startup_input = options
+            .initial_cwd
+            .as_deref()
+            .and_then(|cwd| split_startup_command(cwd, post_login))
+            .map(|command| startup_line(&command));
         let (shell_tx, shell_events) = mpsc::unbounded_channel();
         let connection = connect().await?;
         let shell = start_shell(&connection, size, &shell_tx, progress.as_ref()).await?;
@@ -181,6 +192,7 @@ impl RemoteTerminal {
             integration: options.shell_integration,
             charset: options.charset,
             post_login_input,
+            split_startup_input,
             size,
             sink: Box::new(sink),
             commands: command_rx,
@@ -200,6 +212,39 @@ impl RemoteTerminal {
             .send(command)
             .map_err(|_| TerminalError::Io("the remote Terminal has ended".into()))
     }
+}
+
+fn split_startup_command(cwd: &str, post_login: Option<&str>) -> Option<String> {
+    if !cwd.starts_with('/') || cwd.contains('\0') {
+        return None;
+    }
+
+    // OSC 7 paths are UTF-8. Keep special bytes out of both PTY input and shell syntax.
+    let mut encoded = String::with_capacity(cwd.len());
+    for byte in cwd.bytes() {
+        if byte.is_ascii_alphanumeric() || b"/._-".contains(&byte) {
+            encoded.push(char::from(byte));
+        } else {
+            write!(encoded, "\\0{byte:03o}").expect("writing to a String succeeds");
+        }
+    }
+    // Command substitution trims trailing newlines. A directory can be addressed via its ".".
+    let format = if cwd.ends_with('\n') { "%b/." } else { "%b" };
+    // Escaping the command names bypasses aliases and lets zsh use its built-ins.
+    let cd = format!(r#"\cd -- "$(\printf '{format}' '{encoded}')""#);
+    Some(match post_login {
+        None => format!(" {cd}"),
+        Some(login) => {
+            // Keep cd in the evaluated shell line so a foreground login command cannot read
+            // it as input. Quote the login script as written and preserve its exit status.
+            let after_login = shell_quote(&format!("{cd}; (exit "));
+            format!("eval {}; eval {after_login}\"$?\"')'", shell_quote(login))
+        }
+    })
+}
+
+fn shell_quote(text: &str) -> String {
+    format!("'{}'", text.replace('\'', r"'\''"))
 }
 
 impl Terminal for RemoteTerminal {
@@ -334,6 +379,7 @@ struct Runner {
     integration: bool,
     charset: TerminalCharset,
     post_login_input: Option<Vec<u8>>,
+    split_startup_input: Option<Vec<u8>>,
     size: TerminalSize,
     sink: Box<dyn FnMut(TerminalEvent) + Send>,
     commands: mpsc::UnboundedReceiver<Command>,
@@ -367,7 +413,10 @@ impl Runner {
         if !self.integration {
             self.report_integration(ShellIntegrationStatus::Disabled);
         }
-        let mut startup = if self.integration || self.post_login_input.is_some() {
+        let mut startup = if self.integration
+            || self.post_login_input.is_some()
+            || self.split_startup_input.is_some()
+        {
             Startup::Waiting(Waiting::default())
         } else {
             Startup::Ready
@@ -443,8 +492,12 @@ impl Runner {
         }
     }
 
-    fn finish_startup(&self, shell: &mut RemoteShell, typed: Vec<u8>) {
-        if let Some(line) = &self.post_login_input {
+    fn finish_startup(&mut self, shell: &mut RemoteShell, typed: Vec<u8>) {
+        if let Some(line) = &self.split_startup_input {
+            if shell.write(line).is_ok() {
+                self.split_startup_input = None;
+            }
+        } else if let Some(line) = &self.post_login_input {
             let _ = shell.write(line);
         }
         if !typed.is_empty() {

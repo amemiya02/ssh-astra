@@ -179,6 +179,7 @@ function PaneContent({
         <RemoteTerminalView
           paneId={pane.id}
           host={pane.host}
+          initialCwd={pane.initialCwd}
           onClose={() => onClosePane(pane.id)}
           onEditHost={() => onEditHost(pane.host)}
           active={active}

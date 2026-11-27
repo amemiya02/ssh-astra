@@ -127,10 +127,11 @@ export async function openRemoteTerminal(
   onEvent: (event: TerminalEvent) => void,
   ask: (prompt: ConnectPrompt) => Promise<PromptAnswer>,
   updates: ConnectUpdates,
+  cwd?: string,
 ): Promise<TerminalId> {
   const onPrompt = connectPromptChannel(ask, updates);
   const events = new Channel<TerminalMessage>((message) =>
     onEvent(decodeTerminalMessage(message)),
   );
-  return invoke<TerminalId>("remote_terminal_open", { hostId, size, onEvent: events, onPrompt });
+  return invoke<TerminalId>("remote_terminal_open", { hostId, size, onEvent: events, onPrompt, cwd });
 }

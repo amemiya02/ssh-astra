@@ -7,12 +7,14 @@ import { connectionsStore, useConnections } from "@/features/connect/connections
 import { hostConnections } from "@/features/connect/hostConnection";
 import { CommandDialog, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { FilePanelContent, type FilePanelPane } from "@/features/files/FilePanelContent";
+import { terminalCwds } from "@/features/files/terminalCwds";
 import { useRetainRemoteFilePanels } from "@/features/files/use-retain-remote-file-panels";
 import { fileBrowsers } from "@/features/files/fileBrowsers";
 import { forwardsStore, runningForwards, useForwards } from "@/features/forwards/forwardsStore";
 import { activeConnections, forwardStatusText, runningRules } from "@/features/forwards/status";
 import { ForwardsSidebar } from "@/features/forwards/ForwardsSidebar";
 import { HomeView } from "@/features/home/HomeView";
+import { rememberHostOpened, useRecordHostConnections } from "@/features/hosts/host-history";
 import { useHosts } from "@/features/hosts/hostsStore";
 import { updateSetting } from "@/features/updates/update-settings";
 import { checkOnStartup, updatesStore } from "@/features/updates/updatesStore";
@@ -20,7 +22,6 @@ import { HostsPanel } from "@/features/hosts/HostsPanel";
 import { useHostsController } from "@/features/hosts/useHostsController";
 import { CommandPalette, type PaletteTab } from "@/features/palette/CommandPalette";
 import { usePaletteActions, type PaletteAction } from "@/features/palette/palette-actions";
-import { rememberHostOpened } from "@/features/palette/recent-hosts";
 import { DiagnosticsPaletteActions } from "@/features/settings/diagnostics-section";
 import { AppShell } from "@/features/shell/AppShell";
 import { zoomTerminalFont } from "@/features/terminal/terminal-prefs";
@@ -175,13 +176,17 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
   );
 
   /**
-   * A new pane beside the focused one, running the same kind of Terminal (the same Host's shares its
-   * Connection); beside Settings, a Local terminal.
+   * A new pane beside the focused one, using the same Host and working directory when known.
+   * Non-Terminal panes that can split open a Local terminal beside them.
    */
   const split = (orientation: SplitOrientation) => {
     if (!canSplitFocused) return;
     const pane = activePane(focused);
-    const kind: PaneKind = pane.kind === "remote-terminal" ? { kind: pane.kind, host: pane.host } : localTerminal;
+    const kind: PaneKind = pane.kind === "remote-terminal"
+      ? { kind: pane.kind, host: pane.host, initialCwd: terminalCwds.lastReported(pane.id) }
+      : pane.kind === "local-terminal"
+        ? { kind: pane.kind, cwd: pane.cwd }
+        : localTerminal;
     dispatch({ type: "split", orientation, pane: newPane(kind) });
   };
 
@@ -313,8 +318,8 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
   const forwardStates = useForwards((s) => s.states);
   const held = useConnections((s) => s.held);
   const connectingHeld = useConnections((s) => s.connecting);
-  const running = runningForwards({ states: forwardStates });
-  const connected = activeConnections(connectedHosts(state), running, hosts, held);
+  const running = useMemo(() => runningForwards({ states: forwardStates }), [forwardStates]);
+  const connected = useMemo(() => activeConnections(connectedHosts(state), running, hosts, held), [state, running, hosts, held]);
   const forwards = runningRules(running, hosts).map(({ rule }) => forwardStatusText(rule, t));
   const reconnecting = reconnectingHosts(state);
   // "Connect only" Hosts can be disconnected from the palette.
@@ -334,6 +339,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
   const transferSpeeds = useTransfers((s) => s.speeds);
   const transfers = transferSummary(transferList, transferSpeeds);
   const connections = useMemo(() => hostConnections(connected, state, connectingHeld), [connected, state, connectingHeld]);
+  useRecordHostConnections(connections);
   const filePanelPane: FilePanelPane | undefined =
     focusedPane?.kind === "remote-terminal"
       ? { id: focusedPane.id, host: focusedPane.host, status: focusedPane.status ?? "connecting" }
