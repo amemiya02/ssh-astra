@@ -9,6 +9,9 @@ use crate::forward::ForwardDraft;
 mod csv;
 pub use csv::parse_csv;
 
+mod putty;
+pub use putty::parse_putty;
+
 /// A Host as the source describes it, ready to save. `jump_host` names
 /// another `ConfigHost` (or an already saved Host) by name.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,9 +36,9 @@ pub struct ConfigHost {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportIssue {
-    /// The Host alias or directive for OpenSSH. CSV reports a line instead.
+    /// The Host alias, OpenSSH directive, or PuTTY session name.
     pub entry: String,
-    /// One-based physical line on which the CSV record began.
+    /// One-based physical line for issues reported by location.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub line: Option<usize>,
     /// The Host was not imported at all (otherwise only this part of it).
@@ -81,6 +84,17 @@ pub enum ImportProblem {
     CsvInvalidPort,
     CsvInvalidGroup,
     CsvMalformedRecord,
+    PuttyFile,
+    PuttySessionName,
+    PuttyCredentials,
+    PuttyUnsupportedProtocol,
+    PuttyDefaultUser,
+    PuttyInvalidOption {
+        option: &'static str,
+    },
+    PuttyUnsupportedOptions {
+        options: String,
+    },
 }
 
 /// The outcome of parsing an import source.

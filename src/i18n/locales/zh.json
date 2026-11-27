@@ -191,7 +191,7 @@
     "connectFailed": "无法连接到 {{name}}：{{message}}",
     "import": {
       "action": "导入 Host…",
-      "keywords": "ssh config openssh csv 导入",
+      "keywords": "ssh config openssh csv 导入 putty",
       "pickerTitle": "导入 Host",
       "chooseSource": "选择要从哪里导入 Host。",
       "sshConfig": {
@@ -208,6 +208,15 @@
         "title": "CSV 导入结果",
         "nothing": "CSV 文件中没有可导入的 Host。",
         "error": "无法导入 CSV 文件：{{message}}"
+      },
+      "putty": {
+        "action": "PuTTY 注册表导出文件…",
+        "help": "选择从 PuTTY 的 Sessions 注册表项导出的 .reg 文件。",
+        "chooseFile": "选择 PuTTY 注册表导出文件",
+        "fileType": "PuTTY 注册表导出文件",
+        "title": "PuTTY 导入结果",
+        "nothing": "PuTTY 注册表导出文件中没有可导入的主机。",
+        "error": "无法导入 PuTTY 注册表导出文件：{{message}}"
       },
       "summary": "导入 {{imported}} 个，跳过 {{skipped}} 个，无法导入 {{failed}} 个。",
       "imported": "已导入",
@@ -229,7 +238,14 @@
         "csvMissingField": "必须填写 {{field}}。",
         "csvInvalidPort": "Port 必须是 1 到 65535 之间的整数。",
         "csvInvalidGroup": "Group 路径中的每一级都需要名称。",
-        "csvMalformedRecord": "这条 CSV 记录的引号格式不正确。"
+        "csvMalformedRecord": "这条 CSV 记录的引号格式不正确。",
+        "puttyFile": "请选择带有效文件头和文本编码的 Windows 注册表导出文件（.reg）。",
+        "puttySessionName": "此注册表项中的 PuTTY 会话名称或分组路径无效。",
+        "puttyCredentials": "已略过保存的凭据。",
+        "puttyUnsupportedProtocol": "此 PuTTY 会话使用的协议不是 SSH。",
+        "puttyDefaultUser": "PuTTY 未保存用户名，已使用本机用户名。",
+        "puttyInvalidOption": "PuTTY 选项 {{option}} 缺失或无效。",
+        "puttyUnsupportedOptions": "已略过 PuTTY 选项：{{options}}。"
       }
     },
     "transfer": {

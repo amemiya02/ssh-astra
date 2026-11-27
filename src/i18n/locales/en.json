@@ -191,7 +191,7 @@
     "connectFailed": "Could not connect to {{name}}: {{message}}",
     "import": {
       "action": "Import Hosts…",
-      "keywords": "ssh config openssh csv import",
+      "keywords": "ssh config openssh csv import putty",
       "pickerTitle": "Import Hosts",
       "chooseSource": "Choose where to import Hosts from.",
       "sshConfig": {
@@ -208,6 +208,15 @@
         "title": "CSV import results",
         "nothing": "The CSV file has no Hosts to import.",
         "error": "Could not import the CSV file: {{message}}"
+      },
+      "putty": {
+        "action": "PuTTY registry export…",
+        "help": "Choose a .reg file exported from PuTTY’s Sessions registry key.",
+        "chooseFile": "Choose a PuTTY registry export",
+        "fileType": "PuTTY registry export",
+        "title": "PuTTY import results",
+        "nothing": "The PuTTY registry export has no Hosts to import.",
+        "error": "Could not import the PuTTY registry export: {{message}}"
       },
       "summary": "Imported {{imported}}, skipped {{skipped}}, could not import {{failed}}.",
       "imported": "Imported",
@@ -229,7 +238,14 @@
         "csvMissingField": "{{field}} is required.",
         "csvInvalidPort": "Port must be a whole number from 1 to 65535.",
         "csvInvalidGroup": "Each part of a Group path must have a name.",
-        "csvMalformedRecord": "This CSV record has invalid quoting."
+        "csvMalformedRecord": "This CSV record has invalid quoting.",
+        "puttyFile": "Use a Windows registry export (.reg) with a valid header and text encoding.",
+        "puttySessionName": "This registry key has an invalid PuTTY session name or Group path.",
+        "puttyCredentials": "Saved credentials were omitted.",
+        "puttyUnsupportedProtocol": "This PuTTY session uses a protocol other than SSH.",
+        "puttyDefaultUser": "PuTTY had no saved username. The local username was used.",
+        "puttyInvalidOption": "PuTTY option {{option}} is missing or invalid.",
+        "puttyUnsupportedOptions": "PuTTY options omitted: {{options}}."
       }
     },
     "transfer": {

@@ -222,11 +222,14 @@ export type ImportProblem =
   | { kind: "jumpHostLoop" }
   | { kind: "jumpHostUnavailable"; hop: string }
   | { kind: "csvHeaders" | "csvInvalidPort" | "csvInvalidGroup" | "csvMalformedRecord" }
-  | { kind: "csvMissingField"; field: string };
+  | { kind: "csvMissingField"; field: string }
+  | { kind: "puttyFile" | "puttySessionName" | "puttyCredentials" | "puttyUnsupportedProtocol" | "puttyDefaultUser" }
+  | { kind: "puttyInvalidOption"; option: string }
+  | { kind: "puttyUnsupportedOptions"; options: string };
 
 /** One thing an import left out (`sshastra_core::host_import::ImportIssue`). */
 export interface ImportIssue {
-  /** The OpenSSH Host alias or directive. CSV reports a line instead. */
+  /** The Host alias, directive, or PuTTY session name. */
   entry: string;
   line?: number;
   /** The whole Host was left out, not just part of it. */
@@ -243,7 +246,10 @@ export interface ImportReport {
   proxyCommands: { host: string; command: string }[];
 }
 
-export type HostImportSource = { kind: "sshConfig" } | { kind: "csv"; path: string };
+export type HostImportSource =
+  | { kind: "sshConfig" }
+  | { kind: "csv"; path: string }
+  | { kind: "putty"; path: string };
 
 /** Imports Hosts from the chosen source, skipping names already taken. */
 export function importHostSource(source: HostImportSource): Promise<{ tree: HostTree; report: ImportReport }> {

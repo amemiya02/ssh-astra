@@ -105,6 +105,15 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
           proxyCommands: [],
         },
       };
+      if (command === "hosts_import_source" && args?.source?.kind === "putty") return {
+        tree: { hosts: savedHosts, groups: [] },
+        report: {
+          imported: ["Staging server"],
+          skipped: [],
+          issues: [{ entry: "Staging server", dropped: false, problem: { kind: "puttyCredentials" } }],
+          proxyCommands: [],
+        },
+      };
       if (command === "hosts_import_source") return {
         tree: { hosts: savedHosts, groups: [] },
         report: {
@@ -1825,6 +1834,33 @@ it("keeps the import source picker on CSV cancellation and reports the selected 
   expect(dialog()?.textContent).toContain("CSV Host");
   expect(dialog()?.textContent).toContain("Existing Host");
   expect(dialog()?.textContent).toContain("Line 3: Port must be a whole number from 1 to 65535.");
+  await act(async () => dialog()!.querySelector("button")!.click());
+  const dismiss = document.querySelector<HTMLButtonElement>('button[aria-label^="Dismiss notification: Imported"]');
+  await act(async () => dismiss!.click());
+});
+
+it("imports a selected PuTTY registry export through the shared report", async () => {
+  await render(workspace({ type: "open", tabId: "home", pane: newPane({ kind: "home" }) }));
+  const importButton = [...document.querySelectorAll<HTMLButtonElement>("#tabpanel-home button")]
+    .find((button) => button.textContent === "Import Hosts…")!;
+  await act(async () => importButton.click());
+  const choosePutty = [...dialog()!.querySelectorAll("button")]
+    .find((button) => button.textContent === "PuTTY registry export…");
+  expect(choosePutty).toBeDefined();
+  await act(async () => choosePutty!.click());
+  expect(dialog()?.textContent).toContain("Choose where to import Hosts from.");
+  expect(invoke).not.toHaveBeenCalledWith("hosts_import_source", expect.anything());
+
+  importPath = "/fixtures/putty-sessions.reg";
+  await act(async () => choosePutty!.click());
+  expect(openFileDialog).toHaveBeenCalledWith(expect.objectContaining({
+    multiple: false, directory: false, filters: [{ name: "PuTTY registry export", extensions: ["reg"] }],
+  }));
+  expect(invoke).toHaveBeenCalledWith("hosts_import_source", { source: { kind: "putty", path: importPath } });
+  expect(dialog()?.textContent).toContain("PuTTY import results");
+  expect(dialog()?.textContent).toContain("Staging server");
+  expect(dialog()?.textContent).toContain("Saved credentials were omitted.");
+  expect(dialog()?.querySelector("code")).toBeNull();
   await act(async () => dialog()!.querySelector("button")!.click());
   const dismiss = document.querySelector<HTMLButtonElement>('button[aria-label^="Dismiss notification: Imported"]');
   await act(async () => dismiss!.click());
