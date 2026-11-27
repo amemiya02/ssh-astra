@@ -28,6 +28,8 @@ const listings: Record<string, Listing> = {
   },
   "/big/sub": { path: "/big/sub", entries: [entry("inner.txt")] },
   "/counts": { path: "/counts", entries: [entry(".env"), entry("a.txt"), entry("b.txt")] },
+  "/move": { path: "/move", entries: [entry("sub", "dir"), entry("a.txt"), entry("b.txt"), entry("c.txt")] },
+  "/move/sub": { path: "/move/sub", entries: [] },
 };
 
 const api: FilesApi = {
@@ -68,10 +70,11 @@ afterEach(() => {
   container.remove();
 });
 
-async function render({ showSettings, exchange, startPath }: {
+async function render({ showSettings, exchange, startPath, enableMove }: {
   showSettings?: boolean;
   exchange?: FileExchange;
   startPath?: string;
+  enableMove?: boolean;
 } = {}) {
   const store = createFileBrowserStore(api, "host", startPath);
   const FilesSection = settingsPageSections.find((section) => section.id === "files")?.Component;
@@ -82,7 +85,7 @@ async function render({ showSettings, exchange, startPath }: {
   await act(async () =>
     root!.render(
       <TooltipProvider>
-        <FileBrowser store={store} hostName="web-1" exchange={exchange} />
+        <FileBrowser store={store} hostName="web-1" exchange={exchange} enableMove={enableMove} />
         {showSettings && FilesSection && <FilesSection />}
       </TooltipProvider>,
     ),
@@ -202,6 +205,80 @@ describe("FileBrowser", () => {
     expect(store.getState().path).toBe("/big");
     await act(async () => expect(historyKey(document.activeElement!, "ArrowRight")).toBe(false));
     expect(store.getState().path).toBe("/big/sub");
+  });
+
+  it("cuts and pastes from the focused file list, reporting each failed entry", async () => {
+    const { store, rows } = await render({ startPath: "/counts", enableMove: true });
+    const key = (target: Element, letter: string) => target.dispatchEvent(new KeyboardEvent("keydown", {
+      key: letter.toLowerCase(), code: `Key${letter}`, ctrlKey: true, bubbles: true, cancelable: true,
+    }));
+    const click = (row: Element, ctrlKey = false) => row.dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey }));
+    act(() => {
+      click(rows()[0]!);
+      click(rows()[1]!, true);
+      pathButton("Edit path").click();
+    });
+    expect(key(pathInput(), "X")).toBe(true);
+    expect(store.getState().cut).toBeNull();
+
+    const grid = container.querySelector<HTMLElement>('[role="grid"]')!;
+    act(() => grid.focus());
+    act(() => expect(key(grid, "X")).toBe(false));
+    expect(store.getState().cut?.names).toEqual(["a.txt", "b.txt"]);
+
+    await act(async () => store.getState().navigate("/big/sub"));
+    vi.mocked(api.renameFile)
+      .mockRejectedValueOnce({ kind: "alreadyExists", message: "exists", details: { path: "/big/sub/a.txt" } })
+      .mockRejectedValueOnce({ kind: "permissionDenied", message: "denied", details: { path: "/counts/b.txt" } });
+    await act(async () => expect(key(container.querySelector('[role="grid"]')!, "V")).toBe(false));
+    expect(dialog()?.textContent).toContain("a.txtAlready exists: /big/sub/a.txt");
+    expect(dialog()?.textContent).toContain("b.txtPermission denied: /counts/b.txt");
+    expect(store.getState().error).toBeNull();
+  });
+
+  it("moves dragged selections into folders and ignores a drop on a file", async () => {
+    const { rows } = await render({ startPath: "/move", enableMove: true });
+    const [folder, a, b, c] = rows();
+    const pointer = (target: EventTarget, type: string, y: number) => {
+      target.dispatchEvent(new PointerEvent(type, {
+        bubbles: true, cancelable: true, button: 0, isPrimary: true, pointerId: 1, clientX: 10, clientY: y,
+      }));
+    };
+    rows().forEach((row, index) => { row.getBoundingClientRect = () => new DOMRect(0, index * 26, 100, 26); });
+    act(() => {
+      a!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      b!.dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true }));
+    });
+    const dragFromA = async (target: Element, y: number) => {
+      act(() => pointer(a!, "pointerdown", 36));
+      act(() => pointer(document, "pointermove", 46));
+      act(() => pointer(target, "pointermove", y));
+      await act(async () => pointer(target, "pointerup", y));
+    };
+
+    await dragFromA(c!, 85);
+    expect(api.renameFile).not.toHaveBeenCalled();
+    await dragFromA(folder!, 10);
+    expect(vi.mocked(api.renameFile).mock.calls).toEqual([
+      [1, "/move/a.txt", "/move/sub/a.txt"],
+      [1, "/move/b.txt", "/move/sub/b.txt"],
+    ]);
+  });
+
+  it("offers Cut on a row and Paste in an empty destination's context menu", async () => {
+    const { rows } = await render({ startPath: "/move", enableMove: true });
+    const openMenu = (target: Element) => act(async () => {
+      target.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }));
+    });
+    const menuItem = (label: string) => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+      .find((item) => item.textContent?.startsWith(label))!;
+    await openMenu(rows()[1]!);
+    await act(async () => menuItem("Cut").click());
+    await act(async () => rows()[0]!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+    await openMenu(container.querySelector('[role="grid"]')!);
+    await act(async () => menuItem("Paste").click());
+
+    expect(api.renameFile).toHaveBeenCalledExactlyOnceWith(1, "/move/a.txt", "/move/sub/a.txt");
   });
 
   it("asks before deleting, saying how many entries will go", async () => {

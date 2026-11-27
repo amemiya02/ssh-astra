@@ -290,6 +290,13 @@
     "rename": {
       "title": "重命名“{{name}}”"
     },
+    "move": {
+      "cut": "剪切",
+      "paste": "粘贴",
+      "moving": "正在移动条目…",
+      "failures": "无法移动的条目",
+      "close": "关闭"
+    },
     "nameProblem": {
       "slash": "名称不能包含“/”。",
       "dots": "不能使用“{{name}}”作为名称。",
@@ -318,6 +325,7 @@
       "notFound": "文件或文件夹不存在：{{path}}",
       "permissionDenied": "权限不足：{{path}}",
       "alreadyExists": "已存在：{{path}}",
+      "moveIntoSelf": "不能将文件夹移入自身。",
       "notOpen": "File panel 未连接。",
       "other": "服务器拒绝了操作：{{message}}"
     },
