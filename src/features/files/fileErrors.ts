@@ -40,6 +40,16 @@ export function operationErrorText(t: TFunction, error: CommandError): string {
       return t("sftp.invalidName");
     case "alreadyExists":
       return t("files.operationErrors.alreadyExists", { path });
+    case "archiveToolMissing":
+      return t("files.operationErrors.archiveToolMissing", { tool: String(error.details?.tool ?? "") });
+    case "archiveUnsupported":
+      return t("files.operationErrors.archiveUnsupported", { path });
+    case "archiveNotAFile":
+      return t("files.operationErrors.archiveNotAFile");
+    case "archiveUnavailable":
+      return t("files.operationErrors.archiveUnavailable");
+    case "archiveFailed":
+      return t("files.operationErrors.archiveFailed", { message: error.message });
     case "moveIntoSelf":
       return t("files.operationErrors.moveIntoSelf");
     case "notConnected":

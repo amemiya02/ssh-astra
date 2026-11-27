@@ -103,6 +103,16 @@ export function renameFile(id: FsId, from: string, to: string): Promise<void> {
   return invoke("files_rename", { id, from, to });
 }
 
+/** Creates a new tar.gz on the Host from entries in one directory. */
+export function compressFiles(id: FsId, directory: string, names: readonly string[], archive: string): Promise<void> {
+  return invoke("files_compress", { id, directory, names, archive });
+}
+
+/** Expands one archive on the Host into a new sibling folder. */
+export function extractArchive(id: FsId, directory: string, archive: string): Promise<void> {
+  return invoke("files_extract_archive", { id, directory, archive });
+}
+
 /**
  * How many entries deleting `paths` removes: each path itself plus, for a directory, everything
  * under it (symlinks are not followed). For the delete confirmation.

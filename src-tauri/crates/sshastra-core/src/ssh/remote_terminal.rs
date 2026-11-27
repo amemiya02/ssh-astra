@@ -25,7 +25,7 @@ use tokio::sync::mpsc;
 
 use super::progress::HopProgress;
 use super::shell::ShellEvent;
-use super::{ConnectError, ConnectStage, Connection, Prompter, RemoteShell};
+use super::{shell_quote, ConnectError, ConnectStage, Connection, Prompter, RemoteShell};
 use crate::hosts::Host;
 use crate::terminal::{
     ConnectionState, OutputDecoder, Result, ShellIntegrationEvent, ShellIntegrationStatus,
@@ -241,10 +241,6 @@ fn split_startup_command(cwd: &str, post_login: Option<&str>) -> Option<String> 
             format!("eval {}; eval {after_login}\"$?\"')'", shell_quote(login))
         }
     })
-}
-
-fn shell_quote(text: &str) -> String {
-    format!("'{}'", text.replace('\'', r"'\''"))
 }
 
 impl Terminal for RemoteTerminal {

@@ -13,6 +13,8 @@ const api = (): FilesApi => ({
   retryRemoteEdit: vi.fn(() => Promise.resolve()),
   closeRemoteEdit: vi.fn(() => Promise.resolve()),
   createDir: vi.fn(() => Promise.resolve()),
+  compressFiles: vi.fn(() => Promise.resolve()),
+  extractArchive: vi.fn(() => Promise.resolve()),
   createEmptyFile: vi.fn(() => Promise.resolve()),
   renameFile: vi.fn(() => Promise.resolve()),
   countFiles: vi.fn(() => Promise.resolve(0)),

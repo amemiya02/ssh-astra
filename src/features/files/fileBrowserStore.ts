@@ -6,13 +6,13 @@ import * as ipc from "@/lib/ipc/files";
 import type { FileEntry, FsId, NameMatch, NameSearchMode, NameSearchResult, PermissionChange } from "@/lib/ipc/files";
 import type { HostId } from "@/lib/ipc/hosts";
 import { createSharedRemoteEdits, type EditCommands, type RemoteEditItem } from "./sharedRemoteEdits";
-import { childPath, isDirLike, isFileLike, parentPath } from "./fileList";
+import { archiveFolderName, childPath, isDirLike, isFileLike, parentPath } from "./fileList";
 
 /** The SFTP, file operation and remote edit commands a File panel uses (`@/lib/ipc/files`, `@/lib/ipc/edit`); a fake in tests. */
 export type FilesApi = Pick<
   typeof ipc,
   "openFiles" | "listFiles" | "closeFiles" | "createDir" | "createEmptyFile" | "renameFile" | "countFiles" | "deleteFiles" | "chmodFile"
-  | "folderSize" | "searchNames"
+  | "folderSize" | "searchNames" | "compressFiles" | "extractArchive"
 > & EditCommands;
 
 /**
@@ -95,6 +95,10 @@ export interface FileBrowserState {
   createFile(name: string): Promise<CommandError | null>;
   /** Renames `name` to `newName` (never over an existing entry) and selects it. */
   rename(name: string, newName: string): Promise<CommandError | null>;
+  /** Packs selected entries into a new tar.gz in the directory where the dialog opened. */
+  compress(directory: string, names: readonly string[], archive: string): Promise<CommandError | null>;
+  /** Expands a single archive into a new sibling folder. */
+  extractArchive(directory: string, archive: string): Promise<CommandError | null>;
   /** This panel's cut entries, kept while browsing elsewhere on its Host. */
   cut: FileMove | null;
   moving: boolean;
@@ -448,6 +452,13 @@ export function createFileBrowserStore(
         invalidName(name) ?? operate((id, dir) => api.createEmptyFile(id, childPath(dir, name)), { select: name }),
       rename: async (name, newName) =>
         invalidName(newName) ?? operate((id, dir) => api.renameFile(id, childPath(dir, name), childPath(dir, newName)), { select: newName }),
+      compress: (directory, names, archive) =>
+        operate((id, dir) => api.compressFiles(id, dir, names, archive), { directory, select: archive }),
+      extractArchive: (directory, archive) =>
+        operate((id, dir) => api.extractArchive(id, dir, archive), {
+          directory,
+          select: archiveFolderName(archive) ?? undefined,
+        }),
       cutEntries(names) {
         const { path, moving } = get();
         if (fsId !== null && path !== null && !moving && names.length > 0) {

@@ -23,6 +23,7 @@ import {
   Folder,
   FolderPlus,
   FolderSymlink,
+  FolderOpen,
   KeyRound,
   LoaderCircle,
   Pencil,
@@ -59,6 +60,7 @@ import { FileOperationDialog, MoveFailureDialog, type FileOperation } from "./Fi
 import { FileNameSearch } from "./FileNameSearch";
 import { filesSetting } from "./file-prefs";
 import {
+  archiveFolderName,
   childPath,
   fileIconKind,
   formatPermissions,
@@ -686,10 +688,13 @@ function FileTable({
                             onContextMenu={() => {
                               if (!selection.has(entry.name)) select(entry.name, "only");
                             }}
+                            canExtract={names.length === 1 && isFileLike(entry) && archiveFolderName(entry.name) !== null}
                             onOperation={(kind) => {
                               if (kind === "rename") beginRename(entry.name, index);
                               else if (kind === "permissions") onOperation({ kind, entry, directory: path });
                               else if (kind === "newFolder" || kind === "newFile") onOperation({ kind });
+                              else if (kind === "compress") onOperation({ kind, directory: path, names });
+                              else if (kind === "extract") onOperation({ kind, directory: path, archive: entry.name });
                               else onOperation({ kind, names });
                             }}
                             onDownload={onDownload && (() => onDownload(names))}
@@ -784,6 +789,7 @@ function FileRow({
   onOpen,
   onContextMenu,
   onOperation,
+  canExtract,
   onDownload,
   exchange,
   dragPaths,
@@ -807,6 +813,7 @@ function FileRow({
   onOpen(): void;
   onContextMenu(): void;
   onOperation(kind: FileOperation["kind"] | "rename"): void;
+  canExtract: boolean;
   onDownload?: () => void;
   exchange?: FileExchange;
   dragPaths?: string[];
@@ -952,6 +959,20 @@ function FileRow({
         )}
         {onPaste && <PasteItem onPaste={onPaste} />}
         <ContextMenuSeparator />
+        {exchange?.side !== "local" && (
+          <>
+            <ContextMenuItem onSelect={() => onOperation("compress")}>
+              <FileArchive />
+              {t("files.archive.compressAction")}
+            </ContextMenuItem>
+            {canExtract && (
+              <ContextMenuItem onSelect={() => onOperation("extract")}>
+                <FolderOpen />
+                {t("files.archive.extractAction")}
+              </ContextMenuItem>
+            )}
+          </>
+        )}
         <ContextMenuItem onSelect={() => { renameOnMenuClose.current = true; }}>
           <Pencil />
           {t("files.renameAction")}
