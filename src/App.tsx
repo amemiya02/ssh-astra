@@ -44,8 +44,9 @@ import {
   type SplitOrientation,
 } from "@/features/workspace/tabs";
 import { useWorkspaceShortcuts } from "@/features/workspace/use-workspace-shortcuts";
+import { serializeWorkspaceLayout, workspaceLayoutSetting } from "@/features/workspace/workspace-layout";
 import type { Host } from "@/lib/ipc/hosts";
-import { getSetting } from "@/lib/storage";
+import { getSetting, setSetting } from "@/lib/storage";
 
 const platform = currentPlatform();
 const localTerminal: PaneKind = { kind: "local-terminal" };
@@ -60,6 +61,15 @@ export function App() {
   const { t } = useTranslation();
   const [state, dispatch] = useReducer(tabsReducer, undefined, startupTabs);
   const { tabs, activeId } = state;
+  const focused = activeTab(state);
+  const canSplitFocused = focused !== undefined && canSplit(focused);
+  const lastLayout = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const layout = serializeWorkspaceLayout(state);
+    const snapshot = JSON.stringify(layout);
+    if (lastLayout.current !== undefined && lastLayout.current !== snapshot) setSetting(workspaceLayoutSetting, layout);
+    lastLayout.current = snapshot;
+  }, [state]);
 
   const openTab = useCallback(
     (kind: PaneKind) => dispatch({ type: "open", tabId: crypto.randomUUID(), pane: newPane(kind) }),
@@ -105,9 +115,8 @@ export function App() {
    * Connection); beside Settings, a Local terminal.
    */
   const split = (orientation: SplitOrientation) => {
-    const tab = activeTab(state);
-    if (!tab || !canSplit(activePane(tab))) return;
-    const pane = activePane(tab);
+    if (!canSplitFocused) return;
+    const pane = activePane(focused);
     const kind: PaneKind = pane.kind === "remote-terminal" ? { kind: pane.kind, host: pane.host } : localTerminal;
     dispatch({ type: "split", orientation, pane: newPane(kind) });
   };
@@ -139,18 +148,20 @@ export function App() {
         },
         { id: "home.open", title: t("palette.actions.goHome"), keywords: [t("palette.keywords.hosts")], run: openHome },
         { id: "files.openSftp", title: t("sftp.open"), run: pickSftpHost },
-        {
-          id: "workspace.splitRight",
-          title: t("tabs.splitRight"),
-          shortcut: shortcutLabel("splitRight", platform),
-          run: () => splitRef.current("horizontal"),
-        },
-        {
-          id: "workspace.splitDown",
-          title: t("tabs.splitDown"),
-          shortcut: shortcutLabel("splitDown", platform),
-          run: () => splitRef.current("vertical"),
-        },
+        ...(canSplitFocused ? [
+          {
+            id: "workspace.splitRight",
+            title: t("tabs.splitRight"),
+            shortcut: shortcutLabel("splitRight", platform),
+            run: () => splitRef.current("horizontal"),
+          },
+          {
+            id: "workspace.splitDown",
+            title: t("tabs.splitDown"),
+            shortcut: shortcutLabel("splitDown", platform),
+            run: () => splitRef.current("vertical"),
+          },
+        ] : []),
         {
           id: "settings.open",
           title: t("palette.actions.openSettings"),
@@ -169,7 +180,7 @@ export function App() {
             ]
           : []),
       ],
-      [t, openLocalTerminal, openHome, openSettings, pickSftpHost],
+      [t, openLocalTerminal, openHome, openSettings, pickSftpHost, canSplitFocused],
     ),
   );
 
@@ -228,7 +239,6 @@ export function App() {
   const transferSpeeds = useTransfers((s) => s.speeds);
   const transfers = transferSummary(transferList, transferSpeeds);
   const connections = useMemo(() => hostConnections(connected, state, connectingHeld), [connected, state, connectingHeld]);
-  const focused = activeTab(state);
   const focusedPane = focused && activePane(focused);
   const filePanelPane: FilePanelPane | undefined =
     focusedPane?.kind === "remote-terminal"
@@ -278,6 +288,7 @@ export function App() {
             onFocusPane={(paneId) => dispatch({ type: "focusPane", paneId })}
             onTitleChange={retitle}
             onStatusChange={setStatus}
+            onResizeSplit={(tabId, resize) => dispatch({ type: "resizeSplit", tabId, ...resize })}
           />
         }
         fullWorkspace={!focusedPane || focusedPane.kind === "sftp" || focusedPane.kind === "home"}

@@ -1,4 +1,4 @@
-import type { TabsState } from "@/features/workspace/tabs";
+import { tabPanes, type TabsState } from "@/features/workspace/tabs";
 import type { Host, HostId } from "@/lib/ipc/hosts";
 
 /** A Host's Connection as a Host row or card shows it; a Host with none has no entry. */
@@ -18,7 +18,7 @@ export function hostConnections(
   const states = new Map<HostId, HostConnection>();
   for (const host of connected) states.set(host.id, "connected");
   for (const id of connecting) if (!states.has(id)) states.set(id, "connecting");
-  for (const pane of tabs.tabs.flatMap((tab) => tab.panes)) {
+  for (const pane of tabs.tabs.flatMap(tabPanes)) {
     if (pane.kind !== "remote-terminal" && pane.kind !== "sftp") continue;
     if (pane.reconnecting || (pane.status === "connecting" && !states.has(pane.host.id))) {
       states.set(pane.host.id, "connecting");

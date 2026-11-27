@@ -127,6 +127,7 @@
     "close": "Close {{title}}",
     "splitRight": "Split right",
     "splitDown": "Split down",
+    "resizePanes": "Resize panes",
     "pane": "Pane {{index}} of {{count}}",
     "status": {
       "connecting": "Connecting",

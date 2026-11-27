@@ -1,4 +1,5 @@
 import type { Host } from "@/lib/ipc/hosts";
+import { resizePaneLayout, type SplitResize } from "./pane-layout";
 
 /** A remote Terminal's link to its Host, shown as the state dot on its tab. */
 export type ConnectionStatus = "connecting" | "connected" | "disconnected";
@@ -55,13 +56,18 @@ export interface ReconnectProgress {
 /** `horizontal` lays panes out left to right, `vertical` top to bottom. */
 export type SplitOrientation = "horizontal" | "vertical";
 
+export type PaneLayout<P = Pane> =
+  | { type: "pane"; pane: P }
+  | { type: "split"; orientation: SplitOrientation; children: { layout: PaneLayout<P>; ratio: number }[] };
+
+export const maxPanesPerTab = 8;
+
 export interface Tab {
   id: string;
-  /** Never empty: closing the last pane closes the tab. */
-  panes: Pane[];
+  /** A nonempty tree. Closing the last pane closes the tab. */
+  layout: PaneLayout;
   /** The pane with focus; it names the tab and receives the pane shortcuts. */
   activePaneId: string;
-  orientation: SplitOrientation;
 }
 
 export interface TabsState {
@@ -75,7 +81,8 @@ export type TabsAction =
   | { type: "activate"; id: string }
   | { type: "cycle"; step: 1 | -1 }
   | { type: "move"; id: string; to: number }
-  | { type: "split"; orientation: SplitOrientation; pane: Pane }
+  | { type: "split"; orientation: SplitOrientation; pane: Pane; paneId?: string }
+  | ({ type: "resizeSplit"; tabId: string } & SplitResize)
   | { type: "focusPane"; paneId: string }
   | { type: "cyclePane"; step: 1 | -1 }
   | { type: "closePane"; paneId: string }
@@ -89,9 +96,11 @@ export function startupTabs(): TabsState {
   return tabsReducer(emptyTabs, { type: "open", tabId: crypto.randomUUID(), pane: newPane({ kind: "home" }) });
 }
 
-/** Panes a split can sit beside: Terminals and tabs that open a Local terminal next to them. */
-export function canSplit(pane: Pane): boolean {
-  return pane.kind !== "sftp" && pane.kind !== "home";
+/** Terminals and panes that can open a Local terminal next to them, up to the tab's limit. */
+export function canSplit(tab: Tab, paneId = tab.activePaneId): boolean {
+  const panes = tabPanes(tab);
+  const pane = panes.find((candidate) => candidate.id === paneId);
+  return panes.length < maxPanesPerTab && pane !== undefined && pane.kind !== "sftp" && pane.kind !== "home";
 }
 
 /** DOM ids linking a tab to its panel (aria-controls / aria-labelledby). */
@@ -103,8 +112,18 @@ export function newPane(kind: PaneKind, id: string = crypto.randomUUID()): Pane 
   return kind.kind === "remote-terminal" || kind.kind === "sftp" ? { id, ...kind, status: "connecting" } : { id, ...kind };
 }
 
+/** Leaves in layout order, shared by the tab UI and previous/next pane shortcuts. */
+export function layoutPanes<P>(layout: PaneLayout<P>): P[] {
+  return layout.type === "pane" ? [layout.pane] : layout.children.flatMap((child) => layoutPanes(child.layout));
+}
+
+export function tabPanes(tab: Tab): Pane[] {
+  return layoutPanes(tab.layout);
+}
+
 export function activePane(tab: Tab): Pane {
-  return tab.panes.find((pane) => pane.id === tab.activePaneId) ?? tab.panes[0]!;
+  const panes = tabPanes(tab);
+  return panes.find((pane) => pane.id === tab.activePaneId) ?? panes[0]!;
 }
 
 export function activeTab(state: TabsState): Tab | undefined {
@@ -119,7 +138,7 @@ export function tabStatus(tab: Tab): ConnectionStatus | undefined {
 /** Hosts with at least one connected Terminal, each once, in tab order. */
 export function connectedHosts(state: TabsState): Host[] {
   const hosts = new Map<string, Host>();
-  for (const pane of state.tabs.flatMap((tab) => tab.panes)) {
+  for (const pane of state.tabs.flatMap(tabPanes)) {
     if ((pane.kind === "remote-terminal" || pane.kind === "sftp") && pane.status === "connected" && !hosts.has(pane.host.id)) {
       hosts.set(pane.host.id, pane.host);
     }
@@ -130,7 +149,7 @@ export function connectedHosts(state: TabsState): Host[] {
 /** Hosts whose Terminals are retrying a dropped Connection, each once with its furthest try, in tab order. */
 export function reconnectingHosts(state: TabsState): ({ host: Host } & ReconnectProgress)[] {
   const hosts = new Map<string, { host: Host } & ReconnectProgress>();
-  for (const pane of state.tabs.flatMap((tab) => tab.panes)) {
+  for (const pane of state.tabs.flatMap(tabPanes)) {
     if (pane.kind !== "remote-terminal" || !pane.reconnecting) continue;
     const seen = hosts.get(pane.host.id);
     if (!seen || pane.reconnecting.attempt > seen.attempt) hosts.set(pane.host.id, { host: pane.host, ...pane.reconnecting });
@@ -140,7 +159,7 @@ export function reconnectingHosts(state: TabsState): ({ host: Host } & Reconnect
 
 /** Every open remote Terminal pane's id; a File panel whose pane is not listed is closed. */
 export function remoteTerminalPaneIds(state: TabsState): string[] {
-  return state.tabs.flatMap((tab) => tab.panes.filter((pane) => pane.kind === "remote-terminal").map((p) => p.id));
+  return state.tabs.flatMap(tabPanes).filter((pane) => pane.kind === "remote-terminal").map((pane) => pane.id);
 }
 
 /**
@@ -178,14 +197,13 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
     case "open": {
       const key = singletonKey(action.pane);
       if (key) {
-        const open = state.tabs.flatMap((t) => t.panes).find((pane) => singletonKey(pane) === key);
+        const open = state.tabs.flatMap(tabPanes).find((pane) => singletonKey(pane) === key);
         if (open) return tabsReducer(state, { type: "focusPane", paneId: open.id });
       }
       const tab: Tab = {
         id: action.tabId,
-        panes: [action.pane],
+        layout: { type: "pane", pane: action.pane },
         activePaneId: action.pane.id,
-        orientation: "horizontal",
       };
       return { tabs: [...state.tabs, tab], activeId: tab.id };
     }
@@ -211,11 +229,23 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
       return { ...state, tabs };
     }
     case "split": {
-      const tab = activeTab(state);
-      if (!tab || !canSplit(activePane(tab))) return state;
-      const at = tab.panes.findIndex((pane) => pane.id === tab.activePaneId) + 1;
-      const panes = [...tab.panes.slice(0, at), action.pane, ...tab.panes.slice(at)];
-      return replaceTab(state, { ...tab, panes, activePaneId: action.pane.id, orientation: action.orientation });
+      const tab = action.paneId === undefined ? activeTab(state) : tabOfPane(state, action.paneId);
+      if (!tab || !canSplit(tab, action.paneId) || tabOfPane(state, action.pane.id)) return state;
+      const layout = replaceLeaf(tab.layout, action.paneId ?? tab.activePaneId, (pane) => ({
+        type: "split",
+        orientation: action.orientation,
+        children: [
+          { ratio: 0.5, layout: { type: "pane", pane } },
+          { ratio: 0.5, layout: { type: "pane", pane: action.pane } },
+        ],
+      }))!;
+      return { ...replaceTab(state, { ...tab, layout, activePaneId: action.pane.id }), activeId: tab.id };
+    }
+    case "resizeSplit": {
+      const tab = state.tabs.find((tab) => tab.id === action.tabId);
+      if (!tab) return state;
+      const layout = resizePaneLayout(tab.layout, action);
+      return layout === tab.layout ? state : replaceTab(state, { ...tab, layout });
     }
     case "focusPane": {
       const tab = tabOfPane(state, action.paneId);
@@ -225,20 +255,22 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
     case "cyclePane": {
       const tab = activeTab(state);
       if (!tab) return state;
-      const count = tab.panes.length;
-      const index = tab.panes.findIndex((pane) => pane.id === tab.activePaneId);
-      const next = tab.panes[(index + action.step + count) % count]!;
+      const panes = tabPanes(tab);
+      const count = panes.length;
+      const index = panes.findIndex((pane) => pane.id === tab.activePaneId);
+      const next = panes[(index + action.step + count) % count]!;
       return replaceTab(state, { ...tab, activePaneId: next.id });
     }
     case "closePane": {
       const tab = tabOfPane(state, action.paneId);
       if (!tab) return state;
-      if (tab.panes.length === 1) return closeTab(state, tab.id);
-      const index = tab.panes.findIndex((pane) => pane.id === action.paneId);
-      const panes = tab.panes.filter((pane) => pane.id !== action.paneId);
+      const layout = replaceLeaf(tab.layout, action.paneId, () => undefined);
+      if (!layout) return closeTab(state, tab.id);
+      const index = tabPanes(tab).findIndex((pane) => pane.id === action.paneId);
+      const panes = layoutPanes(layout);
       const activePaneId =
         tab.activePaneId === action.paneId ? panes[Math.min(index, panes.length - 1)]!.id : tab.activePaneId;
-      return replaceTab(state, { ...tab, panes, activePaneId });
+      return replaceTab(state, { ...tab, layout, activePaneId });
     }
     case "retitle": {
       const title = action.title.trim() || undefined;
@@ -263,7 +295,7 @@ function closeTab(state: TabsState, id: string): TabsState {
 }
 
 function tabOfPane(state: TabsState, paneId: string): Tab | undefined {
-  return state.tabs.find((tab) => tab.panes.some((pane) => pane.id === paneId));
+  return state.tabs.find((tab) => tabPanes(tab).some((pane) => pane.id === paneId));
 }
 
 function replaceTab(state: TabsState, next: Tab): TabsState {
@@ -275,6 +307,21 @@ function updatePane(state: TabsState, paneId: string, update: (pane: Pane) => Pa
   if (!tab) return state;
   return replaceTab(state, {
     ...tab,
-    panes: tab.panes.map((pane) => (pane.id === paneId ? update(pane) : pane)),
+    layout: replaceLeaf(tab.layout, paneId, (pane) => ({ type: "pane", pane: update(pane) }))!,
   });
+}
+
+function replaceLeaf(layout: PaneLayout, paneId: string, replace: (pane: Pane) => PaneLayout | undefined): PaneLayout | undefined {
+  if (layout.type === "pane") return layout.pane.id === paneId ? replace(layout.pane) : layout;
+  const children = layout.children.flatMap((child) => {
+    const next = replaceLeaf(child.layout, paneId, replace);
+    if (next === undefined) return [];
+    return [next === child.layout ? child : { ...child, layout: next }];
+  });
+  if (children.length === 1) return children[0]!.layout;
+  if (children.length < layout.children.length) {
+    const total = children.reduce((sum, child) => sum + child.ratio, 0);
+    return { ...layout, children: children.map((child) => ({ ...child, ratio: child.ratio / total })) };
+  }
+  return children.every((child, index) => child === layout.children[index]) ? layout : { ...layout, children };
 }

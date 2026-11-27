@@ -8,6 +8,7 @@ import {
   reconnectingHosts,
   startupTabs,
   newPane,
+  tabPanes,
   tabsReducer,
   tabStatus,
   tabTitle,
@@ -37,9 +38,14 @@ const remote = (id: string, on: Host, status: Pane["status"] = "connecting"): Pa
 });
 const tab = (id: string, panes: Pane[] = [local(`${id}.1`)]): Tab => ({
   id,
-  panes,
+  layout: panes.length === 1
+    ? { type: "pane", pane: panes[0]! }
+    : {
+        type: "split",
+        orientation: "horizontal",
+        children: panes.map((pane) => ({ ratio: 1 / panes.length, layout: { type: "pane", pane } })),
+      },
   activePaneId: panes[0]!.id,
-  orientation: "horizontal",
 });
 
 function withTabs(ids: string[], activeId: string): TabsState {
@@ -48,7 +54,7 @@ function withTabs(ids: string[], activeId: string): TabsState {
 
 const ids = (state: TabsState) => state.tabs.map((t) => t.id);
 const paneIds = (state: TabsState, tabId: string) =>
-  state.tabs.find((t) => t.id === tabId)?.panes.map((p) => p.id);
+  state.tabs.filter((t) => t.id === tabId).flatMap(tabPanes).map((p) => p.id);
 
 describe("tabsReducer: tabs", () => {
   it("opens a pane in a new tab at the end and focuses it", () => {
@@ -80,10 +86,10 @@ describe("tabsReducer: tabs", () => {
     for (const kind of ["home", "sftp"] as const) {
       const pane = kind === "home" ? ({ id: "x.1", kind } as Pane) : newPane({ kind, host: host("h") }, "x.1");
       const state: TabsState = { tabs: [tab("x", [pane])], activeId: "x" };
-      expect(canSplit(pane)).toBe(false);
+      expect(canSplit(state.tabs[0]!)).toBe(false);
       expect(tabsReducer(state, { type: "split", orientation: "horizontal", pane: local("x.2") })).toBe(state);
     }
-    expect(canSplit(local("a.1"))).toBe(true);
+    expect(canSplit(tab("a"))).toBe(true);
   });
 
   it("opens one Port forwards tab per Host, focusing the open one", () => {
@@ -162,19 +168,66 @@ describe("tabsReducer: splits", () => {
       pane: local("a.2"),
     });
     expect(paneIds(state, "a")).toEqual(["a.1", "a.2"]);
-    expect(state.tabs[0]).toMatchObject({ activePaneId: "a.2", orientation: "vertical" });
+    expect(state.tabs[0]).toMatchObject({ activePaneId: "a.2", layout: { type: "split", orientation: "vertical" } });
   });
 
-  it("inserts next to the active pane, and a later split sets the orientation for the whole tab", () => {
+  it("splits right and then down within the selected pane, keeping the right pane full height", () => {
     let state = tabsReducer(withTabs(["a"], "a"), { type: "split", orientation: "horizontal", pane: local("a.2") });
     state = tabsReducer(state, { type: "focusPane", paneId: "a.1" });
     state = tabsReducer(state, { type: "split", orientation: "vertical", pane: local("a.3") });
     expect(paneIds(state, "a")).toEqual(["a.1", "a.3", "a.2"]);
-    expect(state.tabs[0]).toMatchObject({ activePaneId: "a.3", orientation: "vertical" });
+    expect(state.tabs[0]).toMatchObject({
+      activePaneId: "a.3",
+      layout: {
+        type: "split",
+        orientation: "horizontal",
+        children: [
+          {
+            ratio: 0.5,
+            layout: {
+              type: "split",
+              orientation: "vertical",
+              children: [
+                { ratio: 0.5, layout: { type: "pane", pane: { id: "a.1" } } },
+                { ratio: 0.5, layout: { type: "pane", pane: { id: "a.3" } } },
+              ],
+            },
+          },
+          { ratio: 0.5, layout: { type: "pane", pane: { id: "a.2" } } },
+        ],
+      },
+    });
   });
 
   it("does nothing when splitting with no tab open", () => {
     expect(tabsReducer(emptyTabs, { type: "split", orientation: "horizontal", pane: local("x") })).toBe(emptyTabs);
+  });
+
+  it("allows eight panes and rejects a ninth even when targeting another pane", () => {
+    let state = withTabs(["a"], "a");
+    for (let index = 2; index <= 8; index++) {
+      state = tabsReducer(state, {
+        type: "split",
+        paneId: "a.1",
+        orientation: index % 2 === 0 ? "horizontal" : "vertical",
+        pane: local(`a.${index}`),
+      });
+    }
+    expect(paneIds(state, "a")).toEqual(["a.1", "a.8", "a.7", "a.6", "a.5", "a.4", "a.3", "a.2"]);
+    expect(canSplit(state.tabs[0]!, "a.1")).toBe(false);
+    expect(tabsReducer(state, { type: "split", paneId: "a.1", orientation: "horizontal", pane: local("a.9") })).toBe(state);
+  });
+
+  it("promotes the remaining sibling after closing a nested split", () => {
+    let state = withTabs(["a"], "a");
+    state = tabsReducer(state, { type: "split", orientation: "horizontal", pane: local("a.2") });
+    const before = state.tabs[0]?.layout;
+    state = tabsReducer(state, { type: "split", orientation: "vertical", pane: local("a.3") });
+    state = tabsReducer(state, { type: "closePane", paneId: "a.3" });
+    expect(state.tabs[0]?.layout).toEqual(before);
+    expect(state.tabs[0]?.activePaneId).toBe("a.2");
+    state = tabsReducer(state, { type: "closePane", paneId: "a.2" });
+    expect(state).toEqual(withTabs(["a"], "a"));
   });
 
   it("focusing a pane also brings its tab to the front", () => {
@@ -186,9 +239,13 @@ describe("tabsReducer: splits", () => {
   });
 
   it("cycles focus through the active tab's panes", () => {
-    const state: TabsState = { tabs: [tab("a", [local("a.1"), local("a.2"), local("a.3")])], activeId: "a" };
+    let state = withTabs(["a"], "a");
+    state = tabsReducer(state, { type: "split", orientation: "horizontal", pane: local("a.2") });
+    state = tabsReducer(state, { type: "split", paneId: "a.1", orientation: "vertical", pane: local("a.3") });
     expect(tabsReducer(state, { type: "cyclePane", step: 1 }).tabs[0]?.activePaneId).toBe("a.2");
-    expect(tabsReducer(state, { type: "cyclePane", step: -1 }).tabs[0]?.activePaneId).toBe("a.3");
+    expect(tabsReducer(state, { type: "cyclePane", step: -1 }).tabs[0]?.activePaneId).toBe("a.1");
+    state = tabsReducer(state, { type: "cyclePane", step: 1 });
+    expect(tabsReducer(state, { type: "cyclePane", step: 1 }).tabs[0]?.activePaneId).toBe("a.1");
   });
 
   it("closing a pane focuses its neighbour and keeps the tab", () => {
@@ -215,9 +272,9 @@ describe("tabsReducer: splits", () => {
 describe("tabsReducer: pane state", () => {
   it("retitles a pane when its shell sets a title, and clears it on an empty title", () => {
     const titled = tabsReducer(withTabs(["a", "b"], "a"), { type: "retitle", paneId: "b.1", title: "vim notes.md" });
-    expect(titled.tabs[1]?.panes[0]).toEqual({ id: "b.1", kind: "local-terminal", title: "vim notes.md" });
+    expect(activePane(titled.tabs[1]!)).toEqual({ id: "b.1", kind: "local-terminal", title: "vim notes.md" });
     const cleared = tabsReducer(titled, { type: "retitle", paneId: "b.1", title: "  " });
-    expect(cleared.tabs[1]?.panes[0]?.title).toBeUndefined();
+    expect(activePane(cleared.tabs[1]!).title).toBeUndefined();
   });
 
   it("records a remote Terminal's Connection status as it changes", () => {
