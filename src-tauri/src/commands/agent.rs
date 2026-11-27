@@ -1,6 +1,8 @@
 //! The Agent reads the saved Host's existing Terminal and its exact Connection.
 //! A screen request uses that Terminal's own webview channel and a one-shot reply.
 
+pub(crate) mod review;
+
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -8,6 +10,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::SystemTime;
 
 use serde::Serialize;
+use serde_json::json;
+use tauri_plugin_clipboard_manager::ClipboardExt;
 use sshastra_core::agent::{
     ActivityCursor, ActivityPage, AgentActivityLog, AgentBackend, DirectoryRead, OpenTerminal,
     ReadError, ReadTarget, TerminalScreen, SCREEN_BYTE_LIMIT,
@@ -17,24 +21,32 @@ use sshastra_core::ssh::{BoxFuture, Connection};
 use sshastra_core::terminal::{TerminalId, TerminalRegistry};
 use tauri::{
     ipc::{Channel, InvokeResponseBody},
-    State, Webview,
+    AppHandle, Manager, State, Webview,
 };
 use tokio::sync::{oneshot, Semaphore};
+use tokio::time::Instant;
+
+use crate::windows;
 
 use super::hosts::HostsState;
+
+pub(crate) use review::PendingReviews;
+use review::ReviewChoice;
 use crate::error::CommandResult;
 
 const MAX_PENDING_REMOTE_READS: usize = 8;
 
 pub(crate) struct DesktopAgent {
+    app: AppHandle,
     hosts: HostsState,
     registry: TerminalRegistry,
     remote_slots: Arc<Semaphore>,
 }
 
 impl DesktopAgent {
-    pub fn new(hosts: HostsState, registry: TerminalRegistry) -> Self {
+    pub fn new(app: AppHandle, hosts: HostsState, registry: TerminalRegistry) -> Self {
         Self {
+            app,
             hosts,
             registry,
             remote_slots: Arc::new(Semaphore::new(MAX_PENDING_REMOTE_READS)),
@@ -109,6 +121,82 @@ impl AgentBackend for DesktopAgent {
                 .connection(id)
                 .ok()?
                 .map(|(generation, _)| generation),
+        })
+    }
+
+    fn request_command_review<'a>(
+        &'a self,
+        target: &'a ReadTarget,
+        command: String,
+        enabled: &'a (dyn Fn() -> bool + Sync),
+        deadline: Instant,
+    ) -> BoxFuture<'a, ReviewOutcome> {
+        Box::pin(async move {
+            let unavailable = ReviewOutcome::Unavailable;
+            let current_target = || enabled() && self.target(target.terminal).is_some_and(|current| {
+                current.same_authorization(target) && current.host_name == target.host_name
+            });
+            let Some(mut permission) = self.hosts.watch_agent_approval(&target.host) else {
+                return unavailable;
+            };
+            let Some(route) = windows::terminal_route(&self.app, target.terminal) else {
+                return unavailable;
+            };
+            let Some((delivery, mut route_changes)) = route.lock().review_delivery() else {
+                return unavailable;
+            };
+            let Some(mut prompt) = self.registry.observe_idle_prompt(target.terminal).await else {
+                return unavailable;
+            };
+            let Some(prompt_id) = *prompt.borrow_and_update() else {
+                return unavailable;
+            };
+            if !current_target() || !matches!(permission.has_changed(), Ok(false))
+                || !matches!(route_changes.has_changed(), Ok(false)) {
+                return unavailable;
+            }
+            let host = sshastra_core::agent::bound_metadata(target.host_name.clone(), 512);
+            let details = json!({
+                "terminalId":target.terminal, "host":host, "promptId":prompt_id, "command":command
+            });
+            let broker = self.app.state::<Arc<PendingReviews>>();
+            let Some(mut review) = broker.inner().request(delivery, details) else {
+                return unavailable;
+            };
+            let answer = tokio::select! {
+                biased;
+                _ = permission.changed() => return unavailable,
+                _ = route_changes.changed() => return unavailable,
+                _ = prompt.changed() => return unavailable,
+                answer = &mut review.answer => match answer {
+                    Ok(answer) => answer,
+                    Err(_) => return unavailable,
+                },
+            };
+            let outcome = match answer.choice {
+                ReviewChoice::Reject => ReviewOutcome::Rejected,
+                ReviewChoice::Unavailable => unavailable,
+                ReviewChoice::Copy => {
+                    // Drain previously queued user input and confirm that the
+                    // very same prompt and renderer still own this choice.
+                    let observed = self.registry.observe_idle_prompt(target.terminal).await;
+                    let idle = observed.as_ref().and_then(|state| *state.borrow());
+                    if Instant::now() >= deadline {
+                        ReviewOutcome::TimedOut
+                    } else if idle != Some(prompt_id) || !matches!(prompt.has_changed(), Ok(false))
+                        || !matches!(permission.has_changed(), Ok(false))
+                        || !matches!(route_changes.has_changed(), Ok(false)) || !current_target()
+                    {
+                        unavailable
+                    } else if self.app.clipboard().write_secret(command).is_ok() {
+                        ReviewOutcome::Copied
+                    } else {
+                        ReviewOutcome::ClipboardUnavailable
+                    }
+                }
+            };
+            let _ = answer.completed.send(outcome);
+            outcome
         })
     }
 

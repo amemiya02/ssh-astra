@@ -27,6 +27,7 @@ pub(crate) struct Route {
     pub(crate) delivery: TerminalDelivery,
     pending: Option<PendingOutput>,
     running: bool,
+    review_changes: watch::Sender<()>,
 }
 
 struct PendingOutput {
@@ -42,6 +43,7 @@ impl TerminalRoute {
             delivery,
             pending: None,
             running: true,
+            review_changes: watch::Sender::new(()),
         })))
     }
 
@@ -61,6 +63,7 @@ impl TerminalRoute {
                 // Authentication prompts are bound to their originating Window. Leave a
                 // reconnect that starts during the move entirely with the source.
                 if !route.running {
+                    route.invalidate_reviews();
                     route.abort();
                 }
                 if let Some(prompts) = &route.delivery.prompts {
@@ -71,6 +74,7 @@ impl TerminalRoute {
             }
             TerminalEvent::Exit { .. } => {
                 route.running = false;
+                route.invalidate_reviews();
                 route.abort();
             }
             _ => {}
@@ -79,6 +83,15 @@ impl TerminalRoute {
 }
 
 impl Route {
+    pub(crate) fn review_delivery(&self) -> Option<(TerminalDelivery, watch::Receiver<()>)> {
+        (self.running && self.pending.is_none())
+            .then(|| (self.delivery.clone(), self.review_changes.subscribe()))
+    }
+
+    pub(crate) fn invalidate_reviews(&self) {
+        self.review_changes.send_replace(());
+    }
+
     pub(crate) fn prepare(&mut self, token: &str, result: &MoveResult) -> bool {
         if !self.running || self.pending.is_some() {
             return false;
@@ -92,6 +105,7 @@ impl Route {
         {
             return false;
         }
+        self.invalidate_reviews();
         self.pending = Some(PendingOutput {
             token: token.into(),
             result: result.clone(),

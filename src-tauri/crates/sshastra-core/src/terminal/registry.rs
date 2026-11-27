@@ -11,7 +11,7 @@ use crate::hosts::HostId;
 use crate::ssh::BoxFuture;
 
 use super::{
-    ConnectionState, OutputKind, Result, Terminal, TerminalError, TerminalEvent, TerminalOutput,
+    ConnectionState, IdlePrompt, OutputKind, Result, Terminal, TerminalError, TerminalEvent, TerminalOutput,
     TerminalSize,
 };
 
@@ -214,6 +214,11 @@ impl TerminalRegistry {
 
     pub fn connection(&self, id: TerminalId) -> Result<Option<(u64, Arc<crate::ssh::Connection>)>> {
         self.with(id, |terminal| Ok(terminal.connection()))
+    }
+
+    pub async fn observe_idle_prompt(&self, id: TerminalId) -> Option<IdlePrompt> {
+        let observation = self.with(id, |terminal| Ok(terminal.observe_idle_prompt())).ok()?;
+        observation.await
     }
 
     pub fn write_for_connection(&self, id: TerminalId, generation: u64, data: &[u8]) -> Result<()> {

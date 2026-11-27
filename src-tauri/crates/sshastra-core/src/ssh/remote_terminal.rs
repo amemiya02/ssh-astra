@@ -23,14 +23,14 @@ use std::time::Duration;
 
 use tokio::time::Instant;
 
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, oneshot, watch};
 
 use super::progress::HopProgress;
 use super::shell::ShellEvent;
-use super::{shell_quote, ConnectError, ConnectStage, Connection, Prompter, RemoteShell};
+use super::{shell_quote, BoxFuture, ConnectError, ConnectStage, Connection, Prompter, RemoteShell};
 use crate::hosts::Host;
 use crate::terminal::{
-    ConnectionState, OutputDecoder, Result, ShellIntegrationEvent, ShellIntegrationStatus,
+    ConnectionState, IdlePrompt, OutputDecoder, Result, ShellIntegrationEvent, ShellIntegrationStatus,
     ShellOutput, Terminal, TerminalBackspace, TerminalCharset, TerminalError, TerminalEvent,
     TerminalSize, INJECTION,
 };
@@ -87,6 +87,7 @@ enum Command {
     Data(Vec<u8>),
     ConnectionData { generation: u64, input: Vec<u8> },
     FollowDirectory { prompt_id: u64, input: Vec<u8> },
+    ObserveIdlePrompt(oneshot::Sender<IdlePrompt>),
     Resize(TerminalSize),
     Reconnect,
     Close,
@@ -201,6 +202,7 @@ impl RemoteTerminal {
             commands: command_rx,
             retry_on_focus_or_wake: retry_on_focus_or_wake.clone(),
             active_connection,
+            idle_prompt: watch::Sender::new(None),
             generation: 0,
             shell_tx,
             shell_events,
@@ -316,6 +318,17 @@ impl Terminal for RemoteTerminal {
             .upgrade()
             .filter(|connection| !connection.is_closed())?;
         Some((*generation, connection))
+    }
+
+    fn observe_idle_prompt(&self) -> BoxFuture<'static, Option<IdlePrompt>> {
+        let (reply, observation) = oneshot::channel();
+        let sent = self.send(Command::ObserveIdlePrompt(reply)).is_ok();
+        Box::pin(async move {
+            if !sent {
+                return None;
+            }
+            observation.await.ok()
+        })
     }
 
     fn write_for_connection(&mut self, generation: u64, data: &[u8]) -> Result<()> {
@@ -515,6 +528,7 @@ struct Runner {
     commands: mpsc::UnboundedReceiver<Command>,
     retry_on_focus_or_wake: watch::Sender<bool>,
     active_connection: watch::Sender<Option<(u64, Weak<Connection>)>>,
+    idle_prompt: watch::Sender<Option<u64>>,
     generation: u64,
     /// Every shell this Terminal runs reports here. A shell's last event is
     /// `Exit` or `Lost`, so events of an old shell never follow a new one's.
@@ -527,6 +541,7 @@ impl Runner {
         let mut cwd = None;
         loop {
             let ended = self.serve(&mut shell, cwd).await;
+            self.idle_prompt.send_replace(None);
             self.active_connection.send_replace(None);
             let Ok(last_cwd) = ended else {
                 return;
@@ -613,6 +628,7 @@ impl Runner {
                                     _ => {}
                                 }
                                 follow_prompt.marker(marker, !startup_command_pending);
+                                self.report_idle_prompt(follow_prompt.idle);
                             }
                             if let TerminalEvent::Cwd(path) = &event {
                                 if integrated && !restoring {
@@ -658,6 +674,7 @@ impl Runner {
                     // Failures mean the shell is ending; its last event follows.
                     Command::Data(bytes) => {
                         follow_prompt.input(&bytes);
+                        self.report_idle_prompt(follow_prompt.idle);
                         if matches!(startup, Startup::Ready) {
                             let _ = shell.write(&bytes);
                         } else {
@@ -667,6 +684,7 @@ impl Runner {
                     Command::ConnectionData { generation, input } => {
                         if self.generation == generation {
                             follow_prompt.input(&input);
+                            self.report_idle_prompt(follow_prompt.idle);
                             if matches!(startup, Startup::Ready) {
                                 let _ = shell.write(&input);
                             } else {
@@ -677,8 +695,12 @@ impl Runner {
                     Command::FollowDirectory { prompt_id, input } => {
                         // Bind the request to this exact prompt and never buffer it during startup or recovery.
                         if matches!(startup, Startup::Ready) && follow_prompt.take(prompt_id) {
+                            self.report_idle_prompt(follow_prompt.idle);
                             let _ = shell.write(&input);
                         }
+                    }
+                    Command::ObserveIdlePrompt(reply) => {
+                        let _ = reply.send(self.idle_prompt.subscribe());
                     }
                     Command::Resize(size) => {
                         self.size = size;
@@ -693,6 +715,14 @@ impl Runner {
                 },
             }
         }
+    }
+
+    fn report_idle_prompt(&self, prompt: Option<u64>) {
+        self.idle_prompt.send_if_modified(|current| {
+            let changed = *current != prompt;
+            *current = prompt;
+            changed
+        });
     }
 
     fn finish_startup(&mut self, shell: &mut RemoteShell, input: Option<&[u8]>, typed: Vec<u8>) {

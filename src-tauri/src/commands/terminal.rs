@@ -446,7 +446,8 @@ pub async fn terminal_close(
     registry: State<'_, TerminalRegistry>,
     id: TerminalId,
 ) -> CommandResult<()> {
-    if windows::with_resources(&window, |resources| resources.terminals.remove(&id))?.is_some() {
+    if let Some(route) = windows::with_resources(&window, |resources| resources.terminals.remove(&id))? {
+        route.lock().invalidate_reviews();
         registry.close(id)?;
     }
     Ok(())

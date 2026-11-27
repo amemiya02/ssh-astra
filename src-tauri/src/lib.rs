@@ -40,7 +40,7 @@ use tauri_plugin_window_state::StateFlags;
 pub use agent_transport::run_stdio as run_agent_stdio;
 use agent_transport::AgentService;
 
-use commands::agent::{DesktopAgent, PendingScreens};
+use commands::agent::{DesktopAgent, PendingReviews, PendingScreens};
 use commands::clipboard::ClipboardImages;
 use commands::connections::{ConnectionsState, TemporaryHosts};
 use commands::credentials::Vault;
@@ -164,6 +164,7 @@ pub fn run() {
             }
             let agent_service = AgentService::new(
                 DesktopAgent::new(
+                    app.handle().clone(),
                     hosts.clone(),
                     app.state::<TerminalRegistry>().inner().clone(),
                 ),
@@ -206,6 +207,7 @@ pub fn run() {
         .manage(FsRegistry::default())
         .manage(TransfersState::default())
         .manage(Arc::new(PendingScreens::default()))
+        .manage(Arc::new(PendingReviews::default()))
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::Focused(true) => {
                 windows::focused(window.app_handle(), window.label());
@@ -283,6 +285,7 @@ pub fn run() {
             commands::known_hosts::known_hosts_list,
             commands::known_hosts::known_hosts_reveal,
             commands::notifications::notification_show,
+            commands::notifications::notification_request_attention,
             commands::diagnostics::diagnostics_event,
             commands::diagnostics::diagnostics_open_logs,
             commands::diagnostics::diagnostics_report,
@@ -298,6 +301,7 @@ pub fn run() {
             commands::terminal::terminal_close,
             commands::terminal::terminal_set_title,
             commands::agent::terminal_agent_screen,
+            commands::agent::review::terminal_agent_review_answer,
             commands::terminal::terminal_log_start,
             commands::terminal::terminal_log_stop,
             commands::terminal::terminal_recording_start,

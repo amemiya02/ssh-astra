@@ -11,7 +11,8 @@ use std::time::{Duration, SystemTime};
 
 use serde_json::Value;
 use sshastra_core::agent::{
-    dispatch_recording, rpc_error, ActivityCall, AgentActivityLog, AgentBackend,
+    dispatch_recording, rpc_error, ActivityCall, AgentActivityLog, AgentBackend, COMMAND_REVIEW_TIMEOUT,
+    COMMAND_REVIEW_TOOL,
 };
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::runtime::{Builder, Runtime};
@@ -210,14 +211,24 @@ async fn converse(
     else {
         return Ok(());
     };
+    let deadline = if is_command_review(&frame) {
+        Instant::now() + COMMAND_REVIEW_TIMEOUT + REQUEST_TIMEOUT
+    } else {
+        deadline
+    };
     let enabled = || active.load(Ordering::Acquire);
     let mut activity = InFlightActivity { log, call: None };
-    let response = match timeout_at(
-        deadline,
-        dispatch_recording(&frame, enabled, backend, &mut activity.call),
-    )
-    .await
-    {
+    let response = tokio::select! {
+        biased;
+        // A canceled proxy connection discards the pending decision so the Window
+        // cannot answer a request whose client has stopped waiting.
+        _ = stream.read_u8() => return Ok(()),
+        response = timeout_at(
+            deadline,
+            dispatch_recording(&frame, enabled, backend, &mut activity.call),
+        ) => response,
+    };
+    let response = match response {
         Ok(response) => response,
         Err(error) => {
             if let Some(call) = &mut activity.call {
@@ -266,13 +277,24 @@ fn json_line(value: &Value) -> Vec<u8> {
     frame
 }
 
+fn is_command_review(frame: &[u8]) -> bool {
+    serde_json::from_slice::<Value>(frame).is_ok_and(|request| {
+        request["method"] == "tools/call" && request["params"]["name"] == COMMAND_REVIEW_TOOL
+    })
+}
+
 async fn forward(endpoint: &Endpoint, frame: &[u8]) -> io::Result<Option<Vec<u8>>> {
     let request = async {
         let mut stream = endpoint.connect().await?;
         stream.write_all(frame).await?;
         read_frame(stream, MAX_RESPONSE_BYTES).await
     };
-    tokio::time::timeout(REQUEST_TIMEOUT, request).await?
+    let timeout = if is_command_review(frame) {
+        COMMAND_REVIEW_TIMEOUT + REQUEST_TIMEOUT * 2
+    } else {
+        REQUEST_TIMEOUT
+    };
+    tokio::time::timeout(timeout, request).await?
 }
 
 /// Called before starting Tauri. Standard output is reserved for MCP frames.
