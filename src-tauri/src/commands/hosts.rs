@@ -1,11 +1,13 @@
 //! Host commands: the saved Host list (HostStore) with its Groups.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use sshastra_core::agent::{OpenTerminal, TerminalOrigin};
-use sshastra_core::host_import::{parse_csv, parse_mobaxterm, parse_putty, ParsedConfig};
+use sshastra_core::host_import::{
+    parse_csv, parse_mobaxterm, parse_putty, parse_xshell, ImportIssue, ImportProblem, ParsedConfig,
+};
 use sshastra_core::hosts::{
     Bookmark, Group, GroupId, Host, HostDraft, HostId, HostStore, HostTree, ImportReport,
     ImportSummary,
@@ -16,6 +18,7 @@ use tauri::{ipc::Channel, State, WebviewWindow};
 
 use super::connections::ConnectionsState;
 use super::forwards::ForwardsState;
+use super::session_folder::{read_session_folder, SkipReason};
 use super::watch::Watcher;
 use crate::commands::credentials::Vault;
 use crate::error::{CommandError, CommandResult};
@@ -274,6 +277,7 @@ pub enum HostImportSource {
     Csv { path: PathBuf },
     Putty { path: PathBuf },
     Mobaxterm { path: PathBuf },
+    Xshell { path: PathBuf },
 }
 
 /// Reads the selected source, then saves its parsed Hosts in one import.
@@ -282,7 +286,20 @@ pub async fn hosts_import_source(
     hosts: State<'_, HostsState>,
     source: HostImportSource,
 ) -> CommandResult<SourceImportResult> {
-    let parsed = tauri::async_runtime::spawn_blocking(move || match source {
+    let parsed = tauri::async_runtime::spawn_blocking(move || read_import_source(source))
+        .await
+        .map_err(std::io::Error::other)??;
+    hosts.edit(|store| {
+        let report = store.import_config(parsed)?;
+        Ok(SourceImportResult {
+            tree: store.tree(),
+            report,
+        })
+    })
+}
+
+fn read_import_source(source: HostImportSource) -> std::io::Result<ParsedConfig> {
+    match source {
         HostImportSource::SshConfig => read_ssh_config(),
         HostImportSource::Csv { path } => {
             std::fs::read_to_string(path).map(|text| parse_csv(&text))
@@ -293,16 +310,37 @@ pub async fn hosts_import_source(
         HostImportSource::Mobaxterm { path } => {
             std::fs::read(path).map(|bytes| parse_mobaxterm(&bytes, &local_username()))
         }
-    })
-    .await
-    .map_err(std::io::Error::other)??;
-    hosts.edit(|store| {
-        let report = store.import_config(parsed)?;
-        Ok(SourceImportResult {
-            tree: store.tree(),
-            report,
-        })
-    })
+        HostImportSource::Xshell { path } => read_xshell_folder(&path),
+    }
+}
+
+fn read_xshell_folder(path: &Path) -> std::io::Result<ParsedConfig> {
+    let snapshot = read_session_folder(path, "xsh")?;
+    let files = snapshot
+        .files
+        .iter()
+        .map(|(path, bytes)| (path.as_path(), bytes.as_slice()));
+    let mut parsed = parse_xshell(files, &local_username());
+    parsed
+        .issues
+        .extend(snapshot.skipped.into_iter().map(|(path, reason)| {
+            ImportIssue {
+                entry: path
+                    .iter()
+                    .map(|part| part.to_str())
+                    .collect::<Option<Vec<_>>>()
+                    .map(|parts| parts.join("/"))
+                    .filter(|name| !name.chars().any(char::is_control))
+                    .unwrap_or_default(),
+                line: None,
+                dropped: true,
+                problem: match reason {
+                    SkipReason::Unreadable => ImportProblem::XshellFile,
+                    SkipReason::Limit => ImportProblem::XshellFolderLimit,
+                },
+            }
+        }));
+    Ok(parsed)
 }
 
 /// A missing `~/.ssh/config` imports nothing.
@@ -324,6 +362,67 @@ fn local_username() -> String {
         .filter(|user| !user.is_empty())
         .map(|user| user.to_string_lossy().into_owned())
         .unwrap_or_else(|| "root".to_owned())
+}
+
+#[cfg(test)]
+mod source_import_tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    #[cfg(unix)]
+    fn xshell_source_reads_only_regular_sessions_under_the_selected_folder() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("Sessions");
+        let external = temp.path().join("Unselected");
+        fs::create_dir_all(root.join("Work/Production")).unwrap();
+        fs::create_dir(&external).unwrap();
+        let session = "[CONNECTION]\nProtocol=SSH\nHost=host.example.test\n";
+        fs::write(root.join("Work/Production/Build.XSH"), session).unwrap();
+        fs::write(root.join("Not a session.txt"), session).unwrap();
+        fs::write(external.join("Outside.xsh"), session).unwrap();
+        symlink(external.join("Outside.xsh"), root.join("Linked.xsh")).unwrap();
+        symlink(&external, root.join("Linked folder")).unwrap();
+
+        let source =
+            serde_json::from_value(serde_json::json!({ "kind": "xshell", "path": root })).unwrap();
+        let parsed = read_import_source(source).unwrap();
+        assert_eq!(parsed.hosts.len(), 1);
+        assert_eq!(parsed.hosts[0].name, "Build");
+        assert_eq!(parsed.hosts[0].group_path, ["Work", "Production"]);
+        assert!(parsed
+            .issues
+            .iter()
+            .any(|issue| issue.entry == "Linked.xsh" && issue.dropped));
+        assert!(!format!("{parsed:?}").contains("Unselected"));
+    }
+
+    #[test]
+    fn xshell_source_reports_oversized_files_without_losing_other_sessions() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(
+            root.path().join("Build.xsh"),
+            "[CONNECTION]\nProtocol=SSH\nHost=host.example.test\n",
+        )
+        .unwrap();
+        let oversized = fs::File::create(root.path().join("Oversized.xsh")).unwrap();
+        oversized.set_len(1024 * 1024).unwrap();
+
+        let parsed = read_import_source(HostImportSource::Xshell {
+            path: root.path().to_owned(),
+        })
+        .unwrap();
+        assert_eq!(parsed.hosts[0].name, "Build");
+        assert_eq!(parsed.hosts.len(), 1);
+        assert!(parsed
+            .issues
+            .iter()
+            .any(|issue| issue.entry == "Oversized.xsh"
+                && issue.problem == ImportProblem::XshellFolderLimit
+                && issue.dropped));
+    }
 }
 
 /// Writes the whole Host list (no credentials) as an export file at `path`.

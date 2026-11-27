@@ -1,7 +1,10 @@
 //! Parsed Host settings and the problems reported by import sources.
 
+use std::borrow::Cow;
+use std::net::Ipv6Addr;
 use std::path::PathBuf;
 
+use encoding_rs::{Encoding, WINDOWS_1252};
 use serde::Serialize;
 
 use crate::forward::ForwardDraft;
@@ -14,6 +17,9 @@ pub use mobaxterm::parse_mobaxterm;
 
 mod putty;
 pub use putty::parse_putty;
+
+mod xshell;
+pub use xshell::parse_xshell;
 
 /// A Host as the source describes it, ready to save. `jump_host` names
 /// another `ConfigHost` (or an already saved Host) by name.
@@ -39,7 +45,7 @@ pub struct ConfigHost {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportIssue {
-    /// The Host alias, OpenSSH directive, or PuTTY session name.
+    /// A Host alias, directive, or relative source location.
     pub entry: String,
     /// One-based physical line for issues reported by location.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -107,6 +113,16 @@ pub enum ImportProblem {
     MobaxtermDefaultUser,
     MobaxtermKeyPath,
     MobaxtermUnsupportedSettings,
+    XshellCredentials,
+    XshellFile,
+    XshellFolderLimit,
+    XshellInvalidPort,
+    XshellUnsupportedSession,
+    XshellDefaultUser,
+    XshellKeyPath,
+    XshellUnsupportedSettings,
+    XshellUnsupportedProxy,
+    XshellInvalidJumpHost,
 }
 
 /// The outcome of parsing an import source.
@@ -114,4 +130,35 @@ pub enum ImportProblem {
 pub struct ParsedConfig {
     pub hosts: Vec<ConfigHost>,
     pub issues: Vec<ImportIssue>,
+}
+
+fn decode_windows_text(bytes: &[u8]) -> Option<Cow<'_, str>> {
+    if let Some((encoding, bom_length)) = Encoding::for_bom(bytes) {
+        let (text, malformed) = encoding.decode_without_bom_handling(&bytes[bom_length..]);
+        return (!malformed).then_some(text);
+    }
+    Some(match std::str::from_utf8(bytes) {
+        Ok(text) => text.into(),
+        Err(_) => WINDOWS_1252.decode_without_bom_handling(bytes).0,
+    })
+}
+
+fn valid_label(value: &str) -> bool {
+    !value.is_empty() && !value.chars().any(char::is_control)
+}
+
+fn ssh_address(value: &str) -> Option<&str> {
+    let host = value
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .unwrap_or(value);
+    if host.contains(':') {
+        return host.parse::<Ipv6Addr>().is_ok().then_some(host);
+    }
+    let valid = value == host
+        && !host.is_empty()
+        && host
+            .chars()
+            .all(|ch| ch.is_alphanumeric() || matches!(ch, '.' | '-' | '_'));
+    valid.then_some(host)
 }

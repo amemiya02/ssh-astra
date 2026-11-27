@@ -67,8 +67,10 @@ function IssueList({ heading, issues }: { heading: string; issues: ImportIssue[]
       <ul className="grid gap-1 text-xs">
         {issues.map((issue, i) => (
           <li key={i}>
-            <span className="font-mono">{issue.line === undefined ? issue.entry : t("hosts.import.line", { line: issue.line })}</span>
-            {": "}
+            {(issue.line !== undefined || issue.entry) && <>
+              <span className="font-mono">{issue.line === undefined ? issue.entry : t("hosts.import.line", { line: issue.line })}</span>
+              {": "}
+            </>}
             {t(`hosts.import.problems.${issue.problem.kind}`, { ...issue.problem })}
           </li>
         ))}
