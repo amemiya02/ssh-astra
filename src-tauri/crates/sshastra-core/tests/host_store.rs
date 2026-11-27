@@ -614,7 +614,7 @@ fn batch_move_appends_hosts_in_saved_order_and_keeps_the_whole_tree() {
         .move_hosts(&[b.clone(), a.clone(), a.clone()], Some(group.id.clone()))
         .unwrap();
     assert_eq!(tree, HostStore::open(&path).unwrap().tree());
-    assert_eq!(tree.groups, [group.clone()]);
+    assert_eq!(tree.groups.as_slice(), std::slice::from_ref(&group));
     let under_group: Vec<_> = tree
         .hosts
         .iter()
