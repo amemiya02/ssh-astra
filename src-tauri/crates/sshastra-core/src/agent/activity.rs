@@ -14,6 +14,7 @@ use uuid::Uuid;
 
 use super::{
     bound_metadata, ReadTarget, COMMAND_REVIEW_TOOL, HOST_NAME_BYTE_LIMIT, PATH_BYTE_LIMIT,
+    WRITE_FILE_TOOL,
 };
 use crate::fs_util::write_atomically_private;
 
@@ -33,6 +34,7 @@ pub(super) enum Tool {
     ListDirectory,
     ReadFile,
     RequestCommandReview,
+    WriteFile,
     Unknown,
 }
 
@@ -44,6 +46,7 @@ impl Tool {
             Some("list_directory") => Self::ListDirectory,
             Some("read_file") => Self::ReadFile,
             Some(COMMAND_REVIEW_TOOL) => Self::RequestCommandReview,
+            Some(WRITE_FILE_TOOL) => Self::WriteFile,
             _ => Self::Unknown,
         }
     }

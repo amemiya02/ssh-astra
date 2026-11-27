@@ -28,6 +28,12 @@ pub(super) enum ReviewDetails<'a> {
         prompt_id: u64,
         command: &'a str,
     },
+    FileWrite {
+        terminal_id: TerminalId,
+        host: &'a str,
+        path: &'a str,
+        byte_length: usize,
+    },
 }
 
 #[derive(Serialize)]
@@ -37,10 +43,11 @@ struct ReviewRequest<'a> {
     details: ReviewDetails<'a>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum ReviewChoice {
     Copy,
+    Approve,
     Reject,
     Unavailable,
 }
@@ -52,6 +59,7 @@ pub(super) struct ReviewAnswer {
 
 struct PendingReview {
     id: u64,
+    positive_choice: ReviewChoice,
     answer: Option<oneshot::Sender<ReviewAnswer>>,
 }
 
@@ -98,6 +106,10 @@ impl PendingReviews {
             return None;
         }
         let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
+        let positive_choice = match &details {
+            ReviewDetails::Command { .. } => ReviewChoice::Copy,
+            ReviewDetails::FileWrite { .. } => ReviewChoice::Approve,
+        };
         let message = json!({"agentReview":ReviewRequest { id, details }});
         send(&delivery.events, message).ok()?;
         let (answer, receive) = oneshot::channel();
@@ -105,6 +117,7 @@ impl PendingReviews {
             delivery.webview.clone(),
             PendingReview {
                 id,
+                positive_choice,
                 answer: Some(answer),
             },
         );
@@ -127,6 +140,11 @@ impl PendingReviews {
         let pending = windows
             .get_mut(webview)
             .filter(|pending| pending.id == id)?;
+        if matches!(choice, ReviewChoice::Copy | ReviewChoice::Approve)
+            && choice != pending.positive_choice
+        {
+            return None;
+        }
         // Keep the slot reserved through final validation, while consuming the
         // sender so a duplicate decision cannot win.
         let answer = pending.answer.take()?;
@@ -187,6 +205,7 @@ mod tests {
             .request(delivery.clone(), details("whoami"))
             .is_none());
         assert!(broker.decide("other", id, ReviewChoice::Copy).is_none());
+        assert!(broker.decide("origin", id, ReviewChoice::Approve).is_none());
         assert!(broker
             .decide("origin", id + 1, ReviewChoice::Copy)
             .is_none());
@@ -207,5 +226,49 @@ mod tests {
         let next = broker.request(delivery, details("pwd")).unwrap();
         assert!(broker.decide("origin", id, ReviewChoice::Copy).is_none());
         drop(next);
+    }
+
+    #[tokio::test]
+    async fn file_write_review_delivers_only_metadata_and_accepts_the_typed_choice_once() {
+        let broker = Arc::new(PendingReviews::default());
+        let (messages, mut events) = mpsc::unbounded_channel();
+        let delivery = TerminalDelivery {
+            webview: "origin".into(),
+            events: Channel::new(move |event| {
+                messages.send(event).unwrap();
+                Ok(())
+            }),
+            prompts: None,
+        };
+        let mut review = broker
+            .request(
+                delivery,
+                ReviewDetails::FileWrite {
+                    terminal_id: 7.into(),
+                    host: "Work",
+                    path: "/sample/ file",
+                    byte_length: 24,
+                },
+            )
+            .unwrap();
+        let InvokeResponseBody::Json(message) = events.recv().await.unwrap() else {
+            panic!("expected a file write request");
+        };
+        let message: Value = serde_json::from_str(&message).unwrap();
+        let id = message["agentReview"]["id"].as_u64().unwrap();
+        assert_eq!(
+            message["agentReview"],
+            json!({
+                "id":id,"kind":"fileWrite","terminalId":7,"host":"Work","path":"/sample/ file","byteLength":24
+            })
+        );
+        assert!(broker.decide("other", id, ReviewChoice::Approve).is_none());
+        assert!(broker.decide("origin", id, ReviewChoice::Copy).is_none());
+        let reply = broker.decide("origin", id, ReviewChoice::Approve).unwrap();
+        assert!(broker.decide("origin", id, ReviewChoice::Approve).is_none());
+        let answer = (&mut review.answer).await.unwrap();
+        assert!(matches!(answer.choice, ReviewChoice::Approve));
+        let _ = answer.completed.send(ReviewOutcome::Written);
+        assert_eq!(reply.await.unwrap(), ReviewOutcome::Written);
     }
 }

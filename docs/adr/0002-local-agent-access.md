@@ -4,7 +4,7 @@ SSH Astra remains a desktop SSH client. Users can bring an MCP client they alrea
 
 Agent access depends on the running window. The application owns the listener and the Terminal lifecycle, displays which tabs are shared, and lets the user revoke access from the status bar. The approval seam is designed for a decision in the window for an individual action. Permission follows the Host chosen by the user. A command's text alone cannot establish its effect on a particular Host, so the design leaves the decision with the user.
 
-Both the global switch and the per-Host permission default to Off. Each saved Host can use Off, Read only, or Approval required. Both enabled levels offer the read-only tools below. Approval required also accepts individual proposals for command review. Imports and duplicates start at Off. A Terminal opened through Quick connect remains private for its lifetime, including after its Temporary Host is saved. Terminals subsequently opened on the saved Host can be opted in.
+Both the global switch and the per-Host permission default to Off. Each saved Host can use Off, Read only, or Approval required. Both enabled levels offer the read-only tools below. Approval required also accepts individual command reviews and file writes. Imports and duplicates start at Off. A Terminal opened through Quick connect remains private for its lifetime, including after its Temporary Host is saved. Terminals subsequently opened on the saved Host can be opted in.
 
 ## Local transport
 
@@ -25,8 +25,18 @@ SFTP uses the exact existing Connection of the selected Terminal. SSH Astra chec
 
 `request_command_review` takes a `terminalId` and a printable single-line `command` of up to 4,096 UTF-8 bytes. It requires a live Connection and a confirmed empty prompt in the currently focused Terminal pane on a saved Host with Approval required. A modal in that Terminal's Window shows the saved Host, Terminal ID, and exact proposal. The user can reject it or copy it verbatim to the clipboard for manual submission through their usual Terminal controls.
 
-The decision applies once. The request expires after two minutes and is canceled when permission, the prompt, the Connection, or the Terminal’s Window changes. Switching panes also dismisses the request. A Window handles one proposal at a time. When the Window is in the background, the app requests taskbar or Dock attention and uses the configured Agent command review notification. Alerts omit command text.
+The decision applies once. The request expires after two minutes and is canceled when permission, the prompt, the Connection, or the Terminal’s Window changes. Switching panes also dismisses the request. A Window handles one review request at a time. When the Window is in the background, the app requests taskbar or Dock attention and uses the configured Agent review notification. Alerts omit command text and file paths.
 
 The MCP result contains only `outcome`, one of `copied`, `rejected`, `unavailable`, `timedOut`, or `clipboardUnavailable`. A copied outcome records the clipboard action. Submitting the command remains a separate action in the Terminal.
+
+## File writes
+
+`write_file` takes a `terminalId`, an absolute remote `path`, and `data` as standard padded base64. The decoded data is limited to 44 KiB and the entire request, including its newline, must fit within the existing 64 KiB MCP frame limit. The path must be printable, at most 4,096 UTF-8 bytes, and use explicit segments. The review shows the saved Host, Terminal ID, exact path, and decoded byte count. The Window and two-minute decision limit apply to every call. Choose **Approve once** to write the supplied bytes or **Reject** to decline.
+
+An approved call stages a private sibling file on the Terminal's current SFTP Connection, then publishes it with one rename. Atomic replacement support is required for an existing regular file. The original file stays intact if staging fails. The app verifies permission and the Connection again before publication. A lost rename reply can leave publication unconfirmed.
+
+The result contains only `outcome`. It can be `written`, `rejected`, `unavailable`, `timedOut`, or `writeFailed`.
+
+## Activity
 
 **Settings → Agent access** shows tool calls from the last 30 days, with the time, tool, permitted Host and path where available, and result. Load older activity to browse earlier calls. The activity archive stays in the app's local configuration directory. It excludes proposal text, request frames, returned content, and credentials. The app prunes old entries at startup and whenever it reads or writes the archive. Clear the archive from the same Settings section.

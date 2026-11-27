@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
 use sha2::{Digest, Sha256};
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex as AsyncMutex;
 use uuid::Uuid;
 
@@ -235,6 +235,114 @@ fn staging_name(name: &[u8]) -> String {
 
 fn invalid_name(side: &Side) -> FsError {
     FsError::Io(format!("{}: missing file name", side.display()))
+}
+
+/// A one-shot remote stage. It shares the transfer staging layout and exclusive
+/// creation, but never adopts an earlier partial or falls back to in-place I/O.
+pub struct StagedRemoteWrite {
+    target: Side,
+    temp: Option<Side>,
+    original: Option<FileStat>,
+    cleanup_runtime: tokio::runtime::Handle,
+}
+
+impl StagedRemoteWrite {
+    pub async fn prepare(fs: Arc<dyn RemoteFs>, path: &str, bytes: &[u8]) -> FsResult<Self> {
+        let target = Side::Remote(fs, path.to_owned(), None);
+        let original = Self::regular_file(&target).await?;
+        let temp = target.sibling()?.active_stage();
+        let mut stage = Self {
+            target,
+            temp: Some(temp.clone()),
+            original,
+            cleanup_runtime: tokio::runtime::Handle::current(),
+        };
+        let mut writer = match temp.create_new(true).await {
+            Ok(writer) => writer,
+            Err(error) => {
+                if connection_error::<()>(&Err(error.clone())) {
+                    stage.discard().await;
+                } else {
+                    stage.temp = None;
+                }
+                return Err(error);
+            }
+        };
+        let written = async {
+            writer.write_all(bytes).await?;
+            writer.shutdown().await
+        }
+        .await;
+        drop(writer);
+        if let Err(error) = written {
+            stage.discard().await;
+            return Err(temp.io_error(error));
+        }
+        if let Some(mode) = stage.original.as_ref().and_then(|stat| stat.permissions) {
+            if let Err(error) = temp.set_permissions(mode).await {
+                stage.discard().await;
+                return Err(error);
+            }
+        }
+        Ok(stage)
+    }
+
+    /// Returns false if approval was invalidated before publication.
+    pub async fn publish(mut self, authorized: &(dyn Fn() -> bool + Sync)) -> FsResult<bool> {
+        let result = self.publish_checked(authorized).await;
+        match result {
+            Ok(true) => self.temp = None,
+            _ => self.discard().await,
+        }
+        result
+    }
+
+    async fn publish_checked(&self, authorized: &(dyn Fn() -> bool + Sync)) -> FsResult<bool> {
+        if !authorized() {
+            return Ok(false);
+        }
+        if Self::regular_file(&self.target).await? != self.original {
+            return Err(FsError::Protocol(
+                "The destination changed while staging".into(),
+            ));
+        }
+        let (Side::Remote(fs, from, _), Side::Remote(_, to, _)) =
+            (self.temp.as_ref().expect("a prepared stage"), &self.target)
+        else {
+            unreachable!("remote stage and destination");
+        };
+        fs.publish_atomic(from, to, self.original.is_some(), authorized)
+            .await
+    }
+
+    async fn regular_file(target: &Side) -> FsResult<Option<FileStat>> {
+        match target.lstat().await {
+            Ok(stat) if stat.kind == FileKind::File => Ok(Some(stat)),
+            Ok(_) => Err(FsError::Protocol(
+                "The destination is not a regular file".into(),
+            )),
+            Err(FsError::NotFound(_)) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
+    async fn discard(&mut self) {
+        if let Some(temp) = &self.temp {
+            let _ = temp.remove().await;
+            self.temp = None;
+        }
+    }
+}
+
+impl Drop for StagedRemoteWrite {
+    fn drop(&mut self) {
+        if let Some(temp) = self.temp.take() {
+            // If the caller stops waiting, only cleanup may outlive the call.
+            self.cleanup_runtime.spawn(async move {
+                let _ = temp.remove().await;
+            });
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]

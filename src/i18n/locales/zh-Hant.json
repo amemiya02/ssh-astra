@@ -10,7 +10,7 @@
       "read": "唯讀",
       "approval": "需要核准"
     },
-    "hostHint": "唯讀權限分享此主機上開啟的終端機與檔案。需要核准的權限也允許逐筆要求審核指令。此權限只儲存在本機。",
+    "hostHint": "唯讀權限分享此主機上開啟的終端機與檔案。需要核准的權限也允許逐筆審核指令及核准檔案寫入。此權限只儲存在本機。",
     "review": {
       "title": "審核代理指令",
       "description": "請核對所選終端機的指令提案。你可以將它複製到剪貼簿，再自行貼上與送出。要求將在兩分鐘後逾時。",
@@ -22,6 +22,18 @@
       "notification": "開啟 SSH Astra 審核指令要求。",
       "copied": "已將指令複製到剪貼簿。",
       "copyFailed": "無法複製指令。要求可能已逾時，或終端機狀態已變更。"
+    },
+    "fileReview": {
+      "title": "核准寫入遠端檔案",
+      "description": "將要求中的內容寫入這個路徑。如果檔案已存在，將取代原檔案。要求將在兩分鐘後逾時。",
+      "path": "遠端路徑",
+      "size": "檔案大小",
+      "bytes_one": "{{bytes}} 位元組",
+      "bytes_other": "{{bytes}} 位元組",
+      "approve": "僅核准這一次",
+      "notification": "開啟 SSH Astra 審核遠端檔案寫入要求。",
+      "written": "已寫入遠端檔案。",
+      "writeFailed": "無法確認遠端檔案已寫入。"
     },
     "enabled": "代理存取已開啟",
     "turnOff": "關閉代理存取",
@@ -1461,8 +1473,8 @@
     },
     "notifications": {
       "agentReview": {
-        "label": "代理指令審核",
-        "description": "SSH Astra 在背景時，如果本機 MCP 用戶端要求審核指令，則傳送通知。"
+        "label": "代理審核要求",
+        "description": "SSH Astra 在背景時，如果本機 MCP 用戶端要求審核指令或核准檔案寫入，則傳送通知。"
       },
       "transfers": {
         "label": "批次傳輸",

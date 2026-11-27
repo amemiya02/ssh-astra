@@ -10,7 +10,7 @@
       "read": "只读",
       "approval": "需要批准"
     },
-    "hostHint": "只读权限共享此主机上打开的终端和文件。需要批准的权限还允许逐条请求审核命令。此权限只保存在本机。",
+    "hostHint": "只读权限共享此主机上打开的终端和文件。需要批准的权限还允许逐条审核命令和逐次批准文件写入。此权限只保存在本机。",
     "review": {
       "title": "审核代理命令",
       "description": "请核对针对所选终端的命令。你可以将它复制到剪贴板，再自行粘贴和提交。请求将在两分钟后过期。",
@@ -22,6 +22,18 @@
       "notification": "打开 SSH Astra 审核命令请求。",
       "copied": "命令已复制到剪贴板。",
       "copyFailed": "无法复制命令。请求可能已过期，或终端状态已改变。"
+    },
+    "fileReview": {
+      "title": "批准写入远程文件",
+      "description": "将请求中的内容写入此路径。如果文件已存在，将替换原文件。请求将在两分钟后过期。",
+      "path": "远程路径",
+      "size": "文件大小",
+      "bytes_one": "{{bytes}} 字节",
+      "bytes_other": "{{bytes}} 字节",
+      "approve": "仅批准本次",
+      "notification": "打开 SSH Astra 审核远程文件写入请求。",
+      "written": "已写入远程文件。",
+      "writeFailed": "无法确认远程文件已写入。"
     },
     "enabled": "代理访问已开启",
     "turnOff": "关闭代理访问",
@@ -1461,8 +1473,8 @@
     },
     "notifications": {
       "agentReview": {
-        "label": "代理命令审核",
-        "description": "SSH Astra 在后台时，如果本机 MCP 客户端请求审核命令，则发送通知。"
+        "label": "代理审核请求",
+        "description": "SSH Astra 在后台时，如果本机 MCP 客户端请求审核命令或批准文件写入，则发送通知。"
       },
       "transfers": {
         "label": "批量传输",
