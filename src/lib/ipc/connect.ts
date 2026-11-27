@@ -1,6 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type { HostId } from "./hosts";
-import { decodeTerminalMessage, type TerminalEvent, type TerminalMessage, type TerminalId, type TerminalSize } from "./terminal";
+import { decodeTerminalMessage, type ConnectionState, type TerminalEvent, type TerminalMessage, type TerminalId, type TerminalSize } from "./terminal";
 
 /** A question the backend asks while connecting (`src-tauri/src/prompts.rs`). */
 export type ConnectPrompt =
@@ -31,7 +31,14 @@ export interface ConnectProgress {
   method: "none" | "agent" | "keyFile" | "password" | "keyboardInteractive" | null;
 }
 
-type PromptMessage = ConnectPrompt | { type: "progress"; progress: ConnectProgress };
+type PromptMessage = ConnectPrompt
+  | { type: "progress"; progress: ConnectProgress }
+  | { type: "reconnect"; state: ConnectionState };
+
+interface ConnectUpdates {
+  onProgress(progress: ConnectProgress): void;
+  onReconnect(state: ConnectionState): void;
+}
 
 /**
  * `null` means the user cancelled, which cancels the connect. `save` keeps the
@@ -91,14 +98,15 @@ export function answerPrompts(
   };
 }
 
-/** Progress shares the prompt Channel and carries no question id. */
+/** Progress and reconnect states share the ordered prompt Channel and expect no reply. */
 export function connectPromptChannel(
   ask: (prompt: ConnectPrompt) => Promise<PromptAnswer>,
-  onProgress?: (progress: ConnectProgress) => void,
+  updates?: ConnectUpdates,
 ): Channel<PromptMessage> {
   const handle = answerPrompts(ask);
   return new Channel<PromptMessage>((message) => {
-    if (message.type === "progress") onProgress?.(message.progress);
+    if (message.type === "progress") updates?.onProgress(message.progress);
+    else if (message.type === "reconnect") updates?.onReconnect(message.state);
     else void handle(message);
   });
 }
@@ -118,9 +126,9 @@ export async function openRemoteTerminal(
   size: TerminalSize,
   onEvent: (event: TerminalEvent) => void,
   ask: (prompt: ConnectPrompt) => Promise<PromptAnswer>,
-  onProgress: (progress: ConnectProgress) => void,
+  updates: ConnectUpdates,
 ): Promise<TerminalId> {
-  const onPrompt = connectPromptChannel(ask, onProgress);
+  const onPrompt = connectPromptChannel(ask, updates);
   const events = new Channel<TerminalMessage>((message) =>
     onEvent(decodeTerminalMessage(message)),
   );

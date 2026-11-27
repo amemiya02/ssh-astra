@@ -6,7 +6,7 @@
 mod support;
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 
 use sshastra_core::files::{
@@ -16,8 +16,9 @@ use sshastra_core::files::{
 use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::ssh::{
-    BoxFuture, ConnectError, ConnectionManager, HeldConnections, HostKeyPrompt, PasswordPrompt,
-    Prompter, ReconnectPolicy, RemoteTerminal, RemoteTerminalOptions, Secret,
+    BoxFuture, ConnectError, ConnectProgress, ConnectStage, ConnectionManager, HeldConnections,
+    HostKeyPrompt, PasswordPrompt, ProgressStatus, Prompter, ReconnectPolicy, RemoteTerminal,
+    RemoteTerminalOptions, Secret,
 };
 use sshastra_core::terminal::{
     ConnectionState, ShellIntegrationEvent, Terminal, TerminalEvent, TerminalSize,
@@ -39,9 +40,16 @@ const POLICY: ReconnectPolicy = ReconnectPolicy {
     first_delay: Duration::from_millis(300),
 };
 
-struct TrustingPrompter;
+#[derive(Default)]
+struct TrustingPrompter {
+    progress: StdMutex<Vec<ConnectProgress>>,
+}
 
 impl Prompter for TrustingPrompter {
+    fn progress(&self, progress: ConnectProgress) {
+        self.progress.lock().unwrap().push(progress);
+    }
+
     fn confirm_host_key(&self, _: HostKeyPrompt) -> BoxFuture<'_, bool> {
         Box::pin(async { true })
     }
@@ -55,6 +63,7 @@ struct Fixture {
     sshd: Sshd,
     manager: Arc<ConnectionManager>,
     host: Host,
+    prompts: Arc<TrustingPrompter>,
     /// While set, connecting fails as if the server were unreachable.
     down: Arc<AtomicBool>,
     /// How many times a Terminal has tried to connect.
@@ -85,6 +94,7 @@ impl Fixture {
             ))),
             sshd,
             host,
+            prompts: Arc::default(),
             down: Arc::default(),
             connects: Arc::default(),
             _known_hosts: dir,
@@ -96,16 +106,22 @@ impl Fixture {
     }
 
     async fn open_with(&self, shell_integration: bool) -> (RemoteTerminal, Events) {
-        let (manager, host, down) = (self.manager.clone(), self.host.clone(), self.down.clone());
+        let (manager, host, down, prompts) = (
+            self.manager.clone(),
+            self.host.clone(),
+            self.down.clone(),
+            self.prompts.clone(),
+        );
         let connects = self.connects.clone();
         let connect = move || {
-            let (manager, host, down) = (manager.clone(), host.clone(), down.clone());
+            let (manager, host, down, prompts) =
+                (manager.clone(), host.clone(), down.clone(), prompts.clone());
             connects.fetch_add(1, Ordering::SeqCst);
             async move {
                 if down.load(Ordering::SeqCst) {
                     return Err(ConnectError::Unreachable("the test took it down".into()));
                 }
-                manager.connect(&host, Arc::new(TrustingPrompter)).await
+                manager.connect(&host, prompts).await
             }
         };
         let (tx, rx) = mpsc::unbounded_channel();
@@ -113,9 +129,16 @@ impl Fixture {
             reconnect: POLICY,
             shell_integration,
         };
-        let terminal = RemoteTerminal::open_with(connect, options, SIZE, move |e| {
-            let _ = tx.send(e);
-        })
+        let terminal = RemoteTerminal::open_with_progress(
+            connect,
+            options,
+            SIZE,
+            move |e| {
+                let _ = tx.send(e);
+            },
+            self.host.clone(),
+            self.prompts.clone(),
+        )
         .await
         .unwrap();
         (terminal, Events { rx })
@@ -206,6 +229,7 @@ async fn a_dropped_connection_reconnects_and_the_terminal_gets_a_new_shell() {
     let fx = Fixture::new(sshd);
     let (mut terminal, mut events) = fx.open().await;
     let before = events.shell_pid(&mut terminal).await;
+    fx.prompts.progress.lock().unwrap().clear();
 
     fx.sshd.drop_connections();
 
@@ -217,6 +241,19 @@ async fn a_dropped_connection_reconnects_and_the_terminal_gets_a_new_shell() {
         }
     );
     assert_eq!(events.state(EVENT_WAIT).await, ConnectionState::Connected);
+    let shell_progress: Vec<_> = fx
+        .prompts
+        .progress
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|step| step.host_id == fx.host.id && step.stage == ConnectStage::Shell)
+        .map(|step| step.status)
+        .collect();
+    assert_eq!(
+        shell_progress,
+        [ProgressStatus::Running, ProgressStatus::Succeeded]
+    );
     let after = events.shell_pid(&mut terminal).await;
     assert_ne!(before, after, "the Terminal runs a new shell");
 }
@@ -346,7 +383,7 @@ async fn a_held_connection_that_drops_is_reported_and_let_go() {
     });
     let connection = fx
         .manager
-        .connect(&fx.host, Arc::new(TrustingPrompter))
+        .connect(&fx.host, Arc::new(TrustingPrompter::default()))
         .await
         .unwrap();
     held.hold(&fx.host.id, connection);
@@ -391,7 +428,7 @@ async fn dropping_the_connection_during_upload_keeps_the_remote_original() {
         let (manager, host) = (manager.clone(), host.clone());
         Box::pin(async move {
             let connection = manager
-                .connect(&host, Arc::new(TrustingPrompter))
+                .connect(&host, Arc::new(TrustingPrompter::default()))
                 .await
                 .map_err(|e| FsError::Protocol(e.to_string()))?;
             let fs: Arc<dyn RemoteFs> = Arc::new(connection.open_sftp().await?);

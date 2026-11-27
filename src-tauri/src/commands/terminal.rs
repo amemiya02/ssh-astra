@@ -59,7 +59,10 @@ fn send_json(channel: &Channel<InvokeResponseBody>, message: &impl Serialize) {
 }
 
 /// Forwards a Terminal's events to its channel in the wire format above.
-fn channel_sink(on_event: Channel<InvokeResponseBody>) -> impl FnMut(TerminalEvent) + Send {
+fn channel_sink(
+    on_event: Channel<InvokeResponseBody>,
+    on_prompt: Option<Channel<PromptRequest>>,
+) -> impl FnMut(TerminalEvent) + Send {
     move |event| {
         // A send only fails once the webview is gone; nothing left to tell.
         match event {
@@ -67,7 +70,14 @@ fn channel_sink(on_event: Channel<InvokeResponseBody>) -> impl FnMut(TerminalEve
                 let _ = on_event.send(InvokeResponseBody::Raw(bytes));
             }
             TerminalEvent::Connection(connection) => {
-                send_json(&on_event, &ConnectionMessage { connection })
+                // Recovery states must reach the overlay in order with the progress
+                // updates, while the Terminal stream still orders shell events.
+                if let Some(channel) = &on_prompt {
+                    let _ = channel.send(PromptRequest::Reconnect {
+                        state: connection.clone(),
+                    });
+                }
+                send_json(&on_event, &ConnectionMessage { connection });
             }
             TerminalEvent::Cwd(cwd) => send_json(&on_event, &CwdMessage { cwd }),
             TerminalEvent::ShellIntegration(shell_integration) => {
@@ -85,15 +95,19 @@ pub async fn local_terminal_open(
     size: TerminalSize,
     on_event: Channel<InvokeResponseBody>,
 ) -> CommandResult<TerminalId> {
-    let pty = LocalPty::spawn(ShellCommand::default_shell(), size, channel_sink(on_event))?;
+    let pty = LocalPty::spawn(
+        ShellCommand::default_shell(),
+        size,
+        channel_sink(on_event, None),
+    )?;
     Ok(registry.insert(Box::new(pty)))
 }
 
 /// Opens a Terminal on a saved Host, connecting first (through its Jump
 /// hosts, if any) if needed. Progress and questions for the user arrive on
 /// `on_prompt`. Answer questions with `prompt_answer`. If the Connection drops later, the Terminal
-/// reconnects on its own (asking on `on_prompt` again if needed); see
-/// `terminal_reconnect`.
+/// reconnects on its own, sending attempt states alongside progress and questions on `on_prompt`.
+/// See `terminal_reconnect`.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // Tauri injects each managed state as an argument.
 pub async fn remote_terminal_open(
@@ -112,7 +126,7 @@ pub async fn remote_terminal_open(
     let host = hops.pop().expect("a jump chain ends with the Host itself");
     let prompter = Arc::new(ChannelPrompter {
         pending: Arc::clone(&pending),
-        channel: on_prompt,
+        channel: on_prompt.clone(),
     });
     let (target, prompts) = (host.clone(), prompter.clone());
     let connect = move || {
@@ -132,9 +146,9 @@ pub async fn remote_terminal_open(
         connect,
         options,
         size,
-        channel_sink(on_event),
-        &host,
-        prompter.as_ref(),
+        channel_sink(on_event, Some(on_prompt)),
+        host,
+        prompter,
     )
     .await?;
     Ok(registry.insert(Box::new(terminal)))
