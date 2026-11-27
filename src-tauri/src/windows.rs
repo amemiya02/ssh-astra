@@ -237,14 +237,13 @@ fn build(app: &AppHandle, label: &str, presentation: Presentation) -> tauri::Res
         .unwrap()
         .insert(label.into(), WindowResources::default());
     let result = builder.build();
-    if result.is_err() {
-        windows.resources.lock().unwrap().remove(label);
-    }
-    #[cfg(target_os = "linux")]
-    if let Ok(window) = &result {
-        if presentation == Presentation::Hidden {
-            crate::tray::watch_hidden(window);
+    match &result {
+        #[cfg(target_os = "linux")]
+        Ok(window) if presentation == Presentation::Hidden => crate::tray::watch_hidden(window),
+        Err(_) => {
+            windows.resources.lock().unwrap().remove(label);
         }
+        Ok(_) => {}
     }
     result
 }

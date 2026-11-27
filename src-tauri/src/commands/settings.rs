@@ -9,9 +9,9 @@ use sshastra_core::agent::AgentSettings;
 use sshastra_core::files::TransferSettings;
 use sshastra_core::settings::SettingsStore;
 use sshastra_core::ssh::ConnectionSettings;
-use tauri::{ipc::Channel, State, WebviewWindow};
 #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
 use tauri::Manager;
+use tauri::{ipc::Channel, State, WebviewWindow};
 
 use super::hosts::HostsState;
 use super::ssh_config_export::{OpenSshSettings, OpenSshStatus};
@@ -101,7 +101,10 @@ fn snapshot(
     );
     sections.insert(OpenSshSettings::SECTION.into(), json!(open_ssh));
     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-    sections.insert(login_launch::SECTION.into(), login_launch::status(window.app_handle()));
+    sections.insert(
+        login_launch::SECTION.into(),
+        login_launch::status(window.app_handle()),
+    );
     sections
 }
 

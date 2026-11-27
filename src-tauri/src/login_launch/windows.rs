@@ -74,10 +74,13 @@ impl Registration {
                 let (key, _) = user.create_subkey_with_flags(RUN_KEY, KEY_SET_VALUE)?;
                 key.set_value(&self.name, &command)?;
             }
-        } else if existing.is_some() {
-            if let Some(key) = optional(user.open_subkey_with_flags(RUN_KEY, KEY_SET_VALUE))? {
-                optional(key.delete_value(&self.name))?;
-            }
+            return Ok(());
+        }
+        if existing.is_none() {
+            return Ok(());
+        }
+        if let Some(key) = optional(user.open_subkey_with_flags(RUN_KEY, KEY_SET_VALUE))? {
+            optional(key.delete_value(&self.name))?;
         }
         Ok(())
     }
