@@ -1,14 +1,14 @@
 /**
  * The smoke test: one pass through what a user does first, against the Docker
- * OpenSSH server. The app opens on Home (no Terminal). New Host → connect → trust the host key → run a command and
- * see its output → `cd` and see the File panel follow → upload a file and find
+ * OpenSSH server. New Host → decline the host key → retry in the same tab →
+ * trust and sign in → run a command → `cd` → follow in the File panel → upload a file and find
  * it on the server.
  */
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { $, $$, browser, expect } from "@wdio/globals";
+import { $, browser, expect } from "@wdio/globals";
 import * as sshd from "../support/sshd.ts";
 
 const HOST_NAME = "E2E sshd";
@@ -72,7 +72,7 @@ describe("sshastra", () => {
     sshd.runAsTester(`rm -rf '${scratch}'`);
   });
 
-  it("connects to a new Host, runs a command, follows cd and uploads a file", async () => {
+  it("retries in the same tab, runs a command, follows cd and uploads a file", async () => {
     // New Host pointing at the Docker sshd, from Home's own button (the Host list is hidden on Home).
     await $("button=New Host").click();
     await $("#host-form-name").setValue(HOST_NAME);
@@ -87,8 +87,29 @@ describe("sshastra", () => {
     await hostCard.waitForDisplayed();
     await hostCard.click();
 
-    // First Connection: trust the host key, then sign in with the password.
+    // Decline the first host key question, then retry the same Terminal pane.
     await $("h2=Unknown host key").waitForDisplayed();
+    const tab = $('[role="tab"][aria-selected="true"]');
+    const panelId = await tab.getAttribute("aria-controls");
+    if (!panelId) throw new Error("the active tab has no panel");
+    await $('[role="dialog"]').$("button=Cancel").click();
+
+    const paneId = await $(`#${panelId} [id^="pane-"]`).getAttribute("id");
+    if (!paneId) throw new Error("the active panel has no pane");
+    const pane = $(`#${paneId}`);
+    await expect(pane.$("li*=Verify host key")).toHaveText(expect.stringContaining("Failed"));
+    await expect(pane.$('[role="alert"]')).toHaveText(expect.stringContaining("The host key was not trusted."));
+    await expect(pane.$("button=Close")).toBeDisplayed();
+    await pane.$("button=Edit Host").click();
+    await expect($("h2=Edit Host")).toBeDisplayed();
+    await expect($("#host-form-name")).toHaveValue(HOST_NAME);
+    await $('[role="dialog"]').$("button=Cancel").click();
+    await pane.$("button=Retry").click();
+
+    // The old tab and pane stay in place while trust and authentication run again.
+    await $("h2=Unknown host key").waitForDisplayed();
+    await expect(tab).toHaveAttribute("aria-controls", panelId);
+    await expect(pane).toBeDisplayed();
     await $("button=Trust and connect").click();
     const password = $('[role="dialog"] input[type="password"]');
     await password.waitForDisplayed();
@@ -103,11 +124,10 @@ describe("sshastra", () => {
 
     // Run a command and see its output.
     await waitForTerminalText(/\$\s*$/m, "a prompt");
-    // Focus the shown Terminal (the app opens on Home, so the remote one is the only Terminal).
     // A WebDriver click does not reach xterm's focus handling, so focus its input directly.
-    const shown = await $$(".xterm").filter((xterm) => xterm.isDisplayed());
-    expect(shown).toHaveLength(1);
-    const input = await shown[0]!.$("textarea.xterm-helper-textarea");
+    await expect(tab).toHaveAttribute("aria-controls", panelId);
+    await expect(pane.$(".xterm")).toBeDisplayed();
+    const input = await pane.$("textarea.xterm-helper-textarea");
     await browser.execute((textarea) => textarea.focus(), input);
     await typeCommand(`echo "e2e-$((6 * 7))-${run}"`);
     await waitForTerminalText(new RegExp(`^e2e-42-${run}$`, "m"), "the command's output");
@@ -129,61 +149,5 @@ describe("sshastra", () => {
     });
     // The listing reloads by itself once the upload into the folder shown is done.
     await listing.$(`span=${uploadName}`).waitForDisplayed();
-  });
-
-  it("shows the failed login and retries in the same tab", async () => {
-    const name = "E2E retry sshd";
-    await $('[role="tab"][id]').click();
-    await $("button=New Host").click();
-    await $("#host-form-name").setValue(name);
-    await $("#host-form-address").setValue("127.0.0.1");
-    await $("#host-form-port").clearValue();
-    await $("#host-form-port").setValue(String(sshd.port()));
-    await $("#host-form-user").setValue(sshd.USER);
-    await $("button=Save").click();
-    await $(`//*[@role='tabpanel' and not(@hidden)]//button[contains(., '${name}')]`).click();
-
-    const tab = $('[role="tab"][aria-selected="true"]');
-    const panel = await tab.getAttribute("aria-controls");
-    if (!panel) throw new Error("the active tab has no panel");
-    const pane = await $(`#${panel} [id^="pane-"]`).getAttribute("id");
-    if (!pane) throw new Error("the active panel has no pane");
-    const passwordSelector = '[role="dialog"] input[type="password"]';
-    const trust = $("button=Trust and connect");
-    await browser.waitUntil(async () => await $(passwordSelector).isDisplayed() || await trust.isDisplayed());
-    if (await trust.isDisplayed()) await trust.click();
-
-    let answered = "";
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const password = $(`${passwordSelector}:not([id="${answered}"])`);
-      await password.waitForDisplayed();
-      const id = await password.getAttribute("id");
-      if (!id) throw new Error("the password prompt has no id");
-      answered = id;
-      await password.setValue("e2e-incorrect-password");
-      await $("button=Connect").click();
-    }
-
-    const failedPane = $(`#${pane}`);
-    await expect(failedPane.$("li*=Log in")).toHaveText(expect.stringContaining("Failed"));
-    await expect(failedPane.$('[role="alert"]')).toBeDisplayed();
-    await expect(failedPane.$("button=Close")).toBeDisplayed();
-    await failedPane.$("button=Edit Host").click();
-    await expect($("h2=Edit Host")).toBeDisplayed();
-    await expect($("#host-form-name")).toHaveValue(name);
-    await $('[role="dialog"]').$("button=Cancel").click();
-    await failedPane.$("button=Retry").click();
-
-    const password = $(passwordSelector);
-    await password.waitForDisplayed();
-    await password.setValue(sshd.PASSWORD);
-    await $("button=Connect").click();
-
-    await expect(tab).toHaveAttribute("aria-controls", panel);
-    await expect(failedPane.$(".xterm")).toBeDisplayed();
-    const input = await failedPane.$("textarea.xterm-helper-textarea");
-    await browser.execute((textarea) => textarea.focus(), input);
-    await typeCommand(`echo "e2e-retry-ok-${run}"`);
-    await waitForTerminalText(new RegExp(`^e2e-retry-ok-${run}$`, "m"), "the retried Terminal's output");
   });
 });
