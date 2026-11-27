@@ -17,6 +17,7 @@ const api = (): FilesApi => ({
   renameFile: vi.fn(() => Promise.resolve()),
   countFiles: vi.fn(() => Promise.resolve(0)),
   folderSize: vi.fn(() => Promise.resolve(0)),
+  searchNames: vi.fn(() => Promise.resolve(null)),
   deleteFiles: vi.fn(() => Promise.resolve()),
   chmodFile: vi.fn(() => Promise.resolve()),
 });
