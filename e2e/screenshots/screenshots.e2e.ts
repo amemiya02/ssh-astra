@@ -203,8 +203,6 @@ describe("README screenshots", () => {
       style.textContent = "*, *::before, *::after { animation: none !important; transition: none !important; }";
       document.head.append(style);
     });
-    // The app opens a Local terminal; this machine's shell is no part of the demo.
-    await closeTab("Local terminal");
 
     localDir = mkdtempSync(join(tmpdir(), "sshastra-shots-"));
     const sizes: [string, number][] = [
@@ -219,6 +217,13 @@ describe("README screenshots", () => {
 
   after(() => {
     rmSync(localDir, { recursive: true, force: true });
+  });
+
+  it("Home: the Host vault the app opens with (dark)", async () => {
+    // The app starts on the Home tab with no Terminal; this machine's shell is no part of the demo.
+    await $('[role="tab"][aria-label="Home"]').waitForDisplayed();
+    await $("//*[@role='tabpanel' and not(@hidden)]//button[.//*[normalize-space()='web-01']]").waitForDisplayed();
+    await shot("home-dark", { checkTerminals: false });
   });
 
   it("hero: Host list, a remote Terminal and its File panel (dark)", async () => {
@@ -291,7 +296,8 @@ describe("README screenshots", () => {
   it("Port forwards: local, remote and SOCKS rules running", async () => {
     await setFilePanel(false);
     await hostMenu("api-01", "Port forwards");
-    await $("h2=Port forwards").waitForDisplayed();
+    // The sidebar's Port forwards view has a (hidden) heading of the same name: look in the shown tab.
+    await $('//*[@role="tabpanel" and not(@hidden)]//h2[normalize-space()="Port forwards"]').waitForDisplayed();
     await hostMenu("api-01", "Connect only");
     await browser.waitUntil(async () => (await $$("span=Running").length) === 2, {
       timeoutMsg: "the auto-start rules never ran",

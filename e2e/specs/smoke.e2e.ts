@@ -1,6 +1,6 @@
 /**
  * The smoke test: one pass through what a user does first, against the Docker
- * OpenSSH server. New Host → connect → trust the host key → run a command and
+ * OpenSSH server. The app opens on Home (no Terminal). New Host → connect → trust the host key → run a command and
  * see its output → `cd` and see the File panel follow → upload a file and find
  * it on the server.
  */
@@ -104,7 +104,7 @@ describe("sshastra", () => {
 
     // Run a command and see its output.
     await waitForTerminalText(/\$\s*$/m, "a prompt");
-    // Focus the shown Terminal (the remote one; the Local terminal's tab stays mounted, hidden).
+    // Focus the shown Terminal (the app opens on Home, so the remote one is the only Terminal).
     // A WebDriver click does not reach xterm's focus handling, so focus its input directly.
     const shown = await $$(".xterm").filter((xterm) => xterm.isDisplayed());
     expect(shown).toHaveLength(1);
