@@ -74,6 +74,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
         const target = { ...args!.target!, user: args!.target!.user ?? "local-user" };
         return { ...host, ...target, id: `temporary-${++nextTemporaryId}`, name: quickConnectLabel(target), auth: { type: "auto" } };
       }
+      if (command === "take_ssh_links") return sshLinks.splice(0);
       if (command === "temporary_host_save") {
         if (saveTemporaryError) throw saveTemporaryError;
         const saved = { ...args!.draft!, id: args!.hostId!, groupId: null, forwards: [] };
@@ -95,6 +96,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
       if (command === "snippets_list") return snippetLibrary;
       if (command === "forwards_watch") return initialForwards;
       if (command === "connections_watch") return initialHeld;
+      if (command === "window_try_close") return true;
       if (command === "quit_live_connection_count") return liveConnectionCount;
       if (command === "hosts_import_source" && args?.source?.kind === "csv") return {
         tree: { hosts: savedHosts, groups: [] },
@@ -282,6 +284,7 @@ afterEach(async () => {
   panelListings.clear();
   remoteOpenFixtures.clear();
   localShellPrograms.clear();
+  sshLinks.length = 0;
   clearMocks();
   vi.unstubAllGlobals();
 });
@@ -303,6 +306,7 @@ async function render(initialTabs: TabsState, strict = false) {
 }
 
 const desktopIPC = vi.fn();
+const sshLinks: QuickConnectTarget[] = [];
 
 function enableDesktopWindow() {
   vi.stubGlobal("isTauri", true);
@@ -315,13 +319,58 @@ async function requestWindowClose() {
   await act(async () => emit(TauriEvent.WINDOW_CLOSE_REQUESTED));
 }
 
-const windowDestroys = () => desktopIPC.mock.calls.filter(([command]) => command === "plugin:window|destroy");
+const appQuits = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === "quit_application");
 const dialog = () => document.querySelector('[role="dialog"]');
 const terminalCloses = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === "terminal_close");
 const tabIds = () => [...document.querySelectorAll('[role="tab"]')].map((tab) => tab.id);
 const remoteOpenHostIds = () => vi.mocked(invoke).mock.calls
   .filter(([command]) => command === "remote_terminal_open")
   .map(([, args]) => (args as { hostId: string }).hostId);
+
+it("waits for approval of a cold SSH link and opens the exact saved Host", async () => {
+  const target = { address: host.address, user: host.user, port: host.port };
+  savedHosts = [{ ...host, id: "wrong-user", user: "another-user" }, host];
+  await hostsStore.getState().load();
+  enableDesktopWindow();
+  sshLinks.push(target);
+  await render(emptyTabs, true);
+
+  const confirmation = dialog()!;
+  expect(confirmation?.querySelector("h2")?.textContent).toBe("Open SSH link?");
+  expect(confirmation.textContent).toContain(host.address);
+  expect(confirmation.textContent).toContain(host.port.toString());
+  expect(confirmation.textContent).toContain(host.user);
+  expect(document.activeElement?.textContent).toBe("Cancel");
+  expect(remoteOpenHostIds()).toEqual([]);
+  expect(invoke).not.toHaveBeenCalledWith("temporary_host_create", expect.anything());
+
+  await clickButton("Connect", confirmation);
+  expect(remoteOpenHostIds()).toEqual([host.id]);
+  expect(invoke).toHaveBeenCalledWith("remote_terminal_open", expect.objectContaining({ expectedTarget: target }));
+});
+
+it("handles warm SSH links individually and uses Quick connect only after approval", async () => {
+  savedHosts = [host];
+  await hostsStore.getState().load();
+  enableDesktopWindow();
+  await render(emptyTabs);
+  expect(dialog()).toBeNull();
+
+  const first = { address: "cancel.example.test", user: "cancelled", port: 22 };
+  const second = { address: host.address, user: host.user, port: host.port + 1 };
+  sshLinks.push(first, second);
+  await act(async () => emit("ssh-link-pending"));
+  expect(dialog()?.textContent).toContain(first.address);
+  await clickButton("Cancel", dialog()!);
+  expect(dialog()?.textContent).toContain(second.port.toString());
+  expect(invoke).not.toHaveBeenCalledWith("temporary_host_create", expect.anything());
+  expect(remoteOpenHostIds()).toEqual([]);
+
+  await clickButton("Connect", dialog()!);
+  expect(dialog()).toBeNull();
+  expect(invoke).toHaveBeenCalledWith("temporary_host_create", { target: second });
+  expect(remoteOpenHostIds()).toEqual([expect.stringMatching(/^temporary-/)]);
+});
 
 it("opens each startup Host once and leaves a restored split's Host disconnected in layout-only mode", async () => {
   const restored = { ...host, openOnStartup: true };
@@ -1139,16 +1188,16 @@ it("confirms app quit for a shared Connection even after opting out of Terminal 
     "1 Connection", "0 transfers", "0 Port forwards",
   ]);
   expect(document.activeElement?.textContent).toBe("Cancel");
-  expect(windowDestroys()).toHaveLength(0);
+  expect(appQuits()).toHaveLength(0);
 
   await requestWindowClose();
   expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
   await clickButton("Cancel", dialog()!);
-  expect(windowDestroys()).toHaveLength(0);
+  expect(appQuits()).toHaveLength(0);
 
   await requestWindowClose();
   await clickButton("Quit", dialog()!);
-  expect(windowDestroys()).toHaveLength(1);
+  expect(appQuits()).toHaveLength(1);
 });
 
 it("quits without asking when the workspace is idle", async () => {
@@ -1157,7 +1206,7 @@ it("quits without asking when the workspace is idle", async () => {
 
   await requestWindowClose();
   expect(dialog()).toBeNull();
-  expect(windowDestroys()).toHaveLength(1);
+  expect(appQuits()).toHaveLength(1);
 });
 
 it("confirms quit when a transfer or File panel is the last holder of a Connection", async () => {
@@ -1168,7 +1217,7 @@ it("confirms quit when a transfer or File panel is the last holder of a Connecti
   await requestWindowClose();
   expect(dialog()?.querySelector("h2")?.textContent).toBe("Quit SSH Astra?");
   expect(dialog()?.querySelector("li")?.textContent).toBe("1 Connection");
-  expect(windowDestroys()).toHaveLength(0);
+  expect(appQuits()).toHaveLength(0);
 });
 
 it("saves a separate quit preference and applies it while a Connection is open", async () => {
@@ -1183,7 +1232,7 @@ it("saves a separate quit preference and applies it while a Connection is open",
 
   await requestWindowClose();
   expect(dialog()).toBeNull();
-  expect(windowDestroys()).toHaveLength(1);
+  expect(appQuits()).toHaveLength(1);
 });
 
 async function broadcastShortcut(inWindow = false) {
@@ -1525,9 +1574,9 @@ it("shows the same manual or detected icon in the Host list, Home and an open Te
   expect(tabChrome.querySelector(".bg-ansi-cyan")).not.toBeNull();
 
   const watch = vi.mocked(invoke).mock.calls.filter(([command]) => command === "host_tree_watch").at(-1)?.[1] as {
-    onOsChange: { onmessage(event: HostOsChange): void };
+    onChange: { onmessage(event: HostOsChange): void };
   };
-  act(() => watch.onOsChange.onmessage({ hostId: host.id, detectedOs: "debian" }));
+  act(() => watch.onChange.onmessage({ hostId: host.id, detectedOs: "debian" }));
   expect(glyphs().map((glyph) => glyph?.getAttribute("data-host-icon"))).toEqual(["ubuntu", "ubuntu", "ubuntu"]);
 
   const terminals = [...testTerminals];
@@ -1539,7 +1588,7 @@ it("shows the same manual or detected icon in the Host list, Home and an open Te
 
   await act(async () => { await hostsStore.getState().saveHost(host, host.id); });
   expect(glyphs().map((glyph) => glyph?.getAttribute("data-host-icon"))).toEqual(["debian", "debian", "debian"]);
-  act(() => watch.onOsChange.onmessage({ hostId: host.id, detectedOs: null }));
+  act(() => watch.onChange.onmessage({ hostId: host.id, detectedOs: null }));
   expect(glyphs()).toEqual([null, null, null]);
   expect([...testTerminals]).toEqual(terminals);
   expect(terminalCloses()).toHaveLength(0);

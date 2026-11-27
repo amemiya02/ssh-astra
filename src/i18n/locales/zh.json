@@ -1035,6 +1035,7 @@
       "hostKeyDeclined": "未信任主机密钥，已取消连接。",
       "hostKeyRevoked": "主机密钥已被吊销，连接已阻断。",
       "authenticationFailed": "认证失败。",
+      "sshLinkTargetChanged": "确认 SSH 链接后，已保存的主机发生了变更。请重新打开链接并确认目标。",
       "proxyInvalidConfiguration": "请检查出站代理设置",
       "proxyInvalidTarget": "此代理不支持该主机地址",
       "proxyUnreachable": "无法连接到出站代理",
@@ -1122,6 +1123,7 @@
       "cancel": "取消",
       "actions": {
         "newTab": "新建本地终端",
+        "newWindow": "新建窗口",
         "closePane": "关闭窗格",
         "splitRight": "向右拆分",
         "splitDown": "向下拆分",
@@ -1496,6 +1498,10 @@
     "transfers_one": "{{count}} 项传输",
     "transfers_other": "{{count}} 项传输"
   },
+  "window": {
+    "new": "新建窗口",
+    "openFailed": "无法打开新窗口。"
+  },
   "quit": {
     "title": "退出 SSH Astra？",
     "interruptions": "退出将中断以下活动。",
@@ -1528,6 +1534,12 @@
     "home": "主页",
     "hosts": "Host 列表",
     "forwards": "端口转发"
+  },
+  "sshLink": {
+    "title": "打开 SSH 链接？",
+    "savedHost": "使用已保存的主机「{{name}}」连接？",
+    "quickConnect": "使用快速连接？",
+    "connect": "连接"
   },
   "quickConnect": {
     "action": "快速连接",

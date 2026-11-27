@@ -199,6 +199,11 @@ describe("File panel history shortcuts", () => {
   });
 });
 
+it("opens a new Window with a platform shortcut even from a focused Terminal", () => {
+  expect(matchShortcut(chord("n", { metaKey: true }), "mac", "terminal")).toEqual({ type: "newWindow" });
+  expect(matchShortcut(chord("N", { ctrlKey: true, altKey: true, shiftKey: true }), "other", "terminal")).toEqual({ type: "newWindow" });
+});
+
 describe("the command palette chord", () => {
   const palette = { type: "openPalette" };
 

@@ -14,6 +14,7 @@
     "windows": [
       {
         "title": "SSH Astra",
+        "create": false,
         "width": 1200,
         "height": 760,
         "minWidth": 640,
@@ -27,6 +28,10 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "linux": {
+      "deb": { "desktopTemplate": "linux/sshastra.desktop" },
+      "rpm": { "desktopTemplate": "linux/sshastra.desktop" }
+    },
     "resources": { "../public/host-icon-notices.txt": "host-icon-notices.txt" },
     "icon": [
       "icons/32x32.png",
@@ -38,6 +43,9 @@
     "createUpdaterArtifacts": true
   },
   "plugins": {
+    "deep-link": {
+      "desktop": { "schemes": ["ssh"] }
+    },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRBRUQxN0EzQzYyQjM4QjkKUldTNU9DdkdveGZ0U2xra0dnT04rdGEvenYvM2hkTVBMS3V0UUgzdnUyUERlV2pqTE5UV0g5a3oK",
       "requireSignedVersion": true,

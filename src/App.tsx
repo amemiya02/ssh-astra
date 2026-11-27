@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { connectionsStore, useConnections } from "@/features/connect/connectionsStore";
 import { hostConnections } from "@/features/connect/hostConnection";
+import { SshLinkConfirmation } from "@/features/connect/SshLinkConfirmation";
 import { CommandDialog, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { FilePanelContent, type FilePanelPane } from "@/features/files/FilePanelContent";
 import { terminalCwds } from "@/features/files/terminalCwds";
@@ -39,6 +40,7 @@ import { useResolvedShortcuts } from "@/features/workspace/shortcut-settings";
 import { currentPlatform, paneSwapShortcuts, shortcutLabel, type WorkspaceCommand } from "@/features/workspace/shortcuts";
 import { TabPanels } from "@/features/workspace/TabPanels";
 import { ConflictDialog } from "@/features/transfers/ConflictDialog";
+import { showToast } from "@/features/toasts/toastStore";
 import { transferSummary, transfersStore, useTransfers } from "@/features/transfers/transfersStore";
 import { CloseTerminalsDialog } from "@/features/workspace/CloseTerminalsDialog";
 import { TabStrip } from "@/features/workspace/TabStrip";
@@ -66,6 +68,8 @@ import { ShortcutCaptureContext, useWorkspaceShortcuts } from "@/features/worksp
 import { serializeWorkspaceLayout, workspaceLayoutSetting } from "@/features/workspace/workspace-layout";
 import { workspaceSetting } from "@/features/workspace/workspace-prefs";
 import { createTemporaryHost, forgetTemporaryHost, isTemporaryHost, type Host, type HostId, type QuickConnectTarget } from "@/lib/ipc/hosts";
+import type { SshLinkTarget } from "@/lib/ipc/ssh-links";
+import { newWindow } from "@/lib/ipc/windows";
 import { getSetting, setSetting, useSetting } from "@/lib/storage";
 
 const platform = currentPlatform();
@@ -74,10 +78,13 @@ const localTerminal: PaneKind = { kind: "local-terminal" };
 const updatable = isTauri() && import.meta.env.VITE_E2E !== "1";
 
 /**
- * Composes the main window. Each slot of `AppShell` is owned by a feature:
+ * Composes one Window. Each slot of `AppShell` is owned by a feature:
  * Host list (features/hosts), tabs and splits (features/workspace), File panel (features/files).
  */
-export function App({ initialTabs }: { initialTabs: TabsState }) {
+export function App({ initialTabs, startupTabsAcrossWindows }: {
+  initialTabs: TabsState;
+  startupTabsAcrossWindows?: readonly TabsState[] | null;
+}) {
   const { t } = useTranslation();
   const shortcuts = useResolvedShortcuts(platform);
   const [privacyMode] = useSetting(privacyModeSetting);
@@ -157,23 +164,27 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
   );
   const openLocalTerminal = useCallback(() => openTab(localTerminal), [openTab]);
   const openRemoteTerminal = useCallback(
-    (host: Host, startupOrder?: number) => {
+    (host: Host, startupOrder?: number, expectedTarget?: SshLinkTarget) => {
       if (!isTemporaryHost(host)) rememberHostOpened(host.id);
-      openTab({ kind: "remote-terminal", host }, startupOrder);
+      openTab({ kind: "remote-terminal", host, expectedTarget }, startupOrder);
     },
     [openTab],
   );
   const startupHostsOpened = useRef(false);
   useEffect(() => {
-    if (startupHostsOpened.current) return;
+    if (startupHostsOpened.current || startupTabsAcrossWindows === null) return;
     startupHostsOpened.current = true;
     // main loads the Host list and restores the workspace before mounting App.
     const { status, tree } = hostsStore.getState();
     if (status !== "ready") return;
     const opened = new Set<HostId>();
     let order = 0;
+    for (const workspace of startupTabsAcrossWindows ?? [initialTabs]) {
+      for (const pane of workspace.tabs.flatMap(tabPanes)) {
+        if ("host" in pane) opened.add(pane.host.id);
+      }
+    }
     for (const pane of initialTabs.tabs.flatMap(tabPanes)) {
-      if ("host" in pane) opened.add(pane.host.id);
       if (typeof pane.restoreConnection === "object") order = Math.max(order, pane.restoreConnection.order + 1);
     }
     for (const host of tree.hosts) {
@@ -181,7 +192,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
       openRemoteTerminal(host, order++);
       opened.add(host.id);
     }
-  }, [initialTabs, openRemoteTerminal]);
+  }, [initialTabs, openRemoteTerminal, startupTabsAcrossWindows]);
   const [quickConnectFailed, setQuickConnectFailed] = useState(false);
   const openQuickConnect = useCallback(async (target: QuickConnectTarget) => {
     setQuickConnectFailed(false);
@@ -208,8 +219,8 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
   }, []);
   // A newer release is offered in the status bar; finding none (or failing) says nothing.
   useEffect(() => {
-    if (updatable) return checkOnStartup(updatesStore, () => getSetting(updateSetting));
-  }, []);
+    if (updatable && startupTabsAcrossWindows !== null) return checkOnStartup(updatesStore, () => getSetting(updateSetting));
+  }, [startupTabsAcrossWindows]);
   const retitle = useCallback((paneId: string, title: string) => dispatch({ type: "retitle", paneId, title }), []);
   const setStatus = useCallback(
     (paneId: string, status: ConnectionStatus, reconnecting?: ReconnectProgress) => {
@@ -241,6 +252,13 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
     splitRef.current = split;
   });
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const openWindow = useCallback(() => {
+    if (!isTauri()) return;
+    void newWindow().catch((error: unknown) => {
+      console.warn("Could not open a Window", error);
+      showToast((t) => t("window.openFailed"), "error");
+    });
+  }, []);
   const activateTab = useCallback((id: string) => dispatch({ type: "activate", id }), []);
   const paletteTabs = useMemo(
     (): PaletteTab[] =>
@@ -254,6 +272,12 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
   usePaletteActions(
     useMemo(
       (): PaletteAction[] => [
+        ...(isTauri() ? [{
+          id: "window.new",
+          title: t("window.new"),
+          shortcut: shortcutLabel("newWindow", shortcuts),
+          run: openWindow,
+        }] : []),
         {
           id: "terminal.newLocal",
           title: t("tabs.newLocalTerminal"),
@@ -305,7 +329,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
             ]
           : []),
       ],
-      [t, openLocalTerminal, openHome, openSettings, openTransfers, pickSftpHost, canSplitFocused, privacyMode, shortcuts, focusedOutput, focusedPaneId],
+      [t, openLocalTerminal, openWindow, openHome, openSettings, openTransfers, pickSftpHost, canSplitFocused, privacyMode, shortcuts, focusedOutput, focusedPaneId],
     ),
   );
 
@@ -338,6 +362,8 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
     switch (command.type) {
       case "newTab":
         return openLocalTerminal();
+      case "newWindow":
+        return openWindow();
       case "closePane":
         if (tab) requestClose({ type: "closePane", paneId: tab.activePaneId });
         return;
@@ -535,6 +561,10 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
       )}
       {hostsController.dialogs}
       <ConflictDialog />
+      <SshLinkConfirmation onConnect={(target, host) => {
+        if (host) openRemoteTerminal(host, undefined, target);
+        else void openQuickConnect(target);
+      }} />
       {pendingClose && (
         <CloseTerminalsDialog
           count={pendingClose.count}

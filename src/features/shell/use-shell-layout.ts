@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import { getSetting, setSetting, useSetting } from "@/lib/storage";
 import { layoutSetting, type FilePanelDock, type GroupLayout, type SidebarView } from "./shell-layout";
 
-/** The persisted main window layout, saved whenever it changes. */
+/** The persisted layout for this Window, saved whenever it changes. */
 export function useShellLayout() {
   const [layout] = useSetting(layoutSetting);
 

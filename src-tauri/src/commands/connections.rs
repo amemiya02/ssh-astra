@@ -15,13 +15,14 @@ use sshastra_core::ssh::{
     Prompter, QuickConnectTarget, TemporaryHost,
 };
 use tauri::ipc::Channel;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager, State, WebviewWindow};
 
 use super::forwards::ForwardsState;
 use super::hosts::HostsState;
 use super::settings::SettingsState;
 use crate::error::{CommandError, CommandResult};
-use crate::prompts::{ChannelPrompter, PendingPrompts, PromptRequest};
+use crate::prompts::{ChannelPrompter, PromptRequest};
+use crate::windows;
 
 /// Connects to `host` through its Jump hosts `hops` (outermost first), with
 /// the global connection settings, then starts or restores the Host's saved
@@ -72,12 +73,7 @@ pub(super) fn schedule_os_detection(app: &AppHandle, id: &HostId, connection: &A
         }
 
         let detected_os = connection.detect_os().await;
-        let _ = hosts.with(|store| {
-            if store.finish_os_detection(&id, detected_os)? {
-                hosts.publish_os_change(id, Some(detected_os));
-            }
-            Ok(())
-        });
+        let _ = hosts.edit(|store| Ok(store.finish_os_detection(&id, detected_os)?));
     });
 }
 
@@ -98,12 +94,7 @@ pub fn host_redetect_os(
     hosts: State<'_, HostsState>,
     id: HostId,
 ) -> CommandResult<()> {
-    hosts.with(|store| {
-        if store.clear_os_detection(&id)? {
-            hosts.publish_os_change(id.clone(), None);
-        }
-        Ok(())
-    })?;
+    hosts.edit(|store| Ok(store.clear_os_detection(&id)?))?;
     detect_os_on_current_connection(app, id);
     Ok(())
 }
@@ -129,6 +120,9 @@ pub(crate) struct TemporaryRoute {
 }
 
 impl TemporaryHosts {
+    pub(crate) fn forget(&self, id: &HostId) {
+        self.with(|entries| entries.remove(id));
+    }
     fn with<T>(&self, f: impl FnOnce(&mut HashMap<HostId, Arc<TemporaryRoute>>) -> T) -> T {
         f(&mut self.0.lock().unwrap_or_else(|p| p.into_inner()))
     }
@@ -136,6 +130,7 @@ impl TemporaryHosts {
 
 #[tauri::command]
 pub fn temporary_host_create(
+    window: WebviewWindow,
     connections: State<'_, ConnectionManager>,
     temporary: State<'_, TemporaryHosts>,
     target: QuickConnectTarget,
@@ -151,14 +146,17 @@ pub fn temporary_host_create(
         host: entry,
         saved: OnceLock::new(),
     };
-    temporary.with(|entries| entries.insert(host.id.clone(), Arc::new(route)));
+    windows::with_resources(&window, |resources| {
+        temporary.with(|entries| entries.insert(host.id.clone(), Arc::new(route)));
+        resources.temporary_hosts.insert(host.id.clone());
+    })?;
     Ok(host)
 }
 
 /// Saves a Temporary Host while preserving its live Connection and run-only trust.
 #[tauri::command]
 pub fn temporary_host_save(
-    app: AppHandle,
+    window: WebviewWindow,
     hosts: State<'_, HostsState>,
     connections: State<'_, ConnectionManager>,
     temporary: State<'_, TemporaryHosts>,
@@ -170,7 +168,7 @@ pub fn temporary_host_save(
         let route = entries
             .get(&host_id)
             .ok_or_else(CommandError::temporary_host_unavailable)?;
-        let saved = hosts.with(|store| {
+        let saved = hosts.edit(|store| {
             let hops = store.draft_jump_chain(Some(host_id.clone()), draft.clone())?;
             let saved = store.insert(host_id.clone(), draft)?;
             connections.preserve_temporary_host_trust(&route.host);
@@ -180,13 +178,23 @@ pub fn temporary_host_save(
         entries.remove(&host_id);
         Ok::<_, CommandError>(saved)
     })?;
-    detect_os_on_current_connection(app, host_id);
+    let _ = windows::with_resources(&window, |resources| {
+        resources.temporary_hosts.remove(&host_id)
+    });
+    detect_os_on_current_connection(window.app_handle().clone(), host_id);
     Ok(saved)
 }
 
 #[tauri::command]
-pub fn temporary_host_forget(temporary: State<'_, TemporaryHosts>, host_id: HostId) {
-    temporary.with(|entries| entries.remove(&host_id));
+pub fn temporary_host_forget(
+    window: WebviewWindow,
+    temporary: State<'_, TemporaryHosts>,
+    host_id: HostId,
+) {
+    let _ = windows::with_resources(&window, |resources| {
+        resources.temporary_hosts.remove(&host_id)
+    });
+    temporary.forget(&host_id);
 }
 
 /// A Terminal or standalone File panel can open either a saved route or a Temporary Host.
@@ -255,22 +263,27 @@ impl Default for ConnectionsState {
 }
 
 impl ConnectionsState {
+    pub(crate) fn unwatch(&self, label: &str) {
+        self.watcher.unsubscribe(label);
+    }
+
     /// Lets Host `host`'s held Connection go, if any (e.g. it was deleted).
     pub fn release(&self, host: &HostId) {
         self.held.release(host);
     }
 }
 
-/// Sends every later change to `on_event` (replacing any earlier channel)
+/// Sends every later change to `on_event` (replacing that Window’s earlier channel)
 /// and returns the Hosts held connected now.
 #[tauri::command]
 pub fn connections_watch(
+    window: WebviewWindow,
     connections: State<'_, ConnectionsState>,
     on_event: Channel<HeldEvent>,
 ) -> Vec<HostId> {
     connections
         .watcher
-        .subscribe(on_event, || connections.held.list())
+        .subscribe(window.label(), on_event, || connections.held.list())
 }
 
 /// "Connect only": connects to Host `host_id` (through its Jump hosts),
@@ -278,21 +291,21 @@ pub fn connections_watch(
 /// Terminal until `host_disconnect`. Questions arrive on `on_prompt`.
 #[tauri::command]
 pub async fn host_connect(
-    app: AppHandle,
+    window: WebviewWindow,
     hosts: State<'_, HostsState>,
     connections: State<'_, ConnectionsState>,
-    pending: State<'_, Arc<PendingPrompts>>,
     host_id: HostId,
     on_prompt: Channel<PromptRequest>,
 ) -> CommandResult<()> {
+    let app = window.app_handle();
     let mut hops = hosts.with(|store| Ok(store.jump_chain(&host_id)?))?;
     let host = hops.pop().expect("a jump chain ends with the Host itself");
     let prompter = Arc::new(ChannelPrompter {
-        pending: Arc::clone(&pending),
+        pending: windows::prompts(&window)?,
         channel: on_prompt,
     });
-    let connection = connect_host(&app, &hops, &host, prompter).await?;
-    schedule_os_detection(&app, &host.id, &connection);
+    let connection = connect_host(app, &hops, &host, prompter).await?;
+    schedule_os_detection(app, &host.id, &connection);
     connections.held.hold(&host.id, connection);
     Ok(())
 }
@@ -300,20 +313,20 @@ pub async fn host_connect(
 /// Tests the Host editor's draft over a private route, then disconnects.
 #[tauri::command]
 pub async fn host_test_connection(
-    app: AppHandle,
+    window: WebviewWindow,
     hosts: State<'_, HostsState>,
-    pending: State<'_, Arc<PendingPrompts>>,
     id: Option<HostId>,
     draft: HostDraft,
     on_prompt: Channel<PromptRequest>,
 ) -> CommandResult<()> {
+    let app = window.app_handle();
     let mut hops = hosts.with(|store| Ok(store.draft_jump_chain(id, draft)?))?;
     let host = hops.pop().expect("a jump chain ends with the draft Host");
     let prompter = Arc::new(ChannelPrompter {
-        pending: Arc::clone(&pending),
+        pending: windows::prompts(&window)?,
         channel: on_prompt,
     });
-    configured_connections(&app)
+    configured_connections(app)
         .test_connection(&hops, &host, prompter)
         .await?;
     Ok(())

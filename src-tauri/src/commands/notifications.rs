@@ -1,8 +1,8 @@
 //! App-local desktop notifications, with native window activation on a click.
 
-use tauri::WebviewWindow;
 #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
+use tauri::{Manager, WebviewWindow};
 
 #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
 use tauri_plugin_notification::NotificationExt;
@@ -12,14 +12,14 @@ pub fn listen(app: &AppHandle) -> tauri_plugin_notification::Result<()> {
     let app_handle = app.clone();
     app.notification().on_action(move |action| {
         if action.action_id() == "tap" {
-            focus_main_window(&app_handle);
+            focus_active_window(&app_handle);
         }
     })
 }
 
 #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-fn focus_main_window(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
+fn focus_active_window(app: &AppHandle) {
+    if let Some(window) = crate::windows::active(app) {
         if let Err(error) = window
             .show()
             .and_then(|()| window.unminimize())
@@ -33,6 +33,11 @@ fn focus_main_window(app: &AppHandle) {
 fn is_background(window: &WebviewWindow) -> bool {
     // When a native focus check fails, do not interrupt the user.
     matches!(window.is_focused(), Ok(false))
+        && !window
+            .app_handle()
+            .webview_windows()
+            .values()
+            .any(|window| window.is_focused().unwrap_or(false))
 }
 
 #[tauri::command]

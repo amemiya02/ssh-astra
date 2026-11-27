@@ -1035,6 +1035,7 @@
       "hostKeyDeclined": "The host key was not trusted. Not connected.",
       "hostKeyRevoked": "The host key is revoked. Connection blocked.",
       "authenticationFailed": "Authentication failed.",
+      "sshLinkTargetChanged": "The saved Host changed after you confirmed the SSH link. Open the link again to confirm the destination.",
       "proxyInvalidConfiguration": "Check the outbound proxy settings",
       "proxyInvalidTarget": "The Host address is invalid for this proxy",
       "proxyUnreachable": "Could not reach the outbound proxy",
@@ -1122,6 +1123,7 @@
       "cancel": "Cancel",
       "actions": {
         "newTab": "New Local terminal",
+        "newWindow": "New Window",
         "closePane": "Close pane",
         "splitRight": "Split right",
         "splitDown": "Split down",
@@ -1496,6 +1498,10 @@
     "transfers_one": "{{count}} transfer",
     "transfers_other": "{{count}} transfers"
   },
+  "window": {
+    "new": "New Window",
+    "openFailed": "Could not open a new Window."
+  },
   "quit": {
     "title": "Quit SSH Astra?",
     "interruptions": "Quitting will interrupt the following activity.",
@@ -1528,6 +1534,12 @@
     "home": "Home",
     "hosts": "Hosts",
     "forwards": "Port forwards"
+  },
+  "sshLink": {
+    "title": "Open SSH link?",
+    "savedHost": "Connect using the saved Host {{name}}?",
+    "quickConnect": "Connect using Quick connect?",
+    "connect": "Connect"
   },
   "quickConnect": {
     "action": "Quick connect",

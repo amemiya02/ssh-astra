@@ -1,6 +1,7 @@
 import { hostHue } from "@/features/hosts/hostHue";
 import type { TerminalTitleSource } from "@/features/terminal/terminal-prefs";
 import { isTemporaryHost, type Host } from "@/lib/ipc/hosts";
+import type { SshLinkTarget } from "@/lib/ipc/ssh-links";
 import type { AnsiHue } from "@/theme/monogram-ink";
 import { paneNeighbors, resizePaneLayout, type PaneDirection, type SplitResize } from "./pane-layout";
 import { workspaceHostName } from "./privacy-mode";
@@ -16,7 +17,7 @@ export type PaneKind =
   /** The Host vault: search, recent and every Host as a card. One per window. */
   | { kind: "home" }
   | { kind: "local-terminal"; cwd?: string; shellId?: string }
-  | { kind: "remote-terminal"; host: Host; initialCwd?: string }
+  | { kind: "remote-terminal"; host: Host; initialCwd?: string; expectedTarget?: SshLinkTarget }
   | { kind: "sftp"; host: Host }
   | { kind: "settings" }
   | { kind: "transfers" }

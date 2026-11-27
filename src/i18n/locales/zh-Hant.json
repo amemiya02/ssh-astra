@@ -1035,6 +1035,7 @@
       "hostKeyDeclined": "未信任主機金鑰，已取消連線。",
       "hostKeyRevoked": "主機金鑰已撤銷，連線已封鎖。",
       "authenticationFailed": "身分驗證失敗。",
+      "sshLinkTargetChanged": "確認 SSH 連結後，已儲存的主機已變更。請重新開啟連結並確認目標。",
       "proxyInvalidConfiguration": "請檢查對外代理設定",
       "proxyInvalidTarget": "此代理不支援該主機位址",
       "proxyUnreachable": "無法連線到對外代理",
@@ -1122,6 +1123,7 @@
       "cancel": "取消",
       "actions": {
         "newTab": "新增本機終端機",
+        "newWindow": "新增視窗",
         "closePane": "關閉窗格",
         "splitRight": "向右拆分",
         "splitDown": "向下拆分",
@@ -1496,6 +1498,10 @@
     "transfers_one": "{{count}} 項傳輸",
     "transfers_other": "{{count}} 項傳輸"
   },
+  "window": {
+    "new": "新增視窗",
+    "openFailed": "無法開啟新視窗。"
+  },
   "quit": {
     "title": "結束 SSH Astra？",
     "interruptions": "結束將中斷以下活動。",
@@ -1528,6 +1534,12 @@
     "home": "首頁",
     "hosts": "Host 清單",
     "forwards": "連接埠轉送"
+  },
+  "sshLink": {
+    "title": "開啟 SSH 連結？",
+    "savedHost": "使用已儲存的主機「{{name}}」連線？",
+    "quickConnect": "使用快速連線？",
+    "connect": "連線"
   },
   "quickConnect": {
     "action": "快速連線",
