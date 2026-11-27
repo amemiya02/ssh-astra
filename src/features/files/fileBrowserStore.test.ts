@@ -52,6 +52,8 @@ function fakeApi(overrides: Partial<FilesApi> = {}, dirs: Record<string, string[
     }),
     retryRemoteEdit: vi.fn(() => Promise.resolve()),
     closeRemoteEdit: vi.fn(() => Promise.resolve()),
+    overwriteRemoteEdit: vi.fn(() => Promise.resolve()),
+    openRemoteEditConflictCopy: vi.fn(() => Promise.resolve(43)),
     createDir: vi.fn((_id: number, path: string) => {
       const { dir, name, index } = find(path);
       if (index >= 0) return taken(path);
@@ -448,6 +450,24 @@ describe("remote editing", () => {
     second.closeEdit("/home/me/notes.txt");
     editEvents({ state: "uploadFailed", reason: "closed edit" });
     expect(failures).toEqual(["notes.txt: connection lost"]);
+  });
+
+  it("closes both edits when the last File panel closes while opening the remote version", async () => {
+    let finishOpen!: (id: number) => void;
+    const { api, store } = await connected({
+      openRemoteEditConflictCopy: () => new Promise((resolve) => { finishOpen = resolve; }),
+    });
+    await store.getState().open(entry("notes.txt"));
+    editEvents({ state: "conflict", conflictId: 8 });
+
+    const opening = store.getState().resolveEditConflict("/home/me/notes.txt", "openRemote");
+    store.getState().dispose();
+    finishOpen(43);
+    await opening;
+
+    expect(api.closeRemoteEdit).toHaveBeenCalledWith(42);
+    expect(api.closeRemoteEdit).toHaveBeenCalledWith(43);
+    expect(store.getState().edits).toEqual([]);
   });
 
   it("shows a file that could not be opened and tries again", async () => {

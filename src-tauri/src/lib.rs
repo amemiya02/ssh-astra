@@ -391,6 +391,8 @@ pub fn run() {
             commands::files::files_chmod,
             commands::files::files_close,
             commands::edit::edit_open,
+            commands::edit::edit_open_conflict_copy,
+            commands::edit::edit_overwrite,
             commands::edit::edit_retry,
             commands::edit::edit_close,
             commands::transfers::transfers_watch,

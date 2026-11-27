@@ -5,7 +5,13 @@ import { maxEditSize } from "@/lib/ipc/edit";
 import * as ipc from "@/lib/ipc/files";
 import type { FileEntry, FilePromise, FsId, NameMatch, NameSearchMode, NameSearchResult, PermissionChange } from "@/lib/ipc/files";
 import type { HostId } from "@/lib/ipc/hosts";
-import { createSharedRemoteEdits, type EditCommands, type RemoteEditItem } from "./sharedRemoteEdits";
+import {
+  createSharedRemoteEdits,
+  type EditCommands,
+  type EditConflictAction,
+  type RemoteEditItem,
+  type RemoteEditKey,
+} from "./sharedRemoteEdits";
 import { archiveFolderName, childPath, isDirLike, isFileLike, parentPath } from "./fileList";
 
 /** The SFTP, file operation and remote edit commands a File panel uses (`@/lib/ipc/files`, `@/lib/ipc/edit`); a fake in tests. */
@@ -82,10 +88,12 @@ export interface FileBrowserState {
   editQuestion: EditQuestion | null;
   /** `open` edits the asked-about file even though it looks binary; `cancel` drops the question. */
   answerEditQuestion(answer: "open" | "cancel"): Promise<void>;
+  /** Resolves the selected conflicting edit after the user chooses how to proceed. */
+  resolveEditConflict(key: RemoteEditKey, action: EditConflictAction): Promise<boolean>;
   /** Uploads a failed edit again, or opens again one that could not be opened. */
-  retryEdit(path: string): Promise<void>;
+  retryEdit(key: RemoteEditKey): Promise<void>;
   /** Releases this pane’s edit. Its last pane stops uploads and deletes the temp copy. */
-  closeEdit(path: string): void;
+  closeEdit(key: RemoteEditKey): void;
   /** `order` is the names as displayed, for Shift-click ranges. */
   select(name: string, mode: SelectMode, order: readonly string[]): void;
   // File operations act on entries of `path` by name. Each refreshes the listing and resolves with
@@ -266,14 +274,14 @@ export function createFileBrowserStore(
     };
 
     const remoteEdits = editsForPanel(hostId, (item) => {
-      const { path, name, error } = item;
+      const { key, path, name, error } = item;
       const edits = get().edits;
       if (item.status === "openFailed" && (error?.kind === "tooLarge" || error?.kind === "binary")) {
-        remoteEdits.release(path);
-        set({ edits: edits.filter((e) => e.path !== path), editQuestion: { path, name, reason: error.kind } });
+        remoteEdits.release(key);
+        set({ edits: edits.filter((e) => e.key !== key), editQuestion: { path, name, reason: error.kind } });
       } else {
         const next = edits.slice();
-        const index = next.findIndex((edit) => edit.path === path);
+        const index = next.findIndex((edit) => edit.key === key);
         if (index === -1) next.push(item);
         else next[index] = item;
         set({ edits: next });
@@ -432,10 +440,11 @@ export function createFileBrowserStore(
         if (answer === "open" && question?.reason === "binary") await remoteEdits.open(question.path, true);
       },
 
+      resolveEditConflict: remoteEdits.resolveConflict,
       retryEdit: remoteEdits.retry,
-      closeEdit(path) {
-        remoteEdits.release(path);
-        set({ edits: get().edits.filter((e) => e.path !== path) });
+      closeEdit(key) {
+        remoteEdits.release(key);
+        set({ edits: get().edits.filter((e) => e.key !== key) });
       },
 
       select(name, mode, order) {
@@ -582,7 +591,7 @@ export function createFileBrowserStore(
 
       dispose() {
         get().disconnect();
-        for (const edit of get().edits) get().closeEdit(edit.path);
+        for (const edit of get().edits) get().closeEdit(edit.key);
       },
     };
   });

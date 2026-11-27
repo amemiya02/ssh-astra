@@ -615,6 +615,18 @@
       "noApplication": "这台电脑上没有能打开此文件的应用。",
       "notFound": "文件已不存在。",
       "notAFile": "只有普通文件可以在编辑器中打开。",
+      "conflict": {
+        "title": "远端文件已更改",
+        "body": "打开后，{{host}} 上的 {{path}} 已更改。可用本地最后保存的内容覆盖远端文件，也可另开远端版本并保留本地改动。",
+        "review": "查看冲突",
+        "openRemote": "另开远端版本",
+        "overwrite": "覆盖远端文件",
+        "copyName": "{{name}}（远端版本）",
+        "paused": "已保留本地改动，上传已暂停。",
+        "resolving": "正在处理冲突…",
+        "changed": "冲突已变化，请查看最新状态。",
+        "resolveFailed": "无法解决冲突：{{message}}"
+      },
       "question": {
         "tooLarge": {
           "title": "文件太大，无法编辑",

@@ -18,10 +18,10 @@ use std::time::Duration;
 
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex as AsyncMutex};
 use tokio::task::JoinHandle;
 
-use crate::files::{FileKind, FsError, RemoteFs, READ_FILE_LIMIT};
+use crate::files::{FileKind, FileStat, FsError, RemoteFs, READ_FILE_LIMIT};
 use crate::hosts::HostId;
 
 /// Opens a local file in the system default or user-selected application.
@@ -59,6 +59,13 @@ pub enum EditEvent {
     /// The upload failed; the edit stays open, and the next save or
     /// [`RemoteEditor::retry`] uploads again.
     UploadFailed { reason: String },
+    /// The remote file changed. Uploads stay paused until explicitly overwritten.
+    #[serde(rename_all = "camelCase")]
+    Conflict {
+        conflict_id: u64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -74,6 +81,8 @@ pub enum EditError {
     Open(String),
     #[error("no such edit")]
     NotOpen,
+    #[error("the edit conflict has changed")]
+    ConflictExpired,
     /// Only regular files (or links to them) are edited.
     #[error("not a regular file")]
     NotAFile,
@@ -95,14 +104,85 @@ const BINARY_SNIFF: usize = 8 * 1024;
 const DEFAULT_DEBOUNCE: Duration = Duration::from_millis(500);
 
 struct Edit {
-    host_id: HostId,
-    remote_path: String,
+    target: Arc<EditTarget>,
+    /// Ordinary opens reuse the original edit. Conflict copies have their own lifetime.
+    primary: bool,
+    allow_binary: bool,
     local_path: PathBuf,
-    /// Asks the upload task to upload now ([`RemoteEditor::retry`]).
-    retry: mpsc::UnboundedSender<()>,
+    conflict_id: Arc<AtomicU64>,
+    requests: mpsc::UnboundedSender<UploadRequest>,
     /// Stops watching when dropped.
     _watcher: RecommendedWatcher,
     uploads: JoinHandle<()>,
+}
+
+struct EditTarget {
+    fs: Arc<dyn RemoteFs>,
+    host_id: HostId,
+    remote_path: String,
+    /// Serializes revision checks and writes by edits of the same path. The count also
+    /// detects sibling uploads that fall within the server's timestamp resolution.
+    writes: AsyncMutex<u64>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct Revision {
+    size: u64,
+    modified: Option<u64>,
+    writes: u64,
+}
+
+struct DownloadedEdit {
+    revision: Revision,
+    contents: Vec<u8>,
+}
+
+impl EditTarget {
+    async fn revision(&self, writes: u64) -> Result<Revision, EditError> {
+        Revision::new(self.fs.stat(&self.remote_path).await?, writes)
+    }
+
+    async fn download(&self, writes: u64, allow_binary: bool) -> Result<DownloadedEdit, EditError> {
+        let revision = self.revision(writes).await?;
+        if revision.size > MAX_EDIT_SIZE {
+            return Err(FsError::TooLarge {
+                path: self.remote_path.clone(),
+                limit: MAX_EDIT_SIZE,
+            }
+            .into());
+        }
+        // `read_file` enforces the limit too, should the file have grown.
+        let contents = self.fs.read_file(&self.remote_path).await?;
+        if !allow_binary && contents.iter().take(BINARY_SNIFF).any(|&b| b == 0) {
+            return Err(EditError::Binary);
+        }
+        Ok(DownloadedEdit { revision, contents })
+    }
+}
+
+impl Revision {
+    fn new(stat: FileStat, writes: u64) -> Result<Self, EditError> {
+        if stat.kind != FileKind::File {
+            return Err(EditError::NotAFile);
+        }
+        Ok(Self {
+            size: stat.size,
+            modified: stat.modified,
+            writes,
+        })
+    }
+}
+
+fn conflicted_edit(
+    edits: &HashMap<EditId, Edit>,
+    id: EditId,
+    conflict_id: u64,
+) -> Result<&Edit, EditError> {
+    let edit = edits.get(&id).ok_or(EditError::NotOpen)?;
+    if conflict_id == 0 || edit.conflict_id.load(Ordering::Relaxed) != conflict_id {
+        return Err(EditError::ConflictExpired);
+    }
+    Ok(edit)
 }
 
 fn find_open<'a>(
@@ -112,7 +192,11 @@ fn find_open<'a>(
 ) -> Option<(EditId, &'a Path)> {
     edits
         .iter()
-        .find(|(_, edit)| &edit.host_id == host_id && edit.remote_path == remote_path)
+        .find(|(_, edit)| {
+            edit.primary
+                && &edit.target.host_id == host_id
+                && edit.target.remote_path == remote_path
+        })
         .map(|(id, edit)| (*id, edit.local_path.as_path()))
 }
 
@@ -228,35 +312,91 @@ impl RemoteEditor {
             return self.launch(id, local_path, options.application);
         }
 
-        let stat = fs.stat(remote_path).await?;
-        if stat.kind != FileKind::File {
-            return Err(EditError::NotAFile);
-        }
-        if stat.size > MAX_EDIT_SIZE {
-            return Err(FsError::TooLarge {
-                path: remote_path.to_owned(),
-                limit: MAX_EDIT_SIZE,
-            }
-            .into());
-        }
-        // `read_file` enforces the limit too, should the file have grown.
-        let contents = fs.read_file(remote_path).await?;
+        // A conflict copy can outlive the original. Ordinary opens of that path
+        // must share its upload gate as well.
+        let target = self
+            .lock()
+            .values()
+            .find(|edit| &edit.target.host_id == host_id && edit.target.remote_path == remote_path)
+            .map(|edit| Arc::clone(&edit.target))
+            .unwrap_or_else(|| {
+                Arc::new(EditTarget {
+                    fs,
+                    host_id: host_id.clone(),
+                    remote_path: remote_path.to_owned(),
+                    writes: AsyncMutex::new(0),
+                })
+            });
+        let writes = target.writes.lock().await;
+        let download = target.download(*writes, options.allow_binary).await?;
         // Another Window may have finished opening the same file while this one was downloading it.
         let mut edits = self.lock();
         if let Some((id, local_path)) = find_open(&edits, host_id, remote_path) {
             return self.launch(id, local_path, options.application);
         }
-        if !options.allow_binary && contents.iter().take(BINARY_SNIFF).any(|&b| b == 0) {
-            return Err(EditError::Binary);
-        }
+        self.register(
+            &mut edits,
+            target.clone(),
+            download,
+            true,
+            options,
+            on_event,
+        )
+    }
+
+    /// Opens the current remote version in a second live edit. The original stays paused
+    /// with its local work intact. Uses the current application preference.
+    pub async fn open_conflict_copy(
+        &self,
+        id: EditId,
+        conflict_id: u64,
+        application: Option<&Path>,
+        on_event: impl Fn(EditEvent) + Send + Sync + 'static,
+    ) -> Result<OpenedEdit, EditError> {
+        let (target, allow_binary) = {
+            let edits = self.lock();
+            let edit = conflicted_edit(&edits, id, conflict_id)?;
+            (Arc::clone(&edit.target), edit.allow_binary)
+        };
+        let writes = target.writes.lock().await;
+        conflicted_edit(&self.lock(), id, conflict_id)?;
+        let download = target.download(*writes, allow_binary).await?;
+        let mut edits = self.lock();
+        conflicted_edit(&edits, id, conflict_id)?;
+        let options = OpenEditOptions {
+            allow_binary,
+            application,
+        };
+        self.register(
+            &mut edits,
+            target.clone(),
+            download,
+            false,
+            options,
+            on_event,
+        )
+    }
+
+    fn register(
+        &self,
+        edits: &mut HashMap<EditId, Edit>,
+        target: Arc<EditTarget>,
+        download: DownloadedEdit,
+        primary: bool,
+        options: OpenEditOptions<'_>,
+        on_event: impl Fn(EditEvent) + Send + Sync + 'static,
+    ) -> Result<OpenedEdit, EditError> {
         let id = EditId(self.next_id.fetch_add(1, Ordering::Relaxed) + 1);
         let dir = self
             .root
-            .join(dir_name(&host_id.to_string()))
+            .join(dir_name(&target.host_id.to_string()))
             .join(id.0.to_string());
-        let local_path = dir.join(file_name(remote_path));
+        let local_path = dir.join(file_name(&target.remote_path));
         std::fs::create_dir_all(&dir).map_err(io)?;
-        std::fs::write(&local_path, &contents).map_err(io)?;
+        if let Err(error) = std::fs::write(&local_path, &download.contents) {
+            let _ = std::fs::remove_dir_all(&dir);
+            return Err(io(error));
+        }
 
         // Watch the directory, not the file: editors often save by writing
         // a new file and renaming it over the old one.
@@ -288,26 +428,31 @@ impl RemoteEditor {
             }
         };
 
-        let (retry, retries) = mpsc::unbounded_channel();
+        let (requests, pending) = mpsc::unbounded_channel();
+        let conflict_id = Arc::new(AtomicU64::new(0));
         let uploads = tokio::spawn(
             Uploader {
                 id,
-                fs,
-                remote_path: remote_path.to_owned(),
+                target: target.clone(),
                 local_path: local_path.clone(),
-                uploaded: contents,
+                revision: Some(download.revision),
+                uploaded: download.contents,
+                conflict_id: conflict_id.clone(),
+                next_conflict: 0,
                 debounce: self.debounce,
                 on_event: Box::new(on_event),
             }
-            .run(changed, retries),
+            .run(changed, pending),
         );
         edits.insert(
             id,
             Edit {
-                host_id: host_id.clone(),
-                remote_path: remote_path.to_owned(),
+                target,
+                primary,
+                allow_binary: options.allow_binary,
                 local_path,
-                retry,
+                conflict_id,
+                requests,
                 _watcher: watcher,
                 uploads,
             },
@@ -346,7 +491,18 @@ impl RemoteEditor {
     pub fn retry(&self, id: EditId) -> Result<(), EditError> {
         let edits = self.lock();
         let edit = edits.get(&id).ok_or(EditError::NotOpen)?;
-        edit.retry.send(()).map_err(|_| EditError::NotOpen)
+        edit.requests
+            .send(UploadRequest::Retry)
+            .map_err(|_| EditError::NotOpen)
+    }
+
+    /// Uploads the latest local save despite the reported conflict.
+    pub fn overwrite(&self, id: EditId, conflict_id: u64) -> Result<(), EditError> {
+        let edits = self.lock();
+        let edit = conflicted_edit(&edits, id, conflict_id)?;
+        edit.requests
+            .send(UploadRequest::Overwrite(conflict_id))
+            .map_err(|_| EditError::NotOpen)
     }
 
     /// Stops watching and uploading, and deletes the temp file; `false` if
@@ -393,28 +549,36 @@ impl RemoteEditor {
 /// file last received.
 struct Uploader {
     id: EditId,
-    fs: Arc<dyn RemoteFs>,
-    remote_path: String,
+    target: Arc<EditTarget>,
     local_path: PathBuf,
+    revision: Option<Revision>,
     /// What the remote file holds as far as we know.
     uploaded: Vec<u8>,
+    conflict_id: Arc<AtomicU64>,
+    next_conflict: u64,
     debounce: Duration,
     on_event: Box<dyn Fn(EditEvent) + Send + Sync>,
+}
+
+enum UploadRequest {
+    Save,
+    Retry,
+    Overwrite(u64),
 }
 
 impl Uploader {
     async fn run(
         mut self,
         mut changed: mpsc::UnboundedReceiver<()>,
-        mut retries: mpsc::UnboundedReceiver<()>,
+        mut requests: mpsc::UnboundedReceiver<UploadRequest>,
     ) {
         loop {
-            let force = tokio::select! {
-                Some(()) = changed.recv() => false,
-                Some(()) = retries.recv() => true,
+            let request = tokio::select! {
+                Some(()) = changed.recv() => UploadRequest::Save,
+                Some(request) = requests.recv() => request,
                 else => return,
             };
-            if !force {
+            if matches!(request, UploadRequest::Save) {
                 // Wait until no change arrived for `debounce`.
                 loop {
                     match tokio::time::timeout(self.debounce, changed.recv()).await {
@@ -424,37 +588,91 @@ impl Uploader {
                     }
                 }
             }
-            self.upload(force).await;
+            self.upload(request).await;
         }
     }
 
-    async fn upload(&mut self, force: bool) {
+    async fn upload(&mut self, request: UploadRequest) {
+        let pending = self.conflict_id.load(Ordering::Relaxed);
+        let overwrite = match request {
+            UploadRequest::Overwrite(id) if pending == id => true,
+            UploadRequest::Overwrite(_) => return,
+            _ if pending != 0 => return,
+            _ => false,
+        };
+        let force = !matches!(request, UploadRequest::Save);
         // Missing for a moment while an editor replaces the file; the
         // replacement is another change.
-        let Ok(contents) = tokio::fs::read(&self.local_path).await else {
-            return;
+        let contents = match tokio::fs::read(&self.local_path).await {
+            Ok(contents) => contents,
+            Err(e) => {
+                if force {
+                    self.upload_failed(&io(e), overwrite);
+                }
+                return;
+            }
         };
         if !force && contents == self.uploaded {
             return;
         }
+        let target = self.target.clone();
+        let mut writes = target.writes.lock().await;
         (self.on_event)(EditEvent::Uploading);
-        match self.fs.write_file(&self.remote_path, &contents).await {
+        let remote = match target.revision(*writes).await {
+            Ok(revision) => revision,
+            Err(e) => {
+                self.upload_failed(&e, overwrite);
+                return;
+            }
+        };
+        if !overwrite && self.revision != Some(remote) {
+            self.conflict(None);
+            return;
+        }
+
+        match target.fs.write_file(&target.remote_path, &contents).await {
             Ok(()) => {
                 log::info!("Remote edit id={} upload result=success", self.id.0);
+                *writes += 1;
+                // A successful write can change mtime. If the new revision cannot be
+                // determined, the next save must ask before writing again.
+                self.revision = target
+                    .revision(*writes)
+                    .await
+                    .ok()
+                    .filter(|revision| revision.size == contents.len() as u64);
                 self.uploaded = contents;
+                self.conflict_id.store(0, Ordering::Relaxed);
                 (self.on_event)(EditEvent::Uploaded);
             }
-            Err(e) => {
-                log::warn!(
-                    "Remote edit id={} upload result={}",
-                    self.id.0,
-                    e.log_kind()
-                );
-                (self.on_event)(EditEvent::UploadFailed {
-                    reason: e.to_string(),
-                });
-            }
+            Err(e) => self.upload_failed(&e.into(), overwrite),
         }
+    }
+
+    fn upload_failed(&mut self, error: &EditError, overwrite: bool) {
+        let kind = match error {
+            EditError::Fs(e) => e.log_kind(),
+            EditError::NotAFile => "notAFile",
+            _ => "io",
+        };
+        log::warn!("Remote edit id={} upload result={kind}", self.id.0);
+        if overwrite {
+            self.conflict(Some(error.to_string()));
+        } else {
+            (self.on_event)(EditEvent::UploadFailed {
+                reason: error.to_string(),
+            });
+        }
+    }
+
+    fn conflict(&mut self, reason: Option<String>) {
+        self.next_conflict += 1;
+        self.conflict_id
+            .store(self.next_conflict, Ordering::Relaxed);
+        (self.on_event)(EditEvent::Conflict {
+            conflict_id: self.next_conflict,
+            reason,
+        });
     }
 }
 

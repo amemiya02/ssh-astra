@@ -5,9 +5,18 @@ import type { HostId } from "./hosts";
 export type EditId = number;
 
 /** Mirrors `sshastra_core::edit::EditEvent`: what happened to a save. */
-type EditUploadEvent = { state: "uploading" } | { state: "uploaded" } | { state: "uploadFailed"; reason: string };
+type EditUploadEvent =
+  | { state: "uploading" }
+  | { state: "uploaded" }
+  | { state: "uploadFailed"; reason: string }
+  | { state: "conflict"; conflictId: number; reason?: string };
 
 export type EditEvent = EditUploadEvent | { state: "applicationFallback" };
+
+interface OpenedEdit {
+  id: EditId;
+  applicationFallback: boolean;
+}
 
 /** The largest file opened for editing (`sshastra_core::edit::MAX_EDIT_SIZE`); bigger ones are downloaded instead. */
 export const maxEditSize = 10 * 1024 * 1024;
@@ -26,11 +35,33 @@ export async function openRemoteEdit(
   onEvent: (event: EditEvent) => void,
   { allowBinary = false }: { allowBinary?: boolean } = {},
 ): Promise<EditId> {
-  const { id, applicationFallback } = await invoke<{ id: EditId; applicationFallback: boolean }>("edit_open", {
-    hostId, path, allowBinary, onEvent: new Channel<EditUploadEvent>(onEvent),
+  return openEdit("edit_open", { hostId, path, allowBinary }, onEvent);
+}
+
+/** Opens the remote revision as a separate edit, leaving the original local copy in place. */
+export function openRemoteEditConflictCopy(
+  id: EditId,
+  conflictId: number,
+  onEvent: (event: EditEvent) => void,
+): Promise<EditId> {
+  return openEdit("edit_open_conflict_copy", { id, conflictId }, onEvent);
+}
+
+async function openEdit(
+  command: "edit_open" | "edit_open_conflict_copy",
+  args: { hostId: HostId; path: string; allowBinary: boolean } | { id: EditId; conflictId: number },
+  onEvent: (event: EditEvent) => void,
+): Promise<EditId> {
+  const { id, applicationFallback } = await invoke<OpenedEdit>(command, {
+    ...args, onEvent: new Channel<EditUploadEvent>(onEvent),
   });
   if (applicationFallback) onEvent({ state: "applicationFallback" });
   return id;
+}
+
+/** Uploads the latest local save after the user explicitly approves the conflict. */
+export function overwriteRemoteEdit(id: EditId, conflictId: number): Promise<void> {
+  return invoke("edit_overwrite", { id, conflictId });
 }
 
 /** Uploads the temp file again now, e.g. after `uploadFailed`. */
