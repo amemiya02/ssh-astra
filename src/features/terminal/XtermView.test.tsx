@@ -7,6 +7,7 @@ import { beforeAll, expect, it, vi } from "vitest";
 import { startI18n } from "@/i18n";
 import { getSetting, setSetting } from "@/lib/storage";
 import { ThemeContext } from "@/theme/theme-context";
+import { appearanceSetting } from "@/theme/theme";
 import { appThemes } from "@/theme/themes";
 import { XtermView } from "./XtermView";
 import { terminalSetting } from "./terminal-prefs";
@@ -44,10 +45,12 @@ function mountTerminal(broadcast?: ReturnType<typeof createBroadcast>) {
   act(() => root.render(
     <ThemeContext.Provider value={{
       theme: appThemes.light,
-      settings: { theme: "system", lightTheme: "light", darkTheme: "dark" },
+      settings: appearanceSetting.defaults,
       setTheme() {},
       setLightTheme() {},
       setDarkTheme() {},
+      setZoom() {},
+      setFontFamily() {},
       preview() {},
     }}>
       <BroadcastPaneContext.Provider value={broadcast && { broadcast, tabId: "work", paneId: "source" }}>
