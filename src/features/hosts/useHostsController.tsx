@@ -7,19 +7,22 @@ import { usePaletteActions } from "@/features/palette/palette-actions";
 import { showToast } from "@/features/toasts/toastStore";
 import { readCommandError, refusal, type ConnectPrompt, type PromptAnswer } from "@/lib/ipc/connect";
 import { testHostConnection } from "@/lib/ipc/connections";
-import { isTemporaryHost, redetectHostOs, type Host, type HostDraft, type HostId, type HostImportSource, type ImportReport, type TemporaryHost } from "@/lib/ipc/hosts";
+import { isTemporaryHost, redetectHostOs, type GroupId, type Host, type HostDraft, type HostId, type HostImportSource, type ImportReport, type TemporaryHost } from "@/lib/ipc/hosts";
 import { pickOpenPath, pickSavePath } from "@/lib/ipc/system";
+import { HostBatchDialogContent, type BatchQuestion } from "./HostBatchDialog";
 import { ConfirmRemoveDialogContent, HostFormDialogContent, type Removal } from "./HostDialogs";
-import type { HostListActions } from "./HostList";
+import type { HostBatchActions, HostListActions } from "./HostList";
 import { HostImportDialogContent } from "./HostImportDialog";
 import { ImportReportDialogContent } from "./ImportReportDialog";
+import { emptyHostSelection, type HostSelection } from "./host-selection";
+import { maxHostTags } from "./host-tags";
 import { importReportSummary } from "./importReportSummary";
-import type { DragItem } from "./hostTree";
 import { hostsStore, useHosts } from "./hostsStore";
 
 /** Opening a Host's Terminal, SFTP and Port forwards is the workspace's business, not the controller's. */
 export interface HostOpeners {
   open(host: Host): void;
+  openAll(hosts: readonly Host[]): void;
   openSftp(host: Host): void;
   openForwards(host: Host): void;
 }
@@ -31,10 +34,12 @@ export interface HostOpeners {
  */
 export interface HostsController {
   actions: HostListActions;
-  /** The selected row of the Host list; a new Host goes into a selected Group. */
-  selected: DragItem | null;
-  setSelected(item: DragItem | null): void;
-  selectedGroupId: string | null;
+  batchActions: HostBatchActions;
+  hostSelection: HostSelection;
+  selectHosts(selection: HostSelection): void;
+  /** New Hosts and Groups go inside the selected Group. */
+  selectedGroupId: GroupId | null;
+  selectGroup(id: GroupId): void;
   renamingGroupId: string | null;
   newHost(): void;
   openTemporaryHostEditor(host: TemporaryHost): void;
@@ -52,10 +57,13 @@ export interface HostsController {
 export function useHostsController(openers: HostOpeners, onTemporaryHostSaved: (host: Host) => void): HostsController {
   const { t } = useTranslation();
   const tree = useHosts((s) => s.tree);
-  const [selected, setSelected] = useState<DragItem | null>(null);
+  const [selection, setSelection] = useState<HostSelection | { groupId: GroupId }>(emptyHostSelection);
+  const selectedGroupId = "groupId" in selection ? selection.groupId : null;
+  const hostSelection = "groupId" in selection ? emptyHostSelection : selection;
   /** The Host editor: "new", a Host being edited, or closed. */
   const [editing, setEditing] = useState<Host | "new" | null>(null);
   const [removing, setRemoving] = useState<Removal | null>(null);
+  const [batch, setBatch] = useState<BatchQuestion | null>(null);
   const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const held = useConnections((s) => s.held);
@@ -98,7 +106,11 @@ export function useHostsController(openers: HostOpeners, onTemporaryHostSaved: (
       try {
         return await change();
       } catch (e) {
-        setActionError(t(failed, { message: readCommandError(e).message }));
+        const error = readCommandError(e);
+        const message = error.kind === "hostTagLimit"
+          ? t("hosts.batch.tagLimit", { host: error.details?.host, maxTags: maxHostTags })
+          : error.message;
+        setActionError(t(failed, { message }));
         return undefined;
       }
     },
@@ -108,10 +120,11 @@ export function useHostsController(openers: HostOpeners, onTemporaryHostSaved: (
   const transfer = useMemo(() => {
     const filters = [{ name: t("hosts.transfer.fileType"), extensions: ["json"] }];
     return {
-      async exportHosts() {
+      async exportHosts(ids?: readonly HostId[]) {
         const exported = await attempt(async () => {
-          const path = await pickSavePath({ title: t("hosts.transfer.export"), defaultPath: "sshastra-hosts.json", filters });
-          if (path) await hostsStore.getState().exportHosts(path);
+          const title = t(ids ? "hosts.batch.export" : "hosts.transfer.export");
+          const path = await pickSavePath({ title, defaultPath: "sshastra-hosts.json", filters });
+          if (path) await hostsStore.getState().exportHosts(path, ids);
           return path;
         }, "hosts.transfer.exportFailed");
         if (exported) setNotice(t("hosts.transfer.exported"));
@@ -163,18 +176,21 @@ export function useHostsController(openers: HostOpeners, onTemporaryHostSaved: (
     ),
   );
 
-  const selectedGroupId = selected?.kind === "group" ? selected.id : null;
+  const selectGroup = (groupId: GroupId) => setSelection({ groupId });
+  const selectOneHost = (id: HostId) => setSelection({ anchor: id, ids: [id] });
 
   const createGroup = async (parentId: string | null) => {
     const group = await attempt(() => store().createGroup(t("hosts.newGroupName"), parentId));
     if (group) {
-      setSelected({ kind: "group", id: group.id });
+      selectGroup(group.id);
       setRenamingGroupId(group.id);
     }
   };
 
   const actions: HostListActions = {
-    ...openers,
+    open: openers.open,
+    openSftp: openers.openSftp,
+    openForwards: openers.openForwards,
     connectOnly: (host) => {
       setActionError(null);
       connectionsStore
@@ -193,7 +209,7 @@ export function useHostsController(openers: HostOpeners, onTemporaryHostSaved: (
     duplicate: async (host) => {
       const copy = await attempt(() => store().duplicateHost(host.id, t("hosts.copyName", { name: host.name })));
       if (copy) {
-        setSelected({ kind: "host", id: copy.id });
+        selectOneHost(copy.id);
         setEditing(copy);
       }
     },
@@ -206,6 +222,24 @@ export function useHostsController(openers: HostOpeners, onTemporaryHostSaved: (
     },
     cancelRename: () => setRenamingGroupId(null),
     move: (op) => void attempt(() => store().move(op)),
+  };
+
+  const connectSelection = (ids: readonly HostId[]) => {
+    const saved = new Map(store().tree.hosts.map((host) => [host.id, host]));
+    const targets = ids.map((id) => saved.get(id));
+    if (targets.every((host) => host !== undefined)) openers.openAll(targets);
+    else setActionError(t("hosts.batch.selectionChanged"));
+  };
+
+  const batchActions: HostBatchActions = {
+    move: (ids, groupId) => void attempt(() => store().editHosts(ids, { kind: "move", groupId })),
+    editTag: (ids, kind) => setBatch({ kind, ids }),
+    remove: (ids) => setBatch({ kind: "delete", ids }),
+    connect: (ids) => {
+      if (ids.length > 5) setBatch({ kind: "connect", ids });
+      else connectSelection(ids);
+    },
+    export: (ids) => void transfer.exportHosts(ids),
   };
 
   const temporary = editing && editing !== "new" && isTemporaryHost(editing) ? editing : undefined;
@@ -249,7 +283,7 @@ export function useHostsController(openers: HostOpeners, onTemporaryHostSaved: (
             onCancel={() => setEditing(null)}
             onSaved={(host) => {
               if (temporary) onTemporaryHostSaved(host);
-              setSelected({ kind: "host", id: host.id });
+              selectOneHost(host.id);
               setEditing(null);
             }}
           />
@@ -287,14 +321,32 @@ export function useHostsController(openers: HostOpeners, onTemporaryHostSaved: (
           />
         )}
       </Dialog>
+      <Dialog open={batch !== null} onOpenChange={(open) => !open && setBatch(null)}>
+        {batch && (
+          <HostBatchDialogContent
+            question={batch}
+            hosts={tree.hosts}
+            onCancel={() => setBatch(null)}
+            onConfirm={(tag) => {
+              setBatch(null);
+              const { kind, ids } = batch;
+              if (kind === "connect") connectSelection(ids);
+              else if (kind === "delete") void attempt(() => store().editHosts(ids, { kind: "delete" }));
+              else void attempt(() => store().editHosts(ids, { kind: "tag", change: kind === "addTag" ? "add" : "remove", tag }));
+            }}
+          />
+        )}
+      </Dialog>
     </>
   );
 
   return {
     actions,
-    selected,
-    setSelected,
+    batchActions,
+    hostSelection,
+    selectHosts: setSelection,
     selectedGroupId,
+    selectGroup,
     renamingGroupId,
     newHost: () => setEditing("new"),
     openTemporaryHostEditor: setEditing,

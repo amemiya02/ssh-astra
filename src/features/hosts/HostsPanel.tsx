@@ -13,6 +13,7 @@ import { HostTagFilter } from "./HostTagFilter";
 import { HostsSidebar } from "./HostsSidebar";
 import { RowMoreMenu } from "./RowMenu";
 import { recentHostsSetting } from "./host-history";
+import { emptyHostSelection } from "./host-selection";
 import { hostSortSetting, sortHostTree } from "./host-sort";
 import { searchTree } from "./hostTree";
 import { useHosts } from "./hostsStore";
@@ -39,7 +40,10 @@ export function HostsPanel({
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [sort, setSort] = useSetting(hostSortSetting);
   const [history] = useSetting(recentHostsSetting);
-  const { messages, selected, selectedGroupId } = controller;
+  const { messages, hostSelection, selectedGroupId } = controller;
+  const clearHostSelection = () => {
+    if (hostSelection.anchor !== null) controller.selectHosts(emptyHostSelection);
+  };
 
   const searching = query.trim() !== "" || selectedTag !== null;
   const sortHistory = sort === "recent" ? history : undefined;
@@ -59,8 +63,14 @@ export function HostsPanel({
   } else if (tree.hosts.length > 0 || tree.groups.length > 0 || selectedTag !== null) {
     list = (
       <div className="flex h-full flex-col gap-2">
-        <SearchField value={query} onChange={setQuery} />
-        <HostTagFilter hosts={tree.hosts} value={selectedTag} onChange={setSelectedTag} />
+        <SearchField value={query} onChange={(value) => {
+          clearHostSelection();
+          setQuery(value);
+        }} />
+        <HostTagFilter hosts={tree.hosts} value={selectedTag} onChange={(tag) => {
+          clearHostSelection();
+          setSelectedTag(tag);
+        }} />
         {messages}
         <div className="min-h-0 flex-1">
           {searching && nodes.length === 0 ? (
@@ -75,11 +85,14 @@ export function HostsPanel({
               nodes={nodes}
               searching={searching}
               manualOrder={sort === "manual"}
-              selected={selected}
-              onSelect={controller.setSelected}
+              selectedGroupId={selectedGroupId}
+              onSelectGroup={controller.selectGroup}
+              selection={hostSelection}
+              onSelectHosts={controller.selectHosts}
               renamingGroupId={controller.renamingGroupId}
               connections={connections}
               actions={controller.actions}
+              batchActions={controller.batchActions}
             />
           )}
         </div>
