@@ -5,7 +5,10 @@ import { cn } from "@/lib/utils";
 import { useTheme } from "@/theme/theme-context";
 import { appThemes, darkThemeIds, lightThemeIds, type AppTheme, type AppThemeId } from "@/theme/themes";
 
-/** A small picture of a theme: tab strip, Host list strip and a Terminal sample, all in the theme's own colours. */
+/** The six ANSI hues a swatch row shows, then the accent: what tells dark themes apart at a glance. */
+const swatchHues = ["red", "green", "yellow", "blue", "magenta", "cyan"] as const;
+
+/** A small picture of a theme: tab strip, Host list strip and a Terminal sample with a row of its colours, all in the theme's own colours. */
 function Miniature({ theme }: { theme: AppTheme }) {
   const { ui, terminal: term } = theme;
   return (
@@ -25,7 +28,7 @@ function Miniature({ theme }: { theme: AppTheme }) {
           <span className="h-1 w-2/3 rounded-full" style={{ backgroundColor: ui.mutedForeground, opacity: 0.45 }} />
         </div>
         <div
-          className="min-w-0 flex-1 overflow-hidden px-2 py-1.5 font-mono text-[9px] leading-[1.45] whitespace-nowrap"
+          className="flex min-w-0 flex-1 flex-col overflow-hidden px-2 py-1.5 font-mono text-[9px] leading-[1.45] whitespace-nowrap"
           style={{ backgroundColor: term.background, color: term.foreground }}
         >
           <div>
@@ -37,6 +40,12 @@ function Miniature({ theme }: { theme: AppTheme }) {
           </div>
           <div>
             <span style={{ color: term.red }}>warn</span> disk 91%
+          </div>
+          <div data-swatches className="mt-auto flex items-center gap-[3px] pt-1">
+            {swatchHues.map((hue) => (
+              <span key={hue} className="size-1.5 rounded-full" style={{ backgroundColor: term[hue] }} />
+            ))}
+            <span className="size-1.5 rounded-[2px]" style={{ backgroundColor: ui.primary }} />
           </div>
         </div>
       </div>

@@ -61,6 +61,9 @@ const hover = (el: Element) =>
 const unhover = (el: Element) =>
   act(() => void el.dispatchEvent(new PointerEvent("pointerout", { bubbles: true, pointerType: "mouse", relatedTarget: document.body })));
 
+const hexToRgb = (hex: string) =>
+  `rgb(${[1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16)).join(", ")})`;
+
 describe("theme gallery", () => {
   it("shows every theme as a radio card, one checked per group while following the system", () => {
     const { cards } = render();
@@ -69,6 +72,19 @@ describe("theme gallery", () => {
       "Astra Light",
       "Astra Dark",
     ]);
+  });
+
+  it("paints each card's six ANSI colours and its accent, so dark themes differ at a glance", () => {
+    const { card } = render();
+    const swatches = (name: string) =>
+      [...card(name).querySelectorAll<HTMLElement>("[data-swatches] > span")].map((s) => s.style.backgroundColor);
+    const expected = (id: "nord" | "dracula") => {
+      const { terminal: t, ui } = appThemes[id];
+      return [t.red, t.green, t.yellow, t.blue, t.magenta, t.cyan, ui.primary].map(hexToRgb);
+    };
+    expect(swatches("Nord")).toEqual(expected("nord"));
+    expect(swatches("Dracula")).toEqual(expected("dracula"));
+    expect(swatches("Nord")).not.toEqual(swatches("Dracula"));
   });
 
   it("previews a theme on hover across the window and restores it on leave without saving", () => {
