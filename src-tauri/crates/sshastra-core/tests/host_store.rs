@@ -165,6 +165,7 @@ fn creates_a_host_with_the_requested_id_and_rejects_reusing_it() {
     ));
 
     let reopened = HostStore::open(&path).unwrap();
+    assert_eq!(store.list(), std::slice::from_ref(&saved));
     assert_eq!(reopened.list(), &[saved]);
 }
 

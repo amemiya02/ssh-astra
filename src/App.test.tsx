@@ -617,11 +617,13 @@ it("puts an exact saved Host ahead of Quick connect in Home and the palette", as
 });
 
 it("saves a Temporary Host in place after canceling and retrying the Host editor", async () => {
+  await hostsStore.getState().load();
   await render(emptyTabs);
   await search(homeSearch(), "deploy@lab:2200");
   await enter(homeSearch());
   const calls = (command: string) => vi.mocked(invoke).mock.calls.filter(([name]) => name === command);
-  const id = calls("remote_terminal_open")[0]?.[1]?.hostId;
+  const open = calls("remote_terminal_open")[0]?.[1] as { hostId: string } | undefined;
+  const id = open?.hostId;
   expect(id).toBeDefined();
   expect(calls("files_open")).toEqual([["files_open", { hostId: id }]]);
   const [tab] = tabIds();
@@ -652,6 +654,7 @@ it("saves a Temporary Host in place after canceling and retrying the Host editor
   expect(hostsStore.getState().tree.hosts).toEqual([
     expect.objectContaining({ id, name: "Lab", address: "lab", port: 2200, user: "deploy" }),
   ]);
+  expect(document.querySelector('aside button[aria-current="true"]')?.textContent).toContain("Lab");
   expect(tabIds()).toEqual([tab]);
   expect(document.getElementById(tab!)?.getAttribute("aria-label")).toBe("Lab (Connected)");
   expect(document.querySelector('footer button[aria-label="Save as Host"]')).toBeNull();
