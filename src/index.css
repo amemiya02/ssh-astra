@@ -15,6 +15,8 @@
   /* Chrome: the tinted ground behind the Host list, tab strip and status bar. */
   --background: oklch(0.972 0.003 255);
   --foreground: oklch(0.22 0.012 255);
+  /* The nav rail and Host list column. */
+  --sidebar: var(--background);
   /* Raised work panels (File panel, cards). */
   --surface: oklch(0.995 0.001 255);
   --card: var(--surface);
@@ -44,6 +46,13 @@
   /* Must equal the xterm theme in src/theme/terminal-themes.ts (checked by a test). */
   --terminal-background: #ffffff;
   --terminal-foreground: #2b2f37;
+  /* The Terminal palette's hues, for marks that should recolour with the theme (Host monograms). */
+  --ansi-red: #c4372f;
+  --ansi-green: #1f8a4c;
+  --ansi-yellow: #946200;
+  --ansi-blue: #2f5fd0;
+  --ansi-magenta: #a33ea1;
+  --ansi-cyan: #12808f;
 
   --elevation-panel: 0 1px 2px oklch(0.2 0.02 255 / 0.05), 0 2px 8px oklch(0.2 0.02 255 / 0.04);
   --elevation-overlay: 0 12px 32px oklch(0.2 0.02 255 / 0.16), 0 2px 6px oklch(0.2 0.02 255 / 0.06);
@@ -74,6 +83,12 @@
 
   --terminal-background: #131519;
   --terminal-foreground: #d9dce3;
+  --ansi-red: #f07178;
+  --ansi-green: #6fcf8f;
+  --ansi-yellow: #e0b45a;
+  --ansi-blue: #7aa2f7;
+  --ansi-magenta: #d08bd8;
+  --ansi-cyan: #66c7d4;
 
   --elevation-panel: 0 1px 2px oklch(0 0 0 / 0.3);
   --elevation-overlay: 0 16px 40px oklch(0 0 0 / 0.5), 0 0 0 1px oklch(1 0 0 / 0.06);
@@ -105,6 +120,7 @@
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-sidebar: var(--sidebar);
   --color-surface: var(--surface);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
@@ -129,6 +145,12 @@
   --color-overlay: var(--overlay);
   --color-terminal-background: var(--terminal-background);
   --color-terminal-foreground: var(--terminal-foreground);
+  --color-ansi-red: var(--ansi-red);
+  --color-ansi-green: var(--ansi-green);
+  --color-ansi-yellow: var(--ansi-yellow);
+  --color-ansi-blue: var(--ansi-blue);
+  --color-ansi-magenta: var(--ansi-magenta);
+  --color-ansi-cyan: var(--ansi-cyan);
 }
 
 @layer base {
