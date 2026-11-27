@@ -16,7 +16,7 @@ export interface E2eHooks {
   /** Minimal buffer and renderer observations for the manual benchmark. */
   terminalMetrics(tailLines?: number): TerminalMetrics[];
   setFocusedCursorBlink(enabled: boolean): void;
-  trackOutput(terminal: Terminal, data: Uint8Array): void;
+  trackOutput(terminal: Terminal, data: Uint8Array, onParsed?: () => void): void;
   trackInput(terminal: Terminal, characters: number): void;
 }
 
@@ -79,17 +79,20 @@ export const e2eHooks: E2eHooks | null =
           if (!terminal) throw new Error("No Terminal has focus");
           terminal.options.cursorBlink = enabled;
         },
-        trackOutput: (terminal, data) => {
+        trackOutput: (terminal, data, onParsed) => {
           const counters = terminals.get(terminal);
           if (!counters) {
-            terminal.write(data);
+            terminal.write(data, onParsed);
             return;
           }
           counters.outputMessages++;
           counters.outputBytes += data.byteLength;
           counters.pendingOutputBytes += data.byteLength;
           counters.peakPendingOutputBytes = Math.max(counters.peakPendingOutputBytes, counters.pendingOutputBytes);
-          terminal.write(data, () => { counters.pendingOutputBytes -= data.byteLength; });
+          terminal.write(data, () => {
+            counters.pendingOutputBytes -= data.byteLength;
+            onParsed?.();
+          });
         },
         trackInput: (terminal, characters) => {
           const counters = terminals.get(terminal);
