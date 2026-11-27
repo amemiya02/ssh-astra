@@ -1494,6 +1494,10 @@
         "description": "Command lines are saved in plain text on this device for saved Hosts. Requires Shell integration in remote zsh or bash 4.4+ with prompt expansion enabled.",
         "shellIntegrationDisabled": "Shell integration is off. Turn it on, then open a new remote Terminal. When recording is active, command lines are saved in plain text on this device."
       },
+      "inlineSuggestions": {
+        "label": "Inline command suggestions",
+        "description": "Show matching commands from Command history at the shell prompt. Press Right Arrow or End to insert a suggestion. Requires Command history and Shell integration."
+      },
       "pasteImages": {
         "label": "Paste clipboard images as paths",
         "description": "When the clipboard contains only an image, save it as a PNG and paste its path. Remote Terminals upload the PNG to the Host’s SSH Astra cache."

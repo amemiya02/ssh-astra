@@ -7,6 +7,8 @@
 //!   (`ESC ] 7 ; file://host/percent-encoded-path BEL`) before every prompt,
 //!   and emits private OSC command and prompt markers. Other shells report
 //!   that these markers are unsupported.
+//!   The nonprinting `input` marker follows the primary prompt itself and is
+//!   read by the terminal renderer to locate the editable command line.
 //! - [`ShellOutput`] hides the shell's output from the injection to that
 //!   marker (the echoed line, the repeated prompt) and finds the directory
 //!   reports ([`CwdParser`]) and private markers. Terminal emulators ignore
@@ -39,9 +41,12 @@ pub const INJECTION: &str = concat!(
     " printf \"\\e]7;file://%s%s\\a\" \"$HOSTNAME\" \"$(__sshastra_encode \"$PWD\")\";",
     " if [[ $__sshastra_ready == ready ]]; then printf \"\\e]6973;prompt\\a\"; fi;",
     " return \"$rc\"; };",
+    " __sshastra_input_prompt(){ local rc=$? marker='\\''\\[\\e]6973;input\\a\\]'\\'';",
+    " if [[ $__sshastra_ready == ready && $PS1 != *\"$marker\" ]]; then PS1+=$marker; fi;",
+    " return \"$rc\"; };",
     " if [[ $(declare -p PROMPT_COMMAND 2>/dev/null) == \"declare -a \"* ]]; then",
-    " PROMPT_COMMAND=(__sshastra_prompt \"${PROMPT_COMMAND[@]}\");",
-    " else PROMPT_COMMAND=\"__sshastra_prompt${PROMPT_COMMAND:+;$PROMPT_COMMAND}\"; fi;",
+    " PROMPT_COMMAND=(__sshastra_prompt \"${PROMPT_COMMAND[@]}\" __sshastra_input_prompt);",
+    " else PROMPT_COMMAND=\"__sshastra_prompt${PROMPT_COMMAND:+;$PROMPT_COMMAND}\"$'\\''\\n'\\''__sshastra_input_prompt; fi;",
     " if ((BASH_VERSINFO[0]>4 || (BASH_VERSINFO[0]==4 && BASH_VERSINFO[1]>=4))) && shopt -q promptvars; then",
     " PS0=\"${PS0-}\"'\\''\\e]6973;start;${__sshastra_running:=1};$(__sshastra_command)\\a'\\'';",
     " __sshastra_ready=ready; fi';",
@@ -55,7 +60,10 @@ pub const INJECTION: &str = concat!(
     " if [[ -n ${__sshastra_running-} ]]; then printf \"\\e]6973;end;%d\\a\" \"$rc\"; fi;",
     " unset __sshastra_running;",
     " printf \"\\e]7;file://%s%s\\a\" \"$HOST\" \"$(__sshastra_encode \"$PWD\")\";",
-    " printf \"\\e]6973;prompt\\a\"; };",
+    " printf \"\\e]6973;prompt\\a\";",
+    " local marker=$'\\''%{\\e]6973;input\\a%}'\\'';",
+    " if [[ ! -o promptpercent ]]; then PROMPT=${PROMPT%\"$marker\"};",
+    " elif [[ $PROMPT != *\"$marker\" ]]; then PROMPT+=$marker; fi; };",
     " autoload -Uz add-zsh-hook;",
     " add-zsh-hook precmd __sshastra_prompt && add-zsh-hook preexec __sshastra_preexec",
     " && __sshastra_ready=ready';",

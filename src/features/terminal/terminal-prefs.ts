@@ -46,6 +46,8 @@ export interface TerminalPrefs {
   shellIntegration: boolean;
   /** Save Shell integration command lines on this device for each saved Host. */
   commandHistory: boolean;
+  /** Show a saved command's suffix at the shell prompt when Command history is enabled. */
+  inlineSuggestions: boolean;
   /** The shell ID used by new Local terminals. Null selects the system default. */
   localShell: string | null;
   /** Log output from newly opened Terminals. Read by the core. */
@@ -92,6 +94,7 @@ export const defaultTerminalPrefs: TerminalPrefs = {
   pasteImages: false,
   shellIntegration: true,
   commandHistory: false,
+  inlineSuggestions: true,
   localShell: null,
   autoLog: false,
   showLatency: false,
@@ -149,6 +152,7 @@ export function normalizeTerminalPrefs(raw: Partial<Record<keyof TerminalPrefs, 
     pasteImages: bool(raw.pasteImages, d.pasteImages),
     shellIntegration: bool(raw.shellIntegration, d.shellIntegration),
     commandHistory: bool(raw.commandHistory, d.commandHistory),
+    inlineSuggestions: bool(raw.inlineSuggestions, d.inlineSuggestions),
     localShell: parseLocalShellId(raw.localShell) ?? d.localShell,
     autoLog: bool(raw.autoLog, d.autoLog),
     showLatency: bool(raw.showLatency, d.showLatency),

@@ -33,34 +33,35 @@ impl CommandHistory {
         read(&self.path(host))
     }
 
-    /// Records a Shell integration command line for a saved Host, subject to the current settings.
+    /// Returns whether a Shell integration command line changed a saved Host's history.
     pub fn record(
         &self,
         settings: &TerminalSettings,
         hosts: &HostStore,
         host: &HostId,
         command: &str,
-    ) -> io::Result<()> {
+    ) -> io::Result<bool> {
         if !settings.command_history
             || !settings.shell_integration
             || command.is_empty()
             || command.starts_with(' ')
             || hosts.get(host).is_none()
         {
-            return Ok(());
+            return Ok(false);
         }
 
         let _lock = self.writes.lock().unwrap_or_else(|p| p.into_inner());
         let path = self.path(host);
         let mut commands = read(&path)?;
         if commands.first().is_some_and(|latest| latest == command) {
-            return Ok(());
+            return Ok(false);
         }
         commands.retain(|line| line != command);
         commands.truncate(MAX_COMMANDS_PER_HOST - 1);
         commands.insert(0, command.to_owned());
         let contents = serde_json::to_vec_pretty(&commands).map_err(io::Error::other)?;
-        write_atomically_private(&path, &contents)
+        write_atomically_private(&path, &contents)?;
+        Ok(true)
     }
 
     /// Removes the saved Host's file. Clearing missing history creates nothing.
