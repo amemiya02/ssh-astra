@@ -1,2 +1,5 @@
 # Copied into a Linux container: must keep LF line endings on every OS.
 src-tauri/crates/sshastra-core/tests/sshd/** text eol=lf
+
+# Embedded newlines in quoted CSV fields are part of the expected value.
+src-tauri/crates/sshastra-core/tests/fixtures/host-import.csv text eol=lf
