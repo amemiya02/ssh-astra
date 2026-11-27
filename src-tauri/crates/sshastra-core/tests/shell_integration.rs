@@ -18,7 +18,9 @@ use sshastra_core::terminal::{
     TerminalCharset, TerminalEvent, TerminalSize, REPORT_CWD,
 };
 use support::{Service, Sshd};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
+
+static FLAKY: Mutex<()> = Mutex::const_new(());
 
 const SIZE: TerminalSize = TerminalSize {
     cols: 100,
@@ -496,6 +498,70 @@ async fn zsh_runs_post_login_command_once_after_integration_setup() {
     runs_post_login_command_with_shell_integration(support::ZSH_USER).await;
 }
 
+async fn restores_reported_directory_after_reconnect(user: &str, remove_directory: bool) {
+    let Some(sshd) = support::sshd(Service::Flaky) else {
+        return;
+    };
+    let _turn = FLAKY.lock().await;
+    // The post-login command runs before the restored directory takes effect.
+    let mut shell = Shell::open_with_command(&sshd, user, true, Some("cd /srv/files")).await;
+    shell.settle().await;
+    shell.type_line(r#"scratch=$(mktemp -d "$HOME/reconnect.XXXXXXXX"); cd "$scratch""#);
+    let cwd = shell.next_cwd().await;
+    let leaf = cwd.rsplit('/').next().unwrap();
+    assert!(leaf.starts_with("reconnect."), "{cwd:?}");
+    shell.settle().await;
+    if remove_directory {
+        shell.type_line(r#"rmdir -- "$scratch""#);
+        shell.settle().await;
+    }
+
+    let before_reconnect = shell.output.len();
+    sshd.drop_connections_for(user);
+    shell
+        .run(Duration::from_secs(10), |shell, _| {
+            shell.connection == Some(ConnectionState::Connected)
+        })
+        .await;
+    assert_eq!(shell.connection, Some(ConnectionState::Connected));
+    let directories = shell.settle().await;
+
+    let home = format!("/home/{user}");
+    let (expected_cwd, prompt_dir) = if remove_directory {
+        (home.as_str(), "~".to_owned())
+    } else {
+        (cwd.as_str(), format!("~/{leaf}"))
+    };
+    assert_eq!(directories.last().map(String::as_str), Some(expected_cwd));
+    let prompt_end = if user == support::ZSH_USER { '%' } else { '$' };
+    let prompt = format!("{user}@flaky:{prompt_dir}{prompt_end}");
+    assert_eq!(shell.rows().last(), Some(&prompt), "{:?}", shell.rows());
+    let reconnect_output = String::from_utf8_lossy(&shell.output[before_reconnect..]);
+    assert!(
+        !reconnect_output.contains("No such file or directory"),
+        "{reconnect_output:?}"
+    );
+    if !remove_directory {
+        shell.type_line(&format!("cd; rmdir -- ~/{leaf}"));
+        shell.settle().await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn bash_restores_its_reported_directory_after_reconnect() {
+    restores_reported_directory_after_reconnect(support::USER, false).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn zsh_restores_its_reported_directory_after_reconnect() {
+    restores_reported_directory_after_reconnect(support::ZSH_USER, false).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn reconnect_falls_back_to_home_when_the_reported_directory_is_gone() {
+    restores_reported_directory_after_reconnect(support::USER, true).await;
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn runs_post_login_command_with_shell_integration_disabled() {
     let Some(sshd) = support::sshd(Service::Ssh) else {
@@ -622,6 +688,7 @@ async fn runs_post_login_command_again_in_the_reconnected_shell() {
     let Some(sshd) = support::sshd(Service::Flaky) else {
         return;
     };
+    let _turn = FLAKY.lock().await;
     let mut shell = Shell::open_with_terminal_settings(
         &sshd,
         support::USER,
@@ -656,7 +723,10 @@ async fn runs_post_login_command_again_in_the_reconnected_shell() {
         .await;
     assert_eq!(shell.connection, Some(ConnectionState::Connected));
     let directories = shell.settle().await;
-    assert_eq!(directories.last().map(String::as_str), Some("/home/tester"));
+    assert_eq!(
+        directories.last().map(String::as_str),
+        Some("/srv/files/docs")
+    );
 
     assert!(shell.text().contains("before-disconnect:\u{fffd}"));
     assert_post_login_runs(&shell, 2);
