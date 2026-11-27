@@ -2,9 +2,10 @@ import { useState, type ComponentProps, type KeyboardEvent } from "react";
 import { Input } from "@/components/ui/input";
 
 /**
- * Applies a text or number setting on blur or Enter. Escape restores the saved value.
+ * A text field that applies its value when it loses focus or on Enter, so a half-typed
+ * value never reaches the app. Escape puts the saved value back.
  */
-export function SettingTextField({
+export function CommitField({
   id,
   label,
   value,
@@ -12,7 +13,7 @@ export function SettingTextField({
   ...props
 }: { id: string; label: string; value: string; onCommit(value: string): void } & Pick<
   ComponentProps<"input">,
-  "type" | "min" | "max" | "step" | "className" | "inputMode"
+  "type" | "min" | "max" | "step" | "placeholder" | "className" | "inputMode"
 >) {
   // What the user is typing; null shows the saved value (also after a commit, which may repair it).
   const [draft, setDraft] = useState<string | null>(null);

@@ -3,8 +3,8 @@ import { SegmentedControl } from "@/components/SegmentedControl";
 import { useTerminalPrefs } from "@/features/terminal/terminal-prefs-context";
 import { cursorStyles, terminalBellModes, terminalNumberFields, type TerminalPrefs, type TerminalTitleSource } from "@/features/terminal/terminal-prefs";
 import { TerminalSchemeSelect } from "@/features/terminal/TerminalSchemeSelect";
+import { CommitField } from "./CommitField";
 import { SettingRow } from "./SettingRow";
-import { SettingTextField } from "./SettingTextField";
 import { settingRows } from "./setting-rows";
 import { TerminalHighlightingSettings } from "./terminal-highlighting-settings";
 import { TerminalSchemeSettings } from "./terminal-scheme-settings";
@@ -39,7 +39,7 @@ export function TerminalSection() {
     const { min, max, step } = terminalNumberFields[key];
     return (
       <SettingRow key={key} setting={setting} descriptionValues={{ min, max }}>
-        <SettingTextField
+        <CommitField
           id={`settings-terminal-${key}`}
           label={label}
           type="number"
@@ -68,7 +68,7 @@ export function TerminalSection() {
   return (
     <>
       <SettingRow setting={settingRows.font}>
-        <SettingTextField
+        <CommitField
           id="settings-terminal-font"
           label={fontLabel}
           value={prefs.fontFamily}
@@ -103,7 +103,7 @@ export function TerminalSection() {
       </SettingRow>
       {toggle("cursorBlink")}
       <SettingRow setting={settingRows.wordSeparator}>
-        <SettingTextField
+        <CommitField
           id="settings-terminal-word-separator"
           label={separatorLabel}
           value={prefs.wordSeparator}

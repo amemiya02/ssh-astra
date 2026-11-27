@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { usePaletteActions, type PaletteAction } from "@/features/palette/palette-actions";
-import { useSetting } from "@/lib/storage";
-import { appearanceSetting, applyTheme, darkQuery, resolveTheme, systemPrefersDark } from "./theme";
+import { getSetting, useSetting } from "@/lib/storage";
+import { appearanceSetting, applyInterfaceFont, applyInterfaceZoom, applyTheme, darkQuery, resolveTheme, systemPrefersDark, type AppearanceSettings } from "./theme";
 import { ThemeContext, type ThemeContextValue } from "./theme-context";
 import { appThemeList, appThemes, type AppThemeId } from "./themes";
 
@@ -21,17 +21,25 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const theme = previewId ? appThemes[previewId] : resolveTheme(settings, systemDark);
 
   useEffect(() => applyTheme(document.documentElement, theme), [theme]);
+  useLayoutEffect(() => { void applyInterfaceZoom(document.documentElement, settings.zoom); }, [settings.zoom]);
+  useLayoutEffect(() => applyInterfaceFont(document.documentElement, settings.fontFamily), [settings.fontFamily]);
+
+  const updateAppearance = useCallback((patch: Partial<AppearanceSettings>) => {
+    setSettings(appearanceSetting.parse({ ...getSetting(appearanceSetting), ...patch }));
+  }, [setSettings]);
 
   const value = useMemo<ThemeContextValue>(
     () => ({
       settings,
       theme,
-      setTheme: (next) => setSettings({ ...settings, theme: next }),
-      setLightTheme: (lightTheme) => setSettings({ ...settings, lightTheme }),
-      setDarkTheme: (darkTheme) => setSettings({ ...settings, darkTheme }),
+      setTheme: (next) => updateAppearance({ theme: next }),
+      setLightTheme: (lightTheme) => updateAppearance({ lightTheme }),
+      setDarkTheme: (darkTheme) => updateAppearance({ darkTheme }),
+      setZoom: (zoom) => updateAppearance({ zoom }),
+      setFontFamily: (fontFamily) => updateAppearance({ fontFamily }),
       preview,
     }),
-    [settings, theme, setSettings],
+    [settings, theme, updateAppearance],
   );
 
   const { setTheme } = value;

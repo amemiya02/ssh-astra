@@ -2,8 +2,8 @@ import { useTranslation } from "react-i18next";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { connectionSetting, keepaliveChoices } from "@/features/connect/connection-settings";
 import { useSetting } from "@/lib/storage";
+import { CommitField } from "./CommitField";
 import { SettingRow } from "./SettingRow";
-import { SettingTextField } from "./SettingTextField";
 import { settingRows } from "./setting-rows";
 
 export function ConnectionSection() {
@@ -31,7 +31,7 @@ export function ConnectionSection() {
         />
       </SettingRow>
       <SettingRow setting={settingRows.agentPath}>
-        <SettingTextField
+        <CommitField
           id="settings-connection-agent-path"
           label={t(settingRows.agentPath.title)}
           value={settings.agentPath}
