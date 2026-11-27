@@ -14,6 +14,8 @@ export interface HostFormValues {
   identityFile: string;
   identitiesOnly: boolean;
   forwardAgent: boolean;
+  /** Blank follows the global keepalive interval. */
+  keepaliveSeconds?: string;
   /** The Host's own Terminal colour scheme; absent follows the global one. */
   terminalScheme?: TerminalColorScheme;
   /** Where the File panel opens first; blank is the home directory. */
@@ -26,7 +28,7 @@ export type HostFormField = Exclude<
   "jumpHost" | "authType" | "identitiesOnly" | "forwardAgent" | "terminalScheme" | "defaultDirectory"
 >;
 /** Error codes; the UI maps them to copy under `hosts.errors.*`. */
-export type HostFormError = "required" | "port";
+export type HostFormError = "required" | "port" | "keepaliveSeconds";
 
 export type HostFormResult =
   | { ok: true; draft: HostDraft }
@@ -58,6 +60,7 @@ export function hostFormFrom(host: Host): HostFormValues {
   };
   if (isTerminalColorScheme(host.terminalScheme)) form.terminalScheme = host.terminalScheme;
   if (host.defaultDirectory) form.defaultDirectory = host.defaultDirectory;
+  if (host.keepaliveSeconds !== undefined) form.keepaliveSeconds = String(host.keepaliveSeconds);
   return form;
 }
 
@@ -69,6 +72,8 @@ export function parseHostForm(values: HostFormValues): HostFormResult {
   const user = values.user.trim();
   const portText = values.port.trim() || "22";
   const identityFile = values.identityFile.trim();
+  const keepaliveText = values.keepaliveSeconds?.trim() ?? "";
+  const keepaliveSeconds = Number(keepaliveText);
 
   if (!name) errors.name = "required";
   if (!address) errors.address = "required";
@@ -76,6 +81,9 @@ export function parseHostForm(values: HostFormValues): HostFormResult {
   const port = /^\d+$/.test(portText) ? Number(portText) : NaN;
   if (!(port >= 1 && port <= 65535)) errors.port = "port";
   if (values.authType === "key" && !identityFile) errors.identityFile = "required";
+  if (keepaliveText && (!/^\d+$/.test(keepaliveText) || keepaliveSeconds > 0xffff_ffff)) {
+    errors.keepaliveSeconds = "keepaliveSeconds";
+  }
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   const jumpHost = values.jumpHost || null;
@@ -86,6 +94,7 @@ export function parseHostForm(values: HostFormValues): HostFormResult {
     forwardAgent: values.forwardAgent,
   };
   if (values.terminalScheme) draft.terminalScheme = values.terminalScheme;
+  if (keepaliveText) draft.keepaliveSeconds = keepaliveSeconds;
   const defaultDirectory = values.defaultDirectory?.trim();
   if (defaultDirectory) draft.defaultDirectory = defaultDirectory;
   return { ok: true, draft };

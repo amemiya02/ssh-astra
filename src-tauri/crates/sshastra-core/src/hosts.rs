@@ -19,7 +19,7 @@ pub use transfer::{ImportSummary, EXPORT_FORMAT};
 /// The file format version this build writes, to the store and to export
 /// files. Bump it together with a migration step in [`migrate`], which reads
 /// both.
-const CURRENT_VERSION: u32 = 8;
+const CURRENT_VERSION: u32 = 9;
 
 /// Identifies a Host across restarts and across the IPC boundary.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -113,6 +113,9 @@ pub struct Host {
     /// Allow shells on this Host to forward the local SSH agent.
     #[serde(default)]
     pub forward_agent: bool,
+    /// Seconds between keepalives; `None` follows the global setting, `Some(0)` turns them off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keepalive_seconds: Option<u32>,
     /// The Jump host this Host is reached through, itself possibly behind
     /// another one. Absent in files written before Jump hosts existed.
     #[serde(default)]
@@ -151,6 +154,9 @@ pub struct HostDraft {
     /// Allow shells on this Host to forward the local SSH agent.
     #[serde(default)]
     pub forward_agent: bool,
+    /// Seconds between keepalives; `None` follows the global setting, `Some(0)` turns them off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keepalive_seconds: Option<u32>,
     #[serde(default)]
     pub jump_host: Option<HostId>,
     /// The Terminal colour scheme for this Host (e.g. to mark production),
@@ -196,6 +202,7 @@ impl HostDraft {
             auth,
             identities_only: self.identities_only,
             forward_agent: self.forward_agent,
+            keepalive_seconds: self.keepalive_seconds,
             jump_host: self.jump_host,
             terminal_scheme: self
                 .terminal_scheme
@@ -563,6 +570,7 @@ impl HostStore {
                 auth,
                 identities_only: entry.identities_only,
                 forward_agent: entry.forward_agent,
+                keepalive_seconds: entry.keepalive_seconds,
                 jump_host,
                 terminal_scheme: None,
                 default_directory: None,
@@ -785,8 +793,9 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
         // v2-v4 have no default directory (`None`: home). v6 adds `Auto`
         // without changing how older authentication choices are read. v7
         // adds IdentitiesOnly, which defaults to off in older files. v8
-        // adds ForwardAgent.
-        2 | 4 | 5 | 6 | 7 | CURRENT_VERSION => {
+        // adds ForwardAgent. v9 adds a keepalive interval; older Hosts omit
+        // it and inherit the global one via Host's serde default.
+        2 | 4 | 5 | 6 | 7 | 8 | CURRENT_VERSION => {
             let FileV2 { groups, hosts } = serde_json::from_str(text).map_err(corrupt)?;
             Ok(Library { groups, hosts })
         }

@@ -121,6 +121,7 @@ fn host(sshd: &Sshd, auth: HostAuth) -> Host {
         terminal_scheme: None,
         identities_only: false,
         forward_agent: false,
+        keepalive_seconds: None,
         default_directory: None,
         forwards: Vec::new(),
         group_id: None,

@@ -21,6 +21,7 @@ fn host(name: &str) -> ConfigHost {
         identity_file: None,
         identities_only: false,
         forward_agent: false,
+        keepalive_seconds: None,
         jump_host: None,
         forwards: Vec::new(),
     }
@@ -585,7 +586,7 @@ Host web
             "unknown and irrelevant directives are ignored",
             "
 Host x
-    ServerAliveInterval 30
+    ServerAliveCountMax 3
     SomethingNew 1
 ",
         )

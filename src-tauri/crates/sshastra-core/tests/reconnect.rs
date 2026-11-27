@@ -86,6 +86,7 @@ impl Fixture {
             terminal_scheme: None,
             identities_only: false,
             forward_agent: false,
+            keepalive_seconds: None,
             default_directory: None,
             forwards: Vec::new(),
         };
@@ -305,11 +306,88 @@ async fn after_the_retries_fail_only_a_manual_reconnect_brings_it_back() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_host_keepalive_override_notices_a_silent_server() {
+    let Some(sshd) = support::sshd(Service::Flaky) else {
+        return;
+    };
+    let _turn = SERVER.lock().await;
+    let mut fx = Fixture::new(sshd);
+    fx.manager
+        .set_keepalive_interval(Some(Duration::from_secs(30)));
+    fx.host.keepalive_seconds = Some(1);
+
+    let (mut terminal, mut events) = fx.open().await;
+    events.shell_pid(&mut terminal).await;
+    fx.sshd.pause();
+    let noticed = tokio::time::timeout(Duration::from_secs(8), events.state(EVENT_WAIT)).await;
+    fx.sshd.unpause();
+
+    assert!(
+        matches!(
+            noticed,
+            Ok(ConnectionState::Reconnecting { attempt: 1, .. })
+        ),
+        "expected an idle Connection to drop within eight 1 s intervals: {noticed:?}"
+    );
+    assert_eq!(events.state(EVENT_WAIT).await, ConnectionState::Connected);
+    events.shell_pid(&mut terminal).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_jump_host_keepalive_uses_the_jump_hosts_override() {
+    let Some(sshd) = support::sshd(Service::Flaky) else {
+        return;
+    };
+    let _turn = SERVER.lock().await;
+    let mut fx = Fixture::new(sshd);
+    // Both hops use the same test sshd, but each has its own Connection.
+    let target = Host {
+        id: HostId::from("behind-flaky".to_owned()),
+        address: "127.0.0.1".into(),
+        port: 22,
+        keepalive_seconds: Some(0),
+        ..fx.host.clone()
+    };
+    fx.host.keepalive_seconds = Some(1);
+    let connection = fx
+        .manager
+        .connect_through(&[fx.host], &target, fx.prompts.clone())
+        .await
+        .unwrap();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let _shell = connection
+        .open_shell(SIZE, move |event| {
+            if matches!(event, TerminalEvent::Exit { .. }) {
+                let _ = tx.send(event);
+            }
+        })
+        .await
+        .unwrap();
+
+    fx.sshd.pause();
+    let noticed = tokio::time::timeout(Duration::from_secs(8), rx.recv()).await;
+    fx.sshd.unpause();
+
+    assert!(
+        matches!(noticed, Ok(Some(TerminalEvent::Exit { code: None }))),
+        "{noticed:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn keepalives_at_the_configured_interval_notice_a_silent_server() {
     let Some(sshd) = support::sshd(Service::Flaky) else {
         return;
     };
     let _turn = SERVER.lock().await;
+    let mut disabled = Fixture::new(sshd.clone());
+    disabled
+        .manager
+        .set_keepalive_interval(Some(Duration::from_secs(1)));
+    disabled.host.keepalive_seconds = Some(0);
+    let (mut idle_terminal, mut idle_events) = disabled.open().await;
+    let idle_pid = idle_events.shell_pid(&mut idle_terminal).await;
+
     let fx = Fixture::new(sshd);
     fx.manager
         .set_keepalive_interval(Some(Duration::from_secs(1)));
@@ -331,6 +409,7 @@ async fn keepalives_at_the_configured_interval_notice_a_silent_server() {
     assert!(waited < Duration::from_secs(15), "noticed after {waited:?}");
     assert_eq!(events.state(EVENT_WAIT).await, ConnectionState::Connected);
     events.shell_pid(&mut terminal).await;
+    assert_eq!(idle_events.shell_pid(&mut idle_terminal).await, idle_pid);
 }
 
 #[tokio::test(flavor = "multi_thread")]
