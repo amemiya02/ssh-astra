@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { usePaletteActions } from "@/features/palette/palette-actions";
 import { copyDiagnostics, openLogsDirectory } from "@/lib/ipc/diagnostics";
 import { SettingRow } from "./SettingRow";
+import { settingRows } from "./setting-rows";
 
 const actions = { open: openLogsDirectory, copy: copyDiagnostics };
 type Action = keyof typeof actions;
@@ -38,12 +39,12 @@ export function DiagnosticsSection() {
   const { run, busy, feedback } = useDiagnosticsActions();
   return (
     <>
-      <SettingRow label={t("settings.diagnostics.logs")} description={t("settings.diagnostics.logsDescription")}>
+      <SettingRow setting={settingRows.logs}>
         <Button variant="outline" size="sm" disabled={busy} onClick={() => void run("open")}>
           {t("settings.diagnostics.open")}
         </Button>
       </SettingRow>
-      <SettingRow label={t("settings.diagnostics.report")} description={t("settings.diagnostics.reportDescription")}>
+      <SettingRow setting={settingRows.report}>
         <Button variant="outline" size="sm" disabled={busy} onClick={() => void run("copy")}>
           {t("settings.diagnostics.copy")}
         </Button>

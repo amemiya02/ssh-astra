@@ -4,16 +4,19 @@ import { generalSetting, languagePreferences } from "@/i18n/language";
 import { useSetting } from "@/lib/storage";
 import { useTheme } from "@/theme/theme-context";
 import { SettingRow } from "./SettingRow";
+import { settingRows } from "./setting-rows";
+import { useSettingRowVisible } from "./settings-view";
 import { ThemeGallery } from "./theme-gallery";
 
 export function AppearanceSection() {
   const { t } = useTranslation();
   const { settings, theme, setTheme } = useTheme();
-  const label = t("settings.theme.follow.label");
+  const label = t(settingRows.followAppearance.title);
+  const showGallery = useSettingRowVisible(settingRows.themeGallery);
   const following = settings.theme === "system";
   return (
     <>
-      <SettingRow label={label} description={t("settings.theme.follow.description")}>
+      <SettingRow setting={settingRows.followAppearance}>
         <SegmentedControl
           label={label}
           value={following ? "on" : "off"}
@@ -25,7 +28,7 @@ export function AppearanceSection() {
           onChange={(next) => setTheme(next === "on" ? "system" : theme.id)}
         />
       </SettingRow>
-      <ThemeGallery />
+      {showGallery && <ThemeGallery />}
     </>
   );
 }
@@ -33,9 +36,9 @@ export function AppearanceSection() {
 export function LanguageSection() {
   const { t } = useTranslation();
   const [general, setGeneral] = useSetting(generalSetting);
-  const label = t("settings.language.label");
+  const label = t(settingRows.language.title);
   return (
-    <SettingRow label={label} description={t("settings.language.description")}>
+    <SettingRow setting={settingRows.language}>
       <SegmentedControl
         label={label}
         value={general.language}
