@@ -2,10 +2,12 @@
 
 import asyncio
 import base64
+import ipaddress
 import struct
 from contextlib import suppress
 
-TARGET = ("proxy-target", 22)
+TARGET = ("proxy-target.test", 22)
+IPV6 = ipaddress.IPv6Address("2001:db8::7")
 USERNAME = b"proxy-fixture"
 PASSWORD = b"outbound-proxy-test-secret"
 
@@ -34,9 +36,14 @@ async def socks5(reader, writer, auth):
         if not allowed:
             return None
     version, command, reserved, family = await reader.readexactly(4)
-    host = await sized_bytes(reader) if family == 3 else b""
+    if family == 3:
+        host = (await sized_bytes(reader)).decode("ascii")
+    elif family == 4:
+        host = str(ipaddress.IPv6Address(await reader.readexactly(16)))
+    else:
+        host = ""
     port = struct.unpack("!H", await reader.readexactly(2))[0]
-    if (version, command, reserved) != (5, 1, 0) or (host, port) != (TARGET[0].encode(), TARGET[1]):
+    if (version, command, reserved) != (5, 1, 0) or port != TARGET[1] or host not in {TARGET[0], str(IPV6)}:
         writer.write(b"\x05\x02\x00\x01" + bytes(6))
         return None
     return b"\x05\x00\x00\x01" + bytes(6)
@@ -50,7 +57,14 @@ async def http_connect(reader, writer, auth):
         writer.write(b"HTTP/1.1 407 Proxy Authentication Required\r\n"
                      b'Proxy-Authenticate: Basic realm="sshastra tests"\r\n\r\n')
         return None
-    if line != b"CONNECT proxy-target:22 HTTP/1.1":
+    if line == b"CONNECT oversized.test:22 HTTP/1.1":
+        writer.write(b"HTTP/1.1 200 OK\r\nX-Oversized: " + b"x" * 16384 + b"\r\n\r\n")
+        return None
+    if line == b"CONNECT invalid.test:22 HTTP/1.1":
+        writer.write(b"HTTP/1.1 2000 Bad status\r\n\r\n")
+        return None
+    targets = {f"CONNECT {TARGET[0]}:22 HTTP/1.1".encode(), f"CONNECT [{IPV6}]:22 HTTP/1.1".encode()}
+    if line not in targets:
         writer.write(b"HTTP/1.1 403 Forbidden\r\n\r\n")
         return None
     return b"HTTP/1.1 200 Connection Established\r\n\r\n"
@@ -79,7 +93,7 @@ async def handle(reader, writer, negotiate, auth):
         async with asyncio.TaskGroup() as tasks:
             tasks.create_task(relay(reader, target))
             tasks.create_task(relay(upstream, writer))
-    except (OSError, EOFError, asyncio.LimitOverrunError):
+    except (OSError, EOFError, UnicodeError, asyncio.LimitOverrunError):
         pass
     except ExceptionGroup as errors:
         # Reset during the test's normal teardown is an expected relay exit.

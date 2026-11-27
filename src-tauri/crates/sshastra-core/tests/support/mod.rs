@@ -244,7 +244,7 @@ fn published_port(service: &str, port: u16) -> (String, u16) {
     (host.to_owned(), port.parse().unwrap())
 }
 
-pub const PROXY_TARGET: &str = "proxy-target";
+pub const PROXY_TARGET: &str = "proxy-target.test";
 pub const PROXY_USER: &str = "proxy-fixture";
 pub const PROXY_PASSWORD: &str = "outbound-proxy-test-secret";
 

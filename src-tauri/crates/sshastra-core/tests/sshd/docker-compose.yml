@@ -85,7 +85,9 @@ services:
   proxy-target:
     <<: *sshd
     hostname: proxy-target
-    networks: [outbound-proxy]
+    networks:
+      outbound-proxy:
+        aliases: [proxy-target.test]
   keyonly:
     <<: *sshd
     hostname: keyonly

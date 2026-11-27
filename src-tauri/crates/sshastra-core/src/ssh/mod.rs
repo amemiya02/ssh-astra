@@ -720,9 +720,7 @@ impl ConnectionManager {
                     outbound_proxy::ProxyCredentials::new(&self.vault, owner, can_save);
                 outbound_proxy::dial(config, host, credentials, prompter).await
             }
-            None => open_tcp(host)
-                .await
-                .map(|tcp| BufReader::with_capacity(0, tcp)),
+            None => open_tcp(host).await.map(BufReader::new),
         }
     }
 

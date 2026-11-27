@@ -1,5 +1,5 @@
-//! The CredentialVault: Host passwords and key passphrases the user chose to
-//! save, kept in the operating system's secret store (macOS Keychain, Windows
+//! The CredentialVault: Host passwords, key passphrases and outbound proxy
+//! passwords kept in the operating system's secret store (macOS Keychain, Windows
 //! Credential Manager, Secret Service on Linux) under "Host id + kind". No
 //! credential is ever written to sshastra's own files.
 //!
@@ -29,6 +29,7 @@ pub enum CredentialKind {
 }
 
 impl CredentialKind {
+    /// Every Host-scoped credential kind.
     pub const ALL: [CredentialKind; 3] = [
         CredentialKind::Password,
         CredentialKind::KeyPassphrase,

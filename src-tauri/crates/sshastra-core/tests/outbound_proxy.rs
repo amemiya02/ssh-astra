@@ -75,6 +75,7 @@ async fn a_proxy_applies_only_to_the_first_tcp_hop() {
     let mut settings = SettingsStore::open(temp.path().join("settings.json")).unwrap();
     let mut hosts = HostStore::open(temp.path().join("hosts.json")).unwrap();
     let target = add_host(&mut hosts, PROXY_TARGET, 22, HostProxy::Inherit);
+    let ipv6 = add_host(&mut hosts, "[2001:db8::7]", 22, HostProxy::Inherit);
     let prompts = Arc::new(Prompts::default());
 
     configure(&manager, &mut settings, None);
@@ -87,8 +88,42 @@ async fn a_proxy_applies_only_to_the_first_tcp_hop() {
         configure(&manager, &mut settings, Some(&proxy.config(kind, false)));
         let connection = manager.connect(&target, prompts.clone()).await.unwrap();
         let output = connection.exec("hostname").await.unwrap();
-        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), PROXY_TARGET);
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout).trim(),
+            "proxy-target"
+        );
+        manager.connect(&ipv6, prompts.clone()).await.unwrap();
     }
+
+    for address in ["oversized.test", "invalid.test"] {
+        let invalid = add_host(&mut hosts, address, 22, HostProxy::Inherit);
+        assert!(matches!(
+            manager.connect(&invalid, prompts.clone()).await,
+            Err(ConnectError::Proxy(ProxyError::InvalidResponse))
+        ));
+    }
+    let invalid = add_host(
+        &mut hosts,
+        "proxy-target.test\r\nInjected: value",
+        22,
+        HostProxy::Inherit,
+    );
+    assert!(matches!(
+        manager.connect(&invalid, prompts.clone()).await,
+        Err(ConnectError::Proxy(ProxyError::InvalidTarget))
+    ));
+
+    let held = manager.connect(&target, prompts.clone()).await.unwrap();
+    configure(
+        &manager,
+        &mut settings,
+        Some(&proxy.config(ProxyKind::Socks5, true)),
+    );
+    assert!(Arc::ptr_eq(
+        &held,
+        &manager.connect(&target, prompts.clone()).await.unwrap()
+    ));
+    drop(held);
 
     let override_host = add_host(
         &mut hosts,
@@ -108,11 +143,7 @@ async fn a_proxy_applies_only_to_the_first_tcp_hop() {
         .await
         .unwrap();
     let direct = add_host(&mut hosts, &direct.host, direct.port, HostProxy::Direct);
-    let held = manager.connect(&direct, prompts.clone()).await.unwrap();
-    assert!(Arc::ptr_eq(
-        &held,
-        &manager.connect(&direct, prompts.clone()).await.unwrap()
-    ));
+    manager.connect(&direct, prompts.clone()).await.unwrap();
     let jump = add_host(
         &mut hosts,
         &jump_server.host,
@@ -163,11 +194,12 @@ async fn authenticated_proxies_keep_successful_passwords_in_the_vault_only() {
             ..Prompts::default()
         });
         manager.connect(&target, right.clone()).await.unwrap();
-        let questions = right.questions.lock().unwrap();
-        assert_eq!(questions.len(), 1);
-        assert_eq!(questions[0].user, PROXY_USER);
-        assert!(questions[0].can_save);
-        drop(questions);
+        {
+            let questions = right.questions.lock().unwrap();
+            assert_eq!(questions.len(), 1);
+            assert_eq!(questions[0].user, PROXY_USER);
+            assert!(questions[0].can_save);
+        }
         manager
             .connect(&target, Arc::new(Prompts::default()))
             .await

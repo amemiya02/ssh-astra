@@ -135,12 +135,10 @@ pub(super) async fn dial(
             can_save: credentials.save,
         })
         .await
-        .ok_or_else(|| {
-            if retry {
-                ProxyError::AuthenticationFailed.into()
-            } else {
-                ConnectError::Cancelled
-            }
+        .ok_or(if retry {
+            ProxyError::AuthenticationFailed.into()
+        } else {
+            ConnectError::Cancelled
         })?;
     let stream = tunnel(&config, &target, host.port, Some((username, &secret.value))).await?;
     if credentials.save && secret.save {
@@ -155,12 +153,11 @@ async fn tunnel(
     port: u16,
     login: Option<(&str, &str)>,
 ) -> Result<BufReader<TcpStream>, ProxyError> {
-    if let Some((_, password)) = login {
-        if password.len() > config.credential_limit()
+    if login.is_some_and(|(_, password)| {
+        password.len() > config.credential_limit()
             || (config.kind == ProxyKind::Socks5 && password.is_empty())
-        {
-            return Err(ProxyError::AuthenticationFailed);
-        }
+    }) {
+        return Err(ProxyError::AuthenticationFailed);
     }
 
     tokio::time::timeout(CONNECT_TIMEOUT, async {
