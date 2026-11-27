@@ -57,6 +57,12 @@ function fakeApi(overrides: Partial<FilesApi> = {}, dirs: Record<string, string[
       dirs[path] = [];
       return Promise.resolve();
     }),
+    createEmptyFile: vi.fn((_id: number, path: string) => {
+      const { dir, name, index } = find(path);
+      if (index >= 0) return taken(path);
+      dirs[dir]!.push(name);
+      return Promise.resolve();
+    }),
     renameFile: vi.fn((_id: number, from: string, to: string) => {
       const source = find(from);
       const target = find(to);
@@ -446,6 +452,16 @@ describe("file operations", () => {
     expect(selected(store)).toEqual(["build"]);
   });
 
+  it("refreshes and selects a newly created file in the directory shown", async () => {
+    const { store } = await connected();
+    await store.getState().navigate("/home/me/src");
+
+    expect(await store.getState().createFile("todo.txt")).toBeNull();
+
+    expect(shown(store)).toEqual({ path: "/home/me/src", names: ["main.rs", "lib.rs", "todo.txt"] });
+    expect(selected(store)).toEqual(["todo.txt"]);
+  });
+
   it("renames an entry and keeps it selected under its new name", async () => {
     const { api, store } = await connected();
     store.getState().select("notes.txt", "only", ["notes.txt", "src"]);
@@ -457,13 +473,20 @@ describe("file operations", () => {
     expect(selected(store)).toEqual(["todo.txt"]);
   });
 
-  it("hands back why an operation failed, leaving the listing and its error alone", async () => {
+  it("returns create and rename conflicts while preserving an existing listing error", async () => {
     const { store } = await connected();
+    await store.getState().navigate("/missing");
+    const listingError = store.getState().error;
+    expect(listingError).toMatchObject({ kind: "notFound" });
 
-    const failure = await store.getState().rename("notes.txt", "src");
-
-    expect(failure).toMatchObject({ kind: "alreadyExists", details: { path: "/home/me/src" } });
-    expect(store.getState().error).toBeNull();
+    expect(await store.getState().rename("notes.txt", "src")).toMatchObject({
+      kind: "alreadyExists", details: { path: "/home/me/src" },
+    });
+    expect(store.getState().error).toBe(listingError);
+    expect(await store.getState().createFile("notes.txt")).toMatchObject({
+      kind: "alreadyExists", details: { path: "/home/me/notes.txt" },
+    });
+    expect(store.getState().error).toBe(listingError);
     expect(shown(store).names.sort()).toEqual(["notes.txt", "src"]);
   });
 

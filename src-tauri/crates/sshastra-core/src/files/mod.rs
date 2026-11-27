@@ -156,6 +156,18 @@ pub trait RemoteFs: Send + Sync {
 
     /// Creates the directory `path` (its parent must exist).
     fn create_dir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>>;
+    /// Creates an empty file at `path`; fails with [`FsError::AlreadyExists`]
+    /// if any entry already occupies that path.
+    fn create_empty_file<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move {
+            let mut writer = self.create_new(path, false).await?;
+            writer
+                .shutdown()
+                .await
+                .map_err(|e| FsError::Protocol(format!("{path}: {e}")))
+        })
+    }
+
     /// Renames (or moves) `from` to `to`; fails with
     /// [`FsError::AlreadyExists`] rather than replacing an existing `to`.
     fn rename<'a>(&'a self, from: &'a str, to: &'a str) -> BoxFuture<'a, FsResult<()>>;
@@ -190,7 +202,7 @@ pub trait RemoteFs: Send + Sync {
     /// permissions), to write it. Finish with `shutdown().await`.
     fn create_write<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileWriter>>;
 
-    /// Exclusively creates a transfer's staging file. Existing paths, including
+    /// Exclusively creates a file. Existing paths, including
     /// symlinks, are never opened. Private files are created with mode `0o600`.
     fn create_new<'a>(
         &'a self,

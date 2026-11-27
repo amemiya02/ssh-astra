@@ -275,17 +275,18 @@
       "timedOut": "服务器没有及时响应。",
       "other": "无法列出文件夹：{{message}}"
     },
+    "newFile": "新建文件",
     "newFolder": "新建文件夹",
     "create": "创建",
     "cancel": "取消",
     "name": "名称",
-    "renameAction": "重命名…",
+    "renameAction": "重命名",
     "permissionsAction": "权限…",
     "deleteAction": "删除…",
+    "newFileAction": "新建文件…",
     "newFolderAction": "新建文件夹…",
     "rename": {
-      "title": "重命名“{{name}}”",
-      "confirm": "重命名"
+      "title": "重命名“{{name}}”"
     },
     "nameProblem": {
       "slash": "名称不能包含“/”。",
