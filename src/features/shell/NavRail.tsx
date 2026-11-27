@@ -2,7 +2,8 @@ import { ArrowRightLeft, FolderTree, House, Settings, SquareTerminal, Waypoints 
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
-import { currentPlatform, shortcutLabel } from "@/features/workspace/shortcuts";
+import { useResolvedShortcuts } from "@/features/workspace/shortcut-settings";
+import { shortcutLabel } from "@/features/workspace/shortcuts";
 import type { PaneKind } from "@/features/workspace/tabs";
 import { cn } from "@/lib/utils";
 import type { SidebarView } from "./shell-layout";
@@ -21,8 +22,6 @@ export interface NavRailProps {
   onSettings(): void;
 }
 
-const platform = currentPlatform();
-
 /** The 48px activity rail: places to go (Home, the sidebar's views, SFTP) on top, Local terminal and Settings below. */
 export function NavRail({
   sidebarView,
@@ -35,6 +34,7 @@ export function NavRail({
   onSettings,
 }: NavRailProps) {
   const { t } = useTranslation();
+  const shortcuts = useResolvedShortcuts();
   return (
     <nav aria-label={t("shell.navigation")} className="bg-sidebar flex w-12 shrink-0 flex-col items-center pb-2">
       {/* Clear of the macOS traffic lights; also the window's drag handle. */}
@@ -65,7 +65,7 @@ export function NavRail({
       <div className="mt-auto flex w-full flex-col items-center gap-1">
         <RailButton
           label={t("tabs.newLocalTerminal")}
-          shortcut={shortcutLabel("newTab", platform)}
+          shortcut={shortcutLabel("newTab", shortcuts)}
           active={activeKind === "local-terminal"}
           onClick={onLocalTerminal}
         >
@@ -73,7 +73,7 @@ export function NavRail({
         </RailButton>
         <RailButton
           label={t("settings.open")}
-          shortcut={shortcutLabel("settings", platform)}
+          shortcut={shortcutLabel("settings", shortcuts)}
           active={activeKind === "settings"}
           onClick={onSettings}
         >

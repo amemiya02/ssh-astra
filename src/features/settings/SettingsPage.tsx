@@ -5,11 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { settingsPageSections } from "./sections";
-import { settingRows, type SettingsCategory } from "./setting-rows";
+import { settingRows, shortcutRows, type SettingsCategory } from "./setting-rows";
 import { filterSettingsRows } from "./settings-search";
 import { SettingsViewContext } from "./settings-view";
 
-const availableRows = Object.values(settingRows).filter((row) =>
+const availableRows = [...Object.values(settingRows), ...shortcutRows.values()].filter((row) =>
   settingsPageSections.some(({ id }) => id === row.category)
 );
 

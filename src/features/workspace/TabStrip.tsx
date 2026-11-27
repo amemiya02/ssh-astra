@@ -23,6 +23,7 @@ import type { TemporaryHost } from "@/lib/ipc/hosts";
 import { getSetting, setSetting, useSetting } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import { TabMenu } from "./TabMenu";
+import { useResolvedShortcuts } from "./shortcut-settings";
 import { shortcutLabel, type Platform } from "./shortcuts";
 import type { TabActivity } from "./tab-activity";
 import { privacyModeSetting, workspaceHostName } from "./privacy-mode";
@@ -99,6 +100,7 @@ export function TabStrip({
   onSaveTemporaryHost,
 }: TabStripProps) {
   const { t } = useTranslation();
+  const shortcuts = useResolvedShortcuts(platform);
   const { unread, flashing } = useStore(activity.store);
   const [privacyMode] = useSetting(privacyModeSetting);
   const [{ tabOrientation, verticalTabsCompact, groupTabsByHost: grouping }] = useSetting(workspaceSetting);
@@ -392,7 +394,7 @@ export function TabStrip({
       )}>
         <IconButton
           label={t("tabs.newLocalTerminal")}
-          shortcut={shortcutLabel("newTab", platform)}
+          shortcut={shortcutLabel("newTab", shortcuts)}
           tooltipSide={vertical ? "right" : "bottom"}
           onClick={onNewLocalTerminal}
         >
@@ -403,7 +405,7 @@ export function TabStrip({
           <>
             <IconButton
               label={t("tabs.splitRight")}
-              shortcut={shortcutLabel("splitRight", platform)}
+              shortcut={shortcutLabel("splitRight", shortcuts)}
               tooltipSide={vertical ? "right" : "bottom"}
               onClick={() => onSplit("horizontal")}
             >
@@ -411,7 +413,7 @@ export function TabStrip({
             </IconButton>
             <IconButton
               label={t("tabs.splitDown")}
-              shortcut={shortcutLabel("splitDown", platform)}
+              shortcut={shortcutLabel("splitDown", shortcuts)}
               tooltipSide={vertical ? "right" : "bottom"}
               onClick={() => onSplit("vertical")}
             >

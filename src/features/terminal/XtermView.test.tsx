@@ -1,9 +1,12 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { BroadcastPaneContext, createBroadcast } from "@/features/workspace/broadcast";
+import { currentPlatform } from "@/features/workspace/shortcuts";
 import type { Terminal } from "@xterm/xterm";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeAll, expect, it, vi } from "vitest";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { shortcutSetting } from "@/features/workspace/shortcut-settings";
 import { startI18n } from "@/i18n";
 import { getSetting, setSetting } from "@/lib/storage";
 import { ThemeContext } from "@/theme/theme-context";
@@ -54,11 +57,13 @@ function mountTerminal(broadcast?: ReturnType<typeof createBroadcast>) {
       preview() {},
     }}>
       <BroadcastPaneContext.Provider value={broadcast && { broadcast, tabId: "work", paneId: "source" }}>
-        <XtermView active attach={(xterm) => {
-          terminal = xterm;
-          const subscription = xterm.onData((data) => input.push(data));
-          return () => subscription.dispose();
-        }} />
+        <TooltipProvider>
+          <XtermView active attach={(xterm) => {
+            terminal = xterm;
+            const subscription = xterm.onData((data) => input.push(data));
+            return () => subscription.dispose();
+          }} />
+        </TooltipProvider>
       </BroadcastPaneContext.Provider>
     </ThemeContext.Provider>,
   ));
@@ -74,6 +79,28 @@ function mountTerminal(broadcast?: ReturnType<typeof createBroadcast>) {
     },
   };
 }
+
+it("uses a changed Find shortcut in an already open Terminal", () => {
+  const { container, terminal, cleanup } = mountTerminal();
+  const previous = getSetting(shortcutSetting);
+  const mac = currentPlatform() === "mac";
+  const dispatch = (key: string, code: string, modifiers: KeyboardEventInit) => {
+    const event = new KeyboardEvent("keydown", { key, code, bubbles: true, cancelable: true, ...modifiers });
+    act(() => { terminal.textarea!.dispatchEvent(event); });
+    return event.defaultPrevented;
+  };
+
+  try {
+    setSetting(shortcutSetting, { find: { code: "KeyY", key: "Y", mods: mac ? ["meta", "shift"] : ["ctrl", "shift"] } });
+    dispatch("f", "KeyF", mac ? { metaKey: true } : { ctrlKey: true, shiftKey: true });
+    expect(container.querySelector('[aria-label="Find in Terminal"]')).toBeNull();
+    expect(dispatch("Y", "KeyY", mac ? { metaKey: true, shiftKey: true } : { ctrlKey: true, shiftKey: true })).toBe(true);
+    expect(container.querySelector('[aria-label="Find in Terminal"]')).not.toBeNull();
+  } finally {
+    setSetting(shortcutSetting, previous);
+    cleanup();
+  }
+});
 
 it("shows and opens the OSC 8 destination with the same click as a plain link", async () => {
   const { container, terminal, cleanup } = mountTerminal();

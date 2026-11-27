@@ -13,6 +13,7 @@ import { resolveTerminalTheme, terminalSearchDecorations } from "@/theme/termina
 import { PasteConfirmDialog } from "./PasteConfirmDialog";
 import { TerminalSearchBar, type SearchDirection, type SearchResults } from "./TerminalSearchBar";
 import { BroadcastPaneContext, type Broadcast } from "@/features/workspace/broadcast";
+import { getResolvedShortcuts } from "@/features/workspace/shortcut-settings";
 import { currentPlatform, matchTerminalShortcut } from "@/features/workspace/shortcuts";
 import { planPaste, type PendingPaste } from "./terminal-input";
 import { terminalLinkDestination } from "./terminal-links";
@@ -145,7 +146,7 @@ export function XtermView({ label, active, colorScheme, onTitleChange, attach }:
 
     const platform = currentPlatform();
     xterm.attachCustomKeyEventHandler((event) => {
-      if (event.type !== "keydown" || matchTerminalShortcut(event, platform) !== "find") return true;
+      if (event.type !== "keydown" || event.isComposing || matchTerminalShortcut(event, getResolvedShortcuts(platform)) !== "find") return true;
       event.preventDefault();
       setSearching(true);
       return false;

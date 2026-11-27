@@ -47,7 +47,8 @@ import {
   ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { currentPlatform, matchFileHistoryShortcut, matchFileClipboardShortcut, shortcutLabel } from "@/features/workspace/shortcuts";
+import { getResolvedShortcuts, useResolvedShortcuts } from "@/features/workspace/shortcut-settings";
+import { matchFileHistoryShortcut, matchFileClipboardShortcut, shortcutAriaLabel, shortcutLabel, type ResolvedShortcuts } from "@/features/workspace/shortcuts";
 import type { CommandError } from "@/lib/ipc/connect";
 import type { FileEntry } from "@/lib/ipc/files";
 import { copyTextWithToast } from "@/features/toasts/copyFeedback";
@@ -152,14 +153,17 @@ export function FileBrowser({
     const target = event.target;
     if (event.defaultPrevented || event.nativeEvent.isComposing || !(target instanceof Element) ||
       !event.currentTarget.contains(target) || target.closest("input, textarea, select, [contenteditable]")) return;
-    if (paste && matchFileClipboardShortcut(event, currentPlatform()) === "filePaste") {
+    const shortcuts = getResolvedShortcuts();
+    if (paste && matchFileClipboardShortcut(event, shortcuts) === "filePaste") {
       event.preventDefault();
+      event.stopPropagation();
       if (!event.repeat) paste();
       return;
     }
-    const command = matchFileHistoryShortcut(event);
+    const command = matchFileHistoryShortcut(event, shortcuts);
     if (!command) return;
     event.preventDefault();
+    event.stopPropagation();
     const state = store.getState();
     if (command === "fileBack" ? !state.canGoBack : !state.canGoForward) return;
     // The path bar and table remount on navigation. Keep focus inside the panel.
@@ -167,7 +171,7 @@ export function FileBrowser({
     void (command === "fileBack" ? state.goBack() : state.goForward());
   };
   const browser = (
-    <div ref={panel} tabIndex={-1} onKeyDown={onKeyDown}
+    <div ref={panel} tabIndex={-1} onKeyDownCapture={onKeyDown}
       className="focus-visible:ring-ring/50 flex h-full flex-col outline-none focus-visible:ring-[3px] focus-visible:ring-inset">
       {/* Sibling keys must differ: PathBar and FileTable sharing the path as key made React keep the old path bar. */}
       <PathBar key={`path:${path ?? ""}`} store={store} focusPanel={focusPanel} onOperation={setOperation}
@@ -250,7 +254,7 @@ function PathBar({ store, focusPanel, onOperation, searchOpen, onToggleSearch }:
   const breadcrumb = useRef<HTMLElement>(null);
   const editing = draft !== null;
   const crumbs = path !== null && !editing ? pathCrumbs(path) : [];
-  const platform = currentPlatform();
+  const shortcuts = useResolvedShortcuts();
 
   useLayoutEffect(() => {
     if (editing) {
@@ -284,15 +288,15 @@ function PathBar({ store, focusPanel, onOperation, searchOpen, onToggleSearch }:
     >
       <div className="flex items-center">
         <IconButton
-          type="button" label={t("files.back")} shortcut={shortcutLabel("fileBack", platform)}
-          aria-keyshortcuts="Alt+ArrowLeft" className="size-6" disabled={!canGoBack}
+          type="button" label={t("files.back")} shortcut={shortcutLabel("fileBack", shortcuts)}
+          aria-keyshortcuts={canGoBack ? shortcutAriaLabel("fileBack", shortcuts) : undefined} className="size-6" disabled={!canGoBack}
           onClick={() => navigate(store.getState().goBack)}
         >
           <ArrowLeft />
         </IconButton>
         <IconButton
-          type="button" label={t("files.forward")} shortcut={shortcutLabel("fileForward", platform)}
-          aria-keyshortcuts="Alt+ArrowRight" className="size-6" disabled={!canGoForward}
+          type="button" label={t("files.forward")} shortcut={shortcutLabel("fileForward", shortcuts)}
+          aria-keyshortcuts={canGoForward ? shortcutAriaLabel("fileForward", shortcuts) : undefined} className="size-6" disabled={!canGoForward}
           onClick={() => navigate(store.getState().goForward)}
         >
           <ArrowRight />
@@ -413,6 +417,7 @@ function FileTable({
   remoteClipboard?: RemoteClipboard;
 }) {
   const { t, i18n } = useTranslation();
+  const shortcuts = useResolvedShortcuts();
   const entries = useStore(store, (s) => s.entries);
   const selection = useStore(store, (s) => s.selection);
   const loading = useStore(store, (s) => s.loading);
@@ -566,7 +571,7 @@ function FileTable({
 
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.target !== event.currentTarget || event.nativeEvent.isComposing) return;
-    const shortcut = matchFileClipboardShortcut(event, currentPlatform());
+    const shortcut = matchFileClipboardShortcut(event, getResolvedShortcuts());
     if (selected.length > 0) {
       if (canStartMove && shortcut === "fileCut") {
         event.preventDefault();
@@ -686,6 +691,7 @@ function FileTable({
                             id={rowId(index)}
                             index={index}
                             entry={entry}
+                            shortcuts={shortcuts}
                             path={path}
                             exchange={exchange}
                             dragPaths={paths}
@@ -819,6 +825,7 @@ function FileRow({
   id,
   index,
   entry,
+  shortcuts,
   path,
   selected,
   focused,
@@ -845,6 +852,7 @@ function FileRow({
   id: string;
   index: number;
   entry: FileEntry;
+  shortcuts: ResolvedShortcuts;
   path: string;
   selected: boolean;
   focused: boolean;
@@ -998,14 +1006,14 @@ function FileRow({
           <ContextMenuItem onSelect={onClipboardCopy}>
             <Copy />
             {t("files.copy")}
-            <ContextMenuShortcut>{shortcutLabel("fileCopy", currentPlatform())}</ContextMenuShortcut>
+            <ContextMenuShortcut>{shortcutLabel("fileCopy", shortcuts)}</ContextMenuShortcut>
           </ContextMenuItem>
         )}
         {onCut && (
           <ContextMenuItem onSelect={onCut}>
             <Scissors />
             {t("files.move.cut")}
-            <ContextMenuShortcut>{shortcutLabel("fileCut", currentPlatform())}</ContextMenuShortcut>
+            <ContextMenuShortcut>{shortcutLabel("fileCut", shortcuts)}</ContextMenuShortcut>
           </ContextMenuItem>
         )}
         {onPaste && <PasteItem onPaste={onPaste} />}
@@ -1054,11 +1062,12 @@ function FileRow({
 
 function PasteItem({ onPaste }: { onPaste(): void }) {
   const { t } = useTranslation();
+  const shortcuts = useResolvedShortcuts();
   return (
     <ContextMenuItem onSelect={onPaste}>
       <ClipboardPaste />
       {t("files.move.paste")}
-      <ContextMenuShortcut>{shortcutLabel("filePaste", currentPlatform())}</ContextMenuShortcut>
+      <ContextMenuShortcut>{shortcutLabel("filePaste", shortcuts)}</ContextMenuShortcut>
     </ContextMenuItem>
   );
 }

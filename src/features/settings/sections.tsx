@@ -6,6 +6,7 @@ import { FilesSection } from "./files-section";
 import { AppearanceCategory } from "./general-sections";
 import { NotificationsSection } from "./notifications-section";
 import type { SettingsCategory } from "./setting-rows";
+import { ShortcutsSection } from "./shortcuts-section";
 import { TerminalSection } from "./terminal-section";
 import { TransfersSection } from "./transfers-section";
 import { UpdatesSection } from "./updates-section";
@@ -17,6 +18,7 @@ export const settingsPageSections: readonly { id: SettingsCategory; Component: C
   { id: "files", Component: FilesSection },
   { id: "connection", Component: ConnectionSection },
   { id: "transfers", Component: TransfersSection },
+  { id: "shortcuts", Component: ShortcutsSection },
   ...(isTauri() ? [
     { id: "notifications", Component: NotificationsSection },
     { id: "updates", Component: UpdatesSection },

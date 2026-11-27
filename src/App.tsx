@@ -29,6 +29,7 @@ import { useTerminalPrefs } from "@/features/terminal/terminal-prefs-context";
 import { createBroadcast, type BroadcastScope } from "@/features/workspace/broadcast";
 import { paneNeighbors } from "@/features/workspace/pane-layout";
 import { privacyModeSetting, togglePrivacyMode } from "@/features/workspace/privacy-mode";
+import { useResolvedShortcuts } from "@/features/workspace/shortcut-settings";
 import { currentPlatform, paneSwapShortcuts, shortcutLabel, type WorkspaceCommand } from "@/features/workspace/shortcuts";
 import { TabPanels } from "@/features/workspace/TabPanels";
 import { ConflictDialog } from "@/features/transfers/ConflictDialog";
@@ -55,7 +56,7 @@ import {
   type SplitOrientation,
   type TabsState,
 } from "@/features/workspace/tabs";
-import { useWorkspaceShortcuts } from "@/features/workspace/use-workspace-shortcuts";
+import { ShortcutCaptureContext, useWorkspaceShortcuts } from "@/features/workspace/use-workspace-shortcuts";
 import { serializeWorkspaceLayout, workspaceLayoutSetting } from "@/features/workspace/workspace-layout";
 import { workspaceSetting } from "@/features/workspace/workspace-prefs";
 import { createTemporaryHost, forgetTemporaryHost, isTemporaryHost, type Host, type HostId, type QuickConnectTarget } from "@/lib/ipc/hosts";
@@ -72,6 +73,7 @@ const updatable = isTauri() && import.meta.env.VITE_E2E !== "1";
  */
 export function App({ initialTabs }: { initialTabs: TabsState }) {
   const { t } = useTranslation();
+  const shortcuts = useResolvedShortcuts(platform);
   const [privacyMode] = useSetting(privacyModeSetting);
   const { prefs: { titleSource } } = useTerminalPrefs();
   const [state, dispatch] = useReducer(tabsReducer, initialTabs);
@@ -115,13 +117,13 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
     ...(hasFocusedTerminal && !(broadcastMode?.scope === "tab" && broadcastMode.tabId === activeId) ? [{
       id: "broadcast.tab",
       title: t("broadcast.toTab"),
-      shortcut: shortcutLabel("broadcastTab", platform),
+      shortcut: shortcutLabel("broadcastTab", shortcuts),
       run: () => toggleBroadcast("tab"),
     }] : []),
     ...(hasFocusedTerminal && broadcastMode?.scope !== "window" ? [{
       id: "broadcast.window",
       title: t("broadcast.toWindow"),
-      shortcut: shortcutLabel("broadcastWindow", platform),
+      shortcut: shortcutLabel("broadcastWindow", shortcuts),
       run: () => toggleBroadcast("window"),
     }] : []),
     ...(broadcastMode ? [{
@@ -129,7 +131,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
       title: t("broadcast.turnOff"),
       run: broadcast.stop,
     }] : []),
-  ], [activeId, broadcast, broadcastMode, hasFocusedTerminal, t, toggleBroadcast]));
+  ], [activeId, broadcast, broadcastMode, hasFocusedTerminal, shortcuts, t, toggleBroadcast]));
   const lastLayout = useRef<string | undefined>(undefined);
   useEffect(() => {
     const layout = serializeWorkspaceLayout(state);
@@ -224,7 +226,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
         {
           id: "terminal.newLocal",
           title: t("tabs.newLocalTerminal"),
-          shortcut: shortcutLabel("newTab", platform),
+          shortcut: shortcutLabel("newTab", shortcuts),
           run: openLocalTerminal,
         },
         { id: "home.open", title: t("palette.actions.goHome"), keywords: [t("palette.keywords.hosts")], run: openHome },
@@ -239,13 +241,13 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
           {
             id: "workspace.splitRight",
             title: t("tabs.splitRight"),
-            shortcut: shortcutLabel("splitRight", platform),
+            shortcut: shortcutLabel("splitRight", shortcuts),
             run: () => splitRef.current("horizontal"),
           },
           {
             id: "workspace.splitDown",
             title: t("tabs.splitDown"),
-            shortcut: shortcutLabel("splitDown", platform),
+            shortcut: shortcutLabel("splitDown", shortcuts),
             run: () => splitRef.current("vertical"),
           },
         ] : []),
@@ -253,7 +255,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
           id: "settings.open",
           title: t("palette.actions.openSettings"),
           keywords: [t("palette.keywords.preferences")],
-          shortcut: shortcutLabel("settings", platform),
+          shortcut: shortcutLabel("settings", shortcuts),
           run: openSettings,
         },
         ...(updatable
@@ -267,7 +269,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
             ]
           : []),
       ],
-      [t, openLocalTerminal, openHome, openSettings, openTransfers, pickSftpHost, canSplitFocused, privacyMode],
+      [t, openLocalTerminal, openHome, openSettings, openTransfers, pickSftpHost, canSplitFocused, privacyMode, shortcuts],
     ),
   );
 
@@ -279,7 +281,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
         {
           id: "workspace.toggleMaximizePane",
           title: t(paneMaximized ? "tabs.restorePaneLayout" : "tabs.maximizePane"),
-          shortcut: shortcutLabel("toggleMaximizePane", platform),
+          shortcut: shortcutLabel("toggleMaximizePane", shortcuts),
           run: () => dispatch({ type: "toggleMaximizePane" }),
         },
         ...paneSwapShortcuts
@@ -287,14 +289,14 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
           .map(({ name, direction }): PaletteAction => ({
             id: `workspace.${name}`,
             title: t(`tabs.${name}`),
-            shortcut: shortcutLabel(name, platform),
+            shortcut: shortcutLabel(name, shortcuts),
             run: () => dispatch({ type: "swapPane", direction }),
           })),
       ];
-    }, [focusedLayout, focusedPaneId, paneMaximized, t]),
+    }, [focusedLayout, focusedPaneId, paneMaximized, shortcuts, t]),
   );
 
-  useWorkspaceShortcuts(platform, (command: WorkspaceCommand) => {
+  const shortcutCapture = useWorkspaceShortcuts(platform, (command: WorkspaceCommand) => {
     if (pendingClose) return;
     const tab = activeTab(state);
     switch (command.type) {
@@ -391,7 +393,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
   useRetainRemoteFilePanels(remoteTerminalPaneIds(state));
 
   return (
-    <>
+    <ShortcutCaptureContext.Provider value={shortcutCapture}>
       <DiagnosticsPaletteActions />
       <AppShell
         sidebar={{
@@ -533,6 +535,6 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
         onQuickConnect={openQuickConnect}
         onActivateTab={activateTab}
       />
-    </>
+    </ShortcutCaptureContext.Provider>
   );
 }

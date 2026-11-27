@@ -12,9 +12,8 @@ import type { Host } from "@/lib/ipc/hosts";
 import { useSetting } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import { ThemeMenu } from "@/theme/ThemeMenu";
-import { currentPlatform, shortcutLabel } from "@/features/workspace/shortcuts";
-
-const settingsShortcut = shortcutLabel("settings", currentPlatform());
+import { useResolvedShortcuts } from "@/features/workspace/shortcut-settings";
+import { shortcutLabel } from "@/features/workspace/shortcuts";
 
 /** What the status bar reports; every field is live state, never a placeholder. */
 export interface StatusInfo {
@@ -53,6 +52,7 @@ export function StatusBar({
   onOpenSettings(): void;
 }) {
   const { t } = useTranslation();
+  const settingsShortcut = shortcutLabel("settings", useResolvedShortcuts());
   const [privacyMode] = useSetting(privacyModeSetting);
   const { connected, reconnecting, forwards, transfers, activeRemote, saveTemporaryHost, broadcast } = info;
   const transferStatus = transfers.bytesPerSecond > 0
