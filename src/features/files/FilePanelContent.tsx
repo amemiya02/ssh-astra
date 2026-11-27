@@ -13,8 +13,8 @@ import type { ConnectionStatus } from "@/features/workspace/tabs";
 import { transfersStore } from "@/features/transfers/transfersStore";
 import { useOsFileDrop } from "@/features/transfers/use-os-file-drop";
 import { readCommandError } from "@/lib/ipc/connect";
-import { isTemporaryHost, type Host } from "@/lib/ipc/hosts";
-import { pickDownloadFolder, pickFilesToUpload, type TransferHost } from "@/lib/ipc/transfers";
+import type { Host } from "@/lib/ipc/hosts";
+import { pickDownloadFolder, pickFilesToUpload, transferHost, type TransferHost } from "@/lib/ipc/transfers";
 import { useSetting } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import { FileBrowser, type FilePanelDropTarget } from "./FileBrowser";
@@ -43,11 +43,6 @@ interface RemoteSelection {
 
 // The clipboard remains available when switching tabs or hiding the dock.
 const fileClipboard = createStore<RemoteSelection | null>()(() => null);
-const transferHost = (host: Host): TransferHost => ({
-  id: host.id,
-  name: host.name,
-  ...(isTemporaryHost(host) && { temporary: true }),
-});
 
 const filePanelCollisions: CollisionDetection = (args) => {
   const hits = pointerWithin(args);
@@ -165,7 +160,7 @@ function RemoteFilePanel({ pane, onOpenSftp, onCopy, embedded, extraActions, pee
   const hasSelection = useStore(store, (s) => s.selection.size > 0);
 
   const upload = (paths: string[]) => {
-    if (path !== null) void transfersStore.getState().upload(pane.host.id, paths, path);
+    if (path !== null) void transfersStore.getState().upload(transferHost(pane.host), paths, path);
   };
   const pickAndUpload = async () => {
     if (path === null) return;
@@ -182,7 +177,7 @@ function RemoteFilePanel({ pane, onOpenSftp, onCopy, embedded, extraActions, pee
   /** Downloads remote `paths` (absolute) to a folder the user picks. */
   const downloadPaths = async (paths: string[]) => {
     const target = await pickDownloadFolder(t("files.downloadTitle"));
-    if (target !== null) void transfersStore.getState().download(pane.host.id, paths, target);
+    if (target !== null) void transfersStore.getState().download(transferHost(pane.host), paths, target);
   };
   const dropZone = useRef<HTMLDivElement>(null);
   const { over } = useOsFileDrop(dropZone, ready && !collapsed, upload);

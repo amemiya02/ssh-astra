@@ -172,6 +172,7 @@ pub fn run() {
             commands::diagnostics::diagnostics_open_logs,
             commands::diagnostics::diagnostics_report,
             commands::credentials::host_credentials_clear,
+            commands::credentials::global_proxy_password_clear,
             commands::terminal::local_terminal_open,
             commands::terminal::remote_terminal_open,
             commands::terminal::prompt_answer,
@@ -211,6 +212,7 @@ pub fn run() {
             commands::transfers::transfer_retry,
             commands::transfers::transfer_answer,
             commands::transfers::transfers_remove,
+            commands::transfers::transfer_reveal_download,
         ])
         .build(tauri::generate_context!())
         .expect("error while building sshastra")

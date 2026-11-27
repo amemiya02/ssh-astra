@@ -2,7 +2,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { e2eHooks } from "@/lib/e2e";
-import type { HostId } from "./hosts";
+import { isTemporaryHost, type Host, type HostId } from "./hosts";
 
 /** Mirrors `sshastra_core::files::TransferId`. */
 export type TransferId = number;
@@ -23,6 +23,10 @@ export interface TransferHost {
   id: HostId;
   name: string;
   temporary?: boolean;
+}
+
+export function transferHost(host: Host): TransferHost {
+  return { id: host.id, name: host.name, ...(isTemporaryHost(host) && { temporary: true }) };
 }
 
 /** Mirrors `sshastra_core::files::Transfer`: one dropped or picked file or folder. */
@@ -56,13 +60,13 @@ export function watchTransfers(onEvent: (transfer: Transfer) => void): Promise<T
 }
 
 /** Queues uploading local files or folders into `remoteDir` over the Host's live Connection. */
-export function uploadFiles(hostId: HostId, paths: string[], remoteDir: string): Promise<TransferId[]> {
-  return invoke<TransferId[]>("transfers_upload", { hostId, paths, remoteDir });
+export function uploadFiles(host: TransferHost, paths: string[], remoteDir: string): Promise<TransferId[]> {
+  return invoke<TransferId[]>("transfers_upload", { host, paths, remoteDir });
 }
 
 /** Queues downloading remote files or folders (absolute paths) into the local folder `localDir`. */
-export function downloadFiles(hostId: HostId, paths: string[], localDir: string): Promise<TransferId[]> {
-  return invoke<TransferId[]>("transfers_download", { hostId, paths, localDir });
+export function downloadFiles(host: TransferHost, paths: string[], localDir: string): Promise<TransferId[]> {
+  return invoke<TransferId[]>("transfers_download", { host, paths, localDir });
 }
 
 /** Queues copying absolute paths from one Host into a directory on another. */
@@ -96,6 +100,11 @@ export function answerConflict(id: TransferId, answer: ConflictAnswer): Promise<
 /** Forgets finished transfers. */
 export function removeTransfers(ids: TransferId[]): Promise<void> {
   return invoke("transfers_remove", { ids });
+}
+
+/** Shows the completed download's local target in the system file manager. */
+export function revealDownload(id: TransferId): Promise<void> {
+  return invoke("transfer_reveal_download", { id });
 }
 
 /** The native picker for files to upload; `null` if cancelled. */

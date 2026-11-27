@@ -15,6 +15,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ConnectErrorPanel } from "@/features/connect/ConnectErrorPanel";
 import { ConnectPromptDialog } from "@/features/connect/ConnectPromptDialog";
+import { ProxyFields } from "@/features/connect/ProxyFields";
+import { inheritedProxyForm, type ProxyField } from "@/features/connect/proxy-form";
 import { readCommandError, refusal, type CommandError, type ConnectPrompt, type PromptAnswer } from "@/lib/ipc/connect";
 import type { testHostConnection } from "@/lib/ipc/connections";
 import { isTemporaryHost, type Group, type Host, type HostDraft, type HostId, type TerminalBackspace, type TerminalCharset } from "@/lib/ipc/hosts";
@@ -58,7 +60,7 @@ export function ConfirmRemoveDialogContent({
   );
 }
 
-const fields: { field: HostFormField; inputMode?: "numeric" }[] = [
+const fields: { field: Exclude<HostFormField, ProxyField>; inputMode?: "numeric" }[] = [
   { field: "name" },
   { field: "address" },
   { field: "port", inputMode: "numeric" },
@@ -72,6 +74,9 @@ const advancedFieldIds = {
   terminalScheme: "host-form-terminal-scheme",
   defaultDirectory: "host-form-default-directory",
   keepaliveSeconds: "host-form-keepalive-seconds",
+  proxyAddress: "host-form-proxy-address",
+  proxyPort: "host-form-proxy-port",
+  proxyUsername: "host-form-proxy-username",
 };
 
 type ConnectionTestState =
@@ -122,7 +127,9 @@ export function HostFormDialogContent({
   useEffect(() => () => testAbort.current?.abort(), []);
 
   useLayoutEffect(() => {
-    const field = saveError?.field ?? (errors.keepaliveSeconds ? "keepaliveSeconds" : undefined);
+    const field = saveError?.field ?? Object.keys(advancedFieldIds).find(
+      (field) => errors[field as HostFormField],
+    ) as keyof typeof advancedFieldIds | undefined;
     if (field) document.getElementById(advancedFieldIds[field])?.focus();
   }, [errors, saveError]);
 
@@ -142,7 +149,7 @@ export function HostFormDialogContent({
     }, purpose);
     setErrors(result.ok ? {} : result.errors);
     if (result.ok) return result.draft;
-    if (result.errors.keepaliveSeconds) setAdvancedOpen(true);
+    if (Object.keys(result.errors).some((field) => field in advancedFieldIds)) setAdvancedOpen(true);
   };
 
   const runTest = async () => {
@@ -200,12 +207,17 @@ export function HostFormDialogContent({
           save(draft, host?.id).then(onSaved, (e: unknown) => {
             const error = readCommandError(e);
             const field = error.kind === "invalid" && error.details?.field;
-            const advancedField = field === "terminalScheme" || field === "defaultDirectory" ? field : undefined;
+            const advancedField = typeof field === "string" && Object.hasOwn(advancedFieldIds, field)
+              ? field as keyof typeof advancedFieldIds : undefined;
             if (advancedField) setAdvancedOpen(true);
             let message = error.message;
             if (error.kind === "temporaryHostUnavailable") message = t("quickConnect.noLongerAvailable");
             if (error.kind === "duplicateHostId") message = t("quickConnect.alreadySaved");
-            setSaveError({ message, field: advancedField });
+            if (advancedField === "proxyAddress" || advancedField === "proxyPort" || advancedField === "proxyUsername") {
+              setErrors({ [advancedField]: advancedField });
+            } else {
+              setSaveError({ message, field: advancedField });
+            }
             setSaving(false);
           });
         }}
@@ -363,6 +375,15 @@ export function HostFormDialogContent({
                     {t("hosts.forwardAgentHint")}
                   </p>
                 </div>
+              </div>
+              <div className="grid gap-1.5">
+                <ProxyFields
+                  id="host-form-proxy"
+                  values={values.proxy ?? inheritedProxyForm}
+                  errors={errors}
+                  onChange={(proxy) => setValues((v) => ({ ...v, proxy }))}
+                />
+                {values.jumpHost && <p className="text-muted-foreground text-xs">{t("proxy.jumpHint")}</p>}
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor={advancedFieldIds.keepaliveSeconds} className="text-xs">

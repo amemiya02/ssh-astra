@@ -52,6 +52,7 @@ async fn connect(port: &str, scratch: &Path) -> Arc<dyn RemoteFs> {
         terminal_scheme: None,
         identities_only: false,
         forward_agent: false,
+        proxy: Default::default(),
         keepalive_seconds: None,
         post_login_command: None,
         terminal_charset: None,

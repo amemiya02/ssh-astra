@@ -263,6 +263,7 @@ fn a_host_with_a_taken_name_is_skipped_and_its_namesake_used_as_jump_host() {
                 terminal_scheme: None,
                 identities_only: false,
                 forward_agent: false,
+                proxy: Default::default(),
                 keepalive_seconds: None,
                 post_login_command: None,
                 terminal_charset: None,

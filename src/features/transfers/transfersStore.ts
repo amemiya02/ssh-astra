@@ -29,10 +29,10 @@ export interface TransfersState {
   speeds: Record<TransferId, number>;
   /** Loads the current transfers and follows the backend's changes. Call once. */
   watch(): Promise<void>;
-  /** Registers an expanded Transfers panel until the returned cleanup is called. */
+  /** Registers a visible transfer list until the returned cleanup is called. */
   trackVisiblePanel(): () => void;
-  upload(hostId: HostId, paths: string[], remoteDir: string): Promise<void>;
-  download(hostId: HostId, paths: string[], localDir: string): Promise<void>;
+  upload(host: TransferHost, paths: string[], remoteDir: string): Promise<void>;
+  download(host: TransferHost, paths: string[], localDir: string): Promise<void>;
   copyRemote(source: TransferHost, paths: string[], target: TransferHost, remoteDir: string): Promise<void>;
   cancel(id: TransferId): Promise<void>;
   pause(id: TransferId): Promise<void>;
@@ -41,6 +41,8 @@ export interface TransfersState {
   answer(id: TransferId, answer: ConflictAnswer): Promise<void>;
   /** Forgets finished transfers among `ids`. */
   dismiss(ids: TransferId[]): Promise<void>;
+  /** Forgets the transfers already completed when this action was requested. */
+  clearCompleted(): Promise<void>;
 }
 
 /** How much a new speed sample moves the shown speed (the rest is the earlier speed). */
@@ -109,6 +111,15 @@ export function createTransfersStore(
       }
     };
 
+    const forgetRows = (ids: ReadonlySet<TransferId>) => {
+      const transfers = get().transfers.filter((transfer) => {
+        if (!ids.has(transfer.id)) return true;
+        if (enqueuing > 0) dismissedDuringEnqueue.set(transfer.id, transfer);
+        return false;
+      });
+      set({ transfers });
+    };
+
     const apply = (transfer: Transfer) => {
       const { transfers, speeds } = get();
       const index = transfers.findIndex((t) => t.id === transfer.id);
@@ -162,12 +173,12 @@ export function createTransfersStore(
         return () => { visiblePanels.delete(panel); };
       },
 
-      upload(hostId, paths, remoteDir) {
-        return enqueue(() => api.uploadFiles(hostId, paths, remoteDir));
+      upload(host, paths, remoteDir) {
+        return enqueue(() => api.uploadFiles(host, paths, remoteDir));
       },
 
-      download(hostId, paths, localDir) {
-        return enqueue(() => api.downloadFiles(hostId, paths, localDir));
+      download(host, paths, localDir) {
+        return enqueue(() => api.downloadFiles(host, paths, localDir));
       },
 
       copyRemote(source, paths, target, remoteDir) {
@@ -181,16 +192,17 @@ export function createTransfersStore(
       answer: (id, answer) => api.answerConflict(id, answer),
 
       async dismiss(ids) {
-        const { transfers } = get();
-        const finished = new Set<TransferId>();
-        for (const transfer of transfers) {
-          if (!ids.includes(transfer.id) || !isFinished(transfer)) continue;
-          finished.add(transfer.id);
-          if (enqueuing > 0) dismissedDuringEnqueue.set(transfer.id, transfer);
-        }
-        if (!finished.size) return;
-        set({ transfers: transfers.filter((t) => !finished.has(t.id)) });
+        const finished = new Set(get().transfers.filter((t) => ids.includes(t.id) && isFinished(t)).map((t) => t.id));
+        if (finished.size === 0) return;
+        forgetRows(finished);
         await api.removeTransfers([...finished]);
+      },
+
+      async clearCompleted() {
+        const completed = new Set(doneTransfers(get().transfers).map(({ id }) => id));
+        if (completed.size === 0) return;
+        await api.removeTransfers([...completed]);
+        forgetRows(completed);
       },
     };
   });
@@ -203,6 +215,27 @@ export function activeTransfers(transfers: readonly Transfer[]): Transfer[] {
 
 export function doneTransfers(transfers: readonly Transfer[]): Transfer[] {
   return transfers.filter((t) => t.state.type === "done");
+}
+
+export type TransferFilter = "all" | "inProgress" | "failed" | "completed";
+
+/** Groups each matching row once, under the source Host or the upload's target Host. */
+export function transferGroups(transfers: readonly Transfer[], filter: TransferFilter) {
+  const groups = new Map<HostId | undefined, { host: TransferHost | undefined; transfers: Transfer[] }>();
+  for (const transfer of transfers) {
+    if (filter === "inProgress" && isFinished(transfer)) continue;
+    if (filter === "failed" && transfer.state.type !== "failed") continue;
+    if (filter === "completed" && transfer.state.type !== "done") continue;
+
+    const host = transfer.sourceHost ?? transfer.targetHost;
+    let group = groups.get(host?.id);
+    if (!group) {
+      group = { host, transfers: [] };
+      groups.set(host?.id, group);
+    }
+    group.transfers.push(transfer);
+  }
+  return [...groups.values()];
 }
 
 /** The question to ask now: the oldest transfer waiting on a conflict. */
@@ -244,6 +277,11 @@ export const transfersStore = createTransfersStore(ipc, undefined, ({ name, stat
     body: t("notifications.transfers.body", { ...summary }),
   }));
 });
+
+export function clearCompletedTransfers(): void {
+  void transfersStore.getState().clearCompleted().catch(() =>
+    showToast((t) => t("transfers.clearFailed"), "error"));
+}
 
 export function useTransfers<T>(selector: (state: TransfersState) => T): T {
   return useStore(transfersStore, selector);

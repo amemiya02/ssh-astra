@@ -639,6 +639,7 @@ impl Runner {
 fn is_transient(error: &ConnectError) -> bool {
     match error {
         ConnectError::Unreachable(_) | ConnectError::TimedOut | ConnectError::Protocol(_) => true,
+        ConnectError::Proxy(super::ProxyError::Unreachable | super::ProxyError::TimedOut) => true,
         ConnectError::JumpHost { source, .. } => is_transient(source),
         _ => false,
     }

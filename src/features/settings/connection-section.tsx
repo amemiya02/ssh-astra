@@ -1,4 +1,10 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button } from "@/components/ui/button";
+import { ProxyFields } from "@/features/connect/ProxyFields";
+import { parseProxyForm, proxyFormFrom, type ProxyField } from "@/features/connect/proxy-form";
+import { clearGlobalProxyPassword } from "@/lib/ipc/credentials";
+import type { ProxyConfig } from "@/lib/ipc/hosts";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { connectionSetting, keepaliveChoices } from "@/features/connect/connection-settings";
 import { useSetting } from "@/lib/storage";
@@ -39,6 +45,53 @@ export function ConnectionSection() {
           className="h-8 w-64 max-w-full font-mono"
         />
       </SettingRow>
+      <SettingRow setting={settingRows.outboundProxy}>
+        <GlobalProxyForm
+          saved={settings.proxy}
+          onSave={(proxy) => setSettings(connectionSetting.parse({ ...settings, proxy }))}
+        />
+      </SettingRow>
     </>
+  );
+}
+
+
+function GlobalProxyForm({ saved, onSave }: { saved?: ProxyConfig; onSave(proxy?: ProxyConfig): void }) {
+  const { t } = useTranslation();
+  const [form, setForm] = useState(() => proxyFormFrom(saved ? { mode: "override", config: saved } : { mode: "direct" }));
+  const [errors, setErrors] = useState<Partial<Record<ProxyField, string>>>({});
+  const [clearing, setClearing] = useState<"idle" | "clearing" | "cleared" | "failed">("idle");
+
+  return (
+    <form
+      className="grid w-64 gap-2.5"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const parsed = parseProxyForm(form);
+        setErrors(parsed.ok ? {} : parsed.errors);
+        if (parsed.ok) onSave(parsed.proxy.mode === "override" ? parsed.proxy.config : undefined);
+      }}
+    >
+      <ProxyFields id="settings-outbound-proxy" global values={form} errors={errors} onChange={setForm} />
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" variant="outline" size="sm">{t("proxy.save")}</Button>
+        {saved?.username && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={clearing === "clearing"}
+            onClick={() => {
+              setClearing("clearing");
+              clearGlobalProxyPassword().then(() => setClearing("cleared"), () => setClearing("failed"));
+            }}
+          >
+            {t("proxy.clearPassword")}
+          </Button>
+        )}
+      </div>
+      {clearing === "cleared" && <p role="status" className="text-muted-foreground text-xs">{t("proxy.passwordCleared")}</p>}
+      {clearing === "failed" && <p role="alert" className="text-destructive text-xs">{t("proxy.clearFailed")}</p>}
+    </form>
   );
 }

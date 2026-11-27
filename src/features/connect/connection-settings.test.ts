@@ -32,3 +32,9 @@ describe("the connection settings section", () => {
     expect(connectionSetting.parse({ agentPath: 42 }).agentPath).toBe("");
   });
 });
+
+it("keeps only the proxy endpoint and account in connection settings", () => {
+  const proxy = { kind: "httpConnect", address: "proxy.example", port: 3128, username: "dev" };
+  expect(connectionSetting.parse({ proxy: { ...proxy, password: "secret-marker" } }).proxy).toEqual(proxy);
+  expect(connectionSetting.parse({ proxy: { ...proxy, address: "user@proxy.example" } }).proxy).toBeUndefined();
+});

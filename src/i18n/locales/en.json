@@ -410,13 +410,31 @@
   },
   "transfers": {
     "title": "Transfers",
+    "open": "Open Transfers",
+    "filter": "Filter transfers",
+    "filters": {
+      "all": "All",
+      "inProgress": "In progress",
+      "failed": "Failed",
+      "completed": "Completed"
+    },
+    "empty": {
+      "all": "No transfers.",
+      "inProgress": "No unfinished transfers.",
+      "failed": "No failed transfers.",
+      "completed": "No completed transfers."
+    },
+    "unknownHost": "Unknown Host",
+    "reveal": "Show in file manager",
+    "revealFailed": "Could not show {{name}} in the file manager.",
+    "clearFailed": "Could not clear completed transfers.",
     "expand": "Show transfers",
     "collapse": "Hide transfers",
     "active": "Active {{count}}",
     "done": "Done {{count}}",
     "noneActive": "Nothing in progress.",
     "noneDone": "No finished transfers.",
-    "clearDone": "Clear finished",
+    "clearDone": "Clear completed",
     "retry": "Retry",
     "pause": "Pause",
     "resume": "Resume",
@@ -671,6 +689,34 @@
       "terafox": "Terafox"
     }
   },
+  "proxy": {
+    "mode": "Proxy type",
+    "none": "No proxy",
+    "direct": "Direct connection",
+    "inherit": "Use global proxy setting",
+    "jumpHint": "This Connection uses the proxy setting of its first Jump host.",
+    "passwordHint": "Optional. Add a username to enter a proxy password at connection time.",
+    "save": "Save proxy",
+    "clearPassword": "Clear saved password",
+    "passwordCleared": "Saved proxy password cleared.",
+    "clearFailed": "Could not clear the saved proxy password.",
+    "fields": {
+      "address": "Proxy address",
+      "port": "Proxy port",
+      "username": "Proxy username"
+    },
+    "errors": {
+      "proxyAddress": "Enter a hostname or IP address.",
+      "proxyPort": "Enter a port from 1 to 65535.",
+      "proxyUsername": "Enter a username supported by this proxy type."
+    },
+    "prompt": {
+      "title": "Proxy password for {{user}} at {{host}}",
+      "description": "Enter the password for the outbound proxy.",
+      "label": "Proxy password",
+      "retry": "The proxy rejected the saved password."
+    }
+  },
   "connect": {
     "progress": {
       "connecting": "Connecting",
@@ -734,6 +780,13 @@
       "hostKeyDeclined": "The host key was not trusted. Not connected.",
       "hostKeyRevoked": "The host key is revoked. Connection blocked.",
       "authenticationFailed": "Authentication failed.",
+      "proxyInvalidConfiguration": "Check the outbound proxy settings",
+      "proxyInvalidTarget": "The Host address is invalid for this proxy",
+      "proxyUnreachable": "Could not reach the outbound proxy",
+      "proxyTimedOut": "The outbound proxy timed out",
+      "proxyInvalidResponse": "The outbound proxy returned an invalid response",
+      "proxyAuthenticationFailed": "The outbound proxy rejected authentication",
+      "proxyConnectFailed": "The outbound proxy could not connect to the Host",
       "cancelled": "Connection cancelled.",
       "generic": "Could not connect.",
       "keyUnreadable": "Could not use the private key {{keyPath}}: {{reason}}",
@@ -973,6 +1026,10 @@
         "description": "How often an idle Connection checks the server is still there. A dropped Connection is noticed after three missed checks. Applies to new Connections.",
         "off": "Off",
         "seconds": "{{count}} s"
+      },
+      "outboundProxy": {
+        "label": "Outbound proxy",
+        "description": "Routes the first TCP hop of new Connections. Hosts can override this choice."
       },
       "agentPath": {
         "label": "Custom agent path",

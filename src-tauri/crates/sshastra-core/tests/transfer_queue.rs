@@ -779,9 +779,17 @@ async fn a_transfer_resumes_when_reconnect_precedes_the_failure_event() {
             }
         }
     });
+    let target = RemoteTransfer {
+        host: TransferHost {
+            id: host.clone(),
+            name: "Host".into(),
+            temporary: false,
+        },
+        open,
+    };
     let id = h
         .queue
-        .upload_to(host.clone(), open, "/payload".into(), "/incoming".into());
+        .upload_to(target, "/payload".into(), "/incoming".into());
     tokio::time::timeout(Duration::from_secs(5), started.notified())
         .await
         .unwrap();
@@ -806,8 +814,7 @@ async fn a_permission_failure_stays_failed_when_the_host_reconnects() {
     let host = HostId::from("host".to_owned());
     h.queue.connection_restored(&host, Box::new(|| true));
     let id = h.queue.upload_to(
-        host.clone(),
-        h.opener(),
+        remote_endpoint(&h.remote, "host", "Host"),
         "/payload".into(),
         "/incoming".into(),
     );
@@ -940,6 +947,7 @@ async fn uploading_a_file_copies_it_into_the_remote_directory() {
     assert_eq!(h.remote.read("/srv/notes.txt").unwrap(), b"hello");
     let t = h.transfer(id);
     assert_eq!(t.direction, TransferDirection::Upload);
+    assert_eq!(h.queue.completed_download_path(id), None);
     assert_eq!(t.name, "notes.txt");
     assert_eq!((t.files_done, t.files_total), (1, 1));
     assert_eq!((t.bytes_done, t.bytes_total), (5, 5));
@@ -959,14 +967,25 @@ async fn downloading_a_folder_recreates_its_nested_tree_locally() {
     h.remote.dir("/srv/site/empty");
     h.local.dir("/dl");
 
-    let id = h.download("/srv/site", "/dl");
+    let source = remote_endpoint(&h.remote, "web", "Web");
+    let label = source.host.clone();
+    let id = h
+        .queue
+        .download_from(source, "/srv/site".into(), "/dl".into());
     h.until_state(id, TransferState::Done).await;
 
     assert_eq!(h.local.tree("/dl/site"), h.remote.tree("/srv/site"));
     let t = h.transfer(id);
     assert_eq!(t.name, "site");
+    assert_eq!(t.source_host, Some(label));
     assert_eq!((t.files_done, t.files_total), (3, 3));
     assert_eq!((t.bytes_done, t.bytes_total), (10_006, 10_006));
+    assert_eq!(
+        h.queue.completed_download_path(id),
+        Some(PathBuf::from("/dl/site"))
+    );
+    h.queue.remove(&[id]);
+    assert_eq!(h.queue.completed_download_path(id), None);
 }
 
 #[tokio::test]

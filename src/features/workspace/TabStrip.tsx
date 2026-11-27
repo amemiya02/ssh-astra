@@ -1,4 +1,4 @@
-import { ChevronRight, Columns2, House, Lock, PanelLeftClose, PanelLeftOpen, Plus, Rows2, Settings, SquareTerminal, Waypoints, X } from "lucide-react";
+import { ArrowDownUp, ChevronRight, Columns2, House, Lock, PanelLeftClose, PanelLeftOpen, Plus, Rows2, Settings, SquareTerminal, Waypoints, X } from "lucide-react";
 import {
   DndContext,
   PointerSensor,
@@ -76,6 +76,7 @@ const kindIcons = {
   "remote-terminal": SquareTerminal,
   sftp: SquareTerminal,
   settings: Settings,
+  transfers: ArrowDownUp,
   "port-forwards": Waypoints,
 } satisfies Record<PaneKind["kind"], unknown>;
 
