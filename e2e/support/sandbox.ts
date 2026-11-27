@@ -35,6 +35,7 @@ export function sandboxHome(): string {
 /** The environment the app runs with: the sandbox home and no ssh-agent. */
 export function appEnv(home: string): Record<string, string> {
   return {
+    SSHASTRA_E2E_HOME: home,
     HOME: home,
     USERPROFILE: home,
     XDG_CONFIG_HOME: join(home, ".config"),

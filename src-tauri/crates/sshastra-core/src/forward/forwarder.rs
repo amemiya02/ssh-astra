@@ -175,13 +175,23 @@ impl PortForwarder {
                 });
                 (ForwardStatus::Running, Some(task), Ok(()))
             }
-            Err(e) => (
-                ForwardStatus::Failed {
-                    reason: e.to_string(),
-                },
-                None,
-                Err(e),
-            ),
+            Err(e) => {
+                let kind = match &e {
+                    ForwardError::PortInUse(_) => "portInUse",
+                    ForwardError::PermissionDenied(_) => "permissionDenied",
+                    ForwardError::Listen { .. } => "listenFailed",
+                    ForwardError::RemoteRefused(_) => "remoteRefused",
+                    ForwardError::ConnectionLost => "connectionLost",
+                };
+                log::warn!("Port forward host={host} id={} start error={kind}", rule.id);
+                (
+                    ForwardStatus::Failed {
+                        reason: e.to_string(),
+                    },
+                    None,
+                    Err(e),
+                )
+            }
         };
         rules.insert(
             rule.id.clone(),
@@ -278,6 +288,12 @@ impl Inner {
     }
 
     fn emit(&self, host: &HostId, id: &ForwardId, status: ForwardStatus) {
+        let state = match &status {
+            ForwardStatus::Stopped => "stopped",
+            ForwardStatus::Running => "running",
+            ForwardStatus::Failed { .. } => "failed",
+        };
+        log::info!("Port forward host={host} id={id} state={state}");
         if let Some(listener) = &self.listener {
             listener(ForwardEvent {
                 host_id: host.clone(),

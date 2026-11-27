@@ -82,10 +82,17 @@ pub struct Sshd {
     pub host_key: HostKey,
 }
 
+fn core_dir() -> PathBuf {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    if env!("CARGO_PKG_NAME") == "sshastra-core" {
+        manifest.to_path_buf()
+    } else {
+        manifest.join("crates/sshastra-core")
+    }
+}
+
 pub fn sshd_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("sshd")
+    core_dir().join("tests/sshd")
 }
 
 /// The server for `service`, starting the containers if needed. `None` means
@@ -141,7 +148,8 @@ pub fn project() -> String {
         }
     }
     // FNV-1a: stable across toolchains, unlike `DefaultHasher`.
-    let hash = env!("CARGO_MANIFEST_DIR")
+    let hash = core_dir()
+        .to_string_lossy()
         .bytes()
         .fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
             (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)

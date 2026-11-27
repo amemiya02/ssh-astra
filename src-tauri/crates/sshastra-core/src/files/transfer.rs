@@ -426,6 +426,11 @@ impl Inner {
                 entry.info.state = TransferState::Running;
                 (id, entry.job.clone(), cancelled, entry.info.clone())
             };
+            log::info!(
+                "transfer id={} direction={:?} state=running",
+                id.0,
+                snapshot.direction
+            );
             self.emit(&snapshot);
             let inner = Arc::clone(self);
             let runtime = self
@@ -452,6 +457,17 @@ impl Inner {
     }
 
     fn finish(self: &Arc<Self>, id: TransferId, result: Result<(), Stop>) {
+        match &result {
+            Ok(()) => log::info!("transfer id={} state=done", id.0),
+            Err(Stop::Cancelled) => log::info!("transfer id={} state=cancelled", id.0),
+            Err(Stop::Failed(error)) => {
+                log::warn!(
+                    "transfer id={} state=failed error={}",
+                    id.0,
+                    error.log_kind()
+                );
+            }
+        }
         let snapshot = {
             let mut st = self.lock();
             st.running -= 1;

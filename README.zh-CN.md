@@ -61,6 +61,18 @@ pnpm tauri dev      # 运行
 pnpm tauri build    # 打包
 ```
 
+## 日志与诊断
+
+在**设置 → 诊断**中打开日志文件夹，也可在命令面板执行**打开日志文件夹**。各平台的默认位置如下。
+
+- macOS — `~/Library/Logs/dev.sshastra.app/`
+- Linux — `$XDG_DATA_HOME/dev.sshastra.app/logs/`（通常是 `~/.local/share/dev.sshastra.app/logs/`）
+- Windows — `%LOCALAPPDATA%\dev.sshastra.app\logs\`
+
+SSH Astra 保留四个应用日志文件，每个最多 1 MiB，以及最近五份 Rust 崩溃报告。日志记录应用启动和版本、SSH 连接与认证步骤、重连、端口转发、传输、远程编辑上传、主机与设置文件错误、更新检查和界面未捕获错误。崩溃报告包含错误类别和源代码位置。本地日志保留主机名称、地址与 SSH 用户名。
+
+SSH Astra 永不记录终端输入和输出、密码、密钥口令、私钥内容、剪贴板内容或原始界面错误消息与堆栈。**复制诊断信息**会复制应用版本、操作系统、架构和脱敏后的日志，其中主机名称、地址和用户名、跳板机、端口转发目标、密钥路径、系统用户名、主目录和 IP 地址均以代号替换。所有日志均保存在本机，SSH Astra 不会上传日志。
+
 ## 参与贡献
 
 欢迎提 Issue 和 PR。项目结构与开发约定见 [`CLAUDE.md`](CLAUDE.md)，领域术语见 [`GLOSSARY.md`](GLOSSARY.md)。

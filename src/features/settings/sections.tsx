@@ -1,6 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import type { ComponentType } from "react";
 import { ConnectionSection } from "./connection-section";
+import { DiagnosticsSection } from "./diagnostics-section";
 import { AppearanceSection, LanguageSection } from "./general-sections";
 import { TerminalSection } from "./terminal-section";
 import { TransfersSection } from "./transfers-section";
@@ -10,7 +11,7 @@ import { UpdatesSection } from "./updates-section";
 export interface SettingsPageSection {
   id: string;
   /** i18n key of the section heading, under `settings.sections`. */
-  title: "appearance" | "language" | "terminal" | "connection" | "transfers" | "updates";
+  title: "appearance" | "language" | "terminal" | "connection" | "transfers" | "updates" | "diagnostics";
   /** Renders the section's `SettingRow`s; reads and writes its settings with `useSetting`. */
   Component: ComponentType;
 }
@@ -27,6 +28,9 @@ export const settingsPageSections: readonly SettingsPageSection[] = [
   { id: "connection", title: "connection", Component: ConnectionSection },
   { id: "transfers", title: "transfers", Component: TransfersSection },
   { id: "language", title: "language", Component: LanguageSection },
-  // Updates come from the installed app's updater; a plain browser (`pnpm dev`) has none.
-  ...(isTauri() ? [{ id: "updates", title: "updates", Component: UpdatesSection } as const] : []),
+  // These sections use native features of the installed app.
+  ...(isTauri() ? [
+    { id: "updates", title: "updates", Component: UpdatesSection },
+    { id: "diagnostics", title: "diagnostics", Component: DiagnosticsSection },
+  ] as const : []),
 ];
