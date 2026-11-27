@@ -2,7 +2,7 @@
 //! Connection stays up while any rule on it runs, even with no Terminal open;
 //! stopping the last one lets it disconnect.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use std::io;
 use std::net::{SocketAddr, TcpListener as StdListener};
@@ -11,14 +11,12 @@ use std::time::Duration;
 
 use serde::Serialize;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Mutex as AsyncMutex;
 use tokio::task::{JoinHandle, JoinSet};
 
 use super::{socks, ForwardId, ForwardKind, PortForward};
 use crate::hosts::{Host, HostId};
 use crate::ssh::{Connection, RemoteListener};
-
-/// Why a rule stopped when its Connection went away.
-const LOST: &str = "the Connection was lost";
 
 /// How often a running rule checks that its Connection is still up.
 const CONNECTION_CHECK: Duration = Duration::from_secs(1);
@@ -62,7 +60,7 @@ impl Endpoint {
 }
 
 /// Why a rule could not start.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum ForwardError {
     #[error("port {} on {} is already in use", .0.port, .0.address)]
     PortInUse(Endpoint),
@@ -97,18 +95,71 @@ pub struct PortForwarder {
 }
 
 struct Inner {
-    rules: Mutex<HashMap<ForwardId, Entry>>,
+    state: Mutex<State>,
     listener: Option<Listener>,
+}
+
+#[derive(Default)]
+struct State {
+    rules: HashMap<ForwardId, Entry>,
+    // Send in transition order, without holding the state lock during a callback.
+    events: VecDeque<ForwardEvent>,
+    dispatching: bool,
 }
 
 struct Entry {
     host: HostId,
     status: ForwardStatus,
-    /// The running rule's task; it owns the listening socket, the Connection
-    /// and every open tunnel, so aborting it releases them all.
-    task: Option<JoinHandle<()>>,
-    /// Tells this run apart from earlier ones of the same rule.
-    run: u64,
+    running: Option<Running>,
+    restore: bool,
+    stopped_by_user: bool,
+    // A pooled Connection can be reported by several callers.
+    auto_attempt: Option<(Weak<Connection>, Result<(), ForwardError>)>,
+    // Serialize opening a rule, including remote requests that await the server.
+    opening: Arc<AsyncMutex<()>>,
+    // Stop invalidates all start requests reserved before it.
+    stop_generation: u64,
+}
+
+struct Running {
+    connection: Weak<Connection>,
+    // Owns the listening socket, Connection and tunnels for this run.
+    task: JoinHandle<()>,
+}
+
+impl Entry {
+    fn new(host: &HostId) -> Self {
+        Self {
+            host: host.clone(),
+            status: ForwardStatus::Stopped,
+            running: None,
+            restore: false,
+            stopped_by_user: false,
+            auto_attempt: None,
+            opening: Arc::default(),
+            stop_generation: 0,
+        }
+    }
+
+    fn stop(&mut self, id: &ForwardId) -> Option<ForwardEvent> {
+        self.stop_generation += 1;
+        self.restore = false;
+        self.stopped_by_user = true;
+        self.auto_attempt = None;
+        if let Some(running) = self.running.take() {
+            running.task.abort();
+        }
+        let previous = std::mem::replace(&mut self.status, ForwardStatus::Stopped);
+        (previous != ForwardStatus::Stopped).then(|| self.event(id))
+    }
+
+    fn event(&self, id: &ForwardId) -> ForwardEvent {
+        ForwardEvent {
+            host_id: self.host.clone(),
+            forward_id: id.clone(),
+            status: self.status.clone(),
+        }
+    }
 }
 
 impl Default for PortForwarder {
@@ -122,8 +173,7 @@ impl PortForwarder {
         Self::build(None)
     }
 
-    /// Calls `listener` on every state change, from any thread, with no lock
-    /// held.
+    /// Calls `listener` on each state change, in order, with no state lock held.
     pub fn with_listener(listener: impl Fn(ForwardEvent) + Send + Sync + 'static) -> Self {
         Self::build(Some(Box::new(listener)))
     }
@@ -131,129 +181,137 @@ impl PortForwarder {
     fn build(listener: Option<Listener>) -> Self {
         Self {
             inner: Arc::new(Inner {
-                rules: Mutex::default(),
+                state: Mutex::default(),
                 listener,
             }),
         }
     }
 
     /// Starts `rule` (one of Host `host`'s) over `connection`, which it keeps
-    /// open until stopped. A running rule is left as it is. Fails, and marks
-    /// the rule failed, if it cannot listen (e.g. the port is taken here, or
-    /// the server refuses a remote port). Must be called within a Tokio
-    /// runtime.
-    pub async fn start(
+    /// open until stopped. A rule already running on a live Connection is
+    /// left as it is. Marks a rule failed if it cannot listen.
+    pub fn start(
         &self,
         connection: Arc<Connection>,
         host: &HostId,
         rule: &PortForward,
-    ) -> Result<(), ForwardError> {
-        if self.status(&rule.id) == ForwardStatus::Running {
-            return Ok(());
+    ) -> impl Future<Output = Result<(), ForwardError>> + Send + 'static {
+        let request = self
+            .reserve(connection, host, rule, false)
+            .expect("manual starts are always reserved");
+        async move {
+            // Finish an in-flight remote request even if the caller closes its pane.
+            // If Stop won, dropping the opened listener cancels it.
+            tokio::spawn(request.open())
+                .await
+                .expect("Port forward setup task panicked")
         }
-        let opened = open(connection, &rule.kind).await;
-        let mut rules = self.inner.lock();
-        if let Some(Entry {
-            status: ForwardStatus::Running,
-            ..
-        }) = rules.get(&rule.id)
-        {
-            // Started meanwhile by another call; `opened` is dropped.
-            return Ok(());
-        }
-        let run = rules.get(&rule.id).map_or(0, |e| e.run + 1);
-        let (status, task, result) = match opened {
-            Ok(opened) => {
-                let finished = Finished {
-                    inner: Arc::downgrade(&self.inner),
-                    id: rule.id.clone(),
-                    run,
-                };
-                let task = tokio::spawn(async move {
-                    let reason = opened.run().await;
-                    finished.fail(reason);
-                });
-                (ForwardStatus::Running, Some(task), Ok(()))
-            }
-            Err(e) => {
-                let kind = match &e {
-                    ForwardError::PortInUse(_) => "portInUse",
-                    ForwardError::PermissionDenied(_) => "permissionDenied",
-                    ForwardError::Listen { .. } => "listenFailed",
-                    ForwardError::RemoteRefused(_) => "remoteRefused",
-                    ForwardError::ConnectionLost => "connectionLost",
-                };
-                log::warn!("Port forward host={host} id={} start error={kind}", rule.id);
-                (
-                    ForwardStatus::Failed {
-                        reason: e.to_string(),
-                    },
-                    None,
-                    Err(e),
-                )
-            }
-        };
-        rules.insert(
-            rule.id.clone(),
-            Entry {
-                host: host.clone(),
-                status: status.clone(),
-                task,
-                run,
-            },
-        );
-        drop(rules);
-        self.inner.emit(host, &rule.id, status);
-        result
     }
 
-    /// Starts every rule of `host` marked to start automatically, over its
-    /// freshly made `connection`; call it whenever the Host connects. Rules
-    /// already running are left as they are. Returns the rules that could
-    /// not start (they are also marked failed).
-    pub async fn start_auto(
+    /// Starts the Host's auto-start rules and restores rules that lost their
+    /// Connection. Call after connecting, even when sharing a pooled Connection.
+    /// Results contain rules that could not start; these are also marked failed.
+    pub fn start_auto(
         &self,
         connection: Arc<Connection>,
         host: &Host,
-    ) -> Vec<(ForwardId, ForwardError)> {
-        let mut failures = Vec::new();
-        for rule in host.forwards.iter().filter(|rule| rule.auto_start) {
-            if let Err(e) = self.start(Arc::clone(&connection), &host.id, rule).await {
-                failures.push((rule.id.clone(), e));
-            }
-        }
-        failures
-    }
-
-    /// Stops rule `id`, closing its listening socket and open tunnels and
-    /// releasing its Connection. Also clears a failed rule's error.
-    pub fn stop(&self, id: &ForwardId) {
-        let Some(entry) = self.inner.lock().remove(id) else {
-            return;
-        };
-        if let Some(task) = entry.task {
-            task.abort();
-        }
-        self.inner.emit(&entry.host, id, ForwardStatus::Stopped);
-    }
-
-    /// Stops every rule of Host `host` (e.g. when it is deleted).
-    pub fn stop_host(&self, host: &HostId) {
-        let ids: Vec<ForwardId> = self
-            .inner
-            .lock()
+    ) -> impl Future<Output = Vec<(ForwardId, ForwardError)>> + Send + 'static {
+        let requests: Vec<_> = host
+            .forwards
             .iter()
-            .filter(|(_, e)| &e.host == host)
-            .map(|(id, _)| id.clone())
+            .filter_map(|rule| self.reserve(Arc::clone(&connection), &host.id, rule, true))
             .collect();
-        for id in ids {
-            self.stop(&id);
+        async move {
+            if requests.is_empty() {
+                return Vec::new();
+            }
+            // Complete the Host's starts even if the pane that connected closes.
+            tokio::spawn(async move {
+                let mut failures = Vec::new();
+                for request in requests {
+                    let id = request.rule.id.clone();
+                    if let Err(error) = request.open().await {
+                        failures.push((id, error));
+                    }
+                }
+                failures
+            })
+            .await
+            .expect("Port forward setup task panicked")
         }
+    }
+
+    // The app reserves requests while reading saved rules, so deleting a rule
+    // can invalidate every request that saw it before the deletion.
+    fn reserve(
+        &self,
+        connection: Arc<Connection>,
+        host: &HostId,
+        rule: &PortForward,
+        automatic: bool,
+    ) -> Option<Start> {
+        let mut state = self.inner.lock();
+        if automatic && !rule.auto_start && !state.rules.contains_key(&rule.id) {
+            return None;
+        }
+        let entry = state
+            .rules
+            .entry(rule.id.clone())
+            .or_insert_with(|| Entry::new(host));
+        if automatic && (&entry.host != host || entry.stopped_by_user) {
+            return None;
+        }
+        Some(Start {
+            inner: Arc::clone(&self.inner),
+            connection,
+            rule: rule.clone(),
+            automatic,
+            stamp: StartStamp {
+                opening: Arc::clone(&entry.opening),
+                stop_generation: entry.stop_generation,
+            },
+        })
+    }
+
+    /// Stops the rule and clears any failure. A manual start can enable it
+    /// again; automatic starts are suppressed for this app run.
+    pub fn stop(&self, id: &ForwardId) {
+        let mut state = self.inner.lock();
+        let event = state.rules.get_mut(id).and_then(|entry| entry.stop(id));
+        self.inner.publish(state, event);
+    }
+
+    /// Stops and forgets a rule removed from its Host.
+    pub fn forget(&self, id: &ForwardId) {
+        let mut state = self.inner.lock();
+        let event = state.rules.remove(id).and_then(|mut entry| entry.stop(id));
+        self.inner.publish(state, event);
+    }
+
+    /// Stops every rule of Host `host` (e.g. when it is disconnected).
+    pub fn stop_host(&self, host: &HostId) {
+        self.clear_host(host, false);
+    }
+
+    /// Stops and forgets the rules of a deleted Host.
+    pub fn forget_host(&self, host: &HostId) {
+        self.clear_host(host, true);
+    }
+
+    fn clear_host(&self, host: &HostId, deleted: bool) {
+        let mut state = self.inner.lock();
+        let events: Vec<_> = state
+            .rules
+            .extract_if(|_, entry| &entry.host == host && (deleted || !entry.stopped_by_user))
+            .filter_map(|(id, mut entry)| entry.stop(&id))
+            .collect();
+        self.inner.publish(state, events);
     }
 
     pub fn status(&self, id: &ForwardId) -> ForwardStatus {
         self.inner
             .lock()
+            .rules
             .get(id)
             .map_or(ForwardStatus::Stopped, |e| e.status.clone())
     }
@@ -262,70 +320,228 @@ impl PortForwarder {
     pub fn list(&self) -> Vec<ForwardEvent> {
         self.inner
             .lock()
+            .rules
             .iter()
-            .map(|(id, e)| ForwardEvent {
-                host_id: e.host.clone(),
-                forward_id: id.clone(),
-                status: e.status.clone(),
-            })
+            .filter(|(_, entry)| entry.status != ForwardStatus::Stopped)
+            .map(|(id, entry)| entry.event(id))
             .collect()
     }
 }
 
 impl Drop for PortForwarder {
     fn drop(&mut self) {
-        for entry in self.inner.lock().values_mut() {
-            if let Some(task) = entry.task.take() {
-                task.abort();
+        for (_, entry) in self.inner.lock().rules.drain() {
+            if let Some(running) = entry.running {
+                running.task.abort();
             }
         }
     }
 }
 
 impl Inner {
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<ForwardId, Entry>> {
-        self.rules.lock().unwrap_or_else(|p| p.into_inner())
+    fn lock(&self) -> std::sync::MutexGuard<'_, State> {
+        self.state.lock().unwrap_or_else(|p| p.into_inner())
     }
 
-    fn emit(&self, host: &HostId, id: &ForwardId, status: ForwardStatus) {
-        let state = match &status {
-            ForwardStatus::Stopped => "stopped",
-            ForwardStatus::Running => "running",
-            ForwardStatus::Failed { .. } => "failed",
-        };
-        log::info!("Port forward host={host} id={id} state={state}");
-        if let Some(listener) = &self.listener {
-            listener(ForwardEvent {
-                host_id: host.clone(),
-                forward_id: id.clone(),
-                status,
-            });
+    fn publish<'a>(
+        &'a self,
+        mut state: std::sync::MutexGuard<'a, State>,
+        events: impl IntoIterator<Item = ForwardEvent>,
+    ) {
+        state.events.extend(events);
+        if state.dispatching || state.events.is_empty() {
+            return;
+        }
+        state.dispatching = true;
+        loop {
+            let Some(event) = state.events.pop_front() else {
+                state.dispatching = false;
+                return;
+            };
+            drop(state);
+            let status = match &event.status {
+                ForwardStatus::Stopped => "stopped",
+                ForwardStatus::Running => "running",
+                ForwardStatus::Failed { .. } => "failed",
+            };
+            log::info!(
+                "Port forward host={} id={} state={status}",
+                event.host_id,
+                event.forward_id
+            );
+            if let Some(listener) = &self.listener {
+                listener(event);
+            }
+            state = self.lock();
         }
     }
+}
+
+#[derive(Clone)]
+struct StartStamp {
+    opening: Arc<AsyncMutex<()>>,
+    stop_generation: u64,
+}
+
+impl StartStamp {
+    fn matches(&self, entry: &Entry) -> bool {
+        self.stop_generation == entry.stop_generation && Arc::ptr_eq(&self.opening, &entry.opening)
+    }
+}
+
+struct Start {
+    inner: Arc<Inner>,
+    connection: Arc<Connection>,
+    rule: PortForward,
+    automatic: bool,
+    stamp: StartStamp,
+}
+
+impl Start {
+    fn entry<'a>(&self, state: &'a mut State) -> Option<&'a mut Entry> {
+        state
+            .rules
+            .get_mut(&self.rule.id)
+            .filter(|entry| self.stamp.matches(entry))
+    }
+
+    async fn open(self) -> Result<(), ForwardError> {
+        let turn = self.stamp.opening.lock().await;
+        let connection = Arc::downgrade(&self.connection);
+        let previous = {
+            let mut state = self.inner.lock();
+            let Some(entry) = self.entry(&mut state) else {
+                return Ok(());
+            };
+            if entry
+                .running
+                .as_ref()
+                .and_then(|running| running.connection.upgrade())
+                .is_some_and(|connection| !connection.is_closed())
+            {
+                return Ok(());
+            }
+            entry.running.take()
+        };
+        if let Some(previous) = previous {
+            // A reconnect may win the race with the previous run's periodical
+            // loss check. Let it close the socket and record the interruption.
+            let _ = previous.task.await;
+        }
+
+        {
+            let mut state = self.inner.lock();
+            let Some(entry) = self.entry(&mut state) else {
+                return Ok(());
+            };
+            if self.automatic {
+                if self.connection.is_closed()
+                    || entry.stopped_by_user
+                    || (!self.rule.auto_start && !entry.restore)
+                {
+                    return Ok(());
+                }
+                if let Some((_, result)) = entry
+                    .auto_attempt
+                    .as_ref()
+                    .filter(|(previous, _)| previous.ptr_eq(&connection))
+                {
+                    return result.clone();
+                }
+            } else {
+                entry.stopped_by_user = false;
+            }
+        }
+
+        let opened = if self.connection.is_closed() {
+            Err(ForwardError::ConnectionLost)
+        } else {
+            open(Arc::clone(&self.connection), &self.rule.kind).await
+        };
+        let mut state = self.inner.lock();
+        let Some(entry) = self.entry(&mut state) else {
+            return Ok(());
+        };
+        entry.restore &= matches!(opened, Err(ForwardError::ConnectionLost));
+        let result = match opened {
+            Ok(opened) => {
+                let finished = Finished {
+                    inner: Arc::downgrade(&self.inner),
+                    id: self.rule.id.clone(),
+                    stamp: self.stamp.clone(),
+                };
+                let task = tokio::spawn(async move {
+                    let failure = opened.run().await;
+                    finished.fail(failure);
+                });
+                entry.status = ForwardStatus::Running;
+                entry.running = Some(Running {
+                    connection: connection.clone(),
+                    task,
+                });
+                Ok(())
+            }
+            Err(error) => {
+                log_start_error(&entry.host, &self.rule.id, &error);
+                entry.status = ForwardStatus::Failed {
+                    reason: error.to_string(),
+                };
+                Err(error)
+            }
+        };
+        entry.auto_attempt = self.automatic.then(|| (connection, result.clone()));
+        let event = entry.event(&self.rule.id);
+        drop(turn);
+        self.inner.publish(state, Some(event));
+        result
+    }
+}
+
+fn log_start_error(host: &HostId, id: &ForwardId, error: &ForwardError) {
+    let kind = match error {
+        ForwardError::PortInUse(_) => "portInUse",
+        ForwardError::PermissionDenied(_) => "permissionDenied",
+        ForwardError::Listen { .. } => "listenFailed",
+        ForwardError::RemoteRefused(_) => "remoteRefused",
+        ForwardError::ConnectionLost => "connectionLost",
+    };
+    log::warn!("Port forward host={host} id={id} start error={kind}");
+}
+
+enum RunFailure {
+    ConnectionLost,
+    Accept(io::Error),
 }
 
 /// Marks a run failed when its task ends by itself.
 struct Finished {
     inner: Weak<Inner>,
     id: ForwardId,
-    run: u64,
+    stamp: StartStamp,
 }
 
 impl Finished {
-    fn fail(self, reason: String) {
+    fn fail(self, failure: RunFailure) {
         let Some(inner) = self.inner.upgrade() else {
             return;
         };
-        let mut rules = inner.lock();
-        let Some(entry) = rules.get_mut(&self.id).filter(|e| e.run == self.run) else {
+        let mut state = inner.lock();
+        let Some(entry) = state
+            .rules
+            .get_mut(&self.id)
+            .filter(|entry| self.stamp.matches(entry))
+        else {
             return;
         };
-        let status = ForwardStatus::Failed { reason };
-        entry.status = status.clone();
-        entry.task = None;
-        let host = entry.host.clone();
-        drop(rules);
-        inner.emit(&host, &self.id, status);
+        entry.restore = matches!(failure, RunFailure::ConnectionLost);
+        let reason = match failure {
+            RunFailure::ConnectionLost => ForwardError::ConnectionLost.to_string(),
+            RunFailure::Accept(error) => format!("stopped accepting connections: {error}"),
+        };
+        entry.status = ForwardStatus::Failed { reason };
+        entry.running = None;
+        let event = entry.event(&self.id);
+        inner.publish(state, Some(event));
     }
 }
 
@@ -395,7 +611,7 @@ async fn open(connection: Arc<Connection>, kind: &ForwardKind) -> Result<Opened,
 
 impl Opened {
     /// Serves the rule until aborted. Returns why it stopped by itself.
-    async fn run(self) -> String {
+    async fn run(self) -> RunFailure {
         match self {
             Opened::Local {
                 listener,
@@ -447,7 +663,11 @@ fn listen(address: &str, port: u16) -> Result<TcpListener, ForwardError> {
 
 /// Accepts connections on `listener`, serving each with `serve` over
 /// `connection`, until aborted. Returns why it stopped by itself.
-async fn serve_local<F, Fut>(listener: TcpListener, connection: Arc<Connection>, serve: F) -> String
+async fn serve_local<F, Fut>(
+    listener: TcpListener,
+    connection: Arc<Connection>,
+    serve: F,
+) -> RunFailure
 where
     F: Fn(TcpStream, SocketAddr, Arc<Connection>) -> Fut,
     Fut: Future<Output = ()> + Send + 'static,
@@ -459,13 +679,13 @@ where
             accepted = listener.accept() => {
                 let (socket, peer) = match accepted {
                     Ok(accepted) => accepted,
-                    Err(e) => return format!("stopped accepting connections: {e}"),
+                    Err(error) => return RunFailure::Accept(error),
                 };
                 tunnels.spawn(serve(socket, peer, Arc::clone(&connection)));
             }
             _ = check.tick() => {
                 if connection.is_closed() {
-                    return LOST.to_owned();
+                    return RunFailure::ConnectionLost;
                 }
             }
             // Reap finished tunnels so the set doesn't grow.
@@ -476,14 +696,18 @@ where
 
 /// Carries every connection the server accepts on `listener` to `target`
 /// on this machine until aborted. Returns why it stopped by itself.
-async fn run_remote(mut listener: RemoteListener, (host, port): (String, u16)) -> String {
+async fn run_remote(mut listener: RemoteListener, (host, port): (String, u16)) -> RunFailure {
     let mut tunnels = JoinSet::new();
     let mut check = tokio::time::interval(CONNECTION_CHECK);
     loop {
         tokio::select! {
             accepted = listener.accept() => {
                 let Some(mut channel) = accepted else {
-                    return LOST.to_owned();
+                    return if listener.connection().is_closed() {
+                        RunFailure::ConnectionLost
+                    } else {
+                        RunFailure::Accept(io::ErrorKind::BrokenPipe.into())
+                    };
                 };
                 let host = host.clone();
                 tunnels.spawn(async move {
@@ -498,7 +722,7 @@ async fn run_remote(mut listener: RemoteListener, (host, port): (String, u16)) -
             }
             _ = check.tick() => {
                 if listener.connection().is_closed() {
-                    return LOST.to_owned();
+                    return RunFailure::ConnectionLost;
                 }
             }
             Some(_) = tunnels.join_next(), if !tunnels.is_empty() => {}

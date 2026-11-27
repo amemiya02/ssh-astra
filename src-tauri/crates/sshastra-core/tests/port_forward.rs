@@ -21,6 +21,9 @@ use support::{Service, Sshd};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
+// Dropping a Connection on `flaky` also drops any others using that service.
+static FLAKY: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 struct Trusting(&'static str);
 
 impl Prompter for Trusting {
@@ -567,4 +570,271 @@ async fn rules_marked_auto_start_start_on_connect_and_the_others_do_not() {
     // Connecting again leaves running rules as they are.
     assert_eq!(forwarder.start_auto(connection, &host).await.len(), 1);
     assert_eq!(round_trip(auto_port, b"still").await, b"still");
+}
+
+struct FlakyConnection {
+    sshd: Sshd,
+    host: Host,
+    manager: ConnectionManager,
+    _known_hosts: tempfile::TempDir,
+}
+
+impl FlakyConnection {
+    fn new(sshd: Sshd) -> Self {
+        let host = host(&sshd);
+        let dir = tempfile::tempdir().unwrap();
+        let manager = ConnectionManager::new(KnownHosts::new(dir.path().join("known_hosts")));
+        Self {
+            sshd,
+            host,
+            manager,
+            _known_hosts: dir,
+        }
+    }
+
+    async fn connect(&self) -> Arc<Connection> {
+        self.manager
+            .connect(&self.host, Arc::new(Trusting(self.sshd.password)))
+            .await
+            .unwrap()
+    }
+
+    async fn drop_transport(&self) {
+        self.sshd.drop_connections();
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while self.manager.live(&self.host.id).await.is_some() {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("the SSH Connection closes");
+    }
+}
+
+fn lost() -> ForwardStatus {
+    ForwardStatus::Failed {
+        reason: "the Connection was lost".into(),
+    }
+}
+
+async fn wait_for_forward_loss(forwarder: &PortForwarder, rule: &PortForward) {
+    let lost = lost();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while forwarder.status(&rule.id) != lost {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the Port forward reports losing its Connection");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_manually_started_forward_recovers_on_the_hosts_next_connection() {
+    let Some(sshd) = support::sshd(Service::Flaky) else {
+        return;
+    };
+    let _turn = FLAKY.lock().await;
+    let mut fixture = FlakyConnection::new(sshd);
+    let port = free_port();
+    let rule = to_echo("recover-manual", port);
+    fixture.host.forwards.push(rule.clone());
+    let connection = fixture.connect().await;
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&events);
+    let forwarder = PortForwarder::with_listener(move |event| {
+        seen.lock().unwrap().push(event.status);
+    });
+    forwarder
+        .start(Arc::clone(&connection), &fixture.host.id, &rule)
+        .await
+        .unwrap();
+    assert_eq!(round_trip(port, b"before").await, b"before");
+
+    fixture.drop_transport().await;
+
+    // Do not wait for the forward's own loss check before reconnecting.
+    let replacement = fixture.connect().await;
+    // A late caller can also report the old pooled Connection.
+    let (stale, first, second) = tokio::join!(
+        forwarder.start_auto(connection, &fixture.host),
+        forwarder.start_auto(Arc::clone(&replacement), &fixture.host),
+        forwarder.start_auto(replacement, &fixture.host),
+    );
+
+    assert!(stale.is_empty() && first.is_empty() && second.is_empty());
+    assert_eq!(forwarder.status(&rule.id), ForwardStatus::Running);
+    assert_eq!(
+        *events.lock().unwrap(),
+        [ForwardStatus::Running, lost(), ForwardStatus::Running]
+    );
+    assert_eq!(round_trip(port, b"after").await, b"after");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn concurrent_connect_callbacks_restore_one_remote_listener() {
+    let Some(sshd) = support::sshd(Service::Flaky) else {
+        return;
+    };
+    let _turn = FLAKY.lock().await;
+    let mut fixture = FlakyConnection::new(sshd);
+    let rule = PortForward {
+        auto_start: true,
+        ..remote("restore-remote", 17004, local_echo().await)
+    };
+    fixture.host.forwards.push(rule.clone());
+    let connection = fixture.connect().await;
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&events);
+    let forwarder = PortForwarder::with_listener(move |event| seen.lock().unwrap().push(event));
+    assert!(forwarder
+        .start_auto(Arc::clone(&connection), &fixture.host)
+        .await
+        .is_empty());
+    let entry = reach_server_port(&forwarder, &fixture.host, &connection, 17004).await;
+    assert_eq!(
+        round_trip(entry, b"before remote reconnect").await,
+        b"before remote reconnect"
+    );
+
+    fixture.drop_transport().await;
+    let replacement = fixture.connect().await;
+    let (first, second) = tokio::join!(
+        forwarder.start_auto(Arc::clone(&replacement), &fixture.host),
+        forwarder.start_auto(Arc::clone(&replacement), &fixture.host),
+    );
+
+    assert!(first.is_empty() && second.is_empty());
+    let entry = reach_server_port(&forwarder, &fixture.host, &replacement, 17004).await;
+    assert_eq!(
+        round_trip(entry, b"after remote reconnect").await,
+        b"after remote reconnect"
+    );
+    let reported: Vec<_> = events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|event| event.forward_id == rule.id)
+        .map(|event| event.status.clone())
+        .collect();
+    assert_eq!(
+        reported,
+        [ForwardStatus::Running, lost(), ForwardStatus::Running]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn stop_and_deletion_win_over_pending_restores() {
+    let Some(sshd) = support::sshd(Service::Flaky) else {
+        return;
+    };
+    let _turn = FLAKY.lock().await;
+    let mut fixture = FlakyConnection::new(sshd);
+    let stopped_port = free_port();
+    let auto = PortForward {
+        auto_start: true,
+        ..to_echo("stop-auto", stopped_port)
+    };
+    let deleted_port = free_port();
+    let deleted = to_echo("delete-manual", deleted_port);
+    fixture.host.forwards = vec![auto.clone(), deleted.clone()];
+    let connection = fixture.connect().await;
+    let forwarder = PortForwarder::new();
+    assert!(forwarder
+        .start_auto(Arc::clone(&connection), &fixture.host)
+        .await
+        .is_empty());
+    forwarder
+        .start(connection, &fixture.host.id, &deleted)
+        .await
+        .unwrap();
+
+    fixture.drop_transport().await;
+    wait_for_forward_loss(&forwarder, &auto).await;
+    wait_for_forward_loss(&forwarder, &deleted).await;
+    let replacement = fixture.connect().await;
+    let pending = forwarder.start_auto(Arc::clone(&replacement), &fixture.host);
+
+    // A pane already has a start request from before Stop and deletion.
+    forwarder.stop(&auto.id);
+    fixture.host.forwards.retain(|rule| rule.id != deleted.id);
+    forwarder.forget(&deleted.id);
+    assert!(pending.await.is_empty());
+    assert!(forwarder
+        .start_auto(Arc::clone(&replacement), &fixture.host)
+        .await
+        .is_empty());
+    assert!(forwarder.list().is_empty());
+    assert!(TcpStream::connect(("127.0.0.1", stopped_port))
+        .await
+        .is_err());
+    assert!(TcpStream::connect(("127.0.0.1", deleted_port))
+        .await
+        .is_err());
+
+    forwarder
+        .start(replacement, &fixture.host.id, &auto)
+        .await
+        .unwrap();
+    assert_eq!(
+        round_trip(stopped_port, b"manual restart").await,
+        b"manual restart"
+    );
+    fixture.drop_transport().await;
+    wait_for_forward_loss(&forwarder, &auto).await;
+    let replacement = fixture.connect().await;
+    assert!(forwarder
+        .start_auto(replacement, &fixture.host)
+        .await
+        .is_empty());
+    assert_eq!(
+        round_trip(stopped_port, b"auto restart").await,
+        b"auto restart"
+    );
+    assert_eq!(forwarder.status(&deleted.id), ForwardStatus::Stopped);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_restore_reports_the_bind_error_and_does_not_retry_on_the_same_connection() {
+    let Some(sshd) = support::sshd(Service::Flaky) else {
+        return;
+    };
+    let _turn = FLAKY.lock().await;
+    let mut fixture = FlakyConnection::new(sshd);
+    let port = free_port();
+    let rule = to_echo("recover-occupied", port);
+    fixture.host.forwards.push(rule.clone());
+    let connection = fixture.connect().await;
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&events);
+    let forwarder =
+        PortForwarder::with_listener(move |event| seen.lock().unwrap().push(event.status));
+    forwarder
+        .start(connection, &fixture.host.id, &rule)
+        .await
+        .unwrap();
+
+    fixture.drop_transport().await;
+    wait_for_forward_loss(&forwarder, &rule).await;
+    let taken = StdListener::bind(("127.0.0.1", port)).unwrap();
+    let replacement = fixture.connect().await;
+
+    let failures = forwarder
+        .start_auto(Arc::clone(&replacement), &fixture.host)
+        .await;
+
+    assert!(matches!(failures.as_slice(), [(id, ForwardError::PortInUse(_))] if id == &rule.id));
+    let failed = ForwardStatus::Failed {
+        reason: format!("port {port} on 127.0.0.1 is already in use"),
+    };
+    assert_eq!(forwarder.status(&rule.id), failed);
+    drop(taken);
+    assert!(forwarder
+        .start_auto(replacement, &fixture.host)
+        .await
+        .is_empty());
+    assert_eq!(forwarder.status(&rule.id), failed);
+    assert_eq!(
+        *events.lock().unwrap(),
+        [ForwardStatus::Running, lost(), failed]
+    );
 }
