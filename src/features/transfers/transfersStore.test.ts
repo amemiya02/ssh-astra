@@ -21,6 +21,7 @@ const transfer = (id: number, patch: Partial<Transfer> = {}): Transfer => ({
   bytesDone: 0,
   bytesTotal: 1000,
   filesDone: 0,
+  unprotected: false,
   filesTotal: 1,
   ...patch,
 });

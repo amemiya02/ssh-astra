@@ -19,6 +19,20 @@ pub trait LocalFs: Send + Sync {
     fn open_read<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<FileReader>>;
     /// Creates the file `path`, or empties it if it exists.
     fn create_write<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<FileWriter>>;
+    /// Exclusively creates a transfer's staging file, optionally with mode `0o600`.
+    fn create_new<'a>(
+        &'a self,
+        path: &'a Path,
+        private: bool,
+    ) -> BoxFuture<'a, FsResult<FileWriter>>;
+    /// Publishes a staged transfer with a single atomic rename.
+    fn publish_transfer<'a>(
+        &'a self,
+        from: &'a Path,
+        to: &'a Path,
+        overwrite: bool,
+    ) -> BoxFuture<'a, FsResult<()>>;
+    fn set_permissions<'a>(&'a self, path: &'a Path, mode: u32) -> BoxFuture<'a, FsResult<()>>;
     /// Creates the directory `path`; its parent must exist.
     fn create_dir<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, FsResult<()>>;
     /// Deletes the file `path` (a cancelled or failed transfer's partial copy).
@@ -94,6 +108,55 @@ impl LocalFs for DiskFs {
                 .await
                 .map_err(|e| error(path, e))?;
             Ok(Box::new(file) as FileWriter)
+        })
+    }
+
+    fn create_new<'a>(
+        &'a self,
+        path: &'a Path,
+        private: bool,
+    ) -> BoxFuture<'a, FsResult<FileWriter>> {
+        Box::pin(async move {
+            let mut options = tokio::fs::OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            if private {
+                options.mode(0o600);
+            }
+            #[cfg(not(unix))]
+            let _ = private;
+            let file = options.open(path).await.map_err(|e| error(path, e))?;
+            Ok(Box::new(file) as FileWriter)
+        })
+    }
+
+    fn publish_transfer<'a>(
+        &'a self,
+        from: &'a Path,
+        to: &'a Path,
+        overwrite: bool,
+    ) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move {
+            if overwrite {
+                tokio::fs::rename(from, to).await.map_err(|e| error(to, e))
+            } else {
+                rename_new(from.to_path_buf(), to.to_path_buf()).await
+            }
+        })
+    }
+
+    fn set_permissions<'a>(&'a self, path: &'a Path, mode: u32) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                tokio::fs::set_permissions(path, std::fs::Permissions::from_mode(mode & 0o7777))
+                    .await
+                    .map_err(|e| error(path, e))?;
+            }
+            #[cfg(not(unix))]
+            let _ = (path, mode);
+            Ok(())
         })
     }
 
@@ -244,19 +307,33 @@ impl RemoteFs for DiskBrowser {
         })
     }
 
+    fn create_new<'a>(
+        &'a self,
+        path: &'a str,
+        private: bool,
+    ) -> BoxFuture<'a, FsResult<FileWriter>> {
+        Box::pin(async move { DiskFs.create_new(&native_path(path), private).await })
+    }
+
+    fn publish_transfer<'a>(
+        &'a self,
+        from: &'a str,
+        to: &'a str,
+        overwrite: bool,
+    ) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move {
+            DiskFs
+                .publish_transfer(&native_path(from), &native_path(to), overwrite)
+                .await
+        })
+    }
+
     fn create_dir<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>> {
         Box::pin(async move { DiskFs.create_dir(&native_path(path)).await })
     }
 
     fn rename<'a>(&'a self, from: &'a str, to: &'a str) -> BoxFuture<'a, FsResult<()>> {
-        Box::pin(async move {
-            let (from, to) = (native_path(from), native_path(to));
-            tokio::task::spawn_blocking(move || {
-                rename_without_replace(&from, &to).map_err(|e| error(&to, e))
-            })
-            .await
-            .map_err(|e| FsError::Io(e.to_string()))?
-        })
+        Box::pin(async move { rename_new(native_path(from), native_path(to)).await })
     }
 
     fn remove_file<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<()>> {
@@ -314,6 +391,14 @@ impl RemoteFs for DiskBrowser {
     fn create_write<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileWriter>> {
         Box::pin(async move { DiskFs.create_write(&native_path(path)).await })
     }
+}
+
+async fn rename_new(from: PathBuf, to: PathBuf) -> FsResult<()> {
+    tokio::task::spawn_blocking(move || {
+        rename_without_replace(&from, &to).map_err(|e| error(&to, e))
+    })
+    .await
+    .map_err(|e| FsError::Io(e.to_string()))?
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]

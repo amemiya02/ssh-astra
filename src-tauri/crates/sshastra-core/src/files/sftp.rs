@@ -1,28 +1,31 @@
-//! [`RemoteFs`] over SFTP: one `sftp` subsystem channel on a Host's shared
-//! Connection.
+//! [`RemoteFs`] over SFTP subsystem channels on a Host's shared Connection.
 
 use std::sync::Arc;
 
 use russh_sftp::client::error::Error as SftpError;
 use russh_sftp::client::fs::Metadata;
-use russh_sftp::client::SftpSession;
-use russh_sftp::protocol::StatusCode;
+use russh_sftp::client::{RawSftpSession, SftpSession};
+use russh_sftp::protocol::{OpenFlags, Packet, StatusCode};
+use tokio::sync::OnceCell;
 use tokio::task::JoinSet;
 
 use super::{
-    join, FileEntry, FileKind, FileReader, FileStat, FileWriter, FsError, FsResult, RemoteFs,
+    join, publish_by_plain_rename, FileEntry, FileKind, FileReader, FileStat, FileWriter, FsError,
+    FsResult, RemoteFs,
 };
 use crate::ssh::{BoxFuture, Connection};
 
 /// Seconds to wait for each SFTP reply; slow links list big directories.
 const REQUEST_TIMEOUT_SECS: u64 = 30;
+const POSIX_RENAME: &str = "posix-rename@openssh.com";
 
 /// A Host's files over SFTP. Keeps its Connection open while it lives;
 /// dropping it closes the SFTP channel (not the Connection, which Terminals
 /// may still hold).
 pub struct SftpFs {
     session: Arc<SftpSession>,
-    _connection: Arc<Connection>,
+    rename_session: OnceCell<Option<RawSftpSession>>,
+    connection: Arc<Connection>,
 }
 
 impl SftpFs {
@@ -40,12 +43,35 @@ impl SftpFs {
         session.set_timeout(REQUEST_TIMEOUT_SECS);
         Ok(Self {
             session: Arc::new(session),
-            _connection: connection,
+            rename_session: OnceCell::new(),
+            connection,
         })
     }
 }
 
 impl SftpFs {
+    /// The high-level session does not expose extended requests. Open at
+    /// most one extra channel on this Connection when an overwrite needs it.
+    async fn rename_session(&self) -> FsResult<Option<RawSftpSession>> {
+        let channel = match self.connection.open_session_channel().await {
+            Ok(channel) => channel,
+            Err(russh::Error::ChannelOpenFailure(_)) => return Ok(None),
+            Err(e) => return Err(FsError::Protocol(e.to_string())),
+        };
+        channel
+            .request_subsystem(true, "sftp")
+            .await
+            .map_err(|e| FsError::Protocol(e.to_string()))?;
+        let session = RawSftpSession::new(channel.into_stream());
+        session.set_timeout(REQUEST_TIMEOUT_SECS);
+        let version = session.init().await.map_err(|e| error("", e))?;
+        Ok(version
+            .extensions
+            .get(POSIX_RENAME)
+            .is_some_and(|version| version == "1")
+            .then_some(session))
+    }
+
     /// OpenSSH answers a bare "failure" when the target of a mkdir or rename
     /// exists; tell that case apart so the user sees why.
     async fn unless_taken(&self, target: &str, err: FsError) -> FsError {
@@ -151,6 +177,28 @@ impl RemoteFs for SftpFs {
         })
     }
 
+    fn create_new<'a>(
+        &'a self,
+        path: &'a str,
+        private: bool,
+    ) -> BoxFuture<'a, FsResult<FileWriter>> {
+        Box::pin(async move {
+            let attrs = Metadata {
+                permissions: private.then_some(0o600),
+                ..Metadata::empty()
+            };
+            let flags = OpenFlags::CREATE | OpenFlags::EXCLUDE | OpenFlags::WRITE;
+            match self
+                .session
+                .open_with_flags_and_attributes(path, flags, attrs)
+                .await
+            {
+                Ok(file) => Ok(Box::new(file) as FileWriter),
+                Err(e) => Err(self.unless_taken(path, error(path, e)).await),
+            }
+        })
+    }
+
     fn lstat<'a>(&'a self, path: &'a str) -> BoxFuture<'a, FsResult<FileStat>> {
         Box::pin(async move {
             let meta = self
@@ -178,6 +226,37 @@ impl RemoteFs for SftpFs {
             match self.session.rename(from, to).await {
                 Ok(()) => Ok(()),
                 Err(e) => Err(self.unless_taken(to, error(from, e)).await),
+            }
+        })
+    }
+
+    fn publish_transfer<'a>(
+        &'a self,
+        from: &'a str,
+        to: &'a str,
+        overwrite: bool,
+    ) -> BoxFuture<'a, FsResult<()>> {
+        Box::pin(async move {
+            if !overwrite {
+                return self.rename(from, to).await;
+            }
+            let Some(session) = self
+                .rename_session
+                .get_or_try_init(|| self.rename_session())
+                .await?
+            else {
+                return publish_by_plain_rename(self, from, to, true).await;
+            };
+            let payload = russh_sftp::ser::to_bytes(&(from, to))
+                .map_err(|e| FsError::Protocol(e.to_string()))?;
+            let response = session
+                .extended(POSIX_RENAME, payload.to_vec())
+                .await
+                .map_err(|e| error(to, e))?;
+            match response {
+                Packet::Status(status) if status.status_code == StatusCode::Ok => Ok(()),
+                Packet::Status(status) => Err(error(to, SftpError::Status(status))),
+                _ => Err(error(to, SftpError::UnexpectedPacket)),
             }
         })
     }

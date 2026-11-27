@@ -658,11 +658,16 @@ impl Connection {
     /// the Connection alive while it is open.
     pub async fn open_sftp(self: &Arc<Self>) -> Result<SftpFs, FsError> {
         let channel = self
-            .handle
-            .channel_open_session()
+            .open_session_channel()
             .await
             .map_err(|e| FsError::Protocol(e.to_string()))?;
         SftpFs::start(Arc::clone(self), channel).await
+    }
+
+    pub(crate) async fn open_session_channel(
+        &self,
+    ) -> Result<russh::Channel<russh::client::Msg>, russh::Error> {
+        self.handle.channel_open_session().await
     }
 }
 
