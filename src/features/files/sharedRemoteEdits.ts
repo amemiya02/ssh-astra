@@ -70,7 +70,9 @@ export function createSharedRemoteEdits(api: EditCommands, onUploadFailed?: (nam
       if (edit.opening) return edit.opening;
 
       const onEvent = (event: EditEvent) => {
-        if (event.state === "uploadFailed") uploadFailed(edit, { kind: "uploadFailed", message: event.reason });
+        if (event.state === "applicationFallback") {
+          if (edit.panels.size) showToast((t) => t("toast.editApplicationFallback", { name: edit.item.name }));
+        } else if (event.state === "uploadFailed") uploadFailed(edit, { kind: "uploadFailed", message: event.reason });
         else publish(edit, { status: event.state, error: null });
       };
       const show = async () => {

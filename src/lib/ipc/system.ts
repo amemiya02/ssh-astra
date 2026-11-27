@@ -31,6 +31,6 @@ export function pickSavePath(options: { title: string; defaultPath?: string; fil
 }
 
 /** Asks for one file or folder to open (native picker); null if the user cancels. */
-export function pickOpenPath(options: { title: string; filters?: FileFilter[]; directory?: boolean }): Promise<string | null> {
+export function pickOpenPath(options: { title: string; defaultPath?: string; filters?: FileFilter[]; directory?: boolean }): Promise<string | null> {
   return open({ directory: false, ...options, multiple: false });
 }
