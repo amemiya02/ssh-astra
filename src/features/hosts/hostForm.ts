@@ -1,5 +1,5 @@
 import { parseProxyForm, proxyFormFrom, type ProxyField, type ProxyFormValues } from "@/features/connect/proxy-form";
-import type { Host, HostAuth, HostDraft, TerminalBackspace, TerminalCharset } from "@/lib/ipc/hosts";
+import type { Host, HostAuth, HostDraft, HostIcon, TerminalBackspace, TerminalCharset } from "@/lib/ipc/hosts";
 import { isTerminalColorScheme, type ImportedTerminalScheme, type TerminalColorScheme } from "@/theme/terminal-themes";
 
 /** The Host form's raw input values. */
@@ -9,6 +9,7 @@ export interface HostFormValues {
   port: string;
   user: string;
   tags: string[];
+  icon?: HostIcon;
   /** The Jump host's id, or "" to connect directly. */
   jumpHost: string;
   authType: HostAuth["type"];
@@ -33,7 +34,7 @@ export interface HostFormValues {
 type HostInputField = Exclude<
   keyof HostFormValues,
   "jumpHost" | "authType" | "identitiesOnly" | "forwardAgent" | "terminalScheme" | "defaultDirectory" |
-  "postLoginCommand" | "terminalCharset" | "terminalBackspace" | "proxy" | "tags"
+  "postLoginCommand" | "terminalCharset" | "terminalBackspace" | "proxy" | "tags" | "icon"
 >;
 /** Error codes; the UI maps them to copy under `hosts.errors.*`. */
 export type HostFormError = "required" | "port" | "keepaliveSeconds";
@@ -66,6 +67,7 @@ export function hostFormFrom(host: Host, importedSchemes: readonly ImportedTermi
     port: String(host.port),
     user: host.user,
     tags: host.tags ?? [],
+    icon: host.icon,
     jumpHost: host.jumpHost ?? "",
     authType: host.auth.type,
     identityFile: host.auth.type === "key" ? host.auth.identityFile : "",
@@ -114,6 +116,7 @@ export function parseHostForm(values: HostFormValues, purpose: "save" | "test" =
     forwardAgent: values.forwardAgent,
   };
   if (values.tags.length > 0) draft.tags = values.tags;
+  if (values.icon) draft.icon = values.icon;
   if (proxy.proxy.mode !== "inherit") draft.proxy = proxy.proxy;
   if (values.terminalScheme) draft.terminalScheme = values.terminalScheme;
   if (keepaliveText) draft.keepaliveSeconds = keepaliveSeconds;
