@@ -8,11 +8,11 @@ export type HostId = string;
 export type GroupId = string;
 
 /**
- * Mirrors `sshastra_core::hosts::HostAuth`. Either way a connect tries
- * ssh-agent, then the key file (if any), then password, then
- * keyboard-interactive, as far as the server allows.
+ * Mirrors `sshastra_core::hosts::HostAuth`. The server's allowed methods
+ * determine whether a connect tries ssh-agent, then the default or specified
+ * key files, then password and keyboard-interactive.
  */
-export type HostAuth = { type: "password" } | { type: "key"; identityFile: string };
+export type HostAuth = { type: "auto" } | { type: "password" } | { type: "key"; identityFile: string };
 
 /** A Host's editable fields (`sshastra_core::hosts::HostDraft`). */
 export interface HostDraft {

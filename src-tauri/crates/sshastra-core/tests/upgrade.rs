@@ -131,6 +131,47 @@ fn saving_after_upgrading_from_v0_1_0_keeps_every_host() {
 }
 
 #[test]
+fn saving_automatic_auth_keeps_the_explicit_auth_of_v0_3_0_hosts() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = hosts_path(&dir);
+    fs::write(&path, include_str!("fixtures/v0.3.0/hosts.json")).unwrap();
+    let mut store = HostStore::open(&path).unwrap();
+    assert_eq!(
+        store.get(&id("h-password")).unwrap().auth,
+        HostAuth::Password
+    );
+    assert_eq!(
+        store.get(&id("h-key")).unwrap().auth,
+        HostAuth::Key {
+            identity_file: "~/.ssh/build".into(),
+        }
+    );
+    let mut expected = store.list().to_vec();
+    expected.push(
+        store
+            .upsert(
+                None,
+                HostDraft {
+                    name: "web".into(),
+                    address: "web.example.com".into(),
+                    port: 22,
+                    user: "dev".into(),
+                    auth: HostAuth::Auto,
+                    jump_host: None,
+                    terminal_scheme: None,
+                    default_directory: None,
+                },
+            )
+            .unwrap(),
+    );
+
+    let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(saved["version"], 6);
+    assert_eq!(saved["hosts"][2]["auth"], json!({ "type": "auto" }));
+    assert_eq!(HostStore::open(path).unwrap().list(), expected);
+}
+
+#[test]
 fn settings_saved_by_v0_1_0_load_after_upgrading() {
     let dir = config_dir_from("v0.1.0");
     let store = SettingsStore::open(settings_path(&dir)).unwrap();

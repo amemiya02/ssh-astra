@@ -7,9 +7,9 @@
 //! to a [`Prompter`], which the app implements with UI dialogs. A changed host
 //! key is never put to the user: the connection is refused.
 //!
-//! Authentication tries, as far as the server allows: ssh-agent, the Host's
-//! private key file, password, keyboard-interactive (see `auth`). A password
-//! or key passphrase saved in the CredentialVault is tried before asking.
+//! Authentication tries, as far as the server allows: ssh-agent, the default
+//! or specified private keys, password, keyboard-interactive (see `auth`). A
+//! password or key passphrase saved in the CredentialVault is tried before asking.
 //!
 //! A Host behind Jump hosts is reached with
 //! [`ConnectionManager::connect_through`]: each hop is its own Connection
@@ -304,6 +304,7 @@ fn log_hop<T>(id: &HostId, step: &str, result: &Result<T, ConnectError>) {
 pub struct ConnectionManager {
     known_hosts: KnownHosts,
     agent: Agent,
+    home_dir: Option<PathBuf>,
     vault: Arc<dyn CredentialVault>,
     /// Read when a Connection opens; changing it leaves open ones as they are.
     keepalive_interval: Mutex<Option<Duration>>,
@@ -327,6 +328,9 @@ impl ConnectionManager {
         Self {
             known_hosts,
             agent: Agent::None,
+            home_dir: std::env::var_os("HOME")
+                .or_else(|| std::env::var_os("USERPROFILE"))
+                .map(PathBuf::from),
             vault: Arc::new(NoVault),
             keepalive_interval: Mutex::new(ConnectionSettings::default().keepalive_interval()),
             handshake_timeout: HANDSHAKE_TIMEOUT,
@@ -339,6 +343,12 @@ impl ConnectionManager {
     /// [`Agent::System`].
     pub fn with_agent(mut self, agent: Agent) -> Self {
         self.agent = agent;
+        self
+    }
+
+    /// Resolves default key paths and `~/` in private key paths against `home_dir`.
+    pub fn with_home_dir(mut self, home_dir: impl Into<PathBuf>) -> Self {
+        self.home_dir = Some(home_dir.into());
         self
     }
 
@@ -590,6 +600,7 @@ impl ConnectionManager {
             &mut handle,
             host,
             &self.agent,
+            self.home_dir.as_deref(),
             &self.vault,
             prompter.as_ref(),
             deadline,
