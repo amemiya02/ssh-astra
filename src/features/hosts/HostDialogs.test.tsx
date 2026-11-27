@@ -254,6 +254,23 @@ describe("Host editor", () => {
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ forwardAgent: !enabled }), "prod");
   });
 
+  it.each([undefined, true])("shows the legacy algorithm risk in Advanced and saves when toggled from %s", async (enabled) => {
+    const save = vi.fn<EditorProps["save"]>().mockResolvedValue(host);
+    await renderEditor({ host: { ...host, allowLegacyAlgorithms: enabled }, save });
+
+    const allowLegacy = field("Allow legacy algorithms");
+    expect(allowLegacy.closest("[hidden]")).not.toBeNull();
+    act(() => button("Advanced").click());
+    expect(allowLegacy.closest("[hidden]")).toBeNull();
+    expect(allowLegacy.getAttribute("aria-checked")).toBe(String(enabled ?? false));
+    expect(document.getElementById(allowLegacy.getAttribute("aria-describedby")!)?.textContent)
+      .toBe("Older SSH algorithms offer weaker protection. Enable only for this Host if it requires them. Reconnect to apply changes.");
+
+    act(() => allowLegacy.click());
+    await act(async () => button("Save").click());
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ allowLegacyAlgorithms: !enabled }), "prod");
+  });
+
   it.each([
     ["defaultDirectory", "File panel folder"],
     ["terminalScheme", "Terminal colours"],
@@ -375,6 +392,7 @@ describe("Host editor", () => {
       defaultDirectory: "~/release",
       identitiesOnly: false,
       forwardAgent: false,
+      allowLegacyAlgorithms: false,
     }, "prod");
   });
 });

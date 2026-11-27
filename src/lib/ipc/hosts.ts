@@ -60,6 +60,8 @@ export interface HostDraft {
   identitiesOnly?: boolean;
   /** Allow the remote host to use the local SSH agent during a Connection. */
   forwardAgent?: boolean;
+  /** Offer legacy SSH algorithms as fallbacks. Off when absent. */
+  allowLegacyAlgorithms?: boolean;
   /** Outbound proxy choice when this Host is the first hop. */
   proxy?: HostProxy;
   /** Seconds between keepalives; absent follows the global setting, 0 turns them off. */

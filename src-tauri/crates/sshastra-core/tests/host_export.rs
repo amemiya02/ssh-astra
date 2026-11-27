@@ -30,6 +30,7 @@ fn draft(name: &str) -> HostDraft {
         terminal_scheme: None,
         identities_only: false,
         forward_agent: false,
+        allow_legacy_algorithms: false,
         proxy: Default::default(),
         keepalive_seconds: None,
         post_login_command: None,
@@ -73,6 +74,7 @@ fn populated() -> (tempfile::TempDir, HostStore) {
                 terminal_scheme: Some("ember".into()),
                 identities_only: true,
                 forward_agent: false,
+                allow_legacy_algorithms: false,
                 proxy: Default::default(),
                 keepalive_seconds: None,
                 post_login_command: None,
@@ -181,7 +183,7 @@ fn exporting_then_importing_into_an_empty_store_gives_the_same_host_list() {
         exported_web["tags"],
         serde_json::json!(["Production", "East Coast"])
     );
-    assert_eq!(exported["version"], 17);
+    assert_eq!(exported["version"], 18);
     assert_eq!(exported_web["icon"], "server");
     assert_eq!(exported_web["color"], "magenta");
     assert_eq!(renamed(&source.tree(), &imported), imported);
