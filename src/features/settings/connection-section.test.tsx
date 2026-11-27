@@ -16,7 +16,8 @@ it("enables OS detection by default and saves when turned off", async () => {
   try {
     act(() => root.render(<ConnectionSection />));
     const control = container.querySelector('[aria-label="Detect Host operating systems"]')!;
-    const [on, off] = control.querySelectorAll<HTMLButtonElement>("button");
+    const on = control.querySelector<HTMLButtonElement>('[data-value="on"]')!;
+    const off = control.querySelector<HTMLButtonElement>('[data-value="off"]')!;
     expect(on.getAttribute("aria-checked")).toBe("true");
     act(() => off.click());
     expect(save).toHaveBeenLastCalledWith("connection", { keepaliveSeconds: 30, agentPath: "", detectOs: false });

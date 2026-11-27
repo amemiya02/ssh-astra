@@ -66,7 +66,7 @@ describe("hosts store", () => {
       },
     });
 
-    expect(store.getState().tree.hosts[0].detectedOs).toBe("debian");
+    expect(store.getState().tree.hosts[0]?.detectedOs).toBe("debian");
     await store.getState().saveHost({ ...draft("new name"), icon: "router" }, original.id);
     expect(store.getState().tree.hosts[0]).toMatchObject({ name: "new name", icon: "router", detectedOs: "debian" });
   });
