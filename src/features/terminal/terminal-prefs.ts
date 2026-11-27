@@ -80,7 +80,7 @@ export const defaultTerminalPrefs: TerminalPrefs = {
   highlighting: defaultTerminalHighlighting,
   inlineImages: true,
   copyOnSelect: true,
-  rightClickPaste: true,
+  rightClickPaste: false,
   shellIntegration: true,
   autoLog: false,
   logDirectory: null,

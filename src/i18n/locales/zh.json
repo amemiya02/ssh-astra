@@ -726,6 +726,10 @@
       "failed": "无法写入终端录制文件。{{message}}"
     },
     "pressEnterToRestart": "按 Enter 启动新的 shell。",
+    "menu": {
+      "label": "终端菜单",
+      "clear": "清屏"
+    },
     "search": {
       "label": "在终端中查找",
       "placeholder": "查找",
@@ -1182,8 +1186,12 @@
         "failed": "无法选择终端输出文件夹。{{message}}"
       },
       "rightClickPaste": {
-        "label": "右键粘贴",
-        "description": "开启后，在终端中右键单击会粘贴剪贴板内容。关闭后会打开终端菜单。"
+        "label": "右键操作",
+        "description": "选择在终端中点击右键时执行的操作。",
+        "options": {
+          "menu": "打开菜单",
+          "paste": "直接粘贴"
+        }
       },
       "confirmMultilinePaste": {
         "label": "多行粘贴前确认",

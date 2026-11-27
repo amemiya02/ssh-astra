@@ -726,6 +726,10 @@
       "failed": "Could not write the Recording. {{message}}"
     },
     "pressEnterToRestart": "Press Enter to start a new shell.",
+    "menu": {
+      "label": "Terminal menu",
+      "clear": "Clear screen"
+    },
     "search": {
       "label": "Find in Terminal",
       "placeholder": "Find",
@@ -1182,8 +1186,12 @@
         "failed": "Could not choose a Terminal output folder. {{message}}"
       },
       "rightClickPaste": {
-        "label": "Right-click paste",
-        "description": "When on, right-clicking pastes the clipboard. When off, it opens the Terminal menu."
+        "label": "Right-click action",
+        "description": "Choose what right-clicking in a Terminal does.",
+        "options": {
+          "menu": "Open menu",
+          "paste": "Paste directly"
+        }
       },
       "confirmMultilinePaste": {
         "label": "Confirm multi-line paste",

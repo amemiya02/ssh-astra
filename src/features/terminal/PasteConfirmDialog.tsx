@@ -13,11 +13,12 @@ import type { PendingPaste } from "./terminal-input";
 
 interface PasteConfirmDialogProps {
   paste: PendingPaste | null;
+  onCloseAutoFocus?(event: Event): void;
   onConfirm(): void;
   onCancel(): void;
 }
 
-export function PasteConfirmDialog({ paste, onConfirm, onCancel }: PasteConfirmDialogProps) {
+export function PasteConfirmDialog({ paste, onCloseAutoFocus, onConfirm, onCancel }: PasteConfirmDialogProps) {
   const { t } = useTranslation();
   const hasInvisibleCharacters = !!paste?.invisibleCharacters?.length;
   let previewOffset = 0;
@@ -43,7 +44,7 @@ export function PasteConfirmDialog({ paste, onConfirm, onCancel }: PasteConfirmD
   return (
     <Dialog open={paste !== null} onOpenChange={(open) => !open && onCancel()}>
       {paste && (
-        <DialogContent showCloseButton={false} className="max-w-[calc(100%-2rem)] p-5 sm:max-w-120">
+        <DialogContent onCloseAutoFocus={onCloseAutoFocus} showCloseButton={false} className="max-w-[calc(100%-2rem)] p-5 sm:max-w-120">
           <DialogHeader>
             <DialogTitle>
               {hasInvisibleCharacters ? t("terminal.paste.invisibleTitle") : t("terminal.paste.title", { count: paste.lines })}

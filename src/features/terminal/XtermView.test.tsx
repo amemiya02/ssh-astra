@@ -1,3 +1,4 @@
+import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { BroadcastPaneContext, createBroadcast } from "@/features/workspace/broadcast";
 import { currentPlatform } from "@/features/workspace/shortcuts";
@@ -20,6 +21,7 @@ vi.hoisted(() => {
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
 });
 
+vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({ readText: vi.fn(), writeText: vi.fn() }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(async () => {}) }));
 
 vi.mock("@xterm/addon-webgl", () => ({
@@ -79,6 +81,120 @@ function mountTerminal(broadcast?: ReturnType<typeof createBroadcast>) {
     },
   };
 }
+
+function openContextMenu(terminal: Terminal) {
+  return act(async () => terminal.element!.dispatchEvent(new MouseEvent("contextmenu", {
+    bubbles: true, cancelable: true, button: 2, clientX: 12, clientY: 12,
+  })));
+}
+
+function menuItem(label: string) {
+  return [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent === label);
+}
+
+async function chooseMenuItem(label: string) {
+  const item = menuItem(label);
+  expect(item).toBeDefined();
+  await act(async () => item!.click());
+}
+
+it("selects all Terminal output and copies the xterm selection from the right-click menu", async () => {
+  const original = getSetting(terminalSetting);
+  setSetting(terminalSetting, { ...original, copyOnSelect: false });
+  const { terminal, cleanup } = mountTerminal();
+  vi.mocked(writeText).mockResolvedValue(undefined);
+  try {
+    await act(async () => new Promise<void>((resolve) => terminal.write("Build passed", resolve)));
+    await openContextMenu(terminal);
+    expect(menuItem("Copy")?.getAttribute("aria-disabled")).toBe("true");
+    await chooseMenuItem("Select All");
+    expect(terminal.getSelection().trim()).toBe("Build passed");
+
+    act(() => terminal.select(6, 0, 6));
+    await openContextMenu(terminal);
+    await chooseMenuItem("Copy");
+    expect(writeText).toHaveBeenCalledExactlyOnceWith("passed");
+    await vi.waitFor(() => expect(document.activeElement).toBe(terminal.textarea));
+  } finally {
+    cleanup();
+    vi.mocked(writeText).mockReset();
+    setSetting(terminalSetting, original);
+  }
+});
+
+it("confirms menu paste before sending bracketed input to the Terminal and its Broadcast peers", async () => {
+  const { terminal, input, inTab, otherTab, cleanup } = broadcastFixture();
+  vi.mocked(readText).mockResolvedValue("one\ntwo");
+  try {
+    await act(async () => new Promise<void>((resolve) => terminal.write("\x1b[?2004h", resolve)));
+    await openContextMenu(terminal);
+    await chooseMenuItem("Paste");
+    expect(pasteDialog()?.querySelector("h2")?.textContent).toBe("Paste 2 lines?");
+    expect(input).toEqual([]);
+    expect(inTab).not.toHaveBeenCalled();
+    await answerPaste("Paste");
+    const bytes = "\x1b[200~one\rtwo\x1b[201~";
+    expect(input).toEqual([bytes]);
+    expect(inTab).toHaveBeenCalledExactlyOnceWith(bytes);
+    expect(otherTab).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(document.activeElement).toBe(terminal.textarea));
+  } finally {
+    cleanup();
+    vi.mocked(readText).mockReset();
+  }
+});
+
+it("right-clicks straight into the same paste path when direct paste is selected", async () => {
+  const original = getSetting(terminalSetting);
+  setSetting(terminalSetting, { ...original, rightClickPaste: true });
+  const { terminal, input, cleanup } = mountTerminal();
+  vi.mocked(readText).mockResolvedValue("one\ntwo");
+  try {
+    await openContextMenu(terminal);
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(pasteDialog()?.querySelector("h2")?.textContent).toBe("Paste 2 lines?");
+    expect(input).toEqual([]);
+    await answerPaste("Paste");
+    expect(input).toEqual(["one\rtwo"]);
+  } finally {
+    cleanup();
+    vi.mocked(readText).mockReset();
+    setSetting(terminalSetting, original);
+  }
+});
+
+it("opens the Terminal menu with Shift+F10 and moves focus to Find when selected", async () => {
+  const { terminal, input, cleanup } = mountTerminal();
+  const shiftF10 = new KeyboardEvent("keydown", { key: "F10", code: "F10", shiftKey: true, bubbles: true, cancelable: true });
+  try {
+    await act(async () => terminal.textarea!.dispatchEvent(shiftF10));
+    expect(shiftF10.defaultPrevented).toBe(true);
+    expect(document.activeElement?.closest('[role="menu"]')).not.toBeNull();
+    const find = menuItem("Find");
+    expect(find).toBeDefined();
+    await act(async () => {
+      find!.focus();
+      find!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    });
+    await vi.waitFor(() => expect(document.activeElement?.getAttribute("aria-label")).toBe("Find in Terminal"));
+    expect(input).toEqual([]);
+  } finally {
+    cleanup();
+  }
+});
+
+it("clears the Terminal display and scrollback without typing a shell command", async () => {
+  const { terminal, input, cleanup } = mountTerminal();
+  try {
+    await act(async () => new Promise<void>((resolve) => terminal.write("Old output\r\n$ ", resolve)));
+    await openContextMenu(terminal);
+    await chooseMenuItem("Clear screen");
+    expect(terminal.buffer.active.getLine(0)?.translateToString(true)).toBe("$ ");
+    expect(input).toEqual([]);
+  } finally {
+    cleanup();
+  }
+});
 
 it("uses a changed Find shortcut in an already open Terminal", () => {
   const { container, terminal, cleanup } = mountTerminal();

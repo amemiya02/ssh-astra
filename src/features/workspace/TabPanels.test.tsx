@@ -92,6 +92,7 @@ function renderWorkspace(initialPane: Pane = local("a")) {
           activeId={state.activeId}
           renderHome={() => null}
           onFocusPane={(paneId) => dispatch({ type: "focusPane", paneId })}
+          onSplitPane={() => {}}
           onClosePane={(paneId) => dispatch({ type: "closePane", paneId })}
           onEditHost={() => {}}
           onConnectRestoredPane={(paneId) => dispatch({ type: "connectRestoredPane", paneId })}

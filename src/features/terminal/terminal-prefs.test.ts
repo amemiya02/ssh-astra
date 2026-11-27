@@ -17,7 +17,7 @@ function memoryBackend(initial: Record<string, unknown> = {}): SettingsBackend &
 }
 
 describe("terminal preferences", () => {
-  it("defaults to the design's Terminal font, follows the app theme, and turns copy on select and right-click paste on", async () => {
+  it("defaults to the Terminal font, app theme, copy on select, and the right-click menu", async () => {
     const prefs = (await openSettings(memoryBackend())).get(terminalSetting);
     expect(prefs).toEqual(defaultTerminalPrefs);
     expect(prefs.fontSize).toBe(13);
@@ -27,11 +27,16 @@ describe("terminal preferences", () => {
     expect(prefs.colorScheme).toBe("app");
     expect(prefs.bell).toBe("none");
     expect(prefs.copyOnSelect).toBe(true);
-    expect(prefs.rightClickPaste).toBe(true);
+    expect(prefs.rightClickPaste).toBe(false);
     expect(prefs.shellIntegration).toBe(true);
     expect(prefs.autoLog).toBe(false);
     expect(prefs.logDirectory).toBeNull();
     expect(prefs.confirmMultilinePaste).toBe(true);
+  });
+
+  it.each([false, true])("preserves an explicit right-click paste preference of %s", async (rightClickPaste) => {
+    const backend = memoryBackend({ terminal: { rightClickPaste } });
+    expect((await openSettings(backend)).get(terminalSetting).rightClickPaste).toBe(rightClickPaste);
   });
 
   it("survives a restart", async () => {

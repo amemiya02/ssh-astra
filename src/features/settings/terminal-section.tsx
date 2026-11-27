@@ -13,7 +13,7 @@ import { settingRows } from "./setting-rows";
 import { TerminalHighlightingSettings } from "./terminal-highlighting-settings";
 import { TerminalSchemeSettings } from "./terminal-scheme-settings";
 
-type BooleanPref = "ligatures" | "cursorBlink" | "copyOnSelect" | "rightClickPaste" | "confirmMultilinePaste" | "shellIntegration" | "autoLog" | "inlineImages";
+type BooleanPref = "ligatures" | "cursorBlink" | "copyOnSelect" | "confirmMultilinePaste" | "shellIntegration" | "autoLog" | "inlineImages";
 
 export function TerminalSection() {
   const { t } = useTranslation();
@@ -145,7 +145,17 @@ export function TerminalSection() {
         />
       </SettingRow>
       {toggle("copyOnSelect")}
-      {toggle("rightClickPaste")}
+      <SettingRow setting={settingRows.rightClickPaste}>
+        <SegmentedControl
+          label={t(settingRows.rightClickPaste.title)}
+          value={prefs.rightClickPaste ? "paste" : "menu"}
+          options={[
+            { value: "menu", label: t("settings.terminal.rightClickPaste.options.menu") },
+            { value: "paste", label: t("settings.terminal.rightClickPaste.options.paste") },
+          ]}
+          onChange={(mode) => updatePrefs({ rightClickPaste: mode === "paste" })}
+        />
+      </SettingRow>
       {toggle("confirmMultilinePaste")}
       {toggle("shellIntegration")}
       {toggle("autoLog")}

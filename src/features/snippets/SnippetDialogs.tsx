@@ -117,9 +117,10 @@ export function DeleteSnippetDialog({ snippet, busy, error, onConfirm, onCancel 
   );
 }
 
-export function SnippetPrompt({ snippet, template, onRun, onCancel }: {
+export function SnippetPrompt({ snippet, template, onCloseAutoFocus, onRun, onCancel }: {
   snippet: Snippet;
   template: ReturnType<typeof parseSnippet>;
+  onCloseAutoFocus?(event: Event): void;
   onRun(text: string): void;
   onCancel(): void;
 }) {
@@ -127,7 +128,7 @@ export function SnippetPrompt({ snippet, template, onRun, onCancel }: {
   const [values, setValues] = useState(() => new Map(template.variables.map(({ name, defaultValue }) => [name, defaultValue ?? ""])));
   const expanded = template.expand(values);
   return (
-    <DialogContent showCloseButton={false} className={dialogClass}>
+    <DialogContent onCloseAutoFocus={onCloseAutoFocus} showCloseButton={false} className={dialogClass}>
       <DialogHeader>
         <DialogTitle>{t("snippets.runNamed", { name: snippet.name })}</DialogTitle>
         <DialogDescription>{t("snippets.promptDescription")}</DialogDescription>

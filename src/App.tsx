@@ -197,18 +197,19 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
   );
 
   /**
-   * A new pane beside the focused one, using the same Host and working directory when known.
+   * A new pane beside the selected one, using the same Host and working directory when known.
    * Non-Terminal panes that can split open a Local terminal beside them.
    */
-  const split = (orientation: SplitOrientation) => {
-    if (!canSplitFocused) return;
-    const pane = activePane(focused);
+  const split = (orientation: SplitOrientation, paneId?: string) => {
+    if (!focused || !canSplit(focused, paneId)) return;
+    const pane = paneId === undefined ? activePane(focused) : tabPanes(focused).find((pane) => pane.id === paneId);
+    if (!pane) return;
     const kind: PaneKind = pane.kind === "remote-terminal"
       ? { kind: pane.kind, host: pane.host, initialCwd: terminalCwds.lastReported(pane.id) }
       : pane.kind === "local-terminal"
         ? { kind: pane.kind, cwd: pane.cwd }
         : localTerminal;
-    dispatch({ type: "split", orientation, pane: newPane(kind) });
+    dispatch({ type: "split", orientation, pane: newPane(kind), paneId: pane.id });
   };
 
   // The palette's split actions run the latest `split`, without re-registering on every change.
@@ -472,6 +473,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
               />
             )}
             onFocusPane={(paneId) => dispatch({ type: "focusPane", paneId })}
+            onSplitPane={(paneId, orientation) => split(orientation, paneId)}
             onClosePane={(paneId) => requestClose({ type: "closePane", paneId })}
             onEditHost={(host) => hostsController.actions.edit(hosts.find((saved) => saved.id === host.id) ?? host)}
             onConnectRestoredPane={(paneId) => dispatch({ type: "connectRestoredPane", paneId })}
