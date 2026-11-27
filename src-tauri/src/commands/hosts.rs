@@ -22,6 +22,7 @@ use tokio::sync::watch;
 use super::connections::ConnectionsState;
 use super::forwards::ForwardsState;
 use super::session_folder::{read_session_folder, SkipReason};
+use super::ssh_config_export::OpenSshSync;
 use super::watch::Watcher;
 use crate::commands::credentials::Vault;
 use crate::error::{CommandError, CommandResult};
@@ -32,6 +33,7 @@ use crate::error::{CommandError, CommandResult};
 pub struct HostsState {
     store: Arc<Mutex<Result<HostStore, CommandError>>>,
     changes: Arc<Watcher<HostTreeChange>>,
+    open_ssh: Arc<OpenSshSync>,
     approvals: Arc<Mutex<HashMap<HostId, watch::Sender<()>>>>,
 }
 
@@ -48,12 +50,22 @@ pub struct SharedHostTree {
 }
 
 impl HostsState {
-    pub fn new(store: Result<HostStore, CommandError>) -> Self {
+    pub fn new(store: Result<HostStore, CommandError>, open_ssh: OpenSshSync) -> Self {
         Self {
             store: Arc::new(Mutex::new(store)),
             changes: Arc::default(),
+            open_ssh: Arc::new(open_ssh),
             approvals: Arc::default(),
         }
+    }
+
+    pub(super) fn open_ssh(&self) -> &OpenSshSync {
+        &self.open_ssh
+    }
+
+    pub(super) fn with_export_hosts<T>(&self, f: impl FnOnce(Option<&[Host]>) -> T) -> T {
+        let guard = self.store.lock().unwrap_or_else(|p| p.into_inner());
+        f(guard.as_ref().ok().map(HostStore::list))
     }
 
     pub fn with<T>(&self, f: impl FnOnce(&mut HostStore) -> CommandResult<T>) -> CommandResult<T> {
@@ -81,6 +93,7 @@ impl HostsState {
                             .is_some_and(|host| host.agent_access == AgentPermission::Approval)
                 });
             self.changes.send(HostTreeChange { tree: store.tree() });
+            self.open_ssh.rebuild(store.list(), None);
             Ok(result)
         })
     }
@@ -109,6 +122,7 @@ impl HostsState {
 
     pub(crate) fn unwatch(&self, label: &str) {
         self.changes.unsubscribe(label);
+        self.open_ssh.forget_preview(label);
     }
 
     pub(crate) fn agent_terminals(&self, registry: &TerminalRegistry) -> Vec<OpenTerminal> {
