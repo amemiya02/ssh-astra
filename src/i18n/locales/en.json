@@ -188,10 +188,13 @@
     "dockRight": "Dock File panel on the right",
     "dockBottom": "Dock File panel at the bottom",
     "dockGroup": "File panel position",
+    "back": "Back",
+    "forward": "Forward",
     "up": "Up one folder",
     "refresh": "Refresh",
     "syncToTerminal": "Sync to Terminal folder",
     "goToPath": "Go to path",
+    "editPath": "Edit path",
     "path": "Path",
     "copyPath": "Copy path",
     "showHidden": "Show hidden files",
@@ -492,6 +495,36 @@
     }
   },
   "connect": {
+    "progress": {
+      "connecting": "Connecting",
+      "failed": "Connection failed",
+      "jumpHost": "Jump host: {{name}}",
+      "announcement": "{{host}}: {{stage}}",
+      "seconds": "{{duration}} s",
+      "retry": "Retry",
+      "close": "Close",
+      "stage": {
+        "waiting": "Wait for the existing connection",
+        "reused": "Use existing connection",
+        "reach": "Reach server",
+        "hostKey": "Verify host key",
+        "authenticate": "Log in",
+        "shell": "Open shell"
+      },
+      "status": {
+        "pending": "Pending",
+        "running": "In progress",
+        "succeeded": "Complete",
+        "failed": "Failed"
+      },
+      "method": {
+        "none": "check server methods",
+        "agent": "SSH agent",
+        "keyFile": "private key",
+        "password": "password",
+        "keyboardInteractive": "keyboard-interactive"
+      }
+    },
     "cancel": "Cancel",
     "hostKey": {
       "title": "Unknown host key",

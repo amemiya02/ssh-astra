@@ -22,9 +22,10 @@ use russh::keys::{ssh_key, HashAlg, PrivateKey, PrivateKeyWithHashAlg, PublicKey
 use russh::{AgentAuthError, MethodKind, MethodSet};
 
 use super::handshake::Deadline;
+use super::progress::ActiveStep;
 use super::{
-    ConnectError, KeyboardInteractivePrompt, KeyboardInteractiveQuestion, PassphrasePrompt,
-    PasswordPrompt, Prompter,
+    AuthMethod, ConnectError, KeyboardInteractivePrompt, KeyboardInteractiveQuestion,
+    PassphrasePrompt, PasswordPrompt, Prompter,
 };
 use crate::credentials::{CredentialKind, CredentialVault};
 use crate::hosts::{Host, HostAuth, HostId};
@@ -133,7 +134,8 @@ impl Saved {
     }
 }
 
-struct AuthAttempt<'a, H: client::Handler> {
+struct AuthAttempt<'a, 'step, H: client::Handler> {
+    progress: &'a mut ActiveStep<'step>,
     handle: &'a mut Handle<H>,
     host: &'a Host,
     prompter: &'a dyn Prompter,
@@ -142,15 +144,26 @@ struct AuthAttempt<'a, H: client::Handler> {
     allowed: MethodSet,
 }
 
+pub(super) struct AuthSources<'a> {
+    pub(super) agent: &'a Agent,
+    pub(super) home_dir: Option<&'a Path>,
+    pub(super) vault: &'a Arc<dyn CredentialVault>,
+}
+
 pub(super) async fn authenticate<H: client::Handler>(
     handle: &mut Handle<H>,
     host: &Host,
-    agent: &Agent,
-    home_dir: Option<&Path>,
-    vault: &Arc<dyn CredentialVault>,
+    sources: AuthSources<'_>,
     prompter: &dyn Prompter,
     deadline: Arc<Deadline>,
+    progress: &mut ActiveStep<'_>,
 ) -> Result<(), ConnectError> {
+    let AuthSources {
+        agent,
+        home_dir,
+        vault,
+    } = sources;
+    progress.method(AuthMethod::None);
     log_auth(&host.id, "none", "attempting");
     let none = handle.authenticate_none(&host.user).await;
     log_auth(&host.id, "none", auth_result(&none));
@@ -161,6 +174,7 @@ pub(super) async fn authenticate<H: client::Handler>(
         } => remaining_methods,
     };
     let mut attempt = AuthAttempt {
+        progress,
         handle,
         host,
         prompter,
@@ -230,7 +244,7 @@ enum Method {
     KeyboardInteractive,
 }
 
-impl<H: client::Handler> AuthAttempt<'_, H> {
+impl<H: client::Handler> AuthAttempt<'_, '_, H> {
     fn allows(&self, method: MethodKind) -> bool {
         self.allowed.contains(&method)
     }
@@ -258,9 +272,10 @@ impl<H: client::Handler> AuthAttempt<'_, H> {
         agent: &Agent,
         home_dir: Option<&Path>,
     ) -> Result<Step, ConnectError> {
-        if !self.allows(MethodKind::PublicKey) {
+        if !self.allows(MethodKind::PublicKey) || matches!(agent, Agent::None) {
             return Ok(Step::Skipped);
         }
+        self.progress.method(AuthMethod::Agent);
         let Some(mut client) = agent.connect().await else {
             return Ok(Step::Skipped);
         };
@@ -348,11 +363,13 @@ impl<H: client::Handler> AuthAttempt<'_, H> {
 
     async fn key_file(&mut self, path: PathBuf, skip_missing: bool) -> Result<Step, ConnectError> {
         // A key file is a few KiB: reading it inline is fine.
-        let text = match fs::read_to_string(&path) {
+        let text = fs::read_to_string(&path);
+        if skip_missing && matches!(&text, Err(error) if error.kind() == io::ErrorKind::NotFound) {
+            return Ok(Step::Skipped);
+        }
+        self.progress.method(AuthMethod::KeyFile);
+        let text = match text {
             Ok(text) => text,
-            Err(error) if skip_missing && error.kind() == io::ErrorKind::NotFound => {
-                return Ok(Step::Skipped);
-            }
             Err(error) => {
                 return Ok(Step::Failed(ConnectError::KeyUnreadable {
                     path,
@@ -380,6 +397,7 @@ impl<H: client::Handler> AuthAttempt<'_, H> {
         if !self.allows(MethodKind::Password) {
             return Ok(Step::Skipped);
         }
+        self.progress.method(AuthMethod::Password);
         let mut retry = false;
         if let Some(password) = self.saved.get(CredentialKind::Password).await {
             if let Some(step) = self.try_password(password).await? {
@@ -432,6 +450,10 @@ impl<H: client::Handler> AuthAttempt<'_, H> {
     }
 
     async fn keyboard_interactive(&mut self) -> Result<Step, ConnectError> {
+        if !self.allows(MethodKind::KeyboardInteractive) {
+            return Ok(Step::Skipped);
+        }
+        self.progress.method(AuthMethod::KeyboardInteractive);
         for _ in 0..ATTEMPTS {
             if !self.allows(MethodKind::KeyboardInteractive) {
                 break;

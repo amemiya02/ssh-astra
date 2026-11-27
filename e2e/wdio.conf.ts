@@ -56,6 +56,25 @@ export const config: WebdriverIO.Config = {
     writeFileSync(join(artifacts, `${name}.html`), html);
   },
 
+  async afterSession() {
+    const driver = process.env.SSHASTRA_E2E_RESTARTED_DRIVER;
+    if (!driver) return;
+    // A new session can close the replacement process after the runner has
+    // deleted its test session. The service only owns the original process.
+    const response = await fetch(new URL("/session", driver), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ capabilities: { alwaysMatch: {} } }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) throw new Error("Could not open a cleanup session for the restarted app.");
+    const { value } = await response.json() as { value: { sessionId: string } };
+    await fetch(new URL(`/session/${value.sessionId}/window`, driver), {
+      method: "DELETE",
+      signal: AbortSignal.timeout(5000),
+    }).catch(() => undefined); // Closing the last window may end the server before it replies.
+  },
+
   onComplete() {
     rmSync(home, { recursive: true, force: true });
   },

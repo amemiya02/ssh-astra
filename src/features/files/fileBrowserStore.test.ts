@@ -141,6 +141,51 @@ describe("fileBrowserStore", () => {
     expect(shown(store).path).toBe("/home/me/src");
   });
 
+  it("goes back and forward, replacing forward history after a new navigation", async () => {
+    const { store } = await connected();
+    const availability = () => [store.getState().canGoBack, store.getState().canGoForward];
+    expect(availability()).toEqual([false, false]);
+
+    await store.getState().open(entry("src", "dir"));
+    await store.getState().up();
+    expect(availability()).toEqual([true, false]);
+
+    await store.getState().goBack();
+    expect(shown(store).path).toBe("/home/me/src");
+    expect(availability()).toEqual([true, true]);
+    await store.getState().goForward();
+    expect(shown(store).path).toBe("/home/me");
+
+    await store.getState().goBack();
+    await store.getState().navigate("/home");
+    expect(availability()).toEqual([true, false]);
+    await store.getState().goForward();
+    expect(shown(store).path).toBe("/home");
+    await store.getState().goBack();
+    expect(shown(store).path).toBe("/home/me/src");
+  });
+
+  it("keeps each panel's history through errors, refreshes and reconnects", async () => {
+    const { api, store } = await connected();
+    const otherPanel = createFileBrowserStore(api, "host-1");
+    await otherPanel.getState().connect();
+    await store.getState().navigate("/home/me/src");
+    expect(otherPanel.getState().canGoBack).toBe(false);
+
+    await store.getState().goBack();
+    await store.getState().navigate("/missing");
+    expect(store.getState().error?.kind).toBe("notFound");
+    expect(store.getState().canGoForward).toBe(true);
+
+    await store.getState().refresh();
+    store.getState().disconnect();
+    await store.getState().connect();
+    expect(store.getState().canGoBack).toBe(false);
+    await store.getState().goForward();
+    expect(shown(store).path).toBe("/home/me/src");
+    expect(shown(otherPanel).path).toBe("/home/me");
+  });
+
   it("keeps showing the current directory when a path cannot be opened", async () => {
     const { store } = await connected();
 
@@ -173,6 +218,8 @@ describe("fileBrowserStore", () => {
 
     expect(shown(store).path).toBe("/home/me/src");
     expect(store.getState().loading).toBe(false);
+    await store.getState().goBack();
+    expect(shown(store).path).toBe("/home/me");
   });
 
   it("selects one, toggles, and extends a range in display order", async () => {

@@ -33,6 +33,7 @@ export interface KeyChord {
 }
 
 type Modifier = "meta" | "ctrl" | "alt" | "shift";
+type FileHistoryShortcut = "fileBack" | "fileForward";
 
 /** Shortcuts shown in tooltips, by name. */
 export type ShortcutName =
@@ -44,6 +45,7 @@ export type ShortcutName =
   | "previousTab"
   | "commandPalette"
   | "settings"
+  | FileHistoryShortcut
   | "find";
 
 interface Binding {
@@ -120,6 +122,11 @@ const terminalBindings: Record<Platform, TerminalBinding[]> = {
   other: [{ name: "find", code: "KeyF", mods: ["ctrl", "shift"], command: "find" }],
 };
 
+const fileHistoryBindings: (Pick<Binding, "code" | "mods"> & { name: FileHistoryShortcut })[] = [
+  { name: "fileBack", code: "ArrowLeft", mods: ["alt"] },
+  { name: "fileForward", code: "ArrowRight", mods: ["alt"] },
+];
+
 function pressed(chord: KeyChord, mod: Modifier): boolean {
   return { meta: chord.metaKey, ctrl: chord.ctrlKey, alt: chord.altKey, shift: chord.shiftKey }[mod];
 }
@@ -145,18 +152,23 @@ export function matchTerminalShortcut(chord: KeyChord, platform: Platform): Term
   return terminalBindings[platform].find((b) => b.code === chord.code && exactly(chord, b.mods))?.command ?? null;
 }
 
+/** History shortcuts are handled by the focused File panel. */
+export function matchFileHistoryShortcut(chord: KeyChord) {
+  return fileHistoryBindings.find((b) => b.code === chord.code && exactly(chord, b.mods))?.name ?? null;
+}
+
 const macSymbols: Record<Modifier, string> = { ctrl: "⌃", alt: "⌥", shift: "⇧", meta: "⌘" };
 const pcNames: Record<Modifier, string> = { ctrl: "Ctrl", alt: "Alt", shift: "Shift", meta: "Win" };
 
 function keyName(code: string): string {
   if (code.startsWith("Key")) return code.slice(3);
   if (code.startsWith("Digit")) return code.slice(5);
-  return { BracketRight: "]", BracketLeft: "[", PageDown: "PgDn", PageUp: "PgUp", Comma: "," }[code] ?? code;
+  return { BracketRight: "]", BracketLeft: "[", PageDown: "PgDn", PageUp: "PgUp", Comma: ",", ArrowLeft: "←", ArrowRight: "→" }[code] ?? code;
 }
 
 /** How a named shortcut is written on `platform`, for tooltips: `⇧⌘D`, `Ctrl+Shift+T`. */
 export function shortcutLabel(name: ShortcutName, platform: Platform): string {
-  const binding = [...bindings[platform], ...terminalBindings[platform]].find((b) => b.name === name);
+  const binding = [...bindings[platform], ...terminalBindings[platform], ...fileHistoryBindings].find((b) => b.name === name);
   if (!binding) return "";
   if (platform === "mac") {
     // macOS orders modifiers ⌃⌥⇧⌘.

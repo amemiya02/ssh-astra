@@ -14,8 +14,9 @@ use std::time::{Duration, Instant};
 use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
 use sshastra_core::ssh::{
-    BoxFuture, ConnectError, Connection, ConnectionManager, HostKeyPrompt, PasswordPrompt,
-    Prompter, Secret,
+    AuthMethod, BoxFuture, ConnectError, ConnectProgress, ConnectStage, Connection,
+    ConnectionManager, HostKeyPrompt, PasswordPrompt, ProgressStatus, Prompter, RemoteTerminal,
+    RemoteTerminalOptions, Secret,
 };
 use sshastra_core::terminal::{Terminal, TerminalEvent, TerminalSize};
 use support::{Service, Sshd};
@@ -28,6 +29,7 @@ struct ScriptedPrompter {
     trust_new_host: bool,
     passwords: Mutex<VecDeque<Option<String>>>,
     asked: Mutex<Vec<String>>,
+    progress: Mutex<Vec<ConnectProgress>>,
 }
 
 impl ScriptedPrompter {
@@ -36,6 +38,7 @@ impl ScriptedPrompter {
             trust_new_host,
             passwords: Mutex::new(passwords.iter().map(|p| p.map(str::to_owned)).collect()),
             asked: Mutex::default(),
+            progress: Mutex::default(),
         })
     }
 
@@ -49,6 +52,10 @@ impl ScriptedPrompter {
 }
 
 impl Prompter for ScriptedPrompter {
+    fn progress(&self, progress: ConnectProgress) {
+        self.progress.lock().unwrap().push(progress);
+    }
+
     fn confirm_host_key(&self, prompt: HostKeyPrompt) -> BoxFuture<'_, bool> {
         self.asked.lock().unwrap().push(format!(
             "host key {}:{} {} {}",
@@ -403,6 +410,213 @@ async fn the_same_host_shares_one_connection() {
         2,
         "authenticated once: {:?}",
         prompter.asked()
+    );
+}
+
+async fn open_with_progress(
+    jumps: Vec<Host>,
+    target: Host,
+    prompter: Arc<ScriptedPrompter>,
+) -> RemoteTerminal {
+    let kh = KnownHostsFile::empty();
+    let manager = Arc::new(kh.manager());
+    let prompts = prompter.clone();
+    let shell_host = target.clone();
+    RemoteTerminal::open_with_progress(
+        move || {
+            let (manager, jumps, target, prompts) = (
+                manager.clone(),
+                jumps.clone(),
+                target.clone(),
+                prompts.clone(),
+            );
+            async move { manager.connect_through(&jumps, &target, prompts).await }
+        },
+        RemoteTerminalOptions::default(),
+        TerminalSize { cols: 80, rows: 24 },
+        |_| {},
+        &shell_host,
+        prompter.as_ref(),
+    )
+    .await
+    .unwrap()
+}
+
+fn successful_steps(
+    name: &str,
+    jump_host: bool,
+    stages: &[ConnectStage],
+) -> Vec<(String, bool, ConnectStage, ProgressStatus)> {
+    stages
+        .iter()
+        .flat_map(|&stage| {
+            [ProgressStatus::Running, ProgressStatus::Succeeded]
+                .map(|status| (name.to_owned(), jump_host, stage, status))
+        })
+        .collect()
+}
+
+fn reported_steps(
+    prompter: &ScriptedPrompter,
+) -> Vec<(String, bool, ConnectStage, ProgressStatus)> {
+    prompter
+        .progress
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|event| event.status != ProgressStatus::Running || event.method.is_none())
+        .map(|event| {
+            (
+                event.host_name.clone(),
+                event.jump_host,
+                event.stage,
+                event.status,
+            )
+        })
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_direct_terminal_reports_each_connection_step_in_order() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    use ConnectStage::*;
+    let target = host(&sshd);
+    let prompter = ScriptedPrompter::trusting(&sshd);
+    let _terminal = open_with_progress(vec![], target.clone(), prompter.clone()).await;
+
+    assert_eq!(
+        reported_steps(&prompter),
+        successful_steps(&target.name, false, &[Reach, HostKey, Authenticate, Shell])
+    );
+    assert!(prompter.progress.lock().unwrap().iter().any(|event| {
+        event.stage == Authenticate
+            && event.status == ProgressStatus::Running
+            && event.method == Some(AuthMethod::Password)
+    }));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_terminal_via_a_jump_host_reports_the_named_hops_in_order() {
+    let Some(sshd) = support::sshd(Service::Jump) else {
+        return;
+    };
+    use ConnectStage::*;
+    let mut jump = host(&sshd);
+    jump.name = "Office bastion".into();
+    let target = behind("internal", &jump);
+    let prompter = ScriptedPrompter::new(true, &[Some(sshd.password); 2]);
+    let _terminal = open_with_progress(vec![jump.clone()], target.clone(), prompter.clone()).await;
+
+    assert_eq!(
+        reported_steps(&prompter),
+        [
+            successful_steps(&jump.name, true, &[Reach, HostKey, Authenticate]),
+            successful_steps(&target.name, false, &[Reach, HostKey, Authenticate, Shell]),
+        ]
+        .concat()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_rejected_password_ends_progress_at_the_failed_login_step() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let kh = KnownHostsFile::empty();
+    let prompter = ScriptedPrompter::new(true, &[Some("incorrect"); 3]);
+
+    let result = kh.manager().connect(&host(&sshd), prompter.clone()).await;
+
+    assert!(
+        matches!(result, Err(ConnectError::AuthenticationFailed)),
+        "{result:?}"
+    );
+    let events = prompter.progress.lock().unwrap();
+    let failed = events.last().expect("reported the failed step");
+    assert_eq!(failed.stage, ConnectStage::Authenticate);
+    assert_eq!(failed.status, ProgressStatus::Failed);
+    assert_eq!(failed.method, Some(AuthMethod::Password));
+}
+
+/// Keeps the first attempt in flight at its visible host key prompt.
+struct HostKeyGate {
+    script: Arc<ScriptedPrompter>,
+    entered: tokio::sync::Notify,
+    release: tokio::sync::Notify,
+}
+
+impl Prompter for HostKeyGate {
+    fn confirm_host_key(&self, prompt: HostKeyPrompt) -> BoxFuture<'_, bool> {
+        Box::pin(async move {
+            self.entered.notify_one();
+            self.release.notified().await;
+            self.script.confirm_host_key(prompt).await
+        })
+    }
+
+    fn password(&self, prompt: PasswordPrompt) -> BoxFuture<'_, Option<Secret>> {
+        self.script.password(prompt)
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_concurrent_connect_reports_waiting_before_reusing_the_connection() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let kh = KnownHostsFile::empty();
+    let manager = kh.manager();
+    let target = host(&sshd);
+    let gate = Arc::new(HostKeyGate {
+        script: ScriptedPrompter::trusting(&sshd),
+        entered: tokio::sync::Notify::new(),
+        release: tokio::sync::Notify::new(),
+    });
+    let prompter = ScriptedPrompter::new(false, &[]);
+    let follower = async {
+        gate.entered.notified().await;
+        let connect = manager.connect(&target, prompter.clone());
+        tokio::pin!(connect);
+        std::future::poll_fn(|cx| {
+            use std::future::Future;
+            assert!(connect.as_mut().poll(cx).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        assert_eq!(
+            reported_steps(&prompter),
+            [(
+                target.name.clone(),
+                false,
+                ConnectStage::Waiting,
+                ProgressStatus::Running
+            )]
+        );
+        gate.release.notify_one();
+        connect.await.unwrap()
+    };
+
+    let (first, second) = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::join!(manager.connect(&target, gate.clone()), follower)
+    })
+    .await
+    .unwrap();
+
+    assert!(Arc::ptr_eq(&first.unwrap(), &second));
+    assert_eq!(
+        reported_steps(&prompter),
+        [
+            successful_steps(&target.name, false, &[ConnectStage::Waiting]),
+            vec![(
+                target.name,
+                false,
+                ConnectStage::Reused,
+                ProgressStatus::Succeeded
+            )],
+        ]
+        .concat()
     );
 }
 

@@ -401,6 +401,12 @@ Settings lists every theme as a card (10px radius, 6px padding, auto-fill at min
 - **Focus:** border turns `ring` with a 3px `ring/50` halo.
 - **Error:** border turns `destructive` with a `destructive/20` halo; message below in `text-xs` red.
 
+### File panel path bar
+
+- Back, Forward and Up sit beside a compact `muted` field. Each monospaced breadcrumb opens that directory. Long paths scroll horizontally and show the current directory at the right.
+- Click the blank space or edit icon to select the path for editing. Enter opens an absolute path, `~` or `~/x`. Escape or leaving the field restores the breadcrumbs. Navigation errors appear below the path bar.
+- Alt+Left and Alt+Right browse history when focus is in the File panel outside text fields. Each panel keeps its own history in memory. Opening a different directory from a previous point in history replaces the forward entries.
+
 ### Menus, tooltips, dialogs
 - **Menus:** `raised` fill, 1px border, 8px radius, 4px padding, `shadow-overlay`; items 6px radius, `accent` on focus, destructive items red.
 - **Tooltips:** inverted (foreground fill, ground text), `text-xs`, 8px radius.
@@ -409,6 +415,11 @@ Settings lists every theme as a card (10px radius, 6px padding, auto-fill at min
 ### Host editor
 - **Basic information** is always visible and includes the name, address, port, user, authentication, Group, and Jump host. New Hosts start with Automatic authentication. The private key field appears when Private key is selected. Group shows the current location or the selected destination for a new Host. Use the Host list's move action to change a saved Host's Group.
 - **Advanced** is a full-width disclosure below Basic information. It starts collapsed and contains Identities only, Terminal colours, the File panel folder, and the action to clear a saved Host's credentials. A save error attached to an advanced field opens the section, displays the message by the field, and moves focus to it.
+
+### Connection view
+A remote Terminal pane shows a scrollable Connection view on the workspace surface until its shell opens. The progress list groups steps by Host in route order, including each named Jump host. Reach server, Verify host key and Log in apply to each hop. Open shell applies to the destination. An extra step appears while this pane waits for another connection attempt.
+
+Rows pair a status icon and explicit status text with the current authentication method and right-aligned elapsed time. The active icon uses `warning`, completed icons use `success`, and the failed row uses `destructive`. The existing Connection error panel explains the failure. Retry is the primary action and starts a new attempt in the same pane. Edit Host opens the Host editor, and Close closes the pane.
 
 ### Security surfaces
 - **Fingerprint block:** `muted` fill, 1px border, 10px radius, 12px by 14px padding; a `text-xs` muted label above the fingerprint in mono, breaking anywhere, selectable.

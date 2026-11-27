@@ -1,6 +1,7 @@
 //! A [`Prompter`] that asks the user through the front end: each question is
 //! pushed over a `Channel` with an id, and the UI replies with the
-//! `prompt_answer` command carrying the same id.
+//! `prompt_answer` command carrying the same id. Progress on that Channel
+//! has no id and needs no reply.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -8,13 +9,13 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use sshastra_core::ssh::{
-    BoxFuture, HostKeyPrompt, KeyboardInteractivePrompt, PassphrasePrompt, PasswordPrompt,
-    Prompter, Secret,
+    BoxFuture, ConnectProgress, HostKeyPrompt, KeyboardInteractivePrompt, PassphrasePrompt,
+    PasswordPrompt, Prompter, Secret,
 };
 use tauri::ipc::Channel;
 use tokio::sync::oneshot;
 
-/// A question for the user, sent on a connect's prompt channel.
+/// A question or progress update sent on a connect's prompt channel.
 #[derive(Clone, Serialize)]
 #[serde(
     tag = "type",
@@ -22,6 +23,9 @@ use tokio::sync::oneshot;
     rename_all_fields = "camelCase"
 )]
 pub enum PromptRequest {
+    Progress {
+        progress: ConnectProgress,
+    },
     HostKey {
         id: u64,
         host: String,
@@ -133,6 +137,10 @@ impl ChannelPrompter {
 }
 
 impl Prompter for ChannelPrompter {
+    fn progress(&self, progress: ConnectProgress) {
+        let _ = self.channel.send(PromptRequest::Progress { progress });
+    }
+
     fn confirm_host_key(&self, prompt: HostKeyPrompt) -> BoxFuture<'_, bool> {
         Box::pin(async move {
             let answer = self

@@ -1,5 +1,5 @@
-import { Channel, invoke } from "@tauri-apps/api/core";
-import { answerPrompts, type ConnectPrompt, type PromptAnswer } from "./connect";
+import { invoke } from "@tauri-apps/api/core";
+import { connectPromptChannel, type ConnectPrompt, type PromptAnswer } from "./connect";
 import type { HostId } from "./hosts";
 
 /** Mirrors `sshastra_core::files::FsId`: one open remote file system (a File panel's SFTP session). */
@@ -38,8 +38,7 @@ export function openFiles(hostId: HostId): Promise<FsId> {
 
 /** Connects for a standalone SFTP tab, without opening a Terminal. */
 export function connectFiles(hostId: HostId, ask: (prompt: ConnectPrompt) => Promise<PromptAnswer>): Promise<FsId> {
-  const handle = answerPrompts(ask);
-  return invoke("files_connect", { hostId, onPrompt: new Channel<ConnectPrompt>((prompt) => void handle(prompt)) });
+  return invoke("files_connect", { hostId, onPrompt: connectPromptChannel(ask) });
 }
 
 export function openLocalFiles(): Promise<FsId> {

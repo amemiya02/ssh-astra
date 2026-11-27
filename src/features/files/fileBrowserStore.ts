@@ -45,6 +45,10 @@ export interface FileBrowserState {
   connect(): Promise<void>;
   /** Shows `path`: absolute, `~`, `~/x`, or relative to home. Following the Terminal's `cd` calls this. */
   navigate(path: string): Promise<void>;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  goBack(): Promise<void>;
+  goForward(): Promise<void>;
   up(): Promise<void>;
   refresh(): Promise<void>;
   /** Enters a directory (or a link to one); opens a file (or a link to one) in the user's editor. */
@@ -100,9 +104,12 @@ export function createFileBrowserStore(
   /** Bumped by each listing request; only the latest one is shown. */
   let request = 0;
   let anchor: string | null = null;
+  /** Only successful listings enter history, using the canonical paths returned by the filesystem. */
+  const history: string[] = [];
+  let historyIndex = -1;
 
   return createStore<FileBrowserState>()((set, get) => {
-    const list = async (path: string, keepSelection: boolean) => {
+    const list = async (path: string, keepSelection: boolean, targetIndex?: number) => {
       if (fsId === null) return;
       const mine = ++request;
       set({ loading: true });
@@ -114,11 +121,32 @@ export function createFileBrowserStore(
         const selection =
           keepSelection && samePath ? new Set([...get().selection].filter((n) => names.has(n))) : new Set<string>();
         if (!selection.has(anchor ?? "")) anchor = null;
-        set({ path: listing.path, entries: listing.entries, selection, loading: false, error: null });
+        if (targetIndex !== undefined) {
+          historyIndex = targetIndex;
+          history[historyIndex] = listing.path;
+        } else if (!samePath) {
+          historyIndex += 1;
+          history.splice(historyIndex, history.length - historyIndex, listing.path);
+        }
+        set({
+          path: listing.path,
+          entries: listing.entries,
+          selection,
+          loading: false,
+          error: null,
+          canGoBack: historyIndex > 0,
+          canGoForward: historyIndex < history.length - 1,
+        });
       } catch (e) {
         if (mine !== request) return;
         set({ loading: false, error: readCommandError(e) });
       }
+    };
+
+    const traverse = async (step: -1 | 1) => {
+      const targetIndex = historyIndex + step;
+      const target = history[targetIndex];
+      if (target !== undefined) await list(target, false, targetIndex);
     };
 
     const remoteEdits = editsForPanel(hostId, (item) => {
@@ -176,6 +204,8 @@ export function createFileBrowserStore(
       loading: false,
       error: null,
       selection: new Set(),
+      canGoBack: false,
+      canGoForward: false,
 
       connect() {
         if (get().phase === "open") return Promise.resolve();
@@ -206,6 +236,8 @@ export function createFileBrowserStore(
       },
 
       navigate: (path) => list(path, false),
+      goBack: () => traverse(-1),
+      goForward: () => traverse(1),
       up: () => {
         const path = get().path ?? "/";
         return list(local ? childPath(path, "..") : parentPath(path), false);
