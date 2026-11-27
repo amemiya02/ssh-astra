@@ -2,6 +2,7 @@
 //! `ssh::RemoteTerminal`, a shell channel over a Connection). Both implement [`Terminal`], so the
 //! IPC layer and the UI treat them the same way.
 
+mod command_history;
 mod encoding;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod local_cwd;
@@ -13,6 +14,7 @@ mod recording;
 mod registry;
 mod shell_integration;
 
+pub use command_history::CommandHistory;
 pub(crate) use encoding::OutputDecoder;
 pub use encoding::{TerminalBackspace, TerminalCharset};
 pub use local_pty::{LocalPty, ShellCommand};
@@ -31,6 +33,8 @@ use serde::{Deserialize, Serialize};
 pub struct TerminalSettings {
     /// Type the ShellIntegration hook into new remote shells.
     pub shell_integration: bool,
+    /// Keep command lines reported by Shell integration for saved Hosts.
+    pub command_history: bool,
     /// Write Terminal logs automatically for newly opened Terminals.
     pub auto_log: bool,
     /// Where to save Terminal logs and Recordings. None uses the app directory.
@@ -41,6 +45,7 @@ impl Default for TerminalSettings {
     fn default() -> Self {
         Self {
             shell_integration: true,
+            command_history: false,
             auto_log: false,
             log_directory: None,
         }

@@ -10,6 +10,7 @@ use sshastra_core::hosts::{
     ImportReport, ImportSummary,
 };
 use sshastra_core::ssh_config::{parse_user_config, ParseContext};
+use sshastra_core::terminal::CommandHistory;
 use tauri::{ipc::Channel, State};
 
 use super::connections::ConnectionsState;
@@ -99,17 +100,27 @@ pub fn host_bookmark_delete(
     hosts.with(|store| Ok(store.delete_bookmark(&host_id, &path)?))
 }
 
-/// Deletes a Host, stopping its running Port forwards and, in the background,
-/// clearing its saved credentials.
+/// Deletes a Host and its Command history, stopping its running Port forwards
+/// and, in the background, clearing its saved credentials.
 #[tauri::command]
 pub fn host_delete(
     hosts: State<'_, HostsState>,
     forwards: State<'_, ForwardsState>,
     connections: State<'_, ConnectionsState>,
     vault: State<'_, Vault>,
+    history: State<'_, CommandHistory>,
     id: HostId,
 ) -> CommandResult<()> {
-    hosts.with(|store| Ok(store.delete(&id)?))?;
+    hosts.with(|store| {
+        store.delete(&id)?;
+        if let Err(error) = history.clear(&id) {
+            log::warn!(
+                "Could not remove Command history for a deleted Host: {:?}",
+                error.kind()
+            );
+        }
+        Ok(())
+    })?;
     forwards.forwarder.forget_host(&id);
     connections.release(&id);
     let vault = Vault::clone(&vault);

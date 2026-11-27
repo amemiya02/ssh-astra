@@ -26,7 +26,7 @@ A modern, good-looking SSH & SFTP client for Windows, macOS and Linux.
 - **Hosts**: groups, search, import from `~/.ssh/config` and CSV, Jump hosts.
 - **Terminals**: tabs and split panes; xterm.js with WebGL rendering.
 - **SFTP File panel**: follows your shell's `cd`. Has a transfer queue and drag-and-drop upload. Edited files save back to the server on their own.
-- **Port forwards**: local, remote and SOCKS5; can start when you connect.
+- **Port forwards** can start when you connect and support local, remote, SOCKS5 and HTTP CONNECT rules.
 - **Security**: ssh-agent, private keys, OpenSSH user certificates, passwords and 2FA; secrets stay in the OS keychain; shares `known_hosts` with OpenSSH.
 - **Reconnects** on its own after a dropped Connection.
 - **System notifications** report finished transfer batches, failed reconnections, and requests from Terminal programs while the window is in the background. Choose categories in **Settings → Notifications**.

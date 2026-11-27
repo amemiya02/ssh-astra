@@ -595,9 +595,9 @@
   },
   "forwards": {
     "title": "端口转发",
-    "lead": "通过 {{host}} 的连接转发流量：从这里访问它所在的网络、把本机端口暴露到它上面，或把它当作 SOCKS 代理。运行中的端口转发会让连接保持，即使没有打开终端。",
+    "lead": "通过 {{host}} 的连接转发流量：从这里访问它所在的网络、把本机端口暴露到它上面，或把它当作 SOCKS 或 HTTP 代理。运行中的端口转发会让连接保持，即使没有打开终端。",
     "emptyTitle": "还没有端口转发",
-    "emptyBody": "添加端口转发，访问这个 Host 后面的服务（例如数据库）、把本机端口暴露到它上面，或通过它以 SOCKS 代理上网。",
+    "emptyBody": "添加端口转发，访问这个 Host 后面的服务（例如数据库）、把本机端口暴露到它上面，或把它当作 SOCKS 或 HTTP 代理。",
     "add": "添加端口转发",
     "newTitle": "新建端口转发",
     "editTitle": "编辑端口转发",
@@ -647,7 +647,7 @@
         "targetPort": "本地端口",
         "bindAddress": "Host 上的监听地址"
       },
-      "dynamic": {
+      "proxy": {
         "bindPort": "本地端口",
         "bindAddress": "监听地址"
       }
@@ -661,24 +661,27 @@
         "targetHost": "按本机看到的地址填写，例如 127.0.0.1。",
         "bindAddress": "留空则只接受 Host 本机的连接（localhost）。"
       },
-      "dynamic": {
+      "proxy": {
         "bindAddress": "留空则只接受本机的连接（127.0.0.1）。"
       }
     },
     "kinds": {
       "local": "本地",
       "remote": "远程",
-      "dynamic": "SOCKS"
+      "dynamic": "SOCKS",
+      "http": "HTTP"
     },
     "kindHints": {
       "local": "本机的端口，连到 Host 一侧的地址（ssh -L）。",
       "remote": "Host 上的端口，连到本机一侧的地址（ssh -R）。",
-      "dynamic": "本机上的 SOCKS5 代理，每个连接由 Host 发起（ssh -D）。"
+      "dynamic": "本机上的 SOCKS5 代理，每个连接由 Host 发起（ssh -D）。",
+      "http": "本机上的 HTTP CONNECT 代理。由 Host 连接各客户端请求的目标。"
     },
     "ends": {
       "local": "本地",
       "remote": "Host",
-      "dynamic": "SOCKS5"
+      "dynamic": "SOCKS5",
+      "http": "HTTP CONNECT"
     },
     "autoStartHint": "每当这个 Host 连接时运行：打开终端、启动其他端口转发或「仅连接」。",
     "autoStartBadge": "自动",
@@ -739,6 +742,7 @@
     "forwardsLocal": "{{from}} → {{to}}",
     "forwardsRemote": "Host 上 {{from}} → {{to}}",
     "forwardsDynamic": "SOCKS {{from}}",
+    "forwardsHttp": "HTTP CONNECT {{from}}",
     "transfers": "传输：{{count}}",
     "transfersSpeed": "传输：{{count}} · {{speed}}/s"
   },
@@ -762,6 +766,21 @@
       "cancel": "取消",
       "uploadFailed": "无法开始向 {{host}} 上传文件。",
       "pasteFailed": "无法将拖入的路径粘贴到此 shell。"
+    },
+    "commandHistory": {
+      "title": "命令历史",
+      "description": "搜索此主机的历史命令。按回车将选中的命令粘贴到 Shell 提示符处。",
+      "search": "搜索命令",
+      "loading": "正在读取命令历史…",
+      "empty": "此主机没有命令历史。",
+      "noMatches": "没有匹配的命令。",
+      "loadFailed": "无法读取此主机的命令历史。",
+      "clearFailed": "无法清空此主机的命令历史。",
+      "promptUnavailable": "请等待启用了 Shell 集成的 Shell 回到空闲提示符。",
+      "unsafePaste": "无法安全粘贴此命令。换行和制表符需要括号粘贴模式。",
+      "clear": "清空此主机的命令历史",
+      "confirmClear": "确认清空",
+      "cancel": "取消"
     },
     "shellIntegration": {
       "disabled": "设置中已关闭 Shell 集成。",
@@ -1065,6 +1084,7 @@
         "terminalZoomIn": "增大 终端字号",
         "terminalZoomOut": "减小 终端字号",
         "find": "在终端中查找",
+        "commandHistory": "命令历史",
         "fileBack": "在文件面板中后退",
         "fileForward": "在文件面板中前进",
         "fileCopy": "在文件面板中复制",
@@ -1269,6 +1289,11 @@
       "confirmMultilinePaste": {
         "label": "多行粘贴前确认",
         "description": "粘贴多于一行的内容前先询问，因为 shell 会逐行立即执行。"
+      },
+      "commandHistory": {
+        "label": "命令历史",
+        "description": "已保存主机的命令行会以明文保存在本机。需要远程 zsh 或启用提示符展开的 bash 4.4+ 提供 Shell 集成。",
+        "shellIntegrationDisabled": "Shell 集成已关闭。请开启后打开新的远程终端。记录生效时，命令行会以明文保存在本机。"
       },
       "pasteImages": {
         "label": "将剪贴板图片粘贴为路径",

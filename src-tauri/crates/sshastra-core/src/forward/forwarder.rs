@@ -14,7 +14,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::task::{JoinHandle, JoinSet};
 
-use super::{socks, ForwardId, ForwardKind, PortForward};
+use super::{http, socks, ForwardId, ForwardKind, PortForward};
 use crate::hosts::{Host, HostId};
 use crate::ssh::{Connection, RemoteListener};
 
@@ -553,16 +553,23 @@ enum Opened {
         connection: Arc<Connection>,
         target: (String, u16),
     },
-    /// `ssh -D`: connections here are SOCKS5 clients; each names its target.
-    Dynamic {
+    /// Clients name their target using the proxy's protocol.
+    Proxy {
         listener: TcpListener,
         connection: Arc<Connection>,
+        protocol: ProxyProtocol,
     },
     /// `ssh -R`: connections the server accepts go to `target` from here.
     Remote {
         listener: RemoteListener,
         target: (String, u16),
     },
+}
+
+#[derive(Clone, Copy)]
+enum ProxyProtocol {
+    Socks,
+    Http,
 }
 
 /// Opens `kind`'s listening end: binds the local socket, or has the server
@@ -582,9 +589,18 @@ async fn open(connection: Arc<Connection>, kind: &ForwardKind) -> Result<Opened,
         ForwardKind::Dynamic {
             bind_address,
             bind_port,
-        } => Ok(Opened::Dynamic {
+        } => Ok(Opened::Proxy {
             listener: listen(bind_address, *bind_port)?,
             connection,
+            protocol: ProxyProtocol::Socks,
+        }),
+        ForwardKind::Http {
+            bind_address,
+            bind_port,
+        } => Ok(Opened::Proxy {
+            listener: listen(bind_address, *bind_port)?,
+            connection,
+            protocol: ProxyProtocol::Http,
         }),
         ForwardKind::Remote {
             bind_address,
@@ -625,15 +641,19 @@ impl Opened {
                 })
                 .await
             }
-            Opened::Dynamic {
+            Opened::Proxy {
                 listener,
                 connection,
+                protocol,
             } => {
                 serve_local(
                     listener,
                     connection,
-                    |socket, peer, connection| async move {
-                        socks::serve(socket, peer, &connection).await
+                    move |socket, peer, connection| async move {
+                        match protocol {
+                            ProxyProtocol::Socks => socks::serve(socket, peer, &connection).await,
+                            ProxyProtocol::Http => http::serve(socket, peer, &connection).await,
+                        }
                     },
                 )
                 .await

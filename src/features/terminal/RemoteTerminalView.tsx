@@ -264,6 +264,7 @@ export function RemoteTerminalView({
             label={displayHost.name}
             active={active && opened}
             colorScheme={host.terminalScheme}
+            historyHostId={temporary ? undefined : host.id}
             onTitleChange={onTitleChange}
           />
         </div>

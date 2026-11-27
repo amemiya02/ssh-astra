@@ -83,6 +83,11 @@ describe("forwardStatusText", () => {
     const socks: PortForward = { id: "s", label: "", autoStart: false, type: "dynamic", bindAddress: "127.0.0.1", bindPort: 1080 };
     expect(forwardStatusText(socks, en())).toBe("SOCKS localhost:1080");
   });
+
+  it("shows an HTTP CONNECT proxy and its listening port", () => {
+    const http: PortForward = { id: "h", label: "", autoStart: false, type: "http", bindAddress: "127.0.0.1", bindPort: 8080 };
+    expect(forwardStatusText(http, en())).toBe("HTTP CONNECT localhost:8080");
+  });
 });
 
 describe("runningRules", () => {

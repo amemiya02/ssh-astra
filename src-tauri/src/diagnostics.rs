@@ -260,7 +260,8 @@ fn sensitive_host_values(hosts: &[Host], home: Option<&Path>) -> Vec<String> {
                 } => {
                     values.extend([bind_address.clone(), local_host.clone()]);
                 }
-                ForwardKind::Dynamic { bind_address, .. } => values.push(bind_address.clone()),
+                ForwardKind::Dynamic { bind_address, .. }
+                | ForwardKind::Http { bind_address, .. } => values.push(bind_address.clone()),
             }
         }
     }
