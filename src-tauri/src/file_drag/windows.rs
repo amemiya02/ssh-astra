@@ -2,7 +2,7 @@ use std::cell::Cell;
 use std::ffi::c_void;
 use std::mem::{size_of, ManuallyDrop};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::{mpsc, Arc, Mutex, Weak};
 
 use sshastra_core::files::{FsError, FsResult};
 use tauri::WebviewWindow;
@@ -42,7 +42,7 @@ use windows::Win32::UI::WindowsAndMessaging::{GetClientRect, GetCursorPos};
 use super::{Report, Source};
 
 mod stream;
-use stream::FileStream;
+use stream::{Cursor, FileStream};
 
 thread_local! {
     static DRAG: Cell<bool> = const { Cell::new(false) };
@@ -76,18 +76,7 @@ fn run(hwnd: HWND, source: Arc<Source>, report: Arc<Report>) -> Result<()> {
     DRAG.with(|active| active.set(true));
 
     let formats = Formats::new()?;
-    let (lifetime, finished) = mpsc::channel();
-    let drag = Arc::new(Drag {
-        source,
-        report,
-        can_drop: AtomicBool::new(false),
-        accepted: AtomicBool::new(false),
-        in_drag_loop: AtomicBool::new(true),
-        async_mode: AtomicBool::new(true),
-        extracting: AtomicBool::new(false),
-        read_started: AtomicBool::new(false),
-        _lifetime: lifetime,
-    });
+    let (drag, finished) = Drag::new(source, report);
     let data = data_on_mta(
         DataObject {
             formats,
@@ -111,7 +100,7 @@ fn run(hwnd: HWND, source: Arc<Source>, report: Arc<Report>) -> Result<()> {
             }
         }
     } else {
-        drag.accepted.store(false, Ordering::Release);
+        drag.stop_reading();
         status.ok()?;
         drag.report.finish(Ok(false));
     }
@@ -189,12 +178,47 @@ struct Drag {
     async_mode: AtomicBool,
     extracting: AtomicBool,
     read_started: AtomicBool,
+    streams: Mutex<Vec<Weak<Mutex<Cursor>>>>,
     _lifetime: mpsc::Sender<()>,
 }
 
 impl Drag {
-    fn failed(&self, error: FsError) -> HRESULT {
+    fn new(source: Arc<Source>, report: Arc<Report>) -> (Arc<Self>, mpsc::Receiver<()>) {
+        let (lifetime, finished) = mpsc::channel();
+        let drag = Arc::new(Self {
+            source,
+            report,
+            can_drop: AtomicBool::new(false),
+            accepted: AtomicBool::new(false),
+            in_drag_loop: AtomicBool::new(true),
+            async_mode: AtomicBool::new(true),
+            extracting: AtomicBool::new(false),
+            read_started: AtomicBool::new(false),
+            streams: Mutex::default(),
+            _lifetime: lifetime,
+        });
+        (drag, finished)
+    }
+
+    fn stop_reading(&self) {
         self.accepted.store(false, Ordering::Release);
+        for stream in self
+            .streams
+            .lock()
+            .unwrap()
+            .drain(..)
+            .filter_map(|stream| stream.upgrade())
+        {
+            // Active reads release their handles when they observe the stop after the
+            // current SFTP request. Avoid waiting for that request on the OLE STA.
+            if let Ok(mut stream) = stream.try_lock() {
+                stream.close();
+            }
+        }
+    }
+
+    fn failed(&self, error: FsError) -> HRESULT {
+        self.stop_reading();
         self.report.finish(Err(error));
         STG_E_READFAULT
     }
@@ -208,7 +232,7 @@ struct DropSource {
 impl IDropSource_Impl for DropSource_Impl {
     fn QueryContinueDrag(&self, escape: BOOL, keys: MODIFIERKEYS_FLAGS) -> HRESULT {
         if escape.as_bool() {
-            self.drag.accepted.store(false, Ordering::Release);
+            self.drag.stop_reading();
             return DRAGDROP_S_CANCEL;
         }
         if keys.contains(MK_LBUTTON) {
@@ -311,6 +335,10 @@ impl IDataObject_Impl for DataObject_Impl {
     fn GetData(&self, format: *const FORMATETC) -> Result<STGMEDIUM> {
         let requested = self.formats.query(format)?;
         if requested == self.formats.contents {
+            if self.drag.accepted.load(Ordering::Acquire) && self.drag.source.length.is_none() {
+                // The target can complete an empty stream without calling Read.
+                self.drag.read_started.store(true, Ordering::Release);
+            }
             return Ok(STGMEDIUM {
                 tymed: TYMED_ISTREAM.0 as u32,
                 u: STGMEDIUM_0 {
@@ -413,7 +441,7 @@ impl IDataObjectAsyncCapability_Impl for DataObject_Impl {
 
     fn EndOperation(&self, status: HRESULT, _: Ref<IBindCtx>, effect: u32) -> Result<()> {
         self.drag.extracting.store(false, Ordering::Release);
-        self.drag.accepted.store(false, Ordering::Release);
+        self.drag.stop_reading();
         log::debug!("file drag Explorer asynchronous extraction ended");
         let result: FsResult<bool> = status.ok().map_err(win_error).map(|()| {
             (effect == DROPEFFECT_COPY.0 || self.drag.read_started.load(Ordering::Acquire))
@@ -430,19 +458,19 @@ fn descriptor(file: &Source) -> FILEGROUPDESCRIPTORW {
     for (slot, code_unit) in name.iter_mut().zip(file.name.encode_utf16()) {
         *slot = code_unit;
     }
-    let mut flags = FD_ATTRIBUTES | FD_UNICODE | FD_PROGRESSUI;
+    let mut flags = FD_ATTRIBUTES.0 | FD_UNICODE.0 | FD_PROGRESSUI.0;
     if file.length.is_some() {
-        flags |= FD_FILESIZE;
+        flags |= FD_FILESIZE.0;
     }
     let modified = file.modified.and_then(filetime);
     if modified.is_some() {
-        flags |= FD_WRITESTIME;
+        flags |= FD_WRITESTIME.0;
     }
     let size = file.length.unwrap_or_default();
     FILEGROUPDESCRIPTORW {
         cItems: 1,
         fgd: [FILEDESCRIPTORW {
-            dwFlags: flags.0 as u32,
+            dwFlags: flags as u32,
             dwFileAttributes: FILE_ATTRIBUTE_NORMAL.0,
             ftLastWriteTime: modified.unwrap_or_default(),
             nFileSizeHigh: (size >> 32) as u32,

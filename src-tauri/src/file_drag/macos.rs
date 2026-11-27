@@ -9,7 +9,9 @@ use std::sync::Arc;
 use block2::StackBlock;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
-use objc2::{define_class, msg_send, ClassType, MainThreadMarker, Message};
+use objc2::{
+    define_class, msg_send, AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly, Message,
+};
 use objc2_app_kit::{
     NSDragOperation, NSDraggingContext, NSDraggingItem, NSDraggingSession, NSDraggingSource,
     NSEvent, NSEventMask, NSEventType, NSImage, NSView,
@@ -112,6 +114,13 @@ define_class!(
     }
 );
 
+impl PromiseDelegate {
+    fn new(source: Arc<Source>, report: Arc<Report>) -> Retained<Self> {
+        let this = Self::alloc().set_ivars(PromiseState { source, report });
+        unsafe { msg_send![super(this), init] }
+    }
+}
+
 define_class!(
     // The dragging source is only called on the AppKit thread.
     #[unsafe(super(NSObject))]
@@ -174,15 +183,7 @@ pub(super) fn start(
             return;
         };
         let event = gesture.dragged.as_ref().unwrap_or(&gesture.down);
-        let delegate: Retained<PromiseDelegate> = unsafe {
-            msg_send![
-                PromiseDelegate::alloc().set_ivars(PromiseState {
-                    source,
-                    report: report.clone()
-                }),
-                init
-            ]
-        };
+        let delegate = PromiseDelegate::new(source, report.clone());
         let provider = NSFilePromiseProvider::initWithFileType_delegate(
             NSFilePromiseProvider::alloc(),
             ns_string!("public.data"),
@@ -191,7 +192,7 @@ pub(super) fn start(
         // The delegate property is weak. The provider keeps the delegate alive through delivery.
         unsafe { provider.setUserInfo(Some(delegate.as_ref())) };
         let item = NSDraggingItem::initWithPasteboardWriter(
-            NSDraggingItem::alloc(mtm),
+            NSDraggingItem::alloc(),
             ProtocolObject::from_ref(&*provider),
         );
         let point = view.convertPoint_fromView(event.locationInWindow(), None);
@@ -202,8 +203,8 @@ pub(super) fn start(
         let icon =
             NSImage::imageWithSystemSymbolName_accessibilityDescription(ns_string!("doc"), None);
         unsafe { item.setDraggingFrame_contents(frame, icon.as_deref().map(|icon| icon.as_ref())) };
-        let drag_source: Retained<DragSource> =
-            unsafe { msg_send![DragSource::alloc(mtm).set_ivars(report), init] };
+        let this = DragSource::alloc(mtm).set_ivars(report);
+        let drag_source: Retained<DragSource> = unsafe { msg_send![super(this), init] };
         DRAG.with_borrow_mut(|active| *active = Some(drag_source.clone()));
         view.beginDraggingSessionWithItems_event_source(
             &NSArray::from_retained_slice(&[item]),
@@ -295,5 +296,94 @@ fn promise_error(error: &FsError) -> Retained<NSError> {
             1,
             Some(&info),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+    use std::io::Cursor;
+    use std::rc::Rc;
+
+    use super::*;
+
+    #[test]
+    fn coordinate_a_promise_at_the_system_path_without_overwriting() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("資料.bin");
+        let url = NSURL::fileURLWithPath(&NSString::from_str(path.to_str().unwrap()));
+        let attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let file = Arc::new(Source {
+            name: "資料.bin".into(),
+            length: Some(5),
+            open: Box::new({
+                let attempts = attempts.clone();
+                move |_| {
+                    attempts.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    Box::pin(async {
+                        Ok(Box::new(Cursor::new(b"bytes")) as sshastra_core::files::FileReader)
+                    })
+                }
+            }),
+        });
+        let (sender, mut result) = tokio::sync::oneshot::channel();
+        let report = Arc::new(Report(std::sync::Mutex::new(Some(sender))));
+        let delegate = PromiseDelegate::new(file, report);
+        let delegate: &ProtocolObject<dyn NSFilePromiseProviderDelegate> =
+            ProtocolObject::from_ref(&*delegate);
+        let provider = NSFilePromiseProvider::initWithFileType_delegate(
+            NSFilePromiseProvider::alloc(),
+            ns_string!("public.data"),
+            delegate,
+        );
+        assert_eq!(attempts.load(std::sync::atomic::Ordering::Relaxed), 0);
+
+        let succeeded = Rc::new(Cell::new(false));
+        let completion = StackBlock::new({
+            let succeeded = succeeded.clone();
+            move |error: *mut NSError| succeeded.set(error.is_null())
+        });
+        delegate.filePromiseProvider_writePromiseToURL_completionHandler(
+            &provider,
+            &url,
+            &completion,
+        );
+        assert!(succeeded.get());
+        assert_eq!(result.try_recv(), Ok(Ok(true)));
+        assert_eq!(std::fs::read(&path).unwrap(), b"bytes");
+
+        let failed = Rc::new(Cell::new(false));
+        let completion = StackBlock::new({
+            let failed = failed.clone();
+            move |error: *mut NSError| failed.set(!error.is_null())
+        });
+        delegate.filePromiseProvider_writePromiseToURL_completionHandler(
+            &provider,
+            &url,
+            &completion,
+        );
+        assert!(failed.get());
+        assert_eq!(attempts.load(std::sync::atomic::Ordering::Relaxed), 1);
+        assert_eq!(std::fs::read(&path).unwrap(), b"bytes");
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn removes_the_staging_file_when_remote_content_is_incomplete() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("partial.bin");
+        let url = NSURL::fileURLWithPath(&NSString::from_str(path.to_str().unwrap()));
+        let file = Arc::new(Source {
+            name: "partial.bin".into(),
+            length: Some(90_000),
+            open: Box::new(|_| {
+                Box::pin(async {
+                    Ok(Box::new(Cursor::new(vec![7_u8; 65_000]))
+                        as sshastra_core::files::FileReader)
+                })
+            }),
+        });
+        assert!(coordinate_copy(&url, file, &mut None).is_err());
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
     }
 }

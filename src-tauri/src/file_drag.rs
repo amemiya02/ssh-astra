@@ -1,11 +1,14 @@
 //! Native promises carry listing metadata until the target asks for a dropped file.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+#[cfg(any(windows, target_os = "macos", test))]
+use std::sync::Mutex;
 
 use serde::Deserialize;
 use sshastra_core::files::{FileReader, FsError, FsId, FsResult};
 use sshastra_core::ssh::BoxFuture;
 use tokio::io::AsyncReadExt;
+#[cfg(any(windows, target_os = "macos"))]
 use tokio::sync::oneshot;
 
 #[cfg(target_os = "macos")]
@@ -123,11 +126,12 @@ impl RemoteRead {
         }
         let input = self.input.as_mut().expect("the reader was opened above");
         let chunk_size = output.len().min(CHUNK_SIZE);
-        log::trace!("file drag SFTP read offset={offset} bytes={chunk_size}");
         let read = input
             .read(&mut output[..chunk_size])
             .await
             .map_err(|error| FsError::Io(error.to_string()))?;
+        #[cfg(feature = "e2e")]
+        log::info!("file drag SFTP read offset={offset} requested={chunk_size} received={read}");
         self.position += read as u64;
         if let Some(length) = self.source.length {
             if self.position > length || (read == 0 && self.position < length) {
@@ -211,6 +215,10 @@ mod tests {
             modified: None,
         };
         assert_eq!(file.path(true), Ok("/home/me/資料.txt".into()));
+        assert_eq!(
+            (file.id, file.size, file.modified),
+            (serde_json::from_str("1").unwrap(), 0, None)
+        );
     }
 
     #[tokio::test]

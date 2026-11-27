@@ -20,26 +20,35 @@ use super::{filetime, Drag};
 // E_PENDING: the stream can be queried during hover, but no content is ready.
 const WAIT_FOR_DROP: HRESULT = HRESULT(0x8000_000a_u32 as i32);
 
-struct Cursor {
+pub(super) struct Cursor {
     offset: u64,
     read: RemoteRead,
+}
+
+impl Cursor {
+    pub(super) fn close(&mut self) {
+        self.read.input = None;
+    }
 }
 
 #[implement(IStream)]
 pub(super) struct FileStream {
     drag: Arc<Drag>,
-    cursor: Mutex<Cursor>,
+    cursor: Arc<Mutex<Cursor>>,
 }
 
 impl FileStream {
     pub(super) fn new(drag: Arc<Drag>, offset: u64) -> Self {
-        Self {
-            cursor: Mutex::new(Cursor {
-                offset,
-                read: RemoteRead::new(drag.source.clone()),
-            }),
-            drag,
+        let cursor = Arc::new(Mutex::new(Cursor {
+            offset,
+            read: RemoteRead::new(drag.source.clone()),
+        }));
+        {
+            let mut streams = drag.streams.lock().unwrap();
+            streams.retain(|stream| stream.strong_count() != 0);
+            streams.push(Arc::downgrade(&cursor));
         }
+        Self { cursor, drag }
     }
 }
 
@@ -65,6 +74,7 @@ impl ISequentialStream_Impl for FileStream_Impl {
         let runtime = tauri::async_runtime::handle();
         while copied < requested {
             if !self.drag.accepted.load(Ordering::Acquire) {
+                cursor.close();
                 return WAIT_FOR_DROP;
             }
             let capacity = ((requested - copied) as usize).min(buffer.len());
@@ -73,13 +83,18 @@ impl ISequentialStream_Impl for FileStream_Impl {
             {
                 Ok(count) => count,
                 Err(error) => {
-                    cursor.read.input = None;
+                    cursor.close();
+                    drop(cursor);
                     return self.drag.failed(error);
                 }
             };
+            if !self.drag.accepted.load(Ordering::Acquire) {
+                cursor.close();
+                return WAIT_FOR_DROP;
+            }
             self.drag.read_started.store(true, Ordering::Release);
             if count == 0 {
-                cursor.read.input = None;
+                cursor.close();
                 return S_FALSE;
             }
             // Copy instead of borrowing the caller's potentially uninitialized buffer.
@@ -119,7 +134,7 @@ impl IStream_Impl for FileStream_Impl {
         }
         .ok_or_else(|| Error::from_hresult(STG_E_INVALIDFUNCTION))?;
         if offset != cursor.offset {
-            cursor.read.input = None;
+            cursor.close();
             cursor.offset = offset;
         }
         set_count(position, offset);
