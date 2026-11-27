@@ -13,6 +13,7 @@
 #             `jump2` (as `deep:22`).
 #   keyonly   published: accepts public keys only (no password, no
 #             keyboard-interactive).
+#   certificate published: accepts only user certificates from the test CA.
 #   limitedauth  published: one authorized public key, two authentication tries.
 #   kbdint    published: keyboard-interactive (PAM asks for the password)
 #             instead of the password method, either alone or as the second
@@ -74,6 +75,23 @@ services:
     ports: ["127.0.0.1::22"]
     networks: [public]
     command: [/usr/sbin/sshd, -D, -e, -o, PasswordAuthentication=no, -o, KbdInteractiveAuthentication=no]
+  certificate:
+    <<: *sshd
+    hostname: certificate
+    ports: ["127.0.0.1::22"]
+    networks: [public]
+    command:
+      - /usr/sbin/sshd
+      - -D
+      - -e
+      - -o
+      - PasswordAuthentication=no
+      - -o
+      - KbdInteractiveAuthentication=no
+      - -o
+      - AuthorizedKeysFile=none
+      - -o
+      - TrustedUserCAKeys=/etc/ssh/test-user-ca.pub
   limitedauth:
     <<: *sshd
     hostname: limitedauth

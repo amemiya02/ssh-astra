@@ -27,7 +27,7 @@ A modern, good-looking SSH & SFTP client for Windows, macOS and Linux.
 - **Terminals**: tabs and split panes; xterm.js with WebGL rendering.
 - **SFTP File panel**: follows your shell's `cd`. Has a transfer queue and drag-and-drop upload. Edited files save back to the server on their own.
 - **Port forwards**: local, remote and SOCKS5; can start when you connect.
-- **Security**: ssh-agent, keys, password and 2FA; secrets stay in the OS keychain; shares `known_hosts` with OpenSSH.
+- **Security**: ssh-agent, private keys, OpenSSH user certificates, passwords and 2FA; secrets stay in the OS keychain; shares `known_hosts` with OpenSSH.
 - **Reconnects** on its own after a dropped Connection.
 - **Polish**: ⌘K command palette, light and dark themes, English and 简体中文, in-app updates.
 

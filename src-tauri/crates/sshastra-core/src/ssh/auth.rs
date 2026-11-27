@@ -18,8 +18,11 @@ use std::sync::Arc;
 use russh::client::{self, AuthResult, Handle, KeyboardInteractiveAuthResponse};
 use russh::keys::agent::client::{AgentClient, AgentStream};
 use russh::keys::agent::AgentIdentity;
-use russh::keys::{ssh_key, HashAlg, PrivateKey, PrivateKeyWithHashAlg, PublicKey};
-use russh::{AgentAuthError, MethodKind, MethodSet};
+use russh::keys::{
+    load_openssh_certificate, signature, ssh_encoding::Encode, ssh_key, Certificate, HashAlg,
+    PrivateKey, PrivateKeyWithHashAlg, PublicKey,
+};
+use russh::{AgentAuthError, MethodKind, MethodSet, Signer};
 
 use super::handshake::Deadline;
 use super::progress::ActiveStep;
@@ -289,30 +292,54 @@ impl<H: client::Handler> AuthAttempt<'_, '_, H> {
             }
             _ => None,
         };
-        let identities = client.request_identities().await.unwrap_or_default();
-        let mut public_keys = identities.into_iter().filter_map(|id| match id {
-            AgentIdentity::PublicKey { key, .. } => Some(key),
-            AgentIdentity::Certificate { .. } => None,
+        let mut identities = client.request_identities().await.unwrap_or_default();
+        identities.retain(|identity| {
+            let key_data = match identity {
+                AgentIdentity::PublicKey { key, .. } => key.key_data(),
+                AgentIdentity::Certificate { certificate, .. }
+                    if certificate.cert_type().is_user() =>
+                {
+                    certificate.public_key()
+                }
+                AgentIdentity::Certificate { .. } => return false,
+            };
+            // Certificates and plain keys can represent the same selected key.
+            // Compare the key data because the comments can differ.
+            selected
+                .as_ref()
+                .is_none_or(|selected| selected.key_data() == key_data)
         });
-        let keys: Vec<_> = match selected {
-            // The key comment can differ between the selected file and agent.
-            Some(selected) => public_keys
-                .find(|key| key.key_data() == selected.key_data())
-                .into_iter()
-                .collect(),
-            None => public_keys.collect(),
-        };
-        if keys.is_empty() {
+        if identities.is_empty() {
             return Ok(Step::Skipped);
         }
+        // Prefer certificates while preserving the agent's order within each kind.
+        identities.sort_by_key(|identity| matches!(identity, AgentIdentity::PublicKey { .. }));
         let rsa_hash = self.rsa_hash().await?;
-        for key in keys {
-            let hash = key.algorithm().is_rsa().then_some(rsa_hash).flatten();
+        for identity in identities {
             log_auth(&self.host.id, "agent", "attempting");
-            let result = self
-                .handle
-                .authenticate_publickey_with(&self.host.user, key, hash, &mut client)
-                .await;
+            let result = match identity {
+                AgentIdentity::PublicKey { key, .. } => {
+                    let hash = key.algorithm().is_rsa().then_some(rsa_hash).flatten();
+                    self.handle
+                        .authenticate_publickey_with(&self.host.user, key, hash, &mut client)
+                        .await
+                }
+                AgentIdentity::Certificate { certificate, .. } => {
+                    let hash = certificate
+                        .algorithm()
+                        .is_rsa()
+                        .then_some(rsa_hash)
+                        .flatten();
+                    self.handle
+                        .authenticate_certificate_with(
+                            &self.host.user,
+                            certificate,
+                            hash,
+                            &mut client,
+                        )
+                        .await
+                }
+            };
             log_auth(&self.host.id, "agent", auth_result(&result));
             let result = match result {
                 Ok(result) => result,
@@ -382,7 +409,46 @@ impl<H: client::Handler> AuthAttempt<'_, '_, H> {
             Ok(key) => key,
             Err(e) => return Ok(Step::Failed(e)),
         };
-        let key = PrivateKeyWithHashAlg::new(Arc::new(key), self.rsa_hash().await?);
+        let rsa_hash = self.rsa_hash().await?;
+        let key = Arc::new(key);
+        if let Some(certificate) = matching_user_certificate(&path, key.public_key()) {
+            log_auth(&self.host.id, "key-certificate", "attempting");
+            let result = if let Some(rsa_key) = key.key_data().rsa() {
+                // The direct file certificate API cannot select an RSA hash.
+                self.handle
+                    .authenticate_certificate_with(
+                        &self.host.user,
+                        certificate,
+                        rsa_hash,
+                        &mut RsaCertificateSigner(rsa_key),
+                    )
+                    .await
+                    .map_err(|error| match error {
+                        AgentAuthError::Key(error) => ConnectError::KeyUnreadable {
+                            path: path.clone(),
+                            reason: error.to_string(),
+                        },
+                        AgentAuthError::Send(error) => ConnectError::Protocol(error.to_string()),
+                    })
+            } else {
+                self.handle
+                    .authenticate_openssh_cert(&self.host.user, Arc::clone(&key), certificate)
+                    .await
+                    .map_err(ConnectError::from)
+            };
+            log_auth(&self.host.id, "key-certificate", auth_result(&result));
+            let result = match result {
+                Err(error @ ConnectError::KeyUnreadable { .. }) => return Ok(Step::Failed(error)),
+                result => result?,
+            };
+            if let Some(step) = self.settle(result) {
+                return Ok(step);
+            }
+            if !self.allows(MethodKind::PublicKey) {
+                return Ok(Step::Failed(ConnectError::KeyRejected { path }));
+            }
+        }
+        let key = PrivateKeyWithHashAlg::new(key, rsa_hash);
         let result = self
             .handle
             .authenticate_publickey(&self.host.user, key)
@@ -660,6 +726,37 @@ fn identity_public_key(path: &Path) -> Option<PublicKey> {
             russh::keys::parse_public_key_base64(&encoded).ok()
         }
         _ => None,
+    }
+}
+
+/// OpenSSH appends the certificate suffix to the full file name.
+fn matching_user_certificate(path: &Path, key: &PublicKey) -> Option<Certificate> {
+    let mut certificate_path = path.as_os_str().to_os_string();
+    certificate_path.push("-cert.pub");
+    load_openssh_certificate(certificate_path)
+        .ok()
+        .filter(|certificate| {
+            certificate.cert_type().is_user() && certificate.public_key() == key.key_data()
+        })
+}
+
+struct RsaCertificateSigner<'a>(&'a ssh_key::private::RsaKeypair);
+
+impl Signer for RsaCertificateSigner<'_> {
+    type Error = AgentAuthError;
+
+    async fn auth_sign(
+        &mut self,
+        _: &AgentIdentity,
+        hash_alg: Option<HashAlg>,
+        mut data: Vec<u8>,
+    ) -> Result<Vec<u8>, Self::Error> {
+        let signature = signature::Signer::try_sign(&(self.0, hash_alg), &data)
+            .map_err(|_| russh::keys::Error::InvalidSignature)?;
+        signature
+            .encode_prefixed(&mut data)
+            .map_err(russh::keys::Error::from)?;
+        Ok(data)
     }
 }
 

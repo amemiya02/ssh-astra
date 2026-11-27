@@ -43,6 +43,8 @@ pub enum Service {
     Jump,
     /// Accepts public keys only.
     KeyOnly,
+    /// Accepts only certificates issued by the integration test CA.
+    Certificate,
     /// Accepts only the `id_ed25519` fixture and limits authentication to two tries.
     LimitedAuth,
     /// Keyboard-interactive (PAM asks for the password), alone or after a
@@ -64,6 +66,7 @@ impl Service {
             Service::Ssh => "ssh",
             Service::Jump => "jump",
             Service::KeyOnly => "keyonly",
+            Service::Certificate => "certificate",
             Service::LimitedAuth => "limitedauth",
             Service::KbdInt => "kbdint",
             Service::Counted => "counted",
@@ -132,8 +135,7 @@ pub fn sshd(service: Service) -> Option<Sshd> {
     })
 }
 
-/// A private key fixture in `tests/sshd/keys/` (e.g. `id_ed25519`). Its
-/// public key is authorized for [`USER`] unless named `*_unauthorized`.
+/// A test-only key or certificate fixture in `tests/sshd/keys/`.
 pub fn key(name: &str) -> PathBuf {
     sshd_dir().join("keys").join(name)
 }
