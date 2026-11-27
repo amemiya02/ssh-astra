@@ -433,8 +433,8 @@ async fn open_with_progress(
         RemoteTerminalOptions::default(),
         TerminalSize { cols: 80, rows: 24 },
         |_| {},
-        &shell_host,
-        prompter.as_ref(),
+        shell_host,
+        prompter,
     )
     .await
     .unwrap()

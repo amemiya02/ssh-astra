@@ -421,6 +421,8 @@ A remote Terminal pane shows a scrollable Connection view on the workspace surfa
 
 Rows pair a status icon and explicit status text with the current authentication method and right-aligned elapsed time. The active icon uses `warning`, completed icons use `success`, and the failed row uses `destructive`. The existing Connection error panel explains the failure. Retry is the primary action and starts a new attempt in the same pane. Edit Host opens the Host editor, and Close closes the pane.
 
+If the Connection drops, a scrollable overlay covers the Terminal and shows the attempt count and the same progress list for the current attempt. After the final failure, the overlay keeps that attempt's steps and the error text with the Reconnect button.
+
 ### Security surfaces
 - **Fingerprint block:** `muted` fill, 1px border, 10px radius, 12px by 14px padding; a `text-xs` muted label above the fingerprint in mono, breaking anywhere, selectable.
 - **Connection error panel:** 10px radius, 12px by 14px padding, destructive at 8% (12% dark) fill and a 30% destructive border. A host key mismatch is red and blocks.

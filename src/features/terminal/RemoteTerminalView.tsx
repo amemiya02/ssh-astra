@@ -35,6 +35,11 @@ interface PendingPrompt {
   resolve: (answer: PromptAnswer) => void;
 }
 
+interface Recovery {
+  state: Exclude<ConnectionState, { state: "connected" }>;
+  steps: ObservedProgress[];
+}
+
 interface RemoteTerminalViewProps {
   paneId: string;
   host: Host;
@@ -78,7 +83,7 @@ export function RemoteTerminalView({
   const [steps, setSteps] = useState<ObservedProgress[]>([]);
 
   // Set while the Connection is down; the Terminal stays mounted under the overlay.
-  const [lost, setLost] = useState<Exclude<ConnectionState, { state: "connected" }> | null>(null);
+  const [recovery, setRecovery] = useState<Recovery | null>(null);
   const terminalId = useRef<TerminalId | null>(null);
   const onStatusChangeRef = useRef(onStatusChange);
   const onCwdRef = useRef(onCwd);
@@ -95,16 +100,17 @@ export function RemoteTerminalView({
       await Promise.resolve();
       signal.throwIfAborted();
       let opening = true;
+      let exited = false;
       return openRemoteTerminal(
         host.id,
         size,
         (event) => {
           if (signal.aborted) return;
           if (event.type === "cwd") return onCwdRef.current?.(event.path);
+          if (event.type === "exit") exited = true;
           onEvent(event);
           if (event.type !== "connection") return;
           const state = event.state;
-          setLost(state.state === "connected" ? null : state);
           onStatusChangeRef.current?.(
             statusAfterDrop[state.state],
             state.state === "reconnecting" ? { attempt: state.attempt, attempts: state.attempts } : undefined,
@@ -128,10 +134,23 @@ export function RemoteTerminalView({
             },
           });
         }),
-        (progress) => {
-          if (!opening || signal.aborted) return;
-          const observed = { ...progress, receivedAt: performance.now() };
-          setSteps((previous) => updateConnectionSteps(previous, observed));
+        {
+          onProgress(progress) {
+            if (signal.aborted || exited) return;
+            const observed = { ...progress, receivedAt: performance.now() };
+            if (opening) setSteps((previous) => updateConnectionSteps(previous, observed));
+            else setRecovery((current) => current?.state.state === "reconnecting"
+              ? { ...current, steps: updateConnectionSteps(current.steps, observed) }
+              : current);
+          },
+          onReconnect(state) {
+            if (signal.aborted || exited) return;
+            opening = false;
+            setRecovery((current) => {
+              if (state.state === "connected") return null;
+              return { state, steps: state.state === "reconnecting" ? [] : current?.steps ?? [] };
+            });
+          },
         },
       ).finally(() => {
         opening = false;
@@ -178,7 +197,7 @@ export function RemoteTerminalView({
               terminalId.current = null;
               setOpened(true);
               onTerminalRef.current?.(null);
-              setLost(null);
+              setRecovery(null);
               onStatusChange?.("disconnected");
             }}
             label={host.name}
@@ -191,7 +210,9 @@ export function RemoteTerminalView({
       {!opened && (
         <ConnectionView host={host} steps={steps} error={error} onRetry={retry} onEditHost={onEditHost} onClose={onClose} />
       )}
-      {lost && <DisconnectedOverlay state={lost} onReconnect={reconnect} />}
+      {opened && recovery && (
+        <DisconnectedOverlay host={host} state={recovery.state} steps={recovery.steps} onReconnect={reconnect} />
+      )}
       {pending && (
         <ConnectPromptDialog
           prompt={pending.prompt}
