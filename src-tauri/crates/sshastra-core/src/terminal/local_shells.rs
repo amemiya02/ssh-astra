@@ -325,13 +325,14 @@ fn parse_wsl_shells(output: &[u8]) -> Vec<String> {
     use std::borrow::Cow;
 
     let decoded = if output.starts_with(&[0xff, 0xfe]) || output.contains(&0) {
-        let chunks = output.chunks_exact(2);
-        if !chunks.remainder().is_empty() {
+        let (chunks, remainder) = output.as_chunks::<2>();
+        if !remainder.is_empty() {
             return Vec::new();
         }
         String::from_utf16(
             &chunks
-                .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+                .iter()
+                .map(|&pair| u16::from_le_bytes(pair))
                 .collect::<Vec<_>>(),
         )
         .ok()

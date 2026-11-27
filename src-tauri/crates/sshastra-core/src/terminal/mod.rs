@@ -124,8 +124,8 @@ pub enum ConnectionState {
     Connected,
     /// Disconnected; try `attempt` of `attempts` is waiting or under way.
     Reconnecting { attempt: u32, attempts: u32 },
-    /// Disconnected, and no more automatic tries: only
-    /// [`Terminal::reconnect`] tries again. `reason` is the last failure.
+    /// Disconnected, with the automatic attempts exhausted or stopped.
+    /// `reason` is the last failure.
     Disconnected {
         reason: String,
         /// True once per lost Connection when the transport itself fails to reconnect.
@@ -167,4 +167,7 @@ pub trait Terminal: Send {
     fn reconnect(&mut self) -> Result<()> {
         Ok(())
     }
+    /// Requests one extra attempt on focus or wake, if the Connection is idle after
+    /// a transient failure.
+    fn reconnect_disconnected(&mut self) {}
 }

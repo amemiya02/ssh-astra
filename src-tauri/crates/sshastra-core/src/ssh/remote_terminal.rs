@@ -6,13 +6,14 @@
 //! (a few times), and on success starts a new shell in the same Terminal and
 //! reports [`ConnectionState::Connected`]. The old shell's processes are gone.
 //! When every try fails it reports [`ConnectionState::Disconnected`] and waits
-//! for [`Terminal::reconnect`].
+//! for a manual retry or, after a transient failure, a focus or wake event.
 //!
 //! With ShellIntegration on ([`RemoteTerminalOptions::shell_integration`]),
 //! every shell it starts, the first and each after a reconnect, gets the
 //! prompt hook typed in. It reports the current directory and shell markers.
 //! The configured post-login command runs in each new shell after startup.
 //! A split Terminal also changes to its inherited directory in its first shell.
+//! After a reconnect the new shell restores the last reported directory.
 
 use std::fmt::Write as _;
 use std::future::Future;
@@ -22,7 +23,7 @@ use std::time::Duration;
 
 use tokio::time::Instant;
 
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 use super::progress::HopProgress;
 use super::shell::ShellEvent;
@@ -95,6 +96,7 @@ enum Command {
 /// including [`TerminalEvent::Connection`] changes.
 pub struct RemoteTerminal {
     commands: mpsc::UnboundedSender<Command>,
+    retry_on_focus_or_wake: watch::Sender<bool>,
     charset: TerminalCharset,
     backspace: TerminalBackspace,
 }
@@ -170,41 +172,37 @@ impl RemoteTerminal {
     {
         let post_login = options
             .post_login_command
-            .as_deref()
             .filter(|command| !command.trim().is_empty());
-        let startup_line = |command: &str| {
-            let mut line = options.charset.encode_input(command.as_bytes());
-            line.push(b'\r');
-            line
-        };
-        let post_login_input = post_login.map(startup_line);
         let split_startup_input = options
             .initial_cwd
             .as_deref()
-            .and_then(|cwd| split_startup_command(cwd, post_login))
-            .map(|command| startup_line(&command));
+            .and_then(|cwd| split_startup_command(cwd, post_login.as_deref()))
+            .map(|command| startup_line(options.charset, &command));
         let (shell_tx, shell_events) = mpsc::unbounded_channel();
         let connection = connect().await?;
         let shell = start_shell(&connection, size, &shell_tx, progress.as_ref()).await?;
         let (commands, command_rx) = mpsc::unbounded_channel();
+        let retry_on_focus_or_wake = watch::Sender::new(false);
         let runner = Runner {
             connect: Box::new(move || Box::pin(connect())),
             progress,
             policy: options.reconnect,
             integration: options.shell_integration,
             charset: options.charset,
-            post_login_input,
+            post_login,
             split_startup_input,
             prompt_id: 0,
             size,
             sink: Box::new(sink),
             commands: command_rx,
+            retry_on_focus_or_wake: retry_on_focus_or_wake.clone(),
             shell_tx,
             shell_events,
         };
         tokio::spawn(runner.run(shell));
         Ok(Self {
             commands,
+            retry_on_focus_or_wake,
             charset: options.charset,
             backspace: options.backspace,
         })
@@ -215,6 +213,14 @@ impl RemoteTerminal {
             .send(command)
             .map_err(|_| TerminalError::Io("the remote Terminal has ended".into()))
     }
+}
+
+const MAX_PTY_LINE: usize = 4096;
+
+fn startup_line(charset: TerminalCharset, command: &str) -> Vec<u8> {
+    let mut line = charset.encode_input(command.as_bytes());
+    line.push(b'\r');
+    line
 }
 
 fn encode_shell_directory(cwd: &str) -> Option<(&'static str, String)> {
@@ -240,7 +246,11 @@ fn split_startup_command(cwd: &str, post_login: Option<&str>) -> Option<String> 
     let (format, directory) = encode_shell_directory(cwd)?;
     // Escaping the command names bypasses aliases and lets zsh use its built-ins.
     let cd = format!(r#"\cd -- "$(\printf '{format}' {directory})""#);
-    Some(match post_login {
+    Some(with_post_login(&cd, post_login))
+}
+
+fn with_post_login(cd: &str, post_login: Option<&str>) -> String {
+    match post_login {
         None => format!(" {cd}"),
         Some(login) => {
             // Keep cd in the evaluated shell line so a foreground login command cannot read
@@ -248,23 +258,35 @@ fn split_startup_command(cwd: &str, post_login: Option<&str>) -> Option<String> 
             let after_login = shell_quote(&format!("{cd}; (exit "));
             format!("eval {}; eval {after_login}\"$?\"')'", shell_quote(login))
         }
-    })
+    }
 }
 
-fn follow_directory_input(path: &str) -> Option<Vec<u8>> {
-    const MAX_PTY_LINE: usize = 4096;
+fn builtin_shell_cd(path: &str) -> Option<String> {
     if path.len() >= MAX_PTY_LINE {
         return None;
     }
     let (format, directory) = encode_shell_directory(path)?;
     // Use the shell's built-ins in case an alias or function overrides cd or printf.
-    let mut input =
-        format!(r#" \builtin cd -- "$(\builtin printf '{format}' {directory})""#).into_bytes();
-    if input.len() >= MAX_PTY_LINE {
-        return None;
-    }
-    input.push(b'\r');
-    Some(input)
+    Some(format!(
+        r#"\builtin cd -- "$(\builtin printf '{format}' {directory})""#
+    ))
+}
+
+fn restore_directory_input(
+    path: &str,
+    post_login: Option<&str>,
+    charset: TerminalCharset,
+) -> Option<Vec<u8>> {
+    let cd = builtin_shell_cd(path)?;
+    let cd = format!(r#"{cd} >/dev/null 2>&1 || \builtin cd -- "$HOME" >/dev/null 2>&1"#);
+    let input = startup_line(charset, &with_post_login(&cd, post_login));
+    (input.len() <= MAX_PTY_LINE).then_some(input)
+}
+
+fn follow_directory_input(path: &str) -> Option<Vec<u8>> {
+    let cd = builtin_shell_cd(path)?;
+    let input = format!(" {cd}\r").into_bytes();
+    (input.len() <= MAX_PTY_LINE).then_some(input)
 }
 
 impl Terminal for RemoteTerminal {
@@ -300,6 +322,12 @@ impl Terminal for RemoteTerminal {
     /// waiting; does nothing while connected.
     fn reconnect(&mut self) -> Result<()> {
         self.send(Command::Reconnect)
+    }
+
+    fn reconnect_disconnected(&mut self) {
+        // Claim the idle retry once. A focus or wake during backoff or a connect
+        // leaves no request queued for a later failure.
+        self.retry_on_focus_or_wake.send_if_modified(std::mem::take);
     }
 }
 
@@ -456,12 +484,13 @@ struct Runner {
     /// Type the ShellIntegration hook into every new shell.
     integration: bool,
     charset: TerminalCharset,
-    post_login_input: Option<Vec<u8>>,
+    post_login: Option<String>,
     split_startup_input: Option<Vec<u8>>,
     prompt_id: u64,
     size: TerminalSize,
     sink: Box<dyn FnMut(TerminalEvent) + Send>,
     commands: mpsc::UnboundedReceiver<Command>,
+    retry_on_focus_or_wake: watch::Sender<bool>,
     /// Every shell this Terminal runs reports here. A shell's last event is
     /// `Exit` or `Lost`, so events of an old shell never follow a new one's.
     shell_tx: mpsc::UnboundedSender<ShellEvent>,
@@ -470,10 +499,12 @@ struct Runner {
 
 impl Runner {
     async fn run(mut self, mut shell: RemoteShell) {
+        let mut cwd = None;
         loop {
-            if self.serve(&mut shell).await.is_err() {
+            let Ok(last_cwd) = self.serve(&mut shell, cwd).await else {
                 return;
-            }
+            };
+            cwd = last_cwd;
             log::warn!("remote Terminal Connection lost");
             let reported = Arc::clone(&shell.reconnect_failure_reported);
             drop(shell);
@@ -485,24 +516,34 @@ impl Runner {
         }
     }
 
-    /// Runs `shell` until its Connection drops (`Ok`) or it ends (`Err`,
+    /// Runs `shell` until its Connection drops (`Ok` with its last reported
+    /// directory) or it ends (`Err`,
     /// after sending `Exit`).
-    async fn serve(&mut self, shell: &mut RemoteShell) -> std::result::Result<(), ()> {
+    async fn serve(
+        &mut self,
+        shell: &mut RemoteShell,
+        mut cwd: Option<String>,
+    ) -> std::result::Result<Option<String>, ()> {
         let mut output = ShellOutput::new(self.charset, self.prompt_id);
         let mut decoder = OutputDecoder::new(self.charset);
+        let post_login = self.post_login.as_deref();
+        let restore = cwd
+            .as_deref()
+            .and_then(|path| restore_directory_input(path, post_login, self.charset));
+        let post_login = post_login.map(|command| startup_line(self.charset, command));
         if !self.integration {
             self.report_integration(ShellIntegrationStatus::Disabled);
         }
-        let mut startup = if self.integration
-            || self.post_login_input.is_some()
-            || self.split_startup_input.is_some()
-        {
-            Startup::Waiting(Waiting::default())
-        } else {
-            Startup::Ready
-        };
+        let mut startup =
+            if self.integration || post_login.is_some() || self.split_startup_input.is_some() {
+                Startup::Waiting(Waiting::default())
+            } else {
+                Startup::Ready
+            };
         // User input waits until startup input has been sent.
         let mut typed = Vec::new();
+        let mut integrated = false;
+        let mut restoring = restore.is_some();
         let mut startup_command_pending = false;
         let mut follow_prompt = FollowPrompt::default();
         loop {
@@ -523,23 +564,39 @@ impl Runner {
                         let installing = matches!(startup, Startup::InstallingHook(_));
                         if installing {
                             startup_command_pending = self.split_startup_input.is_some()
-                                || self.post_login_input.is_some()
+                                || restore.is_some()
+                                || post_login.is_some()
                                 || !typed.is_empty();
                         }
                         for event in shown.events {
                             if let TerminalEvent::ShellIntegration(marker) = &event {
-                                if let ShellIntegrationEvent::PromptStart { prompt_id } = marker {
-                                    self.prompt_id = *prompt_id;
-                                }
-                                if matches!(marker, ShellIntegrationEvent::CommandStart { .. }) {
-                                    startup_command_pending = false;
+                                match marker {
+                                    ShellIntegrationEvent::Availability { status } => {
+                                        integrated = *status == ShellIntegrationStatus::Available;
+                                    }
+                                    ShellIntegrationEvent::PromptStart { prompt_id } => {
+                                        self.prompt_id = *prompt_id;
+                                    }
+                                    ShellIntegrationEvent::CommandStart { .. } => {
+                                        startup_command_pending = false;
+                                    }
+                                    ShellIntegrationEvent::CommandEnd { .. } if matches!(startup, Startup::Ready) => {
+                                        restoring = false;
+                                    }
+                                    _ => {}
                                 }
                                 follow_prompt.marker(marker, !startup_command_pending);
+                            }
+                            if let TerminalEvent::Cwd(path) = &event {
+                                if integrated && !restoring {
+                                    cwd = Some(path.clone());
+                                }
                             }
                             (self.sink)(event);
                         }
                         if installing && !output.is_hiding() {
-                            self.finish_startup(shell, std::mem::take(&mut typed));
+                            let restore = restore.as_deref().filter(|_| integrated);
+                            self.finish_startup(shell, restore.or(post_login.as_deref()), std::mem::take(&mut typed));
                             startup = Startup::Ready;
                         }
                     }
@@ -550,7 +607,7 @@ impl Runner {
                     }
                     Some(ShellEvent::Lost) => {
                         self.show(decoder.decode(Vec::new(), true));
-                        return Ok(());
+                        return Ok(cwd);
                     }
                     // Unreachable: `shell_tx` keeps the channel open.
                     None => return Err(()),
@@ -566,7 +623,7 @@ impl Runner {
                             self.show(decoder.decode(output.reveal(), false));
                             self.report_integration(ShellIntegrationStatus::TimedOut);
                         }
-                        self.finish_startup(shell, std::mem::take(&mut typed));
+                        self.finish_startup(shell, post_login.as_deref(), std::mem::take(&mut typed));
                         startup = Startup::Ready;
                     }
                 },
@@ -601,13 +658,11 @@ impl Runner {
         }
     }
 
-    fn finish_startup(&mut self, shell: &mut RemoteShell, typed: Vec<u8>) {
-        if let Some(line) = &self.split_startup_input {
+    fn finish_startup(&mut self, shell: &mut RemoteShell, input: Option<&[u8]>, typed: Vec<u8>) {
+        if let Some(line) = self.split_startup_input.as_deref().or(input) {
             if shell.write(line).is_ok() {
                 self.split_startup_input = None;
             }
-        } else if let Some(line) = &self.post_login_input {
-            let _ = shell.write(line);
         }
         if !typed.is_empty() {
             let _ = shell.write(&typed);
@@ -627,7 +682,7 @@ impl Runner {
     }
 
     /// A new shell on a new Connection: automatic tries with growing delays,
-    /// then single tries whenever the user asks.
+    /// then single tries on request.
     async fn recover(&mut self, reported: &AtomicBool) -> std::result::Result<RemoteShell, Stop> {
         let (mut attempts, mut delay) = (self.policy.attempts.max(1), self.policy.first_delay);
         loop {
@@ -656,17 +711,19 @@ impl Runner {
                 }
                 delay = delay.saturating_mul(2);
             }
-            let (reason, connection_failed) = failure.map_or_else(
-                || (String::new(), false),
-                |(e, connection_failed)| (e.to_string(), connection_failed),
+            let (reason, connection_failed, eligible) = failure.map_or_else(
+                || (String::new(), false, false),
+                |(e, connection_failed)| (e.to_string(), connection_failed, is_transient(&e)),
             );
             let report_reconnect_failure =
                 connection_failed && !reported.swap(true, Ordering::Relaxed);
+            self.retry_on_focus_or_wake.send_replace(eligible);
             self.report(ConnectionState::Disconnected {
                 reason,
                 report_reconnect_failure,
             });
-            self.wait_for_reconnect().await?;
+            self.wait_for_reconnect(eligible).await?;
+            self.retry_on_focus_or_wake.send_replace(false);
             (attempts, delay) = (1, Duration::ZERO);
         }
     }
@@ -702,11 +759,15 @@ impl Runner {
         }
     }
 
-    async fn wait_for_reconnect(&mut self) -> std::result::Result<(), Stop> {
+    async fn wait_for_reconnect(&mut self, eligible: bool) -> std::result::Result<(), Stop> {
+        let mut retry = self.retry_on_focus_or_wake.subscribe();
         loop {
-            let command = self.commands.recv().await;
-            if self.idle(command)? {
-                return Ok(());
+            tokio::select! {
+                biased;
+                command = self.commands.recv() => if self.idle(command)? {
+                    return Ok(());
+                },
+                _ = retry.wait_for(|allowed| !allowed), if eligible => return Ok(()),
             }
         }
     }

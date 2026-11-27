@@ -21,7 +21,7 @@ use sshastra_core::ssh::{
     RemoteTerminal, RemoteTerminalOptions, Secret,
 };
 use sshastra_core::terminal::{
-    ConnectionState, ShellIntegrationEvent, Terminal, TerminalEvent, TerminalSize,
+    ConnectionState, ShellIntegrationEvent, Terminal, TerminalEvent, TerminalRegistry, TerminalSize,
 };
 use support::{Service, Sshd};
 use tokio::sync::{mpsc, Mutex};
@@ -44,6 +44,7 @@ const POLICY: ReconnectPolicy = ReconnectPolicy {
 struct TrustingPrompter {
     progress: StdMutex<Vec<ConnectProgress>>,
     key_prompts: AtomicUsize,
+    wrong_password: AtomicBool,
 }
 
 impl Prompter for TrustingPrompter {
@@ -57,7 +58,12 @@ impl Prompter for TrustingPrompter {
     }
 
     fn password(&self, _: PasswordPrompt) -> BoxFuture<'_, Option<Secret>> {
-        Box::pin(async { Some(Secret::new(support::PASSWORD)) })
+        let password = if self.wrong_password.load(Ordering::SeqCst) {
+            "definitely not the fixture password"
+        } else {
+            support::PASSWORD
+        };
+        Box::pin(async move { Some(Secret::new(password)) })
     }
 }
 
@@ -325,6 +331,113 @@ async fn after_the_retries_fail_only_a_manual_reconnect_brings_it_back() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_focus_or_wake_event_retries_an_eligible_terminal_once() {
+    let Some(sshd) = support::sshd(Service::Flaky) else {
+        return;
+    };
+    let _turn = SERVER.lock().await;
+    let fx = Fixture::new(sshd);
+    let (mut terminal, mut events) = fx.open().await;
+    events.shell_pid(&mut terminal).await;
+    let registry = TerminalRegistry::default();
+    let id = registry.insert(Box::new(terminal));
+
+    fx.down.store(true, Ordering::SeqCst);
+    fx.sshd.drop_connections();
+    // Focus during the automatic attempts does not interrupt their backoff
+    // or queue a later attempt.
+    for attempt in 1..=POLICY.attempts {
+        assert_eq!(
+            events.state(EVENT_WAIT).await,
+            ConnectionState::Reconnecting {
+                attempt,
+                attempts: POLICY.attempts,
+            }
+        );
+        registry.reconnect_disconnected();
+    }
+    assert!(matches!(
+        events.state(EVENT_WAIT).await,
+        ConnectionState::Disconnected { .. }
+    ));
+    assert_eq!(fx.connects.load(Ordering::SeqCst), 4);
+
+    registry.reconnect_disconnected();
+    assert_eq!(
+        events.state(EVENT_WAIT).await,
+        ConnectionState::Reconnecting {
+            attempt: 1,
+            attempts: 1,
+        }
+    );
+    assert!(matches!(
+        events.state(EVENT_WAIT).await,
+        ConnectionState::Disconnected { .. }
+    ));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), events.rx.recv())
+            .await
+            .is_err()
+    );
+    assert_eq!(fx.connects.load(Ordering::SeqCst), 5);
+
+    fx.down.store(false, Ordering::SeqCst);
+    registry.reconnect_disconnected();
+    assert_eq!(
+        events.state(EVENT_WAIT).await,
+        ConnectionState::Reconnecting {
+            attempt: 1,
+            attempts: 1,
+        }
+    );
+    assert_eq!(events.state(EVENT_WAIT).await, ConnectionState::Connected);
+    registry.close(id).unwrap();
+    registry.reconnect_disconnected();
+    assert_eq!(fx.connects.load(Ordering::SeqCst), 6);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn focus_or_wake_leaves_an_authentication_rejection_disconnected() {
+    let Some(sshd) = support::sshd(Service::Flaky) else {
+        return;
+    };
+    let _turn = SERVER.lock().await;
+    let fx = Fixture::new(sshd);
+    let (mut terminal, mut events) = fx.open().await;
+    events.shell_pid(&mut terminal).await;
+    let registry = TerminalRegistry::default();
+    let id = registry.insert(Box::new(terminal));
+
+    fx.prompts.wrong_password.store(true, Ordering::SeqCst);
+    fx.sshd.drop_connections();
+    assert!(matches!(
+        events.state(EVENT_WAIT).await,
+        ConnectionState::Reconnecting { attempt: 1, .. }
+    ));
+    let ConnectionState::Disconnected { reason, .. } = events.state(EVENT_WAIT).await else {
+        panic!("an authentication failure should stop reconnecting");
+    };
+    assert!(reason.contains("authentication failed"), "{reason}");
+    fx.prompts.wrong_password.store(false, Ordering::SeqCst);
+
+    registry.reconnect_disconnected();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), events.rx.recv())
+            .await
+            .is_err()
+    );
+    assert_eq!(fx.connects.load(Ordering::SeqCst), 2);
+
+    // A manual retry remains available after the failure.
+    registry.reconnect(id).unwrap();
+    assert!(matches!(
+        events.state(EVENT_WAIT).await,
+        ConnectionState::Reconnecting { attempts: 1, .. }
+    ));
+    assert_eq!(events.state(EVENT_WAIT).await, ConnectionState::Connected);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn two_terminals_report_one_failed_reconnection_for_their_shared_connection() {
     let Some(sshd) = support::sshd(Service::Flaky) else {
         return;
@@ -499,8 +612,9 @@ async fn shell_integration_goes_into_the_new_shell_after_a_reconnect() {
     ));
     assert_eq!(events.state(EVENT_WAIT).await, ConnectionState::Connected);
 
-    // The new shell starts at home and resumes directory and command reports.
+    // The new shell reports its initial prompt, then restores the previous directory.
     assert_eq!(events.cwd(EVENT_WAIT).await, "/home/tester");
+    assert_eq!(events.cwd(EVENT_WAIT).await, "/srv/files");
     let ShellIntegrationEvent::PromptStart {
         prompt_id: after_reconnect,
     } = events.marker().await

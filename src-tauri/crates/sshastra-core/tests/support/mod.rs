@@ -57,8 +57,8 @@ pub enum Service {
     /// A target nothing else connects to, so a test can count the TCP
     /// connections it sees. Tests using it must not run concurrently.
     Counted,
-    /// A target only `tests/reconnect.rs` uses: it kills and freezes the
-    /// server to drop Connections. Tests using it must not run concurrently.
+    /// A target for tests that kill or freeze the server to drop Connections.
+    /// Tests using it must not run concurrently.
     Flaky,
     /// Accepts TCP but never speaks SSH (no banner).
     Silent,
@@ -219,13 +219,26 @@ impl Sshd {
     /// Kills the server's per-connection processes, so every Connection to
     /// it drops at once (as when the server restarts or the network resets).
     pub fn drop_connections(&self) {
+        self.drop_connections_for(USER);
+    }
+
+    pub fn drop_connections_for(&self, user: &str) {
         let script = r#"for p in /proc/[0-9]*; do
-            if tr '\0' ' ' < "$p/cmdline" 2>/dev/null | grep -q '^sshd: tester'; then
-                kill -9 "${p#/proc/}" 2>/dev/null
-            fi
+            case "$(tr '\0' ' ' < "$p/cmdline" 2>/dev/null)" in
+                "sshd: $1"*) kill -9 "${p#/proc/}" 2>/dev/null ;;
+            esac
         done; true"#;
-        compose(&["exec", "-T", self.service.name(), "bash", "-c", script])
-            .unwrap_or_else(|e| panic!("cannot drop {}'s connections: {e}", self.service.name()));
+        compose(&[
+            "exec",
+            "-T",
+            self.service.name(),
+            "bash",
+            "-c",
+            script,
+            "bash",
+            user,
+        ])
+        .unwrap_or_else(|e| panic!("cannot drop {}'s connections: {e}", self.service.name()));
     }
 
     /// Freezes the server: its connections stay open but nothing answers,
