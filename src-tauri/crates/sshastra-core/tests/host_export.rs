@@ -32,6 +32,7 @@ fn draft(name: &str) -> HostDraft {
         forward_agent: false,
         allow_legacy_algorithms: false,
         open_on_startup: false,
+        agent_access: Default::default(),
         proxy: Default::default(),
         keepalive_seconds: None,
         post_login_command: None,
@@ -224,6 +225,7 @@ fn importing_hosts_cannot_enable_startup_connections() {
     let (_a, mut source) = store();
     let startup = HostDraft {
         open_on_startup: true,
+        agent_access: Default::default(),
         proxy: HostProxy::ProxyCommand("nc %h %p".into()),
         ..draft("web")
     };
@@ -476,4 +478,26 @@ fn an_import_whose_jump_hosts_loop_changes_nothing() {
         Err(HostStoreError::JumpHostCycle(_))
     ));
     assert_eq!(store.tree(), before);
+}
+
+#[test]
+fn agent_access_is_local_to_the_host_store() {
+    use sshastra_core::agent::AgentPermission;
+
+    let (dir, mut source) = store();
+    let host = source.upsert(None, HostDraft {
+        agent_access: AgentPermission::Read,
+        ..draft("build")
+    }).unwrap();
+    let on_disk = HostStore::open(dir.path().join("hosts.json")).unwrap();
+    assert_eq!(on_disk.get(&host.id).unwrap().agent_access, AgentPermission::Read);
+
+    let export = source.export();
+    assert!(!export.contains("agentAccess"));
+
+    let (_dir, mut target) = store();
+    let mut provided: serde_json::Value = serde_json::from_str(&export).unwrap();
+    provided["hosts"][0]["agentAccess"] = "approval".into();
+    target.import(&provided.to_string()).unwrap();
+    assert_eq!(target.list()[0].agent_access, AgentPermission::Off);
 }

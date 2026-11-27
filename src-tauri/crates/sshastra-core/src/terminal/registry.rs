@@ -6,10 +6,16 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
-use super::{OutputKind, Result, Terminal, TerminalError, TerminalOutput, TerminalSize};
+use crate::agent::{bound_metadata, TerminalStatus};
+use crate::hosts::HostId;
+
+use super::{
+    ConnectionState, OutputKind, Result, Terminal, TerminalError, TerminalEvent, TerminalOutput,
+    TerminalSize,
+};
 
 /// Identifies an open Terminal across the IPC boundary.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct TerminalId(u64);
 
@@ -25,10 +31,72 @@ impl fmt::Display for TerminalId {
     }
 }
 
+/// The metadata side of an open Terminal on a saved Host. Shell bytes and
+/// connection errors are deliberately absent.
+pub struct SavedTerminalMetadata {
+    pub host: HostId,
+    state: Mutex<SavedTerminalState>,
+}
+
+#[derive(Clone)]
+pub struct SavedTerminalState {
+    pub title: Option<String>,
+    pub cwd: Option<String>,
+    pub status: Option<TerminalStatus>,
+}
+
+impl SavedTerminalMetadata {
+    pub fn new(host: HostId) -> Self {
+        Self {
+            host,
+            state: Mutex::new(SavedTerminalState {
+                title: None,
+                cwd: None,
+                status: Some(TerminalStatus::Connected),
+            }),
+        }
+    }
+
+    pub fn observe(&self, event: &TerminalEvent) {
+        match event {
+            TerminalEvent::Cwd(cwd) => self.lock().cwd = Some(bound_metadata(cwd.clone(), 4096)),
+            TerminalEvent::Connection(connection) => {
+                let mut state = self.lock();
+                state.status = Some(match connection {
+                    ConnectionState::Connected => TerminalStatus::Connected,
+                    ConnectionState::Reconnecting { .. } => TerminalStatus::Reconnecting,
+                    ConnectionState::Disconnected { .. } => TerminalStatus::Disconnected,
+                });
+                if state.status != Some(TerminalStatus::Connected) {
+                    state.cwd = None;
+                }
+            }
+            TerminalEvent::Exit { .. } => self.lock().status = None,
+            _ => {}
+        }
+    }
+
+    pub fn set_title(&self, title: String) {
+        let title = title.trim();
+        self.lock().title = (!title.is_empty()).then(|| bound_metadata(title.to_owned(), 512));
+    }
+
+    pub fn snapshot(&self) -> SavedTerminalState {
+        self.lock().clone()
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, SavedTerminalState> {
+        self.state.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
 /// Every open Terminal, local or remote, addressed by [`TerminalId`].
 /// Safe to share between threads.
+#[derive(Clone, Default)]
+pub struct TerminalRegistry(Arc<RegistryState>);
+
 #[derive(Default)]
-pub struct TerminalRegistry {
+struct RegistryState {
     next_id: AtomicU64,
     terminals: Mutex<HashMap<TerminalId, OpenTerminal>>,
 }
@@ -36,11 +104,12 @@ pub struct TerminalRegistry {
 struct OpenTerminal {
     input: Box<dyn Terminal>,
     output: Option<Arc<TerminalOutput>>,
+    saved: Option<Arc<SavedTerminalMetadata>>,
 }
 
 impl TerminalRegistry {
     pub fn insert(&self, terminal: Box<dyn Terminal>) -> TerminalId {
-        self.insert_open(terminal, None)
+        self.insert_open(terminal, None, None)
     }
 
     /// Registers the Terminal with the sideband that already wraps its output sink.
@@ -49,17 +118,40 @@ impl TerminalRegistry {
         terminal: Box<dyn Terminal>,
         output: Arc<TerminalOutput>,
     ) -> TerminalId {
+        self.insert_with_metadata(terminal, output, None)
+    }
+
+    pub fn insert_with_metadata(
+        &self,
+        terminal: Box<dyn Terminal>,
+        output: Arc<TerminalOutput>,
+        saved: Option<Arc<SavedTerminalMetadata>>,
+    ) -> TerminalId {
         output.activate_auto();
-        self.insert_open(terminal, Some(output))
+        self.insert_open(terminal, Some(output), saved)
+    }
+
+    pub fn saved_terminals(&self) -> Vec<(TerminalId, Arc<SavedTerminalMetadata>)> {
+        self.lock()
+            .iter()
+            .filter_map(|(id, terminal)| Some((*id, terminal.saved.as_ref()?.clone())))
+            .collect()
+    }
+
+    pub fn set_title(&self, id: TerminalId, title: String) {
+        if let Some(saved) = self.lock().get(&id).and_then(|terminal| terminal.saved.clone()) {
+            saved.set_title(title);
+        }
     }
 
     fn insert_open(
         &self,
         input: Box<dyn Terminal>,
         output: Option<Arc<TerminalOutput>>,
+        saved: Option<Arc<SavedTerminalMetadata>>,
     ) -> TerminalId {
-        let id = TerminalId(self.next_id.fetch_add(1, Ordering::Relaxed) + 1);
-        self.lock().insert(id, OpenTerminal { input, output });
+        let id = TerminalId(self.0.next_id.fetch_add(1, Ordering::Relaxed) + 1);
+        self.lock().insert(id, OpenTerminal { input, output, saved });
         id
     }
 
@@ -148,7 +240,7 @@ impl TerminalRegistry {
 
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<TerminalId, OpenTerminal>> {
         // A panic while holding the lock leaves the map itself intact.
-        self.terminals
+        self.0.terminals
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }

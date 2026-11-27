@@ -22,7 +22,7 @@ use sshastra_core::hosts::HostId;
 use sshastra_core::ssh::{RemoteTerminal, RemoteTerminalOptions};
 use sshastra_core::terminal::{
     local_shell_command, local_shells, local_wsl_paths, ConnectionState, LocalPty, LocalShell,
-    OutputKind, OutputStatus, ShellCommand, ShellIntegrationEvent, TerminalEvent, TerminalId,
+    OutputKind, OutputStatus, SavedTerminalMetadata, ShellCommand, ShellIntegrationEvent, TerminalEvent, TerminalId,
     TerminalOutput, TerminalRegistry, TerminalSettings, TerminalSize, REPORT_CWD,
 };
 use tauri::ipc::{Channel, InvokeResponseBody};
@@ -228,6 +228,13 @@ pub async fn local_terminal_wsl_paths(
     })
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenedRemoteTerminal {
+    id: TerminalId,
+    saved_host: bool,
+}
+
 /// Opens a Terminal on a Host, connecting first (through its Jump
 /// hosts, if any) if needed. Progress and questions for the user arrive on
 /// `on_prompt`. Answer questions with `prompt_answer`. If the Connection drops later, the Terminal
@@ -247,8 +254,11 @@ pub async fn remote_terminal_open(
     on_event: Channel<InvokeResponseBody>,
     on_prompt: Channel<PromptRequest>,
     cwd: Option<String>,
-) -> CommandResult<TerminalId> {
+) -> CommandResult<OpenedRemoteTerminal> {
     let route = Arc::new(HostRoute::lookup(&app, &host_id)?);
+    let saved_host = matches!(route.as_ref(), HostRoute::Saved(_));
+    let metadata = saved_host.then(|| Arc::new(SavedTerminalMetadata::new(host_id.clone())));
+    let observed = metadata.clone();
     let host = route.host().clone();
     let prompter = Arc::new(ChannelPrompter {
         pending: Arc::clone(&pending),
@@ -271,6 +281,9 @@ pub async fn remote_terminal_open(
         options,
         size,
         output.wrap(move |event| {
+            if let Some(metadata) = &observed {
+                metadata.observe(&event);
+            }
             if let TerminalEvent::ShellIntegration(ShellIntegrationEvent::CommandStart {
                 command_line: Some(command),
             }) = &event
@@ -290,7 +303,15 @@ pub async fn remote_terminal_open(
     .await?;
     // Open the PTY before using another session channel on the same SSH transport.
     detect_os_on_current_connection(app, host_id);
-    Ok(registry.insert_with_output(Box::new(terminal), output))
+    Ok(OpenedRemoteTerminal {
+        id: registry.insert_with_metadata(Box::new(terminal), output, metadata),
+        saved_host,
+    })
+}
+
+#[tauri::command]
+pub fn terminal_set_title(registry: State<'_, TerminalRegistry>, id: TerminalId, title: String) {
+    registry.set_title(id, title);
 }
 
 /// Tries a remote Terminal's dropped Connection again now (the overlay's

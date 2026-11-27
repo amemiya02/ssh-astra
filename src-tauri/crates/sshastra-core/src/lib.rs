@@ -2,6 +2,7 @@
 //! crate is a thin IPC bridge on top of it, and everything here is testable
 //! with plain `cargo test`.
 
+pub mod agent;
 pub mod credentials;
 pub mod edit;
 pub mod files;

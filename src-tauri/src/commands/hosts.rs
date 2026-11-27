@@ -1,15 +1,16 @@
 //! Host commands: the saved Host list (HostStore) with its Groups.
 
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
+use sshastra_core::agent::{OpenTerminal, TerminalOrigin};
 use sshastra_core::hosts::{
     Bookmark, DetectedOs, Group, GroupId, Host, HostDraft, HostId, HostStore, HostTree,
     ImportReport, ImportSummary,
 };
 use sshastra_core::ssh_config::{parse_user_config, ParseContext};
-use sshastra_core::terminal::CommandHistory;
+use sshastra_core::terminal::{CommandHistory, TerminalRegistry};
 use tauri::{ipc::Channel, State};
 
 use super::connections::ConnectionsState;
@@ -21,7 +22,7 @@ use crate::error::{CommandError, CommandResult};
 /// The HostStore, or why it could not be loaded at startup (e.g. a damaged
 /// file, which is left untouched rather than overwritten).
 pub struct HostsState {
-    store: Mutex<Result<HostStore, CommandError>>,
+    store: Arc<Mutex<Result<HostStore, CommandError>>>,
     os_changes: Watcher<HostOsChange>,
 }
 
@@ -35,7 +36,7 @@ pub struct HostOsChange {
 impl HostsState {
     pub fn new(store: Result<HostStore, CommandError>) -> Self {
         Self {
-            store: Mutex::new(store),
+            store: Arc::new(Mutex::new(store)),
             os_changes: Watcher::default(),
         }
     }
@@ -45,6 +46,37 @@ impl HostsState {
         match guard.as_mut() {
             Ok(store) => f(store),
             Err(e) => Err(e.clone()),
+        }
+    }
+
+    pub(crate) fn agent_terminals(
+        &self,
+        registry: TerminalRegistry,
+    ) -> impl Fn() -> Vec<OpenTerminal> + Send + Sync + 'static {
+        let hosts = Arc::clone(&self.store);
+        move || {
+            let guard = hosts.lock().unwrap_or_else(|p| p.into_inner());
+            let Ok(store) = guard.as_ref() else {
+                return Vec::new();
+            };
+            registry.saved_terminals().into_iter().filter_map(|(id, metadata)| {
+                let host = store.get(&metadata.host)?;
+                if host.agent_access.is_off() {
+                    return None;
+                }
+                let state = metadata.snapshot();
+                Some(OpenTerminal {
+                    id,
+                    origin: TerminalOrigin::Saved {
+                        host: host.id.clone(),
+                        name: host.name.clone(),
+                        permission: host.agent_access,
+                    },
+                    title: state.title,
+                    cwd: state.cwd,
+                    status: state.status?,
+                })
+            }).collect()
         }
     }
 

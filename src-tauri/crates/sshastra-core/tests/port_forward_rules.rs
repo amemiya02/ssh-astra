@@ -28,6 +28,7 @@ fn draft(name: &str) -> HostDraft {
         forward_agent: false,
         allow_legacy_algorithms: false,
         open_on_startup: false,
+        agent_access: Default::default(),
         proxy: Default::default(),
         keepalive_seconds: None,
         post_login_command: None,

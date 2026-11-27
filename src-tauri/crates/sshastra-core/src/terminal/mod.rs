@@ -21,7 +21,7 @@ pub use local_pty::{LocalPty, ShellCommand};
 pub use local_shells::{local_shell_command, local_shells, local_wsl_paths, LocalShell};
 pub use log_text::TerminalLogText;
 pub use output::{OutputKind, OutputStatus, TerminalOutput};
-pub use registry::{TerminalId, TerminalRegistry};
+pub use registry::{SavedTerminalMetadata, TerminalId, TerminalRegistry};
 pub use shell_integration::{CwdParser, ShellOutput, Shown, INJECTION, REPORT_CWD};
 
 use serde::{Deserialize, Serialize};

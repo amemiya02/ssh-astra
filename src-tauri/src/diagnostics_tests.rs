@@ -55,6 +55,7 @@ async fn log_files_record_an_ssh_connection_without_password_or_terminal_data() 
         forward_agent: false,
         allow_legacy_algorithms: false,
         open_on_startup: false,
+        agent_access: Default::default(),
         proxy: Default::default(),
         keepalive_seconds: None,
         post_login_command: None,
