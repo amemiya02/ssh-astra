@@ -42,6 +42,10 @@ _Avoid_: Trusted host, fingerprint cache
 One interactive shell running over a Connection, shown as a tab or a split pane.
 _Avoid_: Session, console, shell tab
 
+**Snippet**:
+A saved command, optionally with variables, that the user can send to a Terminal.
+_Avoid_: Macro, script, quick command
+
 **Local terminal**:
 A Terminal running a shell on the user's own machine, with no Connection.
 _Avoid_: Local session

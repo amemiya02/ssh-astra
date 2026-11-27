@@ -54,3 +54,10 @@ export function planPaste(
   if (invisibleCharacters.length > 0) return { ask: { text, lines, invisibleCharacters } };
   return confirm && lines > 1 ? { ask: { text, lines } } : { paste: text };
 }
+
+/** Snippets use terminal paste encoding, with an optional Enter after the paste. */
+export function terminalPasteInput(text: string, bracketed: boolean, enter: boolean): string {
+  const normalized = text.replace(/\r?\n/g, "\r");
+  const paste = normalized && bracketed ? `\x1b[200~${normalized}\x1b[201~` : normalized;
+  return enter ? paste + "\r" : paste;
+}

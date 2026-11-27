@@ -1,4 +1,4 @@
-import { ArrowRightLeft, FolderTree, House, Settings, SquareTerminal, Waypoints } from "lucide-react";
+import { ArrowRightLeft, Braces, FolderTree, House, Settings, SquareTerminal, Waypoints } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
@@ -57,6 +57,13 @@ export function NavRail({
           onClick={() => onSidebarView("forwards")}
         >
           <Waypoints />
+        </RailButton>
+        <RailButton
+          label={t("snippets.title")}
+          pressed={sidebarOpen && sidebarView === "snippets"}
+          onClick={() => onSidebarView("snippets")}
+        >
+          <Braces />
         </RailButton>
         <RailButton label={t("sftp.open")} active={activeKind === "sftp"} onClick={onSftp}>
           <ArrowRightLeft />

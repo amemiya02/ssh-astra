@@ -114,9 +114,10 @@ export function LocalTerminalView({ active = true, initialCwd, onCwd, onTitleCha
             pendingInput = "";
           }
           if (broadcast && tabId !== undefined && paneId !== undefined) {
-            unregisterWriter = broadcast.register(tabId, paneId, (data) => {
-              void writeTerminal(opened, data).catch(() => undefined);
-            });
+            unregisterWriter = broadcast.register(
+              tabId, paneId, (data) => writeTerminal(opened, data),
+              () => xterm.modes.bracketedPasteMode && !xterm.options.ignoreBracketedPasteMode,
+            );
           }
           // Catch up on any resize that happened while the shell was starting.
           void resizeTerminal(opened, size());

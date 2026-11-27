@@ -4,7 +4,7 @@ import { defineSection } from "@/lib/storage";
 export type FilePanelDock = "right" | "bottom";
 
 /** What the sidebar column shows; the nav rail switches it. */
-export type SidebarView = "hosts" | "forwards";
+export type SidebarView = "hosts" | "forwards" | "snippets";
 
 /** Panel id → size as a percentage of its resizable group (react-resizable-panels `Layout`). */
 export type GroupLayout = Record<string, number>;
@@ -24,7 +24,8 @@ export const defaultShellLayout: ShellLayout = { dock: "right", sidebarView: "ho
 export const layoutSetting = defineSection<ShellLayout>("layout", defaultShellLayout, (raw) => {
   if (!isRecord(raw)) return defaultShellLayout;
   const dock: FilePanelDock = raw.dock === "bottom" ? "bottom" : "right";
-  const sidebarView: SidebarView = raw.sidebarView === "forwards" ? "forwards" : "hosts";
+  const sidebarView: SidebarView = raw.sidebarView === "forwards" || raw.sidebarView === "snippets"
+    ? raw.sidebarView : "hosts";
   const groups: Record<string, GroupLayout> = {};
   if (isRecord(raw.groups)) {
     for (const [id, layout] of Object.entries(raw.groups)) {
