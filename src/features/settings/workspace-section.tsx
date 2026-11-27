@@ -7,16 +7,30 @@ import { SettingRow } from "./SettingRow";
 export function WorkspaceSection() {
   const { t } = useTranslation();
   const [prefs, setPrefs] = useSetting(workspaceSetting);
-  const label = t("settings.restoreTabs.label");
+  const restoreLabel = t("settings.restoreTabs.label");
+  const confirmCloseLabel = t("settings.confirmClose.label");
 
   return (
-    <SettingRow label={label} description={t("settings.restoreTabs.description")}>
-      <SegmentedControl
-        label={label}
-        value={prefs.restoreTabs}
-        options={restoreTabsOptions.map((value) => ({ value, label: t(`settings.restoreTabs.options.${value}`) }))}
-        onChange={(restoreTabs) => setPrefs({ ...prefs, restoreTabs })}
-      />
-    </SettingRow>
+    <>
+      <SettingRow label={restoreLabel} description={t("settings.restoreTabs.description")}>
+        <SegmentedControl
+          label={restoreLabel}
+          value={prefs.restoreTabs}
+          options={restoreTabsOptions.map((value) => ({ value, label: t(`settings.restoreTabs.options.${value}`) }))}
+          onChange={(restoreTabs) => setPrefs({ ...prefs, restoreTabs })}
+        />
+      </SettingRow>
+      <SettingRow label={confirmCloseLabel} description={t("settings.confirmClose.description")}>
+        <SegmentedControl
+          label={confirmCloseLabel}
+          value={prefs.confirmClose ? "on" : "off"}
+          options={[
+            { value: "on", label: t("settings.on") },
+            { value: "off", label: t("settings.off") },
+          ]}
+          onChange={(value) => setPrefs({ ...prefs, confirmClose: value === "on" })}
+        />
+      </SettingRow>
+    </>
   );
 }

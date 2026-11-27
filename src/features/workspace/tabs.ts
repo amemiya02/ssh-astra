@@ -111,6 +111,8 @@ export type TabsAction =
   | { type: "retitle"; paneId: string; title: string }
   | { type: "status"; paneId: string; status: ConnectionStatus; reconnecting?: ReconnectProgress };
 
+export type CloseAction = Extract<TabsAction, { type: "close" | "closeOthers" | "closeRight" | "closePane" }>;
+
 export const emptyTabs: TabsState = { tabs: [], activeId: null };
 
 /** What the app opens with: the Home tab, no Terminal. */
@@ -390,6 +392,16 @@ function duplicateTab(state: TabsState, { id, tabId, paneIds }: Extract<TabsActi
   const tabs = [...state.tabs];
   tabs.splice(index + 1, 0, copy);
   return { tabs, activeId: tabId };
+}
+
+/** Preview the same close the workspace will apply, including its locked-tab guards. */
+export function countTerminalsClosing(state: TabsState, action: CloseAction): number {
+  const next = tabsReducer(state, action);
+  if (next === state) return 0;
+  const remaining = new Set(next.tabs.flatMap(tabPanes).map((pane) => pane.id));
+  return state.tabs.flatMap(tabPanes).filter((pane) =>
+    pane.kind === "remote-terminal" && pane.status === "connected" && !remaining.has(pane.id),
+  ).length;
 }
 
 function closeTabs(state: TabsState, id: string, mode: "close" | "closeOthers" | "closeRight"): TabsState {

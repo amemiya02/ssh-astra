@@ -133,6 +133,13 @@
     "localTerminal": "Local terminal",
     "newLocalTerminal": "New Local terminal",
     "close": "Close {{title}}",
+    "confirmClose": {
+      "title_one": "Close {{count}} connected Terminal?",
+      "title_other": "Close {{count}} connected Terminals?",
+      "description": "Programs running in the remote Terminals may stop.",
+      "skip": "Don't ask again",
+      "confirm": "Close"
+    },
     "closeTab": "Close tab",
     "closeOthers": "Close other tabs",
     "closeRight": "Close tabs to the right",
@@ -626,6 +633,10 @@
       "transfers": "Transfers",
       "updates": "Updates",
       "diagnostics": "Diagnostics"
+    },
+    "confirmClose": {
+      "label": "Confirm Terminal close",
+      "description": "Ask before closing a connected remote Terminal."
     },
     "restoreTabs": {
       "label": "Restore tabs",
