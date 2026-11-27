@@ -22,7 +22,7 @@ pub use transfer::{ImportSummary, EXPORT_FORMAT};
 /// The file format version this build writes, to the store and to export
 /// files. Bump it together with a migration step in [`migrate`], which reads
 /// both.
-const CURRENT_VERSION: u32 = 15;
+const CURRENT_VERSION: u32 = 16;
 
 const MAX_HOST_TAGS: usize = 10;
 const MAX_TAG_LENGTH: usize = 32;
@@ -121,6 +121,18 @@ pub enum HostIcon {
     Router,
 }
 
+/// The ANSI hues a user can choose for a Host.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum HostColor {
+    Red,
+    Green,
+    Yellow,
+    Blue,
+    Magenta,
+    Cyan,
+}
+
 /// A saved, named set of connection settings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -133,6 +145,9 @@ pub struct Host {
     /// Absent when the Host uses its automatic icon.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<HostIcon>,
+    /// Absent when the Host uses its automatic ANSI hue.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<HostColor>,
     pub address: String,
     pub port: u16,
     pub user: String,
@@ -190,6 +205,8 @@ pub struct HostDraft {
     pub tags: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<HostIcon>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<HostColor>,
     pub address: String,
     pub port: u16,
     pub user: String,
@@ -254,6 +271,7 @@ impl HostDraft {
             name: self.name.trim().to_owned(),
             tags: normalize_tags(&self.tags),
             icon: self.icon,
+            color: self.color,
             address: self.address.trim().to_owned(),
             port: self.port,
             user: self.user.trim().to_owned(),
@@ -665,6 +683,7 @@ impl HostStore {
                 name: entry.name.clone(),
                 tags: Vec::new(),
                 icon: None,
+                color: None,
                 address: entry.address,
                 port: entry.port,
                 user: entry.user,
@@ -920,7 +939,8 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
         // v13 adds a local shell command as an outbound proxy choice. v14
         // adds Tags; older Hosts default to an empty list. v15 adds an
         // optional icon; older Hosts use the automatic icon via serde default.
-        2 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | CURRENT_VERSION => {
+        // v16 adds an optional ANSI hue with the same automatic default.
+        2 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | CURRENT_VERSION => {
             let FileV2 { groups, hosts } = serde_json::from_str(text).map_err(corrupt)?;
             Ok(Library { groups, hosts })
         }

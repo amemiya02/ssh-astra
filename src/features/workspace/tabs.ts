@@ -181,10 +181,10 @@ export function tabStatus(tab: Tab): ConnectionStatus | undefined {
   return activePane(tab).status;
 }
 
-export function tabHue(tab: Tab): AnsiHue | undefined {
+export function tabHue(tab: Tab, savedHost?: Host): AnsiHue | undefined {
   if (tab.color) return tab.color;
   const pane = activePane(tab);
-  return "host" in pane ? hostHue(pane.host.id) : undefined;
+  return "host" in pane ? hostHue(savedHost ?? pane.host) : undefined;
 }
 
 /** Hosts with at least one connected Terminal, each once, in tab order. */

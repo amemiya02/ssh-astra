@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { AnsiHue } from "@/theme/monogram-ink";
 import type { PortForward } from "./forwards";
 
 /** Mirrors `sshastra_core::hosts::HostId`. */
@@ -49,6 +50,8 @@ export interface HostDraft {
   tags?: string[];
   /** User-selected icon. An absent value uses the automatic icon. */
   icon?: HostIcon;
+  /** User-selected ANSI hue. An absent value uses the automatic hue. */
+  color?: AnsiHue;
   /** With a selected key, restrict ssh-agent to its matching identity. */
   identitiesOnly?: boolean;
   /** Allow the remote host to use the local SSH agent during a Connection. */

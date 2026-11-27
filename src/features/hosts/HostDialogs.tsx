@@ -21,6 +21,7 @@ import { readCommandError, refusal, type CommandError, type ConnectPrompt, type 
 import type { testHostConnection } from "@/lib/ipc/connections";
 import { hostIcons, isTemporaryHost, type Group, type Host, type HostDraft, type HostId, type TerminalBackspace, type TerminalCharset } from "@/lib/ipc/hosts";
 import { cn } from "@/lib/utils";
+import { ansiHues } from "@/theme/monogram-ink";
 import { TerminalSchemeSelect } from "@/features/terminal/TerminalSchemeSelect";
 import { useTerminalPrefs } from "@/features/terminal/terminal-prefs-context";
 import { isTerminalColorScheme } from "@/theme/terminal-themes";
@@ -72,8 +73,9 @@ const fields: { field: Exclude<HostFormField, ProxyField>; inputMode?: "numeric"
 
 /** Sentinel for "no Jump host": Radix Select reserves the empty string for clearing. */
 const NO_JUMP_HOST = "none";
-const AUTOMATIC_ICON = "automatic";
-const HOST_ICON_CHOICES = [AUTOMATIC_ICON, ...hostIcons] as const;
+const AUTOMATIC = "automatic";
+const HOST_ICON_CHOICES = [AUTOMATIC, ...hostIcons] as const;
+const HOST_COLOR_CHOICES = [AUTOMATIC, ...ansiHues] as const;
 
 const advancedFieldIds = {
   terminalScheme: "host-form-terminal-scheme",
@@ -325,21 +327,48 @@ export function HostFormDialogContent({
           <div className="grid gap-1.5">
             <Label htmlFor="host-form-icon" className="text-xs">{t("hosts.fields.icon")}</Label>
             <Select
-              value={values.icon ?? AUTOMATIC_ICON}
+              value={values.icon ?? AUTOMATIC}
               onValueChange={(value) => setValues((current) => ({
                 ...current, icon: hostIcons.find((icon) => icon === value),
               }))}
             >
               <SelectTrigger id="host-form-icon" size="sm" className="w-full">
-                <SelectValue>{t(`hosts.icons.${values.icon ?? AUTOMATIC_ICON}`)}</SelectValue>
+                <SelectValue>{t(`hosts.icons.${values.icon ?? AUTOMATIC}`)}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {HOST_ICON_CHOICES.map((choice) => {
                   const label = t(`hosts.icons.${choice}`);
-                  const icon = choice === AUTOMATIC_ICON ? undefined : choice;
+                  const icon = choice === AUTOMATIC ? undefined : choice;
                   return (
                     <SelectItem key={choice} value={choice} textValue={label}>
-                      <HostMonogram host={{ id: host?.id ?? "", name: values.name, icon }} />
+                      <HostMonogram host={{ id: host?.id ?? "", name: values.name, icon, color: values.color }} />
+                      {label}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="host-form-color" className="text-xs">{t("hosts.fields.color")}</Label>
+            <Select
+              value={values.color ?? AUTOMATIC}
+              onValueChange={(value) => setValues((current) => ({
+                ...current, color: ansiHues.find((color) => color === value),
+              }))}
+            >
+              <SelectTrigger id="host-form-color" size="sm" className="w-full">
+                <SelectValue>{t(`hosts.colors.${values.color ?? AUTOMATIC}`)}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {HOST_COLOR_CHOICES.map((choice) => {
+                  const color = choice === AUTOMATIC ? undefined : choice;
+                  const label = t(`hosts.colors.${choice}`);
+                  return (
+                    <SelectItem key={choice} value={choice} textValue={label}>
+                      {(host || color) && (
+                        <HostMonogram host={{ id: host?.id ?? "", name: values.name, icon: values.icon, color }} />
+                      )}
                       {label}
                     </SelectItem>
                   );

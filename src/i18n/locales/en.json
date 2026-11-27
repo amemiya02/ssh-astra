@@ -27,6 +27,7 @@
       "user": "User",
       "group": "Group",
       "icon": "Host icon",
+      "color": "Host colour",
       "jumpHost": "Jump host",
       "auth": "Authentication",
       "identityFile": "Private key file",
@@ -54,6 +55,15 @@
       "database": "Database",
       "cloud": "Cloud",
       "router": "Router"
+    },
+    "colors": {
+      "automatic": "Automatic",
+      "red": "Red",
+      "green": "Green",
+      "yellow": "Yellow",
+      "blue": "Blue",
+      "magenta": "Magenta",
+      "cyan": "Cyan"
     },
     "terminalSchemeInherit": "Same as other Terminals",
     "terminalSchemeHint": "Give production Hosts their own colours so they are hard to mistake.",

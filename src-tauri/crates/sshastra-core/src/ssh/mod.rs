@@ -582,6 +582,7 @@ impl ConnectionManager {
             name,
             tags: Vec::new(),
             icon: None,
+            color: None,
             address,
             port,
             user,

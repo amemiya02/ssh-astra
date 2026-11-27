@@ -88,6 +88,25 @@ describe("Host editor", () => {
     },
   );
 
+  it.each([["Automatic", "Cyan", "cyan"], ["Cyan", "Automatic", undefined]] as const)(
+    "changes the Host colour from %s to %s",
+    async (previous, next, expected) => {
+      const save = vi.fn<EditorProps["save"]>().mockResolvedValue(host);
+      await renderEditor({ host: previous === "Cyan" ? { ...host, color: "cyan" } : host, save });
+
+      const color = field("Host colour");
+      expect(color.textContent).toBe(previous);
+      act(() => color.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+      const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+        .find((item) => item.textContent?.endsWith(next))!;
+      act(() => option.click());
+      await act(async () => button("Save").click());
+
+      expect(save).toHaveBeenCalledOnce();
+      expect(save.mock.calls[0]?.[0].color).toBe(expected);
+    },
+  );
+
   it("suggests existing Tags, removes a Tag and sends the edited Tags through HostDraft", async () => {
     const save = vi.fn<EditorProps["save"]>().mockResolvedValue(host);
     await renderEditor({

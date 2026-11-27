@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use sshastra_core::credentials::{CredentialKind, CredentialVault, MemoryVault};
 use sshastra_core::forward::{ForwardDraft, ForwardKind};
 use sshastra_core::hosts::{
-    GroupId, HostAuth, HostDraft, HostIcon, HostId, HostStore, HostStoreError, HostTree,
+    GroupId, HostAuth, HostColor, HostDraft, HostIcon, HostId, HostStore, HostStoreError, HostTree,
 };
 
 fn store() -> (tempfile::TempDir, HostStore) {
@@ -21,6 +21,7 @@ fn draft(name: &str) -> HostDraft {
         name: name.into(),
         tags: Vec::new(),
         icon: None,
+        color: None,
         address: format!("{name}.example.com"),
         port: 22,
         user: "deploy".into(),
@@ -64,6 +65,7 @@ fn populated() -> (tempfile::TempDir, HostStore) {
             HostDraft {
                 tags: vec!["  Production ".into(), "East Coast".into()],
                 icon: Some(HostIcon::Server),
+                color: Some(HostColor::Magenta),
                 jump_host: Some(bastion.id.clone()),
                 auth: HostAuth::Key {
                     identity_file: PathBuf::from("~/.ssh/id_ed25519"),
@@ -167,6 +169,7 @@ fn exporting_then_importing_into_an_empty_store_gives_the_same_host_list() {
         .unwrap();
     assert_eq!(web.tags, ["Production", "East Coast"]);
     assert_eq!(web.icon, Some(HostIcon::Server));
+    assert_eq!(web.color, Some(HostColor::Magenta));
     let exported: serde_json::Value = serde_json::from_str(&file).unwrap();
     let exported_web = exported["hosts"]
         .as_array()
@@ -178,8 +181,9 @@ fn exporting_then_importing_into_an_empty_store_gives_the_same_host_list() {
         exported_web["tags"],
         serde_json::json!(["Production", "East Coast"])
     );
-    assert_eq!(exported["version"], 15);
+    assert_eq!(exported["version"], 16);
     assert_eq!(exported_web["icon"], "server");
+    assert_eq!(exported_web["color"], "magenta");
     assert_eq!(renamed(&source.tree(), &imported), imported);
     assert_eq!(summary.hosts_added, 3);
     assert_eq!(summary.groups_added, 3);

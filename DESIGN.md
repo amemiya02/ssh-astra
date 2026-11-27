@@ -285,7 +285,7 @@ Pickers list light themes first, then dark, Astra's own at the head of each (`ap
 
 **The State Colour Rule.** Green means connected, amber means connecting or reconnecting (and pulses), red means disconnected, failed, or host key mismatch. They appear wherever a Host appears (Host row, Host card, tab, status bar) and are used for nothing else. State is never colour alone: an `sr-only` label, tooltip or text names it.
 
-**The Hue Is Identity Rule.** A Host's colour is one of six ANSI hues (red, green, yellow, blue, magenta, cyan), a stable FNV-1a hash of its id (`hostHue`), painted only through `--ansi-*` tokens so every theme recolours it. Hue says *which* Host; it never says Connection state.
+**The Hue Is Identity Rule.** A Host uses its selected ANSI hue (red, green, yellow, blue, magenta, cyan) or a stable FNV-1a hash of its id. `hostHue` resolves the hue, and `--ansi-*` tokens let every theme recolour it. Hue says *which* Host; it never says Connection state.
 
 ## Typography
 
@@ -408,7 +408,7 @@ Plain searches in the Host list, Home and the command palette match Tags. A quer
 
 ### Host tile
 
-The Host editor offers platform and generic icons and an Automatic choice. The tile uses the chosen icon, then a detected icon if available, then the Host's initials. All glyphs use `--ansi-*-ink` on the Host's hue at 15%. Tiles are 20px in lists, menus and tabs and 32px on Home cards.
+The Host editor offers platform and generic icons and an Automatic choice. Its Host colour picker offers the six ANSI hues with tile previews. Choosing Automatic restores the hue derived from the Host's id. The tile uses the chosen icon, then a detected icon if available, then the Host's initials. All glyphs use `--ansi-*-ink` on the Host's hue at 15%. Tiles are 20px in lists, menus and tabs and 32px on Home cards.
 
 ### Status bar
 24px on the ground with a 1px top rule, `text-xs` muted foreground, segments closed by 1px rules; clickable segments take `accent` on hover and an inset focus ring. Every segment is live state, never a placeholder ("No Connections" when there are none).
