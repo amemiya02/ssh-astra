@@ -61,7 +61,7 @@ impl SftpFs {
             {
                 return Ok(None)
             }
-            Err(error) => return Err(FsError::Protocol(error.to_string())),
+            Err(error) => return Err(self.connection.sftp_channel_error(error)),
         };
         let started = tokio::select! {
             biased;
@@ -69,7 +69,7 @@ impl SftpFs {
                 let _ = channel.close().await;
                 return Ok(None);
             }
-            result = Self::request_sftp(&channel) => result,
+            result = Self::request_sftp(&self.connection, &channel) => result,
         };
         if let Err(error) = started {
             let _ = channel.close().await;
@@ -82,22 +82,27 @@ impl SftpFs {
         connection: Arc<Connection>,
         channel: russh::Channel<russh::client::Msg>,
     ) -> FsResult<Self> {
-        Self::request_sftp(&channel).await?;
+        Self::request_sftp(&connection, &channel).await?;
         Self::from_stream(connection, channel.into_stream()).await
     }
 
-    async fn request_sftp(channel: &russh::Channel<russh::client::Msg>) -> FsResult<()> {
+    async fn request_sftp(
+        connection: &Connection,
+        channel: &russh::Channel<russh::client::Msg>,
+    ) -> FsResult<()> {
         channel
             .request_subsystem(true, "sftp")
             .await
-            .map_err(|e| FsError::Protocol(e.to_string()))
+            .map_err(|e| connection.sftp_channel_error(e))
     }
 
     async fn from_stream(
         connection: Arc<Connection>,
         stream: russh::ChannelStream<russh::client::Msg>,
     ) -> FsResult<Self> {
-        let session = SftpSession::new(stream).await.map_err(|e| error("", e))?;
+        let session = SftpSession::new(stream)
+            .await
+            .map_err(|e| connection_error(&connection, "", e))?;
         session.set_timeout(REQUEST_TIMEOUT_SECS);
         Ok(Self {
             session: Arc::new(session),
@@ -115,14 +120,11 @@ impl SftpFs {
             .connection
             .open_session_channel()
             .await
-            .map_err(|e| FsError::Protocol(e.to_string()))?;
-        channel
-            .request_subsystem(true, "sftp")
-            .await
-            .map_err(|e| FsError::Protocol(e.to_string()))?;
+            .map_err(|e| self.connection.sftp_channel_error(e))?;
+        Self::request_sftp(&self.connection, &channel).await?;
         let session = RawSftpSession::new(channel.into_stream());
         session.set_timeout(REQUEST_TIMEOUT_SECS);
-        let version = session.init().await.map_err(|e| error("", e))?;
+        let version = session.init().await.map_err(|e| self.error("", e))?;
         match version.extensions.get(POSIX_RENAME).map(String::as_str) {
             Some("1") => Ok(Some(session)),
             Some(_) => Err(FsError::Protocol(format!(
@@ -130,6 +132,10 @@ impl SftpFs {
             ))),
             None => Ok(None),
         }
+    }
+
+    fn error(&self, path: &str, error: SftpError) -> FsError {
+        connection_error(&self.connection, path, error)
     }
 
     /// OpenSSH answers a bare "failure" when the target of a mkdir or rename
@@ -163,6 +169,13 @@ impl RemoteFs for SftpFs {
         Some(self.connection.file_namespace())
     }
 
+    fn transfer_connection_lost(&self, error: &std::io::Error) -> bool {
+        error
+            .get_ref()
+            .and_then(|inner| inner.downcast_ref::<SftpError>())
+            .is_some_and(|error| connection_was_lost(&self.connection, error))
+    }
+
     fn home(&self) -> BoxFuture<'_, FsResult<String>> {
         Box::pin(self.canonicalize("."))
     }
@@ -172,7 +185,7 @@ impl RemoteFs for SftpFs {
             self.session
                 .canonicalize(path)
                 .await
-                .map_err(|e| error(path, e))
+                .map_err(|e| self.error(path, e))
         })
     }
 
@@ -191,7 +204,13 @@ impl RemoteFs for SftpFs {
             while let Some(done) = links.join_next().await {
                 let Ok((index, target)) = done else { continue };
                 // A dangling or unreadable link keeps `link_target: None`.
-                entries[index].link_target = target.ok().map(|m| kind(&m));
+                entries[index].link_target = match target {
+                    Ok(meta) => Some(kind(&meta)),
+                    Err(e) if connection_was_lost(&self.connection, &e) => {
+                        return Err(FsError::NotConnected);
+                    }
+                    Err(_) => None,
+                };
             }
             Ok(entries)
         })
@@ -202,7 +221,7 @@ impl RemoteFs for SftpFs {
             self.session
                 .read_dir(path)
                 .await
-                .map_err(|e| error(path, e))?
+                .map_err(|e| self.error(path, e))?
                 .map(|item| {
                     let name = item.file_name();
                     validate_name(&name)?;
@@ -233,7 +252,7 @@ impl RemoteFs for SftpFs {
         Box::pin(self.scan(cancelled, move |stream| async move {
             let scan = RawSftpSession::new(stream);
             scan.set_timeout(REQUEST_TIMEOUT_SECS);
-            scan.init().await.map_err(|e| error(path, e))?;
+            scan.init().await.map_err(|e| self.error(path, e))?;
             search_names(&scan, path, query, mode).await
         }))
     }
@@ -244,7 +263,7 @@ impl RemoteFs for SftpFs {
                 .session
                 .metadata(path)
                 .await
-                .map_err(|e| error(path, e))?;
+                .map_err(|e| self.error(path, e))?;
             Ok(stat(&meta))
         })
     }
@@ -255,7 +274,11 @@ impl RemoteFs for SftpFs {
         offset: u64,
     ) -> BoxFuture<'a, FsResult<FileReader>> {
         Box::pin(async move {
-            let mut file = self.session.open(path).await.map_err(|e| error(path, e))?;
+            let mut file = self
+                .session
+                .open(path)
+                .await
+                .map_err(|e| self.error(path, e))?;
             if offset != 0 {
                 file.seek(SeekFrom::Start(offset))
                     .await
@@ -275,7 +298,7 @@ impl RemoteFs for SftpFs {
                 .session
                 .open_with_flags(path, OpenFlags::WRITE)
                 .await
-                .map_err(|e| error(path, e))?;
+                .map_err(|e| self.error(path, e))?;
             file.seek(SeekFrom::Start(offset))
                 .await
                 .map_err(|e| seek_error(path, e))?;
@@ -290,7 +313,7 @@ impl RemoteFs for SftpFs {
                 .session
                 .create(path)
                 .await
-                .map_err(|e| error(path, e))?;
+                .map_err(|e| self.error(path, e))?;
             Ok(Box::new(file) as FileWriter)
         })
     }
@@ -312,7 +335,7 @@ impl RemoteFs for SftpFs {
                 .await
             {
                 Ok(file) => Ok(Box::new(file) as FileWriter),
-                Err(e) => Err(self.unless_taken(path, error(path, e)).await),
+                Err(e) => Err(self.unless_taken(path, self.error(path, e)).await),
             }
         })
     }
@@ -323,7 +346,7 @@ impl RemoteFs for SftpFs {
                 .session
                 .symlink_metadata(path)
                 .await
-                .map_err(|e| error(path, e))?;
+                .map_err(|e| self.error(path, e))?;
             Ok(stat(&meta))
         })
     }
@@ -332,7 +355,7 @@ impl RemoteFs for SftpFs {
         Box::pin(async move {
             match self.session.create_dir(path).await {
                 Ok(()) => Ok(()),
-                Err(e) => Err(self.unless_taken(path, error(path, e)).await),
+                Err(e) => Err(self.unless_taken(path, self.error(path, e)).await),
             }
         })
     }
@@ -343,7 +366,7 @@ impl RemoteFs for SftpFs {
             // target (unlike the posix-rename extension).
             match self.session.rename(from, to).await {
                 Ok(()) => Ok(()),
-                Err(e) => Err(self.unless_taken(to, error(from, e)).await),
+                Err(e) => Err(self.unless_taken(to, self.error(from, e)).await),
             }
         })
     }
@@ -370,10 +393,10 @@ impl RemoteFs for SftpFs {
             let response = session
                 .extended(POSIX_RENAME, payload.to_vec())
                 .await
-                .map_err(|e| error(to, e))?;
+                .map_err(|e| self.error(to, e))?;
             match response {
                 Packet::Status(status) if status.status_code == StatusCode::Ok => Ok(()),
-                Packet::Status(status) => Err(error(to, SftpError::Status(status))),
+                Packet::Status(status) => Err(self.error(to, SftpError::Status(status))),
                 _ => Err(error(to, SftpError::UnexpectedPacket)),
             }
         })
@@ -410,7 +433,7 @@ impl RemoteFs for SftpFs {
             self.session
                 .remove_file(path)
                 .await
-                .map_err(|e| error(path, e))
+                .map_err(|e| self.error(path, e))
         })
     }
 
@@ -419,7 +442,7 @@ impl RemoteFs for SftpFs {
             self.session
                 .remove_dir(path)
                 .await
-                .map_err(|e| error(path, e))
+                .map_err(|e| self.error(path, e))
         })
     }
 
@@ -432,7 +455,7 @@ impl RemoteFs for SftpFs {
             self.session
                 .set_metadata(path, attrs)
                 .await
-                .map_err(|e| error(path, e))
+                .map_err(|e| self.error(path, e))
         })
     }
 
@@ -447,7 +470,7 @@ impl RemoteFs for SftpFs {
                 .session
                 .symlink_metadata(path)
                 .await
-                .map_err(|e| error(path, e))?;
+                .map_err(|e| self.error(path, e))?;
             if kind(&current) == FileKind::Symlink {
                 return Ok(());
             }
@@ -468,7 +491,7 @@ impl RemoteFs for SftpFs {
                     },
                 )
                 .await
-                .map_err(|e| error(path, e))
+                .map_err(|e| self.error(path, e))
         })
     }
 }
@@ -634,6 +657,30 @@ fn entry(name: String, meta: &Metadata) -> FileEntry {
         uid: meta.uid,
         gid: meta.gid,
         link_target: None,
+    }
+}
+
+fn connection_was_lost(connection: &Connection, error: &SftpError) -> bool {
+    // A dropped SFTP channel alone can also produce I/O or response errors.
+    // Check the SSH transport and preserve ordinary SFTP status failures.
+    connection.is_closed()
+        && match error {
+            SftpError::IO(_) | SftpError::UnexpectedBehavior(_) | SftpError::Timeout => true,
+            SftpError::Status(status) => {
+                matches!(
+                    status.status_code,
+                    StatusCode::NoConnection | StatusCode::ConnectionLost
+                )
+            }
+            _ => false,
+        }
+}
+
+fn connection_error(connection: &Connection, path: &str, failure: SftpError) -> FsError {
+    if connection_was_lost(connection, &failure) {
+        FsError::NotConnected
+    } else {
+        error(path, failure)
     }
 }
 

@@ -37,6 +37,10 @@ impl Default for TransfersState {
 }
 
 impl TransfersState {
+    pub fn queue(&self) -> TransferQueue {
+        self.queue.clone()
+    }
+
     /// Applies the `transfers` settings section.
     pub fn apply(&self, settings: &TransferSettings) {
         self.queue.set_concurrency(settings.concurrency());
@@ -65,13 +69,13 @@ pub async fn transfers_upload(
     paths: Vec<PathBuf>,
     remote_dir: String,
 ) -> Result<Vec<TransferId>, ()> {
-    let open = live_sftp(app, host_id);
+    let open = live_sftp(app, host_id.clone());
     Ok(paths
         .into_iter()
         .map(|path| {
             transfers
                 .queue
-                .upload(Arc::clone(&open), path, remote_dir.clone())
+                .upload_to(host_id.clone(), Arc::clone(&open), path, remote_dir.clone())
         })
         .collect())
 }
@@ -86,13 +90,16 @@ pub async fn transfers_download(
     paths: Vec<String>,
     local_dir: PathBuf,
 ) -> Result<Vec<TransferId>, ()> {
-    let open = live_sftp(app, host_id);
+    let open = live_sftp(app, host_id.clone());
     Ok(paths
         .into_iter()
         .map(|path| {
-            transfers
-                .queue
-                .download(Arc::clone(&open), path, local_dir.clone())
+            transfers.queue.download_from(
+                host_id.clone(),
+                Arc::clone(&open),
+                path,
+                local_dir.clone(),
+            )
         })
         .collect())
 }
