@@ -131,6 +131,16 @@ pub fn transfer_cancel(transfers: State<'_, TransfersState>, id: TransferId) {
 }
 
 #[tauri::command]
+pub fn transfer_pause(transfers: State<'_, TransfersState>, id: TransferId) {
+    transfers.queue.pause(id);
+}
+
+#[tauri::command]
+pub fn transfer_resume(transfers: State<'_, TransfersState>, id: TransferId) {
+    transfers.queue.resume(id);
+}
+
+#[tauri::command]
 pub fn transfer_retry(transfers: State<'_, TransfersState>, id: TransferId) {
     transfers.queue.retry(id);
 }

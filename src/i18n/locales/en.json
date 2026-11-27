@@ -418,6 +418,8 @@
     "noneDone": "No finished transfers.",
     "clearDone": "Clear finished",
     "retry": "Retry",
+    "pause": "Pause",
+    "resume": "Resume",
     "cancel": "Cancel",
     "dismiss": "Remove",
     "progress": "{{done}} of {{total}}",
@@ -434,6 +436,7 @@
     },
     "state": {
       "queued": "Waiting",
+      "paused": "Paused",
       "conflict": "Waiting for your answer",
       "cancelled": "Cancelled",
       "done": "Done"
