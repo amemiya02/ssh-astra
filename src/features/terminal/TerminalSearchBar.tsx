@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronUp, X } from "lucide-react";
-import { useState } from "react";
+import { useState, type Ref } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,7 @@ export interface SearchResults {
 }
 
 interface TerminalSearchBarProps {
+  inputRef?: Ref<HTMLInputElement>;
   results: SearchResults | null;
   /** `incremental` is a search as you type: it may stay on the current match. */
   onFind(query: string, direction: SearchDirection, incremental?: boolean): void;
@@ -23,7 +24,7 @@ interface TerminalSearchBarProps {
  * Find in the Terminal's scrollback, floating at its top right. Enter finds the
  * next match, Shift+Enter the previous one, Escape closes and returns to the Terminal.
  */
-export function TerminalSearchBar({ results, onFind, onClose }: TerminalSearchBarProps) {
+export function TerminalSearchBar({ inputRef, results, onFind, onClose }: TerminalSearchBarProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
 
@@ -41,6 +42,7 @@ export function TerminalSearchBar({ results, onFind, onClose }: TerminalSearchBa
       className="bg-popover shadow-overlay absolute top-2 right-3 z-10 flex items-center gap-0.5 rounded-lg border p-1"
     >
       <Input
+        ref={inputRef}
         aria-label={t("terminal.search.label")}
         placeholder={t("terminal.search.placeholder")}
         className="h-6.5 w-48 font-mono text-xs"

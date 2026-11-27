@@ -1,27 +1,28 @@
-import { Pencil, Play, Plus, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Download, Pencil, Play, Plus, Trash2, Upload } from "lucide-react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { IconButton } from "@/components/IconButton";
 import { Dialog } from "@/components/ui/dialog";
+import { usePaletteActions, type PaletteAction } from "@/features/palette/palette-actions";
 import { SidebarHeader } from "@/features/shell/SidebarHeader";
+import { showToast } from "@/features/toasts/toastStore";
 import type { Broadcast } from "@/features/workspace/broadcast";
 import { readCommandError } from "@/lib/ipc/connect";
 import type { Host, HostId } from "@/lib/ipc/hosts";
-import { deleteSnippet, listSnippets, saveSnippet, type Snippet } from "@/lib/ipc/snippets";
-import { DeleteSnippetDialog, SnippetEditor, SnippetPrompt } from "./SnippetDialogs";
-import { parseSnippet } from "./snippet-template";
+import { deleteSnippet, exportSnippets, importSnippets, saveSnippet, type Snippet, type SnippetImportReport } from "@/lib/ipc/snippets";
+import { pickOpenPath, pickSavePath } from "@/lib/ipc/system";
+import { DeleteSnippetDialog, SnippetEditor, SnippetImportDialog } from "./SnippetDialogs";
+import { useSnippetLibrary, visibleOnHost } from "./snippet-library";
+import { useSnippetRunner } from "./use-snippet-runner";
 
-type InputTarget = NonNullable<ReturnType<Broadcast["captureInput"]>>;
 type SnippetDialog =
   | { kind: "edit"; snippet?: Snippet }
   | { kind: "delete"; snippet: Snippet }
-  | { kind: "run"; snippet: Snippet; template: ReturnType<typeof parseSnippet>; target: InputTarget };
+  | { kind: "importReport"; report: SnippetImportReport };
 
-type Library = { status: "loading" } | { status: "ready"; snippets: Snippet[] } | { status: "error"; message: string };
-
-function visibleOnHost(snippet: Snippet, hostId?: HostId): boolean {
-  return snippet.hostIds.length === 0 || (hostId !== undefined && snippet.hostIds.includes(hostId));
+function reportRunError(message: string | null) {
+  if (message) showToast(() => message, "error");
 }
 
 export function SnippetsSidebar({ broadcast, paneId, hostId, hosts }: {
@@ -32,88 +33,113 @@ export function SnippetsSidebar({ broadcast, paneId, hostId, hosts }: {
 }) {
   const { t } = useTranslation();
   const canRun = useStore(broadcast.store, ({ writers }) => paneId !== undefined && writers.has(paneId));
-  const [library, setLibrary] = useState<Library>({ status: "loading" });
+  const [library, setLibrary] = useSnippetLibrary();
   const [dialog, setDialog] = useState<SnippetDialog | null>(null);
   const [busy, setBusy] = useState(false);
+  const operationPending = useRef(false);
   const [mutationError, setMutationError] = useState<string | null>(null);
-  const [runError, setRunError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let current = true;
-    void listSnippets().then(
-      (snippets) => { if (current) setLibrary({ status: "ready", snippets }); },
-      (error: unknown) => { if (current) setLibrary({ status: "error", message: readCommandError(error).message }); },
-    );
-    return () => { current = false; };
-  }, []);
+  const { run, dialog: runDialog } = useSnippetRunner({ broadcast, hostId, paneId, reportError: reportRunError });
+  const visibleSnippets = useMemo(() => library.status === "ready"
+    ? library.snippets.filter((snippet) => visibleOnHost(snippet, hostId))
+    : [], [hostId, library]);
+  const ready = library.status === "ready" && !busy;
+  const canExport = ready && library.snippets.length > 0;
 
   const groups = new Map<string | null, Snippet[]>();
-  if (library.status === "ready") {
-    for (const snippet of library.snippets) {
-      if (!visibleOnHost(snippet, hostId)) continue;
-      const group = groups.get(snippet.group);
-      if (group) group.push(snippet);
-      else groups.set(snippet.group, [snippet]);
-    }
+  for (const snippet of visibleSnippets) {
+    const group = groups.get(snippet.group);
+    if (group) group.push(snippet);
+    else groups.set(snippet.group, [snippet]);
   }
 
-  function openDialog(next: SnippetDialog) {
+  const openDialog = useCallback((next: SnippetDialog) => {
     setMutationError(null);
     setDialog(next);
-  }
+  }, []);
 
   function closeDialog() {
     if (!busy) setDialog(null);
   }
 
-  async function mutate(update: (snippets: Snippet[]) => Promise<Snippet[]>) {
-    if (busy || library.status !== "ready") return;
+  const perform = useCallback(async (operation: () => Promise<void>, onError: (error: unknown) => void) => {
+    if (operationPending.current) return;
+    operationPending.current = true;
     setBusy(true);
-    setMutationError(null);
     try {
-      setLibrary({ status: "ready", snippets: await update(library.snippets) });
-      setDialog(null);
+      await operation();
     } catch (error) {
-      setMutationError(t("snippets.saveFailed", { message: readCommandError(error).message }));
+      onError(error);
     } finally {
+      operationPending.current = false;
       setBusy(false);
     }
+  }, []);
+
+  async function mutate(update: (snippets: Snippet[]) => Promise<Snippet[]>) {
+    if (!ready) return;
+    await perform(async () => {
+      setMutationError(null);
+      setLibrary({ status: "ready", snippets: await update(library.snippets) });
+      setDialog(null);
+    }, (error) => setMutationError(t("snippets.saveFailed", { message: readCommandError(error).message })));
   }
 
-  async function send(snippet: Snippet, target: InputTarget, text: string) {
-    try {
-      if (!visibleOnHost(snippet, hostId) || !(await target.send(text, snippet.sendEnter))) {
-        setRunError(t("snippets.terminalUnavailable"));
-      }
-    } catch (error) {
-      setRunError(t("snippets.sendFailed", { message: readCommandError(error).message }));
-    }
-  }
+  const transfer = useMemo(() => {
+    const filters = [{ name: t("snippets.transfer.fileType"), extensions: ["json"] }];
+    return {
+      importFile: () => void perform(async () => {
+        const path = await pickOpenPath({ title: t("snippets.transfer.import"), filters });
+        if (!path) return;
+        const report = await importSnippets(path);
+        setLibrary((current) => current.status === "ready" && report.added.length
+          ? { status: "ready", snippets: [...current.snippets, ...report.added] }
+          : current);
+        openDialog({ kind: "importReport", report });
+      }, (error) => {
+        const { message } = readCommandError(error);
+        showToast((translate) => translate("snippets.transfer.importFailed", { message }), "error");
+      }),
+      exportFile: () => void perform(async () => {
+        const path = await pickSavePath({ title: t("snippets.transfer.export"), defaultPath: "sshastra-snippets.json", filters });
+        if (!path) return;
+        await exportSnippets(path);
+        showToast((translate) => translate("snippets.transfer.exported"));
+      }, (error) => {
+        const { message } = readCommandError(error);
+        showToast((translate) => translate("snippets.transfer.exportFailed", { message }), "error");
+      }),
+    };
+  }, [openDialog, perform, setLibrary, t]);
 
-  function run(snippet: Snippet) {
-    setRunError(null);
-    const target = paneId ? broadcast.captureInput(paneId) : undefined;
-    if (!target) {
-      setRunError(t("snippets.terminalUnavailable"));
-      return;
-    }
-    const template = parseSnippet(snippet.command);
-    if (template.variables.length > 0) openDialog({ kind: "run", snippet, template, target });
-    else {
-      const expanded = template.expand(new Map());
-      if ("text" in expanded) void send(snippet, target, expanded.text);
-    }
-  }
+  usePaletteActions(useMemo((): PaletteAction[] => {
+    if (!ready || dialog) return [];
+    return [
+      { id: "snippets.import", title: t("snippets.transfer.import"), run: () => transfer.importFile() },
+      ...(canExport ? [{ id: "snippets.export", title: t("snippets.transfer.export"), run: () => transfer.exportFile() }] : []),
+      ...(canRun ? visibleSnippets.map((snippet) => ({
+        id: `snippet.run:${snippet.id}`,
+        title: t("snippets.runNamed", { name: snippet.name }),
+        keywords: snippet.group ? [t("snippets.title"), snippet.group] : [t("snippets.title")],
+        run: () => run(snippet),
+      })) : []),
+    ];
+  }, [canExport, canRun, dialog, ready, run, t, transfer, visibleSnippets]));
 
   return (
     <section aria-label={t("snippets.title")} className="flex h-full min-h-0 flex-col pr-1 pl-2.5">
       <SidebarHeader title={t("snippets.title")}>
-        <IconButton label={t("snippets.new")} disabled={library.status !== "ready"} onClick={() => openDialog({ kind: "edit" })}>
+        <IconButton label={t("snippets.transfer.import")} disabled={!ready} onClick={transfer.importFile}>
+          <Upload />
+        </IconButton>
+        <IconButton label={t("snippets.transfer.export")} disabled={!canExport} onClick={transfer.exportFile}>
+          <Download />
+        </IconButton>
+        <IconButton label={t("snippets.new")} disabled={!ready} onClick={() => openDialog({ kind: "edit" })}>
           <Plus />
         </IconButton>
       </SidebarHeader>
       <div className="min-h-0 flex-1 overflow-y-auto pb-2.5">
-        {runError && <p role="alert" className="text-destructive px-2 py-1 text-xs">{runError}</p>}
         {library.status === "loading" && <p role="status" className="text-muted-foreground px-2 py-2">{t("snippets.loading")}</p>}
         {library.status === "error" && (
           <p role="alert" className="text-destructive px-2 py-2">{t("snippets.loadFailed", { message: library.message })}</p>
@@ -133,13 +159,13 @@ export function SnippetsSidebar({ broadcast, paneId, hostId, hosts }: {
               {snippets.map((snippet) => (
                 <li key={snippet.id} className="hover:bg-accent focus-within:bg-accent flex min-w-0 items-center gap-0.5 rounded-lg py-0.5 pr-0.5 pl-2">
                   <span title={snippet.name} className="min-w-0 flex-1 truncate font-medium">{snippet.name}</span>
-                  <IconButton label={t("snippets.runNamed", { name: snippet.name })} disabled={!canRun} onClick={() => run(snippet)}>
+                  <IconButton label={t("snippets.runNamed", { name: snippet.name })} disabled={!canRun || busy} onClick={() => run(snippet)}>
                     <Play />
                   </IconButton>
-                  <IconButton label={t("snippets.editNamed", { name: snippet.name })} onClick={() => openDialog({ kind: "edit", snippet })}>
+                  <IconButton label={t("snippets.editNamed", { name: snippet.name })} disabled={busy} onClick={() => openDialog({ kind: "edit", snippet })}>
                     <Pencil />
                   </IconButton>
-                  <IconButton label={t("snippets.deleteNamed", { name: snippet.name })} onClick={() => openDialog({ kind: "delete", snippet })}>
+                  <IconButton label={t("snippets.deleteNamed", { name: snippet.name })} disabled={busy} onClick={() => openDialog({ kind: "delete", snippet })}>
                     <Trash2 />
                   </IconButton>
                 </li>
@@ -176,18 +202,9 @@ export function SnippetsSidebar({ broadcast, paneId, hostId, hosts }: {
             })}
           />
         )}
-        {dialog?.kind === "run" && (
-          <SnippetPrompt
-            snippet={dialog.snippet}
-            template={dialog.template}
-            onCancel={closeDialog}
-            onRun={(text) => {
-              closeDialog();
-              void send(dialog.snippet, dialog.target, text);
-            }}
-          />
-        )}
+        {dialog?.kind === "importReport" && <SnippetImportDialog report={dialog.report} onClose={closeDialog} />}
       </Dialog>
+      {runDialog}
     </section>
   );
 }

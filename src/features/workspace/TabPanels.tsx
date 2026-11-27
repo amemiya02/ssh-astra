@@ -8,6 +8,7 @@ import { GlobalTransfersPane } from "@/features/transfers/GlobalTransfersPane";
 import { LocalTerminalView } from "@/features/terminal/LocalTerminalView";
 import { SftpWorkspace } from "@/features/files/SftpWorkspace";
 import { terminalCwds } from "@/features/files/terminalCwds";
+import { TerminalPaneMenuContext } from "@/features/terminal/terminal-pane-menu";
 import { RemoteTerminalView } from "@/features/terminal/RemoteTerminalView";
 import type { Host } from "@/lib/ipc/hosts";
 import { cn } from "@/lib/utils";
@@ -15,7 +16,7 @@ import { BroadcastPaneContext, isBroadcastRecipient, type Broadcast } from "./br
 import { PaneDivider } from "./PaneDivider";
 import { positionPanes, resizePaneLayout, type PaneBounds, type SplitResize } from "./pane-layout";
 import { TabActivityContext, type TabActivity } from "./tab-activity";
-import { nextRestoreConnection, tabId, tabPanelId, type ConnectionStatus, type Pane, type ReconnectProgress, type Tab } from "./tabs";
+import { canSplit, nextRestoreConnection, tabId, tabPanelId, type ConnectionStatus, type Pane, type ReconnectProgress, type SplitOrientation, type Tab } from "./tabs";
 
 interface TabPanelsProps {
   activity: TabActivity;
@@ -25,6 +26,7 @@ interface TabPanelsProps {
   /** Home, drawn for the Home tab (or when no tab is open). `active`: it is the pane shown. */
   renderHome(active: boolean): ReactNode;
   onFocusPane(paneId: string): void;
+  onSplitPane(paneId: string, orientation: SplitOrientation): void;
   onClosePane(paneId: string): void;
   onEditHost(host: Host): void;
   onConnectRestoredPane(paneId: string): void;
@@ -104,7 +106,12 @@ function SplitPanes({ broadcast, tab, active, nextConnection, onResizeSplit, ...
             }}
           >
             <BroadcastPaneContext.Provider value={broadcast && { broadcast, tabId: tab.id, paneId: pane.id }}>
-              <PaneContent pane={pane} active={active && focused} autoConnect={pane.id === nextConnection} {...callbacks} />
+              <TerminalPaneMenuContext.Provider value={{
+                hostId: pane.kind === "remote-terminal" ? pane.host.id : undefined,
+                split: canSplit(tab, pane.id) ? (orientation) => callbacks.onSplitPane(pane.id, orientation) : undefined,
+              }}>
+                <PaneContent pane={pane} active={active && focused} autoConnect={pane.id === nextConnection} {...callbacks} />
+              </TerminalPaneMenuContext.Provider>
             </BroadcastPaneContext.Provider>
             {broadcast && <BroadcastMarker broadcast={broadcast} paneId={pane.id} />}
             {/* A Terminal canvas can paint over the pane's inset shadow. Draw the focus ring on top. */}

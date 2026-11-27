@@ -15,6 +15,11 @@ export interface Snippet extends SnippetDraft {
   id: SnippetId;
 }
 
+export interface SnippetImportReport {
+  added: Snippet[];
+  skipped: string[];
+}
+
 export function listSnippets(): Promise<Snippet[]> {
   return invoke("snippets_list");
 }
@@ -25,4 +30,12 @@ export function saveSnippet(draft: SnippetDraft, id?: SnippetId): Promise<Snippe
 
 export function deleteSnippet(id: SnippetId): Promise<void> {
   return invoke("snippet_delete", { id });
+}
+
+export function exportSnippets(path: string): Promise<void> {
+  return invoke("snippets_export", { path });
+}
+
+export function importSnippets(path: string): Promise<SnippetImportReport> {
+  return invoke("snippets_import", { path });
 }

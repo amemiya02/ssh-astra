@@ -39,7 +39,20 @@
     "loadFailed": "Could not load Snippets ({{message}})",
     "saveFailed": "Could not save the change ({{message}})",
     "terminalUnavailable": "The selected Terminal is unavailable.",
-    "sendFailed": "Could not send the Snippet to every Terminal ({{message}})"
+    "sendFailed": "Could not send the Snippet to every Terminal ({{message}})",
+    "transfer": {
+      "fileType": "Snippet library",
+      "import": "Import Snippets",
+      "export": "Export Snippets",
+      "reportTitle": "Snippet import results",
+      "imported_one": "Imported {{count}} Snippet.",
+      "imported_other": "Imported {{count}} Snippets.",
+      "skipped": "Skipped duplicate names",
+      "close": "Close",
+      "exported": "Snippet library exported.",
+      "importFailed": "Could not import Snippets ({{message}})",
+      "exportFailed": "Could not export Snippets ({{message}})"
+    }
   },
   "hosts": {
     "title": "Hosts",
@@ -728,6 +741,10 @@
       "failed": "Could not write the Recording. {{message}}"
     },
     "pressEnterToRestart": "Press Enter to start a new shell.",
+    "menu": {
+      "label": "Terminal menu",
+      "clear": "Clear screen"
+    },
     "search": {
       "label": "Find in Terminal",
       "placeholder": "Find",
@@ -1184,8 +1201,12 @@
         "failed": "Could not choose a Terminal output folder. {{message}}"
       },
       "rightClickPaste": {
-        "label": "Right-click paste",
-        "description": "When on, right-clicking pastes the clipboard. When off, it opens the Terminal menu."
+        "label": "Right-click action",
+        "description": "Choose what right-clicking in a Terminal does.",
+        "options": {
+          "menu": "Open menu",
+          "paste": "Paste directly"
+        }
       },
       "confirmMultilinePaste": {
         "label": "Confirm multi-line paste",

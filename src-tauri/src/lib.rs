@@ -170,6 +170,8 @@ pub fn run() {
             commands::snippets::snippets_list,
             commands::snippets::snippet_save,
             commands::snippets::snippet_delete,
+            commands::snippets::snippets_export,
+            commands::snippets::snippets_import,
             commands::hosts::hosts_list,
             commands::hosts::host_save,
             commands::hosts::host_delete,

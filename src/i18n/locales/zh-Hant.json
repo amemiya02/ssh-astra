@@ -39,7 +39,20 @@
     "loadFailed": "無法載入命令片段（{{message}}）",
     "saveFailed": "無法儲存變更（{{message}}）",
     "terminalUnavailable": "所選的終端機無法使用。",
-    "sendFailed": "無法將命令片段傳送到所有終端機（{{message}}）"
+    "sendFailed": "無法將命令片段傳送到所有終端機（{{message}}）",
+    "transfer": {
+      "fileType": "命令片段庫",
+      "import": "匯入命令片段",
+      "export": "匯出命令片段",
+      "reportTitle": "命令片段匯入結果",
+      "imported_one": "已匯入 {{count}} 則命令片段。",
+      "imported_other": "已匯入 {{count}} 則命令片段。",
+      "skipped": "已略過以下名稱重複的命令片段",
+      "close": "關閉",
+      "exported": "已匯出命令片段庫。",
+      "importFailed": "無法匯入命令片段（{{message}}）",
+      "exportFailed": "無法匯出命令片段（{{message}}）"
+    }
   },
   "hosts": {
     "title": "Hosts",
@@ -728,6 +741,10 @@
       "failed": "無法寫入終端機錄製檔案。{{message}}"
     },
     "pressEnterToRestart": "按 Enter 啟動新的 shell。",
+    "menu": {
+      "label": "終端機選單",
+      "clear": "清除畫面"
+    },
     "search": {
       "label": "在終端機中尋找",
       "placeholder": "尋找",
@@ -1184,8 +1201,12 @@
         "failed": "無法選擇終端機輸出資料夾。{{message}}"
       },
       "rightClickPaste": {
-        "label": "右鍵貼上",
-        "description": "啟用時，在終端機按一下滑鼠右鍵會貼上剪貼簿內容。停用時，會開啟終端機選單。"
+        "label": "右鍵操作",
+        "description": "選擇在終端機中按下滑鼠右鍵時執行的操作。",
+        "options": {
+          "menu": "開啟選單",
+          "paste": "直接貼上"
+        }
       },
       "confirmMultilinePaste": {
         "label": "多行貼上前確認",

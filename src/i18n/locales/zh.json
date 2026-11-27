@@ -39,7 +39,20 @@
     "loadFailed": "无法加载命令片段（{{message}}）",
     "saveFailed": "无法保存更改（{{message}}）",
     "terminalUnavailable": "选中的终端不可用。",
-    "sendFailed": "无法将命令片段发送到所有终端（{{message}}）"
+    "sendFailed": "无法将命令片段发送到所有终端（{{message}}）",
+    "transfer": {
+      "fileType": "命令片段库",
+      "import": "导入命令片段",
+      "export": "导出命令片段",
+      "reportTitle": "命令片段导入结果",
+      "imported_one": "已导入 {{count}} 条命令片段。",
+      "imported_other": "已导入 {{count}} 条命令片段。",
+      "skipped": "已跳过以下重名的命令片段",
+      "close": "关闭",
+      "exported": "已导出命令片段库。",
+      "importFailed": "无法导入命令片段（{{message}}）",
+      "exportFailed": "无法导出命令片段（{{message}}）"
+    }
   },
   "hosts": {
     "title": "Hosts",
@@ -728,6 +741,10 @@
       "failed": "无法写入终端录制文件。{{message}}"
     },
     "pressEnterToRestart": "按 Enter 启动新的 shell。",
+    "menu": {
+      "label": "终端菜单",
+      "clear": "清屏"
+    },
     "search": {
       "label": "在终端中查找",
       "placeholder": "查找",
@@ -1184,8 +1201,12 @@
         "failed": "无法选择终端输出文件夹。{{message}}"
       },
       "rightClickPaste": {
-        "label": "右键粘贴",
-        "description": "开启后，在终端中右键单击会粘贴剪贴板内容。关闭后会打开终端菜单。"
+        "label": "右键操作",
+        "description": "选择在终端中点击右键时执行的操作。",
+        "options": {
+          "menu": "打开菜单",
+          "paste": "直接粘贴"
+        }
       },
       "confirmMultilinePaste": {
         "label": "多行粘贴前确认",
