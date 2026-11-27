@@ -570,6 +570,7 @@ async fn saving_the_temp_file_changes_the_file_on_the_server() {
         id: host(),
         name: "edit".into(),
         tags: Vec::new(),
+        icon: None,
         address: sshd.host.clone(),
         port: sshd.port,
         user: sshd.user.into(),

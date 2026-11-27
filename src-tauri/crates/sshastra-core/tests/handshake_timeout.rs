@@ -42,6 +42,7 @@ fn host(sshd: &Sshd) -> Host {
         id: HostId::from(format!("timeout-{:?}", sshd.service)),
         name: "timeout".into(),
         tags: Vec::new(),
+        icon: None,
         address: sshd.host.clone(),
         port: sshd.port,
         user: sshd.user.into(),

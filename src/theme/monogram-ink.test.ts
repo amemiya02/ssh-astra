@@ -4,7 +4,8 @@ import { ansiHues, contrast, monogramInk, tileAlpha, tileBackings, tileFill } fr
 import { appThemeList } from "./themes";
 
 describe.each(appThemeList.map((theme) => [theme.name, theme] as const))("monogram tiles in %s", (_name, theme) => {
-  it("reads at AA (4.5:1) on every tile, whatever the tile sits on", () => {
+  it("reads at AA (4.5:1) on Host icons and initials, including the active tab surface", () => {
+    expect(tileBackings(theme)).toContain(theme.ui.surface);
     for (const hue of ansiHues) {
       const ink = monogramInk(theme, hue);
       for (const backing of tileBackings(theme)) {

@@ -80,6 +80,7 @@ impl Fixture {
             id: HostId::from("counted".to_owned()),
             name: "counted sshd".into(),
             tags: Vec::new(),
+            icon: None,
             address: sshd.host.clone(),
             port: sshd.port,
             user: sshd.user.into(),
@@ -140,6 +141,7 @@ fn draft(host: &Host) -> HostDraft {
     HostDraft {
         name: host.name.clone(),
         tags: Vec::new(),
+        icon: None,
         address: host.address.clone(),
         port: host.port,
         user: host.user.clone(),
@@ -389,6 +391,7 @@ fn behind(name: &str, jump: &Host) -> Host {
         id: HostId::from(format!("behind-{name}")),
         name: name.into(),
         tags: Vec::new(),
+        icon: None,
         address: name.into(),
         port: 22,
         user: support::USER.into(),

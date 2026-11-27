@@ -37,6 +37,7 @@ fn host(sshd: &Sshd) -> Host {
         id: HostId::from("forward-target".to_owned()),
         name: "ssh".into(),
         tags: Vec::new(),
+        icon: None,
         address: sshd.host.clone(),
         port: sshd.port,
         user: sshd.user.into(),

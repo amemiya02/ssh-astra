@@ -111,6 +111,7 @@ fn host(sshd: &Sshd, auth: HostAuth) -> Host {
         id: HostId::from(format!("vault-{}", sshd.port)),
         name: "docker sshd".into(),
         tags: Vec::new(),
+        icon: None,
         address: sshd.host.clone(),
         port: sshd.port,
         user: sshd.user.into(),
@@ -532,6 +533,7 @@ fn draft(sshd: &Sshd, auth: HostAuth) -> HostDraft {
     HostDraft {
         name: format!("docker {}", sshd.port),
         tags: Vec::new(),
+        icon: None,
         address: sshd.host.clone(),
         port: sshd.port,
         user: sshd.user.into(),
