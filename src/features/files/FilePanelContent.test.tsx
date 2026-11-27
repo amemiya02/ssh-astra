@@ -141,12 +141,13 @@ describe("a File panel following its Terminal's cd", () => {
         </FilePanelDockContext>,
       ),
     );
-    const pathBars = () => [...container.querySelectorAll<HTMLInputElement>('input[aria-label="Path"]')];
-    expect(pathBars().map((input) => input.value)).toEqual(["/etc"]);
+    const pathBars = () => [...container.querySelectorAll('nav[aria-label="Path"]')]
+      .map((bar) => [...bar.querySelectorAll("button")].map((crumb) => crumb.textContent));
+    expect(pathBars()).toEqual([["/", "etc"]]);
 
     await act(async () => terminalCwds.report(pane.id, "/srv/www"));
 
-    expect(pathBars().map((input) => input.value)).toEqual(["/srv/www"]);
+    expect(pathBars()).toEqual([["/", "srv", "www"]]);
     container.remove();
   });
 });

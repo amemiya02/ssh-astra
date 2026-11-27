@@ -1,8 +1,10 @@
 import { useDraggable } from "@dnd-kit/core";
 import {
+  ArrowLeft,
   ArrowRight,
   ArrowUp,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   Copy,
   Download,
@@ -22,6 +24,7 @@ import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, 
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/IconButton";
 import {
   ContextMenu,
@@ -30,6 +33,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { currentPlatform, matchFileHistoryShortcut, shortcutLabel } from "@/features/workspace/shortcuts";
 import type { FileEntry } from "@/lib/ipc/files";
 import { writeClipboardText } from "@/lib/ipc/system";
 import { useSetting } from "@/lib/storage";
@@ -81,10 +85,26 @@ export function FileBrowser({
   const path = useStore(store, (s) => s.path);
   const error = useStore(store, (s) => s.error);
   const [operation, setOperation] = useState<FileOperation | null>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const focusPanel = () => panel.current?.focus({ preventScroll: true });
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const target = event.target;
+    if (event.defaultPrevented || event.nativeEvent.isComposing || !(target instanceof Element) ||
+      !event.currentTarget.contains(target) || target.closest("input, textarea, select, [contenteditable]")) return;
+    const command = matchFileHistoryShortcut(event);
+    if (!command) return;
+    event.preventDefault();
+    const state = store.getState();
+    if (command === "fileBack" ? !state.canGoBack : !state.canGoForward) return;
+    // The path bar and table remount on navigation. Keep focus inside the panel.
+    focusPanel();
+    void (command === "fileBack" ? state.goBack() : state.goForward());
+  };
   return (
-    <div className="@container flex h-full flex-col">
+    <div ref={panel} tabIndex={-1} onKeyDown={onKeyDown}
+      className="@container focus-visible:ring-ring/50 flex h-full flex-col outline-none focus-visible:ring-[3px] focus-visible:ring-inset">
       {/* Sibling keys must differ: PathBar and FileTable sharing the path as key made React keep the old path bar. */}
-      <PathBar key={`path:${path ?? ""}`} store={store} onOperation={setOperation} />
+      <PathBar key={`path:${path ?? ""}`} store={store} focusPanel={focusPanel} onOperation={setOperation} />
       {error && path !== null && (
         <p role="alert" className="text-destructive px-3 pb-1.5 text-xs">
           {errorText(t, error, hostName)}
@@ -100,55 +120,139 @@ export function FileBrowser({
   );
 }
 
-/** The directory being shown, editable: type a path and press Enter to go there. */
-function PathBar({ store, onOperation }: { store: FileBrowserStore; onOperation(operation: FileOperation): void }) {
+/** Split a canonical listing path, keeping POSIX, Windows drive and UNC roots as one segment. */
+function pathCrumbs(path: string) {
+  const root = path.match(/^(?:\/\/(?:\?\/UNC\/)?[^/]+\/[^/]+\/?|[a-z]:\/|\/)/i)?.[0] ?? "";
+  const crumbs = root ? [{ name: root, path: root }] : [];
+  let prefix = root;
+  for (const name of path.slice(root.length).split("/").filter(Boolean)) {
+    prefix = prefix ? childPath(prefix, name) : name;
+    crumbs.push({ name, path: prefix });
+  }
+  return crumbs;
+}
+
+function PathBar({ store, focusPanel, onOperation }: {
+  store: FileBrowserStore;
+  focusPanel(): void;
+  onOperation(operation: FileOperation): void;
+}) {
   const { t } = useTranslation();
   const path = useStore(store, (s) => s.path);
-  // Remounted (keyed by path) when the directory changes, which resets the draft.
-  const [draft, setDraft] = useState(path ?? "");
+  const canGoBack = useStore(store, (s) => s.canGoBack);
+  const canGoForward = useStore(store, (s) => s.canGoForward);
+  const [draft, setDraft] = useState<string | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const breadcrumb = useRef<HTMLElement>(null);
+  const editing = draft !== null;
+  const crumbs = path !== null && !editing ? pathCrumbs(path) : [];
+  const platform = currentPlatform();
+
+  useLayoutEffect(() => {
+    if (editing) {
+      input.current?.focus();
+      input.current?.select();
+    } else if (breadcrumb.current) {
+      breadcrumb.current.scrollLeft = breadcrumb.current.scrollWidth;
+    }
+  }, [editing]);
+
+  const navigate = (run: () => Promise<void>) => {
+    focusPanel();
+    void run();
+  };
 
   return (
     <form
       className="flex shrink-0 items-center gap-1 p-2"
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setDraft(path ?? "");
-      }}
-      onSubmit={(event) => {
+      onSubmit={async (event) => {
         event.preventDefault();
-        if (draft.trim()) void store.getState().navigate(draft);
+        if (!draft?.trim()) return;
+        const editor = input.current;
+        await store.getState().navigate(draft);
+        const { error, loading } = store.getState();
+        if (error || loading) return;
+        if (document.activeElement === editor || (!editor?.isConnected && document.activeElement === document.body)) {
+          focusPanel();
+        }
+        setDraft(null);
       }}
     >
-      <div className="bg-muted flex h-7 min-w-0 flex-1 items-center gap-0.5 rounded-lg pr-2 pl-0.5">
+      <div className="flex items-center">
         <IconButton
-          type="button"
-          label={t("files.up")}
-          className="size-6"
+          type="button" label={t("files.back")} shortcut={shortcutLabel("fileBack", platform)}
+          aria-keyshortcuts="Alt+ArrowLeft" className="size-6" disabled={!canGoBack}
+          onClick={() => navigate(store.getState().goBack)}
+        >
+          <ArrowLeft />
+        </IconButton>
+        <IconButton
+          type="button" label={t("files.forward")} shortcut={shortcutLabel("fileForward", platform)}
+          aria-keyshortcuts="Alt+ArrowRight" className="size-6" disabled={!canGoForward}
+          onClick={() => navigate(store.getState().goForward)}
+        >
+          <ArrowRight />
+        </IconButton>
+        <IconButton type="button" label={t("files.up")} className="size-6"
           disabled={path === null || path === "/"}
-          onClick={() => void store.getState().up()}
+          onClick={() => navigate(store.getState().up)}
         >
           <ArrowUp />
         </IconButton>
-        <input
-          aria-label={t("files.path")}
-          value={draft}
-          spellCheck={false}
-          autoCapitalize="off"
-          autoCorrect="off"
-          className="min-w-0 flex-1 bg-transparent font-mono text-xs outline-none"
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") setDraft(path ?? "");
-            if (event.key === "Enter" && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              event.currentTarget.form?.requestSubmit();
-            }
-          }}
-        />
-        {draft !== (path ?? "") && (
-          <IconButton type="submit" label={t("files.goToPath")} className="size-6"
-            disabled={!draft.trim()} onPointerDown={(event) => event.preventDefault()}>
-            <ArrowRight />
-          </IconButton>
+      </div>
+      <div className={cn("bg-muted flex h-7 min-w-0 flex-1 items-center rounded-lg px-0.5",
+        editing && "focus-within:ring-ring/50 focus-within:ring-[3px]")}
+        onBlur={(event) => {
+          if (editing && !event.currentTarget.contains(event.relatedTarget)) setDraft(null);
+        }}
+      >
+        {editing ? (
+          <>
+            <input ref={input} aria-label={t("files.path")} value={draft}
+              spellCheck={false} autoCapitalize="off" autoCorrect="off"
+              className="min-w-0 flex-1 bg-transparent px-1 font-mono text-xs outline-none"
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing) return;
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  focusPanel();
+                  setDraft(null);
+                }
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  event.currentTarget.form?.requestSubmit();
+                }
+              }}
+            />
+            <IconButton type="submit" label={t("files.goToPath")} className="size-6"
+              disabled={!draft.trim()} onPointerDown={(event) => event.preventDefault()}>
+              <ArrowRight />
+            </IconButton>
+          </>
+        ) : (
+          <>
+            <nav ref={breadcrumb} aria-label={t("files.path")} className="min-w-0 overflow-x-auto [scrollbar-width:none]">
+              <ol className="flex w-max items-center">
+                {crumbs.map((crumb, index) => (
+                  <li key={crumb.path} className="flex items-center">
+                    {index > 0 && <ChevronRight aria-hidden="true" className="text-muted-foreground size-3" />}
+                    <Button type="button" variant="ghost" size="xs" title={crumb.path}
+                      aria-current={index === crumbs.length - 1 ? "location" : undefined}
+                      className="text-muted-foreground aria-[current=location]:text-foreground max-w-36 px-1 font-mono focus-visible:ring-inset"
+                      onClick={() => navigate(() => store.getState().navigate(crumb.path))}
+                    >
+                      <span className="truncate">{crumb.name}</span>
+                    </Button>
+                  </li>
+                ))}
+              </ol>
+            </nav>
+            <IconButton type="button" label={t("files.editPath")} className="h-6 min-w-6 flex-1 cursor-text justify-end px-1"
+              disabled={path === null} onClick={() => setDraft(path)}>
+              <Pencil className="size-3" />
+            </IconButton>
+          </>
         )}
       </div>
       <IconButton

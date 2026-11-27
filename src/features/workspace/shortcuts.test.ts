@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchShortcut, matchTerminalShortcut, shortcutLabel, type KeyChord } from "./shortcuts";
+import { matchFileHistoryShortcut, matchShortcut, matchTerminalShortcut, shortcutLabel, type KeyChord } from "./shortcuts";
 
 const chord = (key: string, mods: Partial<Omit<KeyChord, "key" | "code">> = {}, code?: string): KeyChord => ({
   key,
@@ -87,6 +87,24 @@ describe("shortcutLabel", () => {
     expect(shortcutLabel("splitDown", "mac")).toBe("⇧⌘D");
     expect(shortcutLabel("newTab", "other")).toBe("Ctrl+Shift+T");
     expect(shortcutLabel("splitRight", "other")).toBe("Ctrl+Shift+E");
+  });
+});
+
+describe("File panel history shortcuts", () => {
+  it("leaves Alt+Left and Alt+Right available to the focused panel", () => {
+    const back = chord("ArrowLeft", { altKey: true });
+    const forward = chord("ArrowRight", { altKey: true });
+    expect(matchFileHistoryShortcut(back)).toBe("fileBack");
+    expect(matchFileHistoryShortcut(forward)).toBe("fileForward");
+    expect(matchFileHistoryShortcut(chord("ArrowLeft", { altKey: true, shiftKey: true }))).toBeNull();
+    for (const platform of ["mac", "other"] as const) {
+      expect(matchShortcut(back, platform, "app")).toBeNull();
+      expect(matchShortcut(forward, platform, "terminal")).toBeNull();
+      expect(matchTerminalShortcut(back, platform)).toBeNull();
+      expect(matchTerminalShortcut(forward, platform)).toBeNull();
+    }
+    expect(shortcutLabel("fileBack", "mac")).toBe("⌥←");
+    expect(shortcutLabel("fileForward", "other")).toBe("Alt+→");
   });
 });
 

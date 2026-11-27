@@ -401,6 +401,12 @@ Settings lists every theme as a card (10px radius, 6px padding, auto-fill at min
 - **Focus:** border turns `ring` with a 3px `ring/50` halo.
 - **Error:** border turns `destructive` with a `destructive/20` halo; message below in `text-xs` red.
 
+### File panel path bar
+
+- Back, Forward and Up sit beside a compact `muted` field. Each monospaced breadcrumb opens that directory. Long paths scroll horizontally and show the current directory at the right.
+- Click the blank space or edit icon to select the path for editing. Enter opens an absolute path, `~` or `~/x`. Escape or leaving the field restores the breadcrumbs. Navigation errors appear below the path bar.
+- Alt+Left and Alt+Right browse history when focus is in the File panel outside text fields. Each panel keeps its own history in memory. Opening a different directory from a previous point in history replaces the forward entries.
+
 ### Menus, tooltips, dialogs
 - **Menus:** `raised` fill, 1px border, 8px radius, 4px padding, `shadow-overlay`; items 6px radius, `accent` on focus, destructive items red.
 - **Tooltips:** inverted (foreground fill, ground text), `text-xs`, 8px radius.
