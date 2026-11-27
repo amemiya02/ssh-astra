@@ -16,7 +16,7 @@ use crate::wildcard;
 
 pub use install::{ConfigExport, ExportError, IncludePlan, INCLUDE_LINE};
 
-const HEADER: &str = "# Managed by SSH Astra.\n";
+pub(crate) const HEADER: &str = "# Managed by SSH Astra.\n";
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct UserAliases(Vec<Vec<String>>);
@@ -24,6 +24,13 @@ pub struct UserAliases(Vec<Vec<String>>);
 impl UserAliases {
     pub fn new(blocks: Vec<Vec<String>>) -> Self {
         Self(blocks)
+    }
+
+    fn has_literal(&self, alias: &str) -> bool {
+        self.0
+            .iter()
+            .flatten()
+            .any(|pattern| pattern.eq_ignore_ascii_case(alias))
     }
 
     fn contains(&self, alias: &str) -> bool {
@@ -116,7 +123,11 @@ pub fn generate(
     user_aliases: &UserAliases,
     settings: &ConnectionSettings,
 ) -> GeneratedConfig {
-    let mut named: Vec<_> = hosts.iter().map(|host| (alias(&host.name), host)).collect();
+    let mut named: Vec<_> = hosts
+        .iter()
+        .filter(|host| host.open_ssh_source.is_none())
+        .map(|host| (alias(&host.name), host))
+        .collect();
     named.sort_by(|(a, _), (b, _)| a.cmp(b));
     let mut seen = HashSet::new();
     let duplicates: HashSet<_> = named
@@ -142,19 +153,35 @@ pub fn generate(
         }
     }
 
+    let user_jumps: HashMap<_, _> = hosts
+        .iter()
+        .filter_map(|host| {
+            let source = host.open_ssh_source.as_ref()?;
+            let name = source.alias.as_str();
+            let safe = !name.is_empty()
+                && !name.starts_with('-')
+                && !name.eq_ignore_ascii_case("none")
+                && name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'));
+            (safe && !source.missing && user_aliases.has_literal(name)).then_some((&host.id, name))
+        })
+        .collect();
+
     let mut text = HEADER.to_owned();
     for (alias, host) in &named {
         let Some((_, _, entry)) = entries.get(&host.id) else {
             continue;
         };
-        // ProxyJump invokes ssh on the named alias, which can have its own
-        // ProxyJump. Every hop must be exported to preserve the saved route.
+        // OpenSSH follows the Jump alias's own settings. A linked user alias
+        // already has a declaration, so the user config supplies the rest of its route.
         let mut route = HashSet::from([&host.id]);
         let mut hop = host.jump_host.as_ref();
         let mut available = true;
         while let Some(id) = hop {
             match entries.get(id) {
                 Some((_, host, _)) if route.insert(id) => hop = host.jump_host.as_ref(),
+                None if user_jumps.contains_key(id) => break,
                 _ => {
                     available = false;
                     break;
@@ -168,7 +195,11 @@ pub fn generate(
 
         text.push_str(entry);
         if let Some(jump) = host.jump_host.as_ref() {
-            let _ = writeln!(text, "    ProxyJump {}", entries[jump].0);
+            let alias = user_jumps
+                .get(jump)
+                .copied()
+                .unwrap_or_else(|| entries[jump].0);
+            let _ = writeln!(text, "    ProxyJump {alias}");
         }
         for forward in &host.forwards {
             match forward_entry(&forward.kind, forward.auto_start) {

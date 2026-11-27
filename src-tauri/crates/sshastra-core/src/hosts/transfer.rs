@@ -42,6 +42,7 @@ impl HostStore {
         let mut hosts = self.library.hosts.clone();
         for host in &mut hosts {
             host.agent_access = AgentPermission::Off;
+            host.open_ssh_source = None;
         }
         serde_json::to_string_pretty(&FileRef {
             format: Some(EXPORT_FORMAT),
@@ -112,6 +113,7 @@ impl HostStore {
             // Automatically connecting can run the Host's ProxyCommand.
             copy.open_on_startup = false;
             copy.agent_access = AgentPermission::Off;
+            copy.open_ssh_source = None;
             copy.group_id = host.group_id.as_ref().and_then(|g| groups.get(g).cloned());
             for forward in &mut copy.forwards {
                 forward.id = ForwardId::generate();

@@ -140,6 +140,7 @@ fn host(sshd: &Sshd, auth: HostAuth) -> Host {
         default_directory: None,
         forwards: Vec::new(),
         bookmarks: Vec::new(),
+        open_ssh_source: None,
         group_id: None,
     }
 }

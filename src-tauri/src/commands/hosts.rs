@@ -14,7 +14,6 @@ use sshastra_core::hosts::{
     Bookmark, Group, GroupId, Host, HostDraft, HostId, HostStore, HostTree, ImportReport,
     ImportSummary,
 };
-use sshastra_core::ssh_config::{parse_user_config, ParseContext};
 use sshastra_core::terminal::{CommandHistory, TerminalRegistry};
 use tauri::{ipc::Channel, State, WebviewWindow};
 use tokio::sync::watch;
@@ -337,9 +336,27 @@ pub async fn hosts_import_source(
     hosts: State<'_, HostsState>,
     source: HostImportSource,
 ) -> CommandResult<SourceImportResult> {
-    let parsed = tauri::async_runtime::spawn_blocking(move || read_import_source(source))
+    let state = hosts.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || import_source(&state, source))
         .await
-        .map_err(std::io::Error::other)??;
+        .map_err(std::io::Error::other)?
+}
+
+fn import_source(
+    hosts: &HostsState,
+    source: HostImportSource,
+) -> CommandResult<SourceImportResult> {
+    if matches!(source, HostImportSource::SshConfig) {
+        let config = hosts.open_ssh().read_user_config()?;
+        return hosts.edit(|store| {
+            let report = store.import_open_ssh(config)?;
+            Ok(SourceImportResult {
+                tree: store.tree(),
+                report,
+            })
+        });
+    }
+    let parsed = read_import_source(source)?;
     hosts.edit(|store| {
         let report = store.import_config(parsed)?;
         Ok(SourceImportResult {
@@ -351,7 +368,7 @@ pub async fn hosts_import_source(
 
 fn read_import_source(source: HostImportSource) -> std::io::Result<ParsedConfig> {
     match source {
-        HostImportSource::SshConfig => read_ssh_config(),
+        HostImportSource::SshConfig => unreachable!("handled by the user config import"),
         HostImportSource::Csv { path } => {
             std::fs::read_to_string(path).map(|text| parse_csv(&text))
         }
@@ -417,21 +434,7 @@ fn read_import_folder(path: &Path, source: SessionFolderSource) -> std::io::Resu
     Ok(parsed)
 }
 
-/// A missing `~/.ssh/config` imports nothing.
-fn read_ssh_config() -> std::io::Result<ParsedConfig> {
-    let var = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty());
-    let home = var(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
-        .map(PathBuf::from)
-        .ok_or_else(|| std::io::Error::other("no home directory"))?;
-    parse_user_config(
-        &home,
-        &ParseContext {
-            local_user: local_username(),
-        },
-    )
-}
-
-fn local_username() -> String {
+pub(super) fn local_username() -> String {
     std::env::var_os(if cfg!(windows) { "USERNAME" } else { "USER" })
         .filter(|user| !user.is_empty())
         .map(|user| user.to_string_lossy().into_owned())

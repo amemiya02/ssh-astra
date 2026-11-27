@@ -114,6 +114,7 @@
     }
   },
   "hosts": {
+    "openSshMissing": "OpenSSH alias missing",
     "title": "Hosts",
     "basicInfo": "Basic information",
     "advanced": "Advanced",
@@ -1481,17 +1482,36 @@
     },
     "connection": {
       "openSshSync": {
-        "label": "Sync Hosts to OpenSSH",
-        "description": "Keep an OpenSSH config fragment up to date so you can connect using saved Host aliases on the command line.",
+        "label": "Sync Hosts with OpenSSH",
+        "description": "Apply changes from ~/.ssh/config to imported Hosts and make saved Host aliases available on the command line.",
         "confirmTitle": "Enable OpenSSH sync?",
         "confirmAdd": "SSH Astra will add this line at the top of ~/.ssh/config and write its own config fragment.",
         "confirmExisting": "An existing Include loads the SSH Astra config fragment. Enabling sync writes the fragment.",
         "confirm": "Enable sync",
         "cancel": "Cancel",
-        "refresh": "Refresh export",
+        "refresh": "Sync now",
         "removeInclude": "Sync is off. If SSH Astra added this line, you can remove it from ~/.ssh/config.",
         "written_one": "{{count}} alias available in OpenSSH",
         "written_other": "{{count}} aliases available in OpenSSH",
+        "read": {
+          "review": "Review import",
+          "title": "Import from OpenSSH",
+          "description": "Review the config entries to add to SSH Astra.",
+          "dependencies": "Required Jump hosts",
+          "proxyCommands": "ProxyCommands used by these Hosts",
+          "import": "Import Hosts",
+          "updated": "Updated from OpenSSH",
+          "missing": "Aliases missing from your OpenSSH config",
+          "imported": "Imported from OpenSSH",
+          "invalid": "Config entries that could not be applied",
+          "awaitingJump": "Updates waiting for a required Jump host",
+          "includeIncomplete": "An OpenSSH Include could not be read. Sync kept the saved settings.",
+          "readFailed": "Could not apply changes from your OpenSSH config.",
+          "changed": "The config or available aliases changed. Sync again to review the latest entries.",
+          "failed": "Could not import the OpenSSH entries.",
+          "startupOffer": "Your OpenSSH config has entries available to import.",
+          "dismiss": "Dismiss"
+        },
         "problems": {
           "configChanged": "The config or approval changed. Review the Include again.",
           "missingInclude": "The Include is missing. Turn sync off and back on to review the change.",

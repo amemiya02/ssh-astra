@@ -23,6 +23,7 @@ import { ConnectionDot } from "@/features/connect/ConnectionDot";
 import type { HostConnection } from "@/features/connect/hostConnection";
 import { privacyModeSetting } from "@/features/workspace/privacy-mode";
 import { HostMonogram } from "./HostMonogram";
+import { OpenSshMissing } from "./openSshSync";
 import { hostMenuEntries } from "./hostMenu";
 import { RowContextMenu, RowMoreMenu, type MenuEntry } from "./RowMenu";
 
@@ -415,6 +416,7 @@ function HostRowButton({
         <span className="truncate font-medium">
           <Highlighted text={host.name} indexes={matches?.name} />
         </span>
+        <OpenSshMissing host={host} />
         {connection && (
           <>
             <ConnectionDot state={connection} />

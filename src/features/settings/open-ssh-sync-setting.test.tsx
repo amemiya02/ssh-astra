@@ -74,3 +74,46 @@ it("previews the exact Include before enabling and stays off when cancelled", as
     vi.clearAllMocks();
   }
 });
+
+it("offers new OpenSSH aliases and waits for explicit confirmation before importing them", async () => {
+  startI18n();
+  await i18n.changeLanguage("en");
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  await startSettings({
+    load: async () => ({
+      openSshSync: {
+        enabled: true, readApproval: 24,
+        read: {
+          available: ["build"], dependencies: ["gateway"], updated: ["web"], missing: ["old"], imported: [],
+          awaitingJump: [], issues: [], proxyCommands: [{ host: "build", command: "example-proxy %h" }],
+        },
+      },
+    }),
+    save: async () => {},
+  });
+  vi.mocked(invoke).mockResolvedValue(undefined);
+  const container = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(container);
+  function button(label: string) {
+    return Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
+      .find((button) => button.textContent === label)!;
+  }
+  try {
+    act(() => root.render(<OpenSshSyncSetting />));
+    expect(container.textContent).toContain("web");
+    expect(container.textContent).toContain("old");
+    await act(() => button("Review import").click());
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog?.textContent).toContain("build");
+    expect(dialog?.textContent).toContain("gateway");
+    expect(dialog?.textContent).toContain("example-proxy %h");
+    expect(invoke).not.toHaveBeenCalled();
+    await act(() => button("Import Hosts").click());
+    expect(invoke).toHaveBeenCalledWith("ssh_config_sync_import", { approval: 24 });
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  }
+});

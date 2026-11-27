@@ -113,6 +113,7 @@ impl Shell {
             default_directory: None,
             forwards: Vec::new(),
             bookmarks: Vec::new(),
+            open_ssh_source: None,
         };
         let mut options = RemoteTerminalOptions::for_host(&host, shell_integration);
         options.initial_cwd = initial_cwd.map(str::to_owned);

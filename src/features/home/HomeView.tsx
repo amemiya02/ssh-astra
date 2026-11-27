@@ -9,6 +9,7 @@ import { ConnectionDot } from "@/features/connect/ConnectionDot";
 import type { HostConnection } from "@/features/connect/hostConnection";
 import { connectionSearch, quickConnectLabel } from "@/features/connect/quick-connect";
 import { HostMonogram } from "@/features/hosts/HostMonogram";
+import { OpenSshMissing } from "@/features/hosts/openSshSync";
 import { Highlighted } from "@/features/hosts/HostList";
 import { HostSortMenu } from "@/features/hosts/HostSortMenu";
 import { HostTagFilter } from "@/features/hosts/HostTagFilter";
@@ -274,8 +275,9 @@ function HomeHost({
           </HostMonogram>
           <span className={cn("min-w-0 flex-1", listView && "flex flex-wrap items-center gap-x-3 gap-y-1")}>
             <span className={cn("block min-w-0", listView && "grow basis-40")}>
-              <span className="block truncate font-medium">
-                <Highlighted text={host.name} indexes={matches?.name} />
+              <span className="flex min-w-0 items-center gap-1.5 font-medium">
+                <span className="truncate"><Highlighted text={host.name} indexes={matches?.name} /></span>
+                <OpenSshMissing host={host} />
               </span>
               {!privacyMode && (
                 <span className="text-muted-foreground block truncate font-mono text-xs">
