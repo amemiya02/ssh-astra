@@ -4,6 +4,7 @@ import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { hostsStore } from "@/features/hosts/hostsStore";
 import { currentPlatform } from "@/features/workspace/shortcuts";
 import { emptyTabs, newPane, tabsReducer, type TabsAction, type TabsState } from "@/features/workspace/tabs";
 import { restoreWorkspaceLayout, workspaceLayoutSetting } from "@/features/workspace/workspace-layout";
@@ -23,7 +24,8 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
     },
     invoke: vi.fn(async (command: string) => {
       if (command === "remote_terminal_open" || command === "local_terminal_open") return ++nextTerminalId;
-      if (command === "transfers_watch" || command === "forwards_watch") return [];
+      if (command === "transfers_watch" || command === "forwards_watch" || command === "connections_watch") return [];
+      if (command === "host_tree") return { hosts: savedHosts, groups: [] };
     }),
   };
 });
@@ -50,6 +52,7 @@ const host: Host = {
   id: "test-host", name: "Test Host", address: "example.com", port: 22, user: "deploy",
   auth: { type: "password" }, jumpHost: null, groupId: null, forwards: [],
 };
+let savedHosts: Host[] = [];
 const remote = (id: string) => newPane({ kind: "remote-terminal", host }, id);
 const local = (id: string) => newPane({ kind: "local-terminal" }, id);
 
@@ -97,6 +100,10 @@ async function unmount() {
 
 afterEach(async () => {
   await unmount();
+  if (savedHosts.length > 0) {
+    savedHosts = [];
+    await hostsStore.getState().load();
+  }
   vi.mocked(invoke).mockClear();
   vi.unstubAllGlobals();
 });
@@ -486,15 +493,93 @@ it("marks connected Terminals in the chosen Broadcast scope and lets the status 
   expect(broadcastMarks()).toEqual([]);
 });
 
-async function paletteAction(title: string) {
+async function openPalette() {
   const modifiers = currentPlatform() === "mac" ? { metaKey: true } : { ctrlKey: true, shiftKey: true };
   await act(async () => document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", {
     key: "k", code: "KeyK", bubbles: true, cancelable: true, ...modifiers,
   })));
+}
+
+async function paletteAction(title: string) {
+  await openPalette();
   const item = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((option) => option.textContent?.startsWith(title));
   expect(item, title).toBeDefined();
   await act(async () => item!.click());
 }
+
+it("masks Host details and tab titles while raw address searches still find the Host", async () => {
+  savedHosts = [host, { ...host, id: "unrelated", name: "Other Host", address: "unrelated.test" }];
+  await hostsStore.getState().load();
+  const privateTitle = `${host.user}@${host.address}`;
+  await render(workspace(
+    { type: "open", tabId: "work", pane: remote("work") },
+    { type: "retitle", paneId: "work", title: privateTitle },
+    { type: "open", tabId: "custom", pane: remote("custom") },
+    { type: "renameTab", id: "custom", title: privateTitle },
+    { type: "open", tabId: "home", pane: newPane({ kind: "home" }, "home") },
+  ));
+
+  expect(container?.textContent).toContain(privateTitle);
+  await paletteAction("Turn on privacy mode");
+  expect(container?.innerHTML.includes(host.address), "Host address appears in the DOM").toBe(false);
+  expect(container?.innerHTML.includes(host.user), "Host user appears in the DOM").toBe(false);
+  for (const id of ["tab-work", "tab-custom"]) {
+    const tab = document.getElementById(id)!;
+    expect(tab.textContent).toBe(host.name);
+    expect(tab.getAttribute("aria-label")).toContain(host.name);
+    expect(tab.title).toContain(host.name);
+  }
+
+  async function search(input: HTMLInputElement) {
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => {
+      setValue.call(input, host.address);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+
+  for (const label of ["Search Hosts", "Search Hosts by name, address or user"]) {
+    await search(document.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!);
+  }
+  expect(document.querySelector('[title="Double-click to connect"]')?.textContent).toContain(host.name);
+  expect(document.querySelector("#tabpanel-home")?.textContent).toContain(host.name);
+  expect(container?.textContent).not.toContain("Other Host");
+  expect(container?.textContent).not.toContain(host.address);
+
+  await openPalette();
+  await search(document.querySelector<HTMLInputElement>('input[placeholder="Search Hosts, tabs and actions"]')!);
+  const results = [...dialog()!.querySelectorAll('[role="option"]')];
+  expect(results).toHaveLength(1);
+  expect(results[0]?.textContent).toContain(host.name);
+  expect(results[0]?.outerHTML).not.toContain(host.address);
+  expect(results[0]?.outerHTML).not.toContain(host.user);
+});
+
+it("persists privacy mode and lets the status bar and palette toggle it", async () => {
+  const initialTabs = workspace({ type: "open", tabId: "work", pane: remote("work") });
+  const status = () => document.querySelector("footer")!;
+  const toggle = () => status().querySelector('[aria-label="Privacy mode"]');
+
+  await render(initialTabs);
+  expect(toggle()?.getAttribute("aria-pressed")).toBe("false");
+  expect(status().textContent).toContain("deploy@example.com");
+
+  await clickButton("Privacy mode", status());
+  expect(toggle()?.getAttribute("aria-pressed")).toBe("true");
+  expect(status().textContent).toContain(host.name);
+  expect(status().innerHTML).not.toContain(host.address);
+  expect(status().innerHTML).not.toContain(host.user);
+
+  await unmount();
+  await startSettings(settingsBackend);
+  await render(initialTabs);
+  expect(toggle()?.getAttribute("aria-pressed")).toBe("true");
+  expect(status().innerHTML).not.toContain(host.address);
+
+  await paletteAction("Turn off privacy mode");
+  expect(toggle()?.getAttribute("aria-pressed")).toBe("false");
+  expect(status().textContent).toContain("deploy@example.com");
+});
 
 it("starts and stops Broadcast from the palette and ends it when its tab or window closes", async () => {
   const initialTabs = workspace(

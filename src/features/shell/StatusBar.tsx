@@ -1,12 +1,14 @@
-import { ArrowDownUp, Radio, Settings, Waypoints } from "lucide-react";
+import { ArrowDownUp, Eye, EyeOff, Radio, Settings, Waypoints } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
 import { formatSize } from "@/features/files/fileList";
 import { UpdateNotice } from "@/features/updates/UpdateNotice";
 import type { BroadcastScope } from "@/features/workspace/broadcast";
+import { privacyModeSetting, togglePrivacyMode } from "@/features/workspace/privacy-mode";
 import type { ReconnectProgress } from "@/features/workspace/tabs";
 import type { Host } from "@/lib/ipc/hosts";
+import { useSetting } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import { ThemeMenu } from "@/theme/ThemeMenu";
 import { currentPlatform, shortcutLabel } from "@/features/workspace/shortcuts";
@@ -49,7 +51,9 @@ export function StatusBar({
   onOpenSettings(): void;
 }) {
   const { t } = useTranslation();
+  const [privacyMode] = useSetting(privacyModeSetting);
   const { connected, reconnecting, forwards, transfers, activeRemote, broadcast } = info;
+  const activeRemoteLabel = activeRemote && (privacyMode ? activeRemote.name : address(activeRemote));
   const broadcastStatus = broadcast?.tabTitle
     ? t("broadcast.namedTabStatus", { title: broadcast.tabTitle })
     : t(broadcast?.scope === "tab" ? "broadcast.tabStatus" : "broadcast.windowStatus");
@@ -84,7 +88,7 @@ export function StatusBar({
         {forwards.length > 0 && (
           <Segment
             as="button"
-            title={t("status.forwards", { list: forwards.join(", ") })}
+            title={privacyMode ? undefined : t("status.forwards", { list: forwards.join(", ") })}
             onClick={onShowForwards}
           >
             <Waypoints className="size-3" aria-hidden />
@@ -107,11 +111,20 @@ export function StatusBar({
         <UpdateNotice />
       </div>
       <div className="flex shrink-0 items-center gap-0.5 pr-1.5">
-        {activeRemote && (
-          <span className="mr-1 truncate font-mono" title={address(activeRemote)}>
-            {address(activeRemote)}
+        {activeRemoteLabel && (
+          <span className={cn("mr-1 truncate", !privacyMode && "font-mono")} title={activeRemoteLabel}>
+            {activeRemoteLabel}
           </span>
         )}
+        <IconButton
+          label={t("privacyMode.label")}
+          aria-pressed={privacyMode}
+          tooltipSide="top"
+          className="size-5 aria-pressed:bg-selected aria-pressed:text-primary"
+          onClick={togglePrivacyMode}
+        >
+          {privacyMode ? <EyeOff className="size-3.5" aria-hidden /> : <Eye className="size-3.5" aria-hidden />}
+        </IconButton>
         <ThemeMenu />
         <IconButton label={t("settings.open")} shortcut={settingsShortcut} className="size-5" onClick={onOpenSettings}>
           <Settings className="size-3.5" />
