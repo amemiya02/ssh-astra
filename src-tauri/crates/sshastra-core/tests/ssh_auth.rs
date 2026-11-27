@@ -10,6 +10,10 @@ use std::sync::{Arc, Mutex};
 
 use sshastra_core::hosts::{Host, HostAuth, HostId};
 use sshastra_core::known_hosts::KnownHosts;
+#[cfg(unix)]
+use sshastra_core::settings::SettingsStore;
+#[cfg(unix)]
+use sshastra_core::ssh::ConnectionSettings;
 use sshastra_core::ssh::{
     Agent, BoxFuture, ConnectError, ConnectionManager, HostKeyDecision, HostKeyPrompt,
     KeyboardInteractivePrompt, PassphrasePrompt, PasswordPrompt, Prompter, Secret,
@@ -554,8 +558,11 @@ impl TestAgent {
     }
 
     fn manager(&self, fx: &Fixture) -> ConnectionManager {
-        fx.manager()
-            .with_agent(Agent::Socket(self.dir.path().join("agent.sock")))
+        fx.manager().with_agent(Agent::Socket(self.socket()))
+    }
+
+    fn socket(&self) -> PathBuf {
+        self.dir.path().join("agent.sock")
     }
 }
 
@@ -618,6 +625,46 @@ async fn a_key_in_the_agent_logs_in_without_asking_anything() {
 }
 
 #[cfg(unix)]
+#[tokio::test]
+async fn the_saved_agent_path_authenticates_and_a_missing_socket_falls_back_to_password() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let fixture = Fixture::new();
+    let agent = TestAgent::holding(&["id_ed25519"]);
+    let manager = fixture.manager().with_home_dir(agent.dir.path());
+    let mut store = SettingsStore::open(fixture.dir.path().join("settings.json")).unwrap();
+    let target = host(&sshd, HostAuth::Password);
+
+    store
+        .set(
+            ConnectionSettings::SECTION,
+            serde_json::json!({ "agentPath": "~/agent.sock" }),
+        )
+        .unwrap();
+    manager.apply_settings(&store.section(ConnectionSettings::SECTION));
+    let silent = ScriptedPrompter::silent();
+    let connected = manager.connect(&target, silent.clone()).await.unwrap();
+    assert!(silent.asked().is_empty(), "{:?}", silent.asked());
+
+    store
+        .set(
+            ConnectionSettings::SECTION,
+            serde_json::json!({ "agentPath": "~/missing-agent.sock" }),
+        )
+        .unwrap();
+    manager.apply_settings(&store.section(ConnectionSettings::SECTION));
+    let shared = manager.connect(&target, silent).await.unwrap();
+    assert!(Arc::ptr_eq(&connected, &shared));
+
+    let mut another = target;
+    another.id = HostId::from("auth-fallback-after-agent-path-change".to_owned());
+    let password = ScriptedPrompter::answering(&[Some(&[sshd.password])]);
+    manager.connect(&another, password.clone()).await.unwrap();
+    assert_eq!(password.asked(), ["password retry=false"]);
+}
+
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn agent_keys_are_tried_before_named_and_default_key_files() {
     let Some(sshd) = support::sshd(Service::KeyOnly) else {
@@ -655,9 +702,24 @@ async fn agent_forwarding_lists_the_test_key_only_for_opted_in_hosts() {
     let fingerprint = test_public_key.fingerprint(russh::keys::HashAlg::Sha256);
     let agent = TestAgent::holding(&["id_ed25519"]);
     let fixture = Fixture::new();
-    let manager = agent.manager(&fixture);
+    let manager = fixture.manager();
+    let configured = ConnectionSettings {
+        agent_path: agent.socket().to_str().unwrap().to_owned(),
+        ..ConnectionSettings::default()
+    };
+    let missing = ConnectionSettings {
+        agent_path: fixture
+            .dir
+            .path()
+            .join("missing-agent.sock")
+            .to_str()
+            .unwrap()
+            .to_owned(),
+        ..ConnectionSettings::default()
+    };
 
     for forward in [false, true] {
+        manager.apply_settings(&configured);
         let mut target = serde_json::to_value(host(&sshd, HostAuth::Password)).unwrap();
         target["forwardAgent"] = forward.into();
         target["id"] = format!("forward-agent-{forward}").into();
@@ -669,6 +731,7 @@ async fn agent_forwarding_lists_the_test_key_only_for_opted_in_hosts() {
                 )
                 .await
                 .unwrap();
+            manager.apply_settings(&missing);
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
             let mut shell = connection
                 .open_shell(

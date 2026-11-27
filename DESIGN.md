@@ -420,6 +420,8 @@ The top search field filters settings across all categories. Results keep their 
 
 The left navigation lists Appearance, Terminal, Files, Connection, Transfers, Updates, and Diagnostics in that order when available. Appearance includes workspace layout and interface language. Updates and Diagnostics use the installed app's native features. The current category uses the `selected` surface, and narrow workspaces place the categories in a horizontally scrolling row above the controls. Shortcuts, Notifications, and Agent access can appear when they have settings available.
 
+Settings → Connection accepts a custom Unix agent socket or Windows named pipe in a text field. The field saves on Enter or blur. Clearing it returns new Connections to the system agent. A Connection uses the same source for authentication and agent forwarding when its Host enables forwarding.
+
 Appearance applies interface zoom immediately and remembers the selected percentage from 90% to 125%. The interface font takes a single local font family name and falls back to the system UI stack when that family is unavailable or the field is blank. The Terminal category has its own font family and size controls.
 
 Terminal keyword highlighting uses the active Terminal palette. Settings → Terminal offers a switch for the built-in rules and a list of custom text or regular-expression rules. Matches use xterm decorations in the visible normal buffer.
@@ -449,6 +451,11 @@ Settings lists every theme as a card (10px radius, 6px padding, auto-fill at min
 - In the remote row menu, Compress takes the selection and opens a name dialog for a new .tar.gz in the current folder. Extract appears for a single supported archive and confirms the new sibling folder. Keep conflicts, missing tools and other operation errors in the dialog.
 - The footer shows item and selected counts after filtering. When selected entries are hidden, show their count alongside the visible selection.
 - **Show another Host's File panel** opens a second File panel for a connected Host with an open Terminal. The panels stack in the right dock and sit side by side in the bottom dock. Drop selected entries into the other panel or onto a folder row there. Copy and Paste also work when switching Terminal tabs. Transfers shows both Host names, with both full paths in the row tooltip.
+
+### Transfer row
+
+- Queued and running rows offer Pause beside Cancel. Paused rows keep their progress bar, show Paused in the detail line, and offer Resume beside Cancel. Transfers waiting on a destination conflict can be paused from the conflict dialog.
+- A paused transfer frees its queue slot after the current write closes. Resume takes the next available slot in queue order and verifies any staged bytes before continuing. An overwrite that writes directly to the destination finishes its current file before pausing.
 
 ### Menus, tooltips, dialogs
 - **Menus:** `raised` fill, 1px border, 8px radius, 4px padding, `shadow-overlay`; items 6px radius, `accent` on focus, destructive items red.

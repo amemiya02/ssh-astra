@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowRight, ArrowUp, Check, ChevronDown, ChevronRight, RotateCw, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, Check, ChevronDown, ChevronRight, Pause, Play, RotateCw, Trash2, X } from "lucide-react";
 import { useLayoutEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
@@ -23,7 +23,7 @@ import {
 
 /**
  * The transfer list inside the File panel (DESIGN.md "Transfer row"): Active and Done, each
- * row with progress, speed and time left, cancel or retry. Collapsible to its header; hidden
+ * row with progress, speed, time left and the actions available for its current state. Collapsible to its header; hidden
  * while there are no transfers.
  */
 export function TransfersPanel({ dock, visible }: { dock: FilePanelDock; visible: boolean }) {
@@ -118,6 +118,9 @@ function TransferRow({ transfer, speed }: { transfer: Transfer; speed: number | 
     case "queued":
       detail = t("transfers.state.queued");
       break;
+    case "paused":
+      detail = t("transfers.state.paused");
+      break;
     case "conflict":
       detail = t("transfers.state.conflict");
       break;
@@ -155,6 +158,24 @@ function TransferRow({ transfer, speed }: { transfer: Transfer; speed: number | 
         </span>
         {state.type !== "done" && !failed && (
           <span className="text-muted-foreground text-xs tabular-nums">{percent}%</span>
+        )}
+        {(state.type === "queued" || state.type === "running") && (
+          <IconButton
+            label={t("transfers.pause")}
+            className="size-6"
+            onClick={() => void transfersStore.getState().pause(transfer.id)}
+          >
+            <Pause />
+          </IconButton>
+        )}
+        {state.type === "paused" && (
+          <IconButton
+            label={t("transfers.resume")}
+            className="size-6"
+            onClick={() => void transfersStore.getState().resume(transfer.id)}
+          >
+            <Play />
+          </IconButton>
         )}
         {failed || state.type === "cancelled" ? (
           <>

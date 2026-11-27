@@ -294,15 +294,18 @@ impl Partial {
 pub(super) struct StageLease {
     pub(super) slot: Arc<StageSlot>,
     pub(super) partial: Arc<Partial>,
+    /// A paused transfer reserves its unique stage for its own resume.
+    pub(super) reserved: bool,
 }
 
 impl StageLease {
     /// Returns whether a live Connection is needed to finish cleanup.
     pub(super) async fn discard(&self, live: Option<&dyn RemoteFs>) -> bool {
         let mut current = self.slot.lock().await;
-        if !current
-            .as_ref()
-            .is_some_and(|p| Arc::ptr_eq(p, &self.partial))
+        if !self.reserved
+            && !current
+                .as_ref()
+                .is_some_and(|p| Arc::ptr_eq(p, &self.partial))
         {
             return false;
         }
@@ -317,7 +320,9 @@ impl StageLease {
                 if let Some(fs) = live.filter(|fs| fs.transfer_namespace() == namespace.as_deref())
                 {
                     if !connection_error(&self.discard_remote(fs, path).await) {
-                        *current = None;
+                        if !self.reserved {
+                            *current = None;
+                        }
                         return false;
                     }
                 }
@@ -334,7 +339,9 @@ impl StageLease {
                 }
             }
         }
-        *current = None;
+        if !self.reserved {
+            *current = None;
+        }
         false
     }
 
