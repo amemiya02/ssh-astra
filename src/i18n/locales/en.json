@@ -531,7 +531,8 @@
       "connection": "Connection",
       "language": "Language",
       "transfers": "Transfers",
-      "updates": "Updates"
+      "updates": "Updates",
+      "diagnostics": "Diagnostics"
     },
     "theme": {
       "follow": {
@@ -601,6 +602,17 @@
         "label": "Simultaneous transfers",
         "description": "How many uploads and downloads run at once; the rest wait their turn. A folder's files copy one after another."
       }
+    },
+    "diagnostics": {
+      "logs": "Log files",
+      "logsDescription": "View the application and crash logs on this computer.",
+      "report": "Diagnostic information",
+      "reportDescription": "Copy a report with Host and account details replaced by codes.",
+      "open": "Open log folder",
+      "copy": "Copy diagnostic information",
+      "copied": "Diagnostic information copied.",
+      "openFailed": "Could not open the log folder.",
+      "copyFailed": "Could not copy diagnostic information."
     },
     "updates": {
       "version": {

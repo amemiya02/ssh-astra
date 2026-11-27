@@ -103,6 +103,23 @@ pub enum FsError {
     Io(String),
 }
 
+impl FsError {
+    /// Log the category without including a path or a server error payload.
+    pub(crate) fn log_kind(&self) -> &'static str {
+        match self {
+            Self::NotConnected => "notConnected",
+            Self::NotFound(_) => "notFound",
+            Self::PermissionDenied(_) => "permissionDenied",
+            Self::NotADirectory(_) => "notADirectory",
+            Self::AlreadyExists(_) => "alreadyExists",
+            Self::TooLarge { .. } => "tooLarge",
+            Self::TimedOut => "timedOut",
+            Self::Protocol(_) => "protocol",
+            Self::Io(_) => "io",
+        }
+    }
+}
+
 pub type FsResult<T> = Result<T, FsError>;
 
 /// The most [`RemoteFs::read_file`] reads into memory: 10 MB.

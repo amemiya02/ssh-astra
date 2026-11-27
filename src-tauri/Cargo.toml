@@ -13,6 +13,7 @@ sshastra-core = { path = "crates/sshastra-core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
+log = "0.4"
 
 # Decrypting a passphrase-protected key (bcrypt-pbkdf) takes many seconds
 # unoptimized; keep it fast in dev builds and tests.
@@ -41,6 +42,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+chrono = { version = "0.4", default-features = false, features = ["now"] }
+log = { workspace = true, features = ["std"] }
+regex = "1"
 sshastra-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -54,6 +58,7 @@ tauri-plugin-dialog = "2"
 # In-app updates from GitHub Releases, and the relaunch after installing one.
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+whoami = { version = "2", default-features = false, features = ["std"] }
 # Test-only: an embedded WebDriver server for the E2E smoke test (`e2e/`).
 # Never in release builds (see the `e2e` feature).
 tauri-plugin-wdio-webdriver = { version = "=1.5.1", optional = true }
@@ -62,3 +67,7 @@ tauri-plugin-wdio-webdriver = { version = "=1.5.1", optional = true }
 # The E2E build (`pnpm e2e:build`): embeds the WebDriver server and keeps
 # credentials out of the system keychain. `lib.rs` refuses it in release builds.
 e2e = ["dep:tauri-plugin-wdio-webdriver"]
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }

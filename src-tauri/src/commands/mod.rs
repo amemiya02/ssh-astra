@@ -3,6 +3,7 @@
 
 pub mod connections;
 pub mod credentials;
+pub mod diagnostics;
 pub mod edit;
 pub mod files;
 pub mod forwards;

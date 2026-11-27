@@ -148,7 +148,10 @@ pub(super) async fn authenticate<H: client::Handler>(
     prompter: &dyn Prompter,
     deadline: Arc<Deadline>,
 ) -> Result<(), ConnectError> {
-    let allowed = match handle.authenticate_none(&host.user).await? {
+    log_auth(&host.id, "none", "attempting");
+    let none = handle.authenticate_none(&host.user).await;
+    log_auth(&host.id, "none", auth_result(&none));
+    let allowed = match none? {
         AuthResult::Success => return Ok(()),
         AuthResult::Failure {
             remaining_methods, ..
@@ -173,13 +176,18 @@ pub(super) async fn authenticate<H: client::Handler>(
         Method::Password,
         Method::KeyboardInteractive,
     ] {
-        let step = match method {
-            Method::Agent => attempt.agent(agent).await?,
-            Method::KeyFile => attempt.key_file().await?,
-            Method::Password => attempt.password().await?,
-            Method::KeyboardInteractive => attempt.keyboard_interactive().await?,
+        let (name, step) = match method {
+            Method::Agent => ("agent", attempt.agent(agent).await),
+            Method::KeyFile => ("key-file", attempt.key_file().await),
+            Method::Password => ("password", attempt.password().await),
+            Method::KeyboardInteractive => {
+                ("keyboard-interactive", attempt.keyboard_interactive().await)
+            }
         };
-        match step {
+        if let Ok(Step::Failed(error)) | Err(error) = &step {
+            log_auth(&host.id, name, error.log_kind());
+        }
+        match step? {
             Step::Done => return Ok(()),
             Step::Partial => failure = None,
             Step::Failed(e) => failure = Some(e),
@@ -193,6 +201,22 @@ pub(super) async fn authenticate<H: client::Handler>(
             .map(|m| <&str>::from(m).to_owned())
             .collect(),
     }))
+}
+
+fn log_auth(host: &HostId, method: &str, result: &str) {
+    log::info!("connection hop={host} authentication method={method} result={result}");
+}
+
+fn auth_result<T>(result: &Result<AuthResult, T>) -> &'static str {
+    match result {
+        Ok(AuthResult::Success) => "accepted",
+        Ok(AuthResult::Failure {
+            partial_success: true,
+            ..
+        }) => "partial",
+        Ok(AuthResult::Failure { .. }) => "rejected",
+        Err(_) => "protocol",
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -249,11 +273,13 @@ impl<H: client::Handler> AuthAttempt<'_, H> {
         let rsa_hash = self.rsa_hash().await?;
         for key in keys {
             let hash = key.algorithm().is_rsa().then_some(rsa_hash).flatten();
-            let result = match self
+            log_auth(&self.host.id, "agent", "attempting");
+            let result = self
                 .handle
                 .authenticate_publickey_with(&self.host.user, key, hash, &mut client)
-                .await
-            {
+                .await;
+            log_auth(&self.host.id, "agent", auth_result(&result));
+            let result = match result {
                 Ok(result) => result,
                 // The agent would not sign (locked, refused): next key.
                 Err(AgentAuthError::Key(_)) => continue,
@@ -276,6 +302,7 @@ impl<H: client::Handler> AuthAttempt<'_, H> {
         if !self.allows(MethodKind::PublicKey) {
             return Ok(Step::Skipped);
         }
+        log_auth(&self.host.id, "key-file", "attempting");
         let path = expand_home(identity_file);
         let key = match load_key(&path, self.prompter, &self.saved).await? {
             Ok(key) => key,
@@ -285,9 +312,10 @@ impl<H: client::Handler> AuthAttempt<'_, H> {
         let result = self
             .handle
             .authenticate_publickey(&self.host.user, key)
-            .await?;
+            .await;
+        log_auth(&self.host.id, "key-file", auth_result(&result));
         Ok(self
-            .settle(result)
+            .settle(result?)
             .unwrap_or(Step::Failed(ConnectError::KeyRejected { path })))
     }
 
@@ -297,11 +325,7 @@ impl<H: client::Handler> AuthAttempt<'_, H> {
         }
         let mut retry = false;
         if let Some(password) = self.saved.get(CredentialKind::Password).await {
-            let result = self
-                .handle
-                .authenticate_password(&self.host.user, password)
-                .await?;
-            if let Some(step) = self.settle(result) {
+            if let Some(step) = self.try_password(password).await? {
                 return Ok(step);
             }
             // Changed on the server: forget it and ask.
@@ -323,11 +347,7 @@ impl<H: client::Handler> AuthAttempt<'_, H> {
                 .password(prompt)
                 .await
                 .ok_or(ConnectError::Cancelled)?;
-            let result = self
-                .handle
-                .authenticate_password(&self.host.user, password.value.clone())
-                .await?;
-            if let Some(step) = self.settle(result) {
+            if let Some(step) = self.try_password(password.value.clone()).await? {
                 if password.save {
                     self.saved
                         .set(CredentialKind::Password, password.value)
@@ -344,18 +364,32 @@ impl<H: client::Handler> AuthAttempt<'_, H> {
         Err(ConnectError::AuthenticationFailed)
     }
 
+    async fn try_password(&mut self, password: String) -> Result<Option<Step>, ConnectError> {
+        log_auth(&self.host.id, "password", "attempting");
+        let result = self
+            .handle
+            .authenticate_password(&self.host.user, password)
+            .await;
+        log_auth(&self.host.id, "password", auth_result(&result));
+        Ok(self.settle(result?))
+    }
+
     async fn keyboard_interactive(&mut self) -> Result<Step, ConnectError> {
         for _ in 0..ATTEMPTS {
             if !self.allows(MethodKind::KeyboardInteractive) {
                 break;
             }
+            log_auth(&self.host.id, "keyboard-interactive", "attempting");
             let mut response = self
                 .handle
                 .authenticate_keyboard_interactive_start(&self.host.user, None)
                 .await?;
             loop {
                 match response {
-                    KeyboardInteractiveAuthResponse::Success => return Ok(Step::Done),
+                    KeyboardInteractiveAuthResponse::Success => {
+                        log_auth(&self.host.id, "keyboard-interactive", "accepted");
+                        return Ok(Step::Done);
+                    }
                     KeyboardInteractiveAuthResponse::Failure {
                         remaining_methods,
                         partial_success,
@@ -364,6 +398,12 @@ impl<H: client::Handler> AuthAttempt<'_, H> {
                             remaining_methods,
                             partial_success,
                         };
+                        let status = if partial_success {
+                            "partial"
+                        } else {
+                            "rejected"
+                        };
+                        log_auth(&self.host.id, "keyboard-interactive", status);
                         if let Some(step) = self.settle(result) {
                             return Ok(step);
                         }
