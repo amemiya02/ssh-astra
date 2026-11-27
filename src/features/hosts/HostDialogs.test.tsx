@@ -271,6 +271,21 @@ describe("Host editor", () => {
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ allowLegacyAlgorithms: !enabled }), "prod");
   });
 
+  it.each([undefined, true])("lets the user change Open at startup from %s in Advanced", async (enabled) => {
+    const save = vi.fn<EditorProps["save"]>().mockResolvedValue(host);
+    await renderEditor({ host: { ...host, openOnStartup: enabled }, save });
+
+    const startup = field("Open at startup");
+    expect(startup.closest("[hidden]")).not.toBeNull();
+    act(() => button("Advanced").click());
+    expect(startup.closest("[hidden]")).toBeNull();
+    expect(startup.getAttribute("aria-checked")).toBe(String(enabled ?? false));
+
+    act(() => startup.click());
+    await act(async () => button("Save").click());
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ openOnStartup: !enabled }), "prod");
+  });
+
   it.each([
     ["defaultDirectory", "File panel folder"],
     ["terminalScheme", "Terminal colours"],
@@ -393,6 +408,7 @@ describe("Host editor", () => {
       identitiesOnly: false,
       forwardAgent: false,
       allowLegacyAlgorithms: false,
+      openOnStartup: false,
     }, "prod");
   });
 });

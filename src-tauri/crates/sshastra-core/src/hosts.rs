@@ -24,7 +24,7 @@ pub use transfer::{ImportSummary, EXPORT_FORMAT};
 /// The file format version this build writes, to the store and to export
 /// files. Bump it together with a migration step in [`migrate`], which reads
 /// both.
-const CURRENT_VERSION: u32 = 19;
+const CURRENT_VERSION: u32 = 20;
 
 const MAX_HOST_TAGS: usize = 10;
 const MAX_TAG_LENGTH: usize = 32;
@@ -182,6 +182,9 @@ pub struct Host {
     /// Offer older SSH algorithms as fallbacks for this Host.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub allow_legacy_algorithms: bool,
+    /// Open a Terminal on this Host when the app starts.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub open_on_startup: bool,
     /// Outbound proxy choice for this Host when it is the first TCP hop.
     #[serde(default, skip_serializing_if = "HostProxy::is_inherit")]
     pub proxy: HostProxy,
@@ -247,6 +250,9 @@ pub struct HostDraft {
     /// Offer older SSH algorithms as fallbacks for this Host.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub allow_legacy_algorithms: bool,
+    /// Open a Terminal on this Host when the app starts.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub open_on_startup: bool,
     /// Outbound proxy choice for this Host when it is the first TCP hop.
     #[serde(default, skip_serializing_if = "HostProxy::is_inherit")]
     pub proxy: HostProxy,
@@ -310,6 +316,7 @@ impl HostDraft {
             identities_only: self.identities_only,
             forward_agent: self.forward_agent,
             allow_legacy_algorithms: self.allow_legacy_algorithms,
+            open_on_startup: self.open_on_startup,
             proxy: self.proxy.normalize().map_err(HostStoreError::Invalid)?,
             keepalive_seconds: self.keepalive_seconds,
             post_login_command: self.post_login_command.filter(|s| !s.trim().is_empty()),
@@ -771,6 +778,7 @@ impl HostStore {
                 identities_only: entry.identities_only,
                 forward_agent: entry.forward_agent,
                 allow_legacy_algorithms: false,
+                open_on_startup: false,
                 proxy: entry
                     .proxy_command
                     .map(HostProxy::ProxyCommand)
@@ -1024,7 +1032,8 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
         // v16 adds an optional ANSI hue with the same automatic default.
         // v17 stores the detected OS, v18 adds legacy algorithm opt-in, and
         // v19 adds Bookmarks. Older Hosts default to an empty Bookmark list.
-        2 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18
+        // v20 adds startup connections, off by default.
+        2 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19
         | CURRENT_VERSION => {
             let FileV2 { groups, hosts } = serde_json::from_str(text).map_err(corrupt)?;
             Ok(Library { groups, hosts })
@@ -1055,6 +1064,9 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
         // A field unknown to the original schema could not record consent.
         if version < 18 {
             host.allow_legacy_algorithms = false;
+        }
+        if version < 20 {
+            host.open_on_startup = false;
         }
         host.tags = normalize_tags(&host.tags);
         bookmarks::retain_valid(&mut host.bookmarks);
