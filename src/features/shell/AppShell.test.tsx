@@ -10,11 +10,17 @@ import { TabStrip } from "@/features/workspace/TabStrip";
 import { createTabActivity } from "@/features/workspace/tab-activity";
 import { emptyTabs, newPane, tabsReducer } from "@/features/workspace/tabs";
 import { workspaceSetting } from "@/features/workspace/workspace-prefs";
+import { terminalSetting } from "@/features/terminal/terminal-prefs";
+import type { Host } from "@/lib/ipc/hosts";
+import { watchTerminalLatency } from "@/lib/ipc/terminal";
 import { AppShell } from "./AppShell";
 import { getSetting, setSetting, startSettings, type SettingsBackend } from "@/lib/storage";
 import { useFilePanelDock } from "./file-panel-dock";
 import type { PaneKind } from "@/features/workspace/tabs";
 import { defaultShellLayout, layoutSetting } from "./shell-layout";
+import type { StatusInfo } from "./StatusBar";
+
+vi.mock(import("@/lib/ipc/terminal"), async (original) => ({ ...await original(), watchTerminalLatency: vi.fn() }));
 
 let root: Root | null = null;
 
@@ -58,7 +64,7 @@ function DockState() {
 const fixtureTabs = tabsReducer(emptyTabs, { type: "open", tabId: "local", pane: newPane({ kind: "local-terminal" }, "pane") });
 const activity = createTabActivity();
 
-function shell(activeKind: PaneKind["kind"] | null) {
+function shell(activeKind: PaneKind["kind"] | null, status?: StatusInfo) {
   return (
     <ThemeProvider>
       <TooltipProvider>
@@ -82,6 +88,7 @@ function shell(activeKind: PaneKind["kind"] | null) {
           workspace={<><input aria-label="Terminal input" /><WorkspaceSection /></>}
           filePanel={<DockState />}
           onOpenTransfers={() => {}}
+          status={status}
         />
       </TooltipProvider>
     </ThemeProvider>
@@ -102,6 +109,62 @@ const focus = (activeKind: PaneKind["kind"] | null) => act(() => root!.render(sh
 const toggleAction = () => paletteActions.list().find((a) => a.id === "files.togglePanel");
 
 describe("AppShell", () => {
+  it("shows keepalive latency only for the focused remote Terminal when enabled", () => {
+    const subscriptions: { id: number; emit(sample: number | null): void; stop(): void }[] = [];
+    vi.mocked(watchTerminalLatency).mockImplementation((id, emit) => {
+      const stop = vi.fn();
+      subscriptions.push({ id, emit, stop });
+      return stop;
+    });
+    const host: Host = {
+      id: "test", name: "Test", address: "host.example", port: 22, user: "user",
+      auth: { type: "password" }, jumpHost: null, groupId: null, forwards: [],
+    };
+    const original = getSetting(terminalSetting);
+    const container = render("remote-terminal");
+    const selectTerminal = (id: number | null, generation = 0) => act(() => root!.render(shell(
+      id === null ? "local-terminal" : "remote-terminal",
+      { connected: [host], reconnecting: [], forwards: [], transfers: { count: 0, bytesPerSecond: 0 },
+        activeRemote: id === null ? null : host, activeTerminal: id === null ? undefined : { id, generation } },
+    )));
+    const footer = () => container.querySelector("footer")!.textContent;
+    try {
+      selectTerminal(10);
+      expect(subscriptions).toHaveLength(0);
+      expect(footer()).not.toContain("Latency");
+
+      act(() => setSetting(terminalSetting, { ...original, showLatency: true }));
+      expect(subscriptions.map(({ id }) => id)).toEqual([10]);
+      expect(footer()).toContain("Latency unavailable");
+      act(() => subscriptions[0]!.emit(24));
+      expect(footer()).toContain("24 ms");
+
+      selectTerminal(20);
+      expect(subscriptions[0]!.stop).toHaveBeenCalledOnce();
+      act(() => subscriptions[0]!.emit(35));
+      expect(footer()).not.toContain("35 ms");
+      expect(footer()).not.toContain("24 ms");
+      act(() => subscriptions[1]!.emit(0));
+      expect(footer()).toContain("0 ms");
+      act(() => subscriptions[1]!.emit(null));
+      expect(footer()).toContain("Latency unavailable");
+
+      selectTerminal(20, 1);
+      expect(subscriptions[1]!.stop).toHaveBeenCalledOnce();
+      expect(footer()).toContain("Latency unavailable");
+      selectTerminal(null);
+      expect(subscriptions[2]!.stop).toHaveBeenCalledOnce();
+      expect(footer()).not.toContain("Latency");
+
+      selectTerminal(10);
+      act(() => setSetting(terminalSetting, original));
+      expect(subscriptions[3]!.stop).toHaveBeenCalledOnce();
+      expect(footer()).not.toContain("Latency");
+    } finally {
+      act(() => setSetting(terminalSetting, original));
+    }
+  });
+
   it("changes the tab orientation without replacing the selected tab or focused workspace", () => {
     const container = render("local-terminal");
     const list = container.querySelector('[role="tablist"]')!;

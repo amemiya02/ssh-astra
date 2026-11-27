@@ -19,7 +19,7 @@ notify = "8"
 portable-pty = "0.9"
 regex = "1"
 # `ring` instead of the default aws-lc-rs: no cmake/NASM needed on any platform.
-russh = { version = "0.65", default-features = false, features = ["ring", "rsa", "flate2"] }
+russh = { version = "=0.65.2", default-features = false, features = ["ring", "rsa", "flate2"] }
 russh-sftp = "3"
 serde.workspace = true
 serde_json.workspace = true

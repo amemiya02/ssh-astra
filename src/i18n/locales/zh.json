@@ -902,6 +902,9 @@
   },
   "status": {
     "noConnections": "没有连接",
+    "latency": "延迟 {{milliseconds, number}} 毫秒",
+    "latencyUnavailable": "延迟不可用",
+    "latencyHint": "上次 SSH 保活的往返时间",
     "connectedTo": "已连接：{{hosts}}",
     "reconnecting": "正在重新连接 {{host}}（{{attempt}}/{{attempts}}）",
     "forwards": "端口转发：{{list}}",
@@ -1393,6 +1396,10 @@
           "shell": "Shell 标题",
           "host": "Host 名称"
         }
+      },
+      "showLatency": {
+        "label": "显示连接延迟",
+        "description": "在状态栏显示当前远程终端的 SSH 保活往返时间。"
       },
       "bell": {
         "label": "终端响铃",

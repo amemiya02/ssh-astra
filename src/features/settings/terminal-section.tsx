@@ -14,7 +14,7 @@ import { settingRows } from "./setting-rows";
 import { TerminalHighlightingSettings } from "./terminal-highlighting-settings";
 import { TerminalSchemeSettings } from "./terminal-scheme-settings";
 
-type BooleanPref = "ligatures" | "cursorBlink" | "copyOnSelect" | "confirmMultilinePaste" | "pasteImages" | "shellIntegration" | "commandHistory" | "autoLog" | "inlineImages";
+type BooleanPref = "ligatures" | "cursorBlink" | "copyOnSelect" | "confirmMultilinePaste" | "pasteImages" | "shellIntegration" | "commandHistory" | "autoLog" | "inlineImages" | "showLatency";
 
 export function TerminalSection() {
   const { t } = useTranslation();
@@ -140,6 +140,7 @@ export function TerminalSection() {
           onChange={(titleSource) => updatePrefs({ titleSource })}
         />
       </SettingRow>
+      {toggle("showLatency")}
       <SettingRow setting={settingRows.bell}>
         <SegmentedControl
           label={bellLabel}

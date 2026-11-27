@@ -1,14 +1,16 @@
 import { ArrowDownUp, BookmarkPlus, Cable, Eye, EyeOff, Radio, Settings, Waypoints } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/IconButton";
 import { agentAccessSetting, setAgentAccess } from "@/features/agent/agent-access";
 import { quickConnectLabel } from "@/features/connect/quick-connect";
 import { formatSize } from "@/features/files/fileList";
+import { terminalSetting } from "@/features/terminal/terminal-prefs";
 import type { BroadcastScope } from "@/features/workspace/broadcast";
 import { privacyModeSetting, togglePrivacyMode, workspaceHostName } from "@/features/workspace/privacy-mode";
 import type { ReconnectProgress } from "@/features/workspace/tabs";
 import type { Host } from "@/lib/ipc/hosts";
+import { watchTerminalLatency, type TerminalId } from "@/lib/ipc/terminal";
 import { useSetting } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import { ThemeMenu } from "@/theme/ThemeMenu";
@@ -27,6 +29,8 @@ export interface StatusInfo {
   updateNotice?: ReactNode;
   /** The Host of the focused remote Terminal. */
   activeRemote: Host | null;
+  /** The focused remote Terminal and its current Connection, when connected. */
+  activeTerminal?: { id: TerminalId; generation: number };
   saveTemporaryHost?(): void;
   broadcast?: { scope: BroadcastScope; tabTitle?: string; stop(): void } | null;
 }
@@ -56,7 +60,8 @@ export function StatusBar({
   const settingsShortcut = shortcutLabel("settings", useResolvedShortcuts());
   const [{ enabled: agentEnabled }] = useSetting(agentAccessSetting);
   const [privacyMode] = useSetting(privacyModeSetting);
-  const { connected, reconnecting, forwards, transfers, activeRemote, saveTemporaryHost, broadcast, updateNotice } = info;
+  const [{ showLatency }] = useSetting(terminalSetting);
+  const { connected, reconnecting, forwards, transfers, activeRemote, activeTerminal, saveTemporaryHost, broadcast, updateNotice } = info;
   const transferStatus = transfers.bytesPerSecond > 0
     ? t("status.transfersSpeed", { count: transfers.count, speed: formatSize(Math.round(transfers.bytesPerSecond)) })
     : transfers.count > 0 ? t("status.transfers", { count: transfers.count }) : undefined;
@@ -130,6 +135,13 @@ export function StatusBar({
         <ArrowDownUp className="size-3 shrink-0" aria-hidden />
         <span className="truncate tabular-nums">{transferStatus ?? t("transfers.title")}</span>
       </Segment>
+      {showLatency && activeRemote && (
+        <Segment title={t("status.latencyHint")}>
+          {activeTerminal ? (
+            <ConnectionLatency key={`${activeTerminal.id}:${activeTerminal.generation}`} terminalId={activeTerminal.id} />
+          ) : <span className="truncate">{t("status.latencyUnavailable")}</span>}
+        </Segment>
+      )}
       <div className="flex shrink-0 items-center gap-0.5 pr-1.5">
         {activeRemoteLabel && (
           <span className={cn("mr-1 truncate", !privacyMode && "font-mono")} title={activeRemoteLabel}>
@@ -161,6 +173,17 @@ export function StatusBar({
         </IconButton>
       </div>
     </footer>
+  );
+}
+
+function ConnectionLatency({ terminalId }: { terminalId: TerminalId }) {
+  const { t } = useTranslation();
+  const [sample, setSample] = useState<number | null>(null);
+  useEffect(() => watchTerminalLatency(terminalId, setSample), [terminalId]);
+  return (
+    <span className="truncate tabular-nums">
+      {sample === null ? t("status.latencyUnavailable") : t("status.latency", { milliseconds: sample })}
+    </span>
   );
 }
 

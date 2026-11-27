@@ -602,6 +602,10 @@ export function App({ initialTabs, startupTabsAcrossWindows, incomingMove }: {
           transfers,
           updateNotice: <UpdateNotice interruptions={interruptions} />,
           activeRemote: focusedPane?.kind === "remote-terminal" ? focusedPane.host : null,
+          activeTerminal: !moving && focusedPane?.kind === "remote-terminal"
+            && focusedPane.status === "connected" && focusedPane.terminalId !== undefined
+            ? { id: focusedPane.terminalId, generation: focusedPane.connectionGeneration ?? 0 }
+            : undefined,
           saveTemporaryHost: focusedTemporaryHost && (() => hostsController.openTemporaryHostEditor(focusedTemporaryHost)),
           broadcast: broadcastMode && {
             scope: broadcastMode.scope,

@@ -32,6 +32,7 @@ describe("terminal preferences", () => {
     expect(prefs.shellIntegration).toBe(true);
     expect(prefs.localShell).toBeNull();
     expect(prefs.autoLog).toBe(false);
+    expect(prefs.showLatency).toBe(false);
     expect(prefs.logDirectory).toBeNull();
     expect(prefs.confirmMultilinePaste).toBe(true);
   });
@@ -70,6 +71,7 @@ describe("terminal preferences", () => {
       commandHistory: true,
       localShell: "/bin/zsh",
       autoLog: true,
+      showLatency: true,
       logDirectory: "/tmp/my Terminal logs",
       confirmMultilinePaste: false,
     };

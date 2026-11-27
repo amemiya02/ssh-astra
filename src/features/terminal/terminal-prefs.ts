@@ -50,6 +50,8 @@ export interface TerminalPrefs {
   localShell: string | null;
   /** Log output from newly opened Terminals. Read by the core. */
   autoLog: boolean;
+  /** Show the focused remote Terminal's Connection latency in the status bar. */
+  showLatency: boolean;
   /** A user-selected directory for Terminal logs and Recordings. Null uses the app directory. */
   logDirectory: string | null;
   /** Ask before pasting more than one line (`PasteConfirmDialog`), since a shell runs each as it arrives. */
@@ -92,6 +94,7 @@ export const defaultTerminalPrefs: TerminalPrefs = {
   commandHistory: false,
   localShell: null,
   autoLog: false,
+  showLatency: false,
   logDirectory: null,
   confirmMultilinePaste: true,
 };
@@ -148,6 +151,7 @@ export function normalizeTerminalPrefs(raw: Partial<Record<keyof TerminalPrefs, 
     commandHistory: bool(raw.commandHistory, d.commandHistory),
     localShell: parseLocalShellId(raw.localShell) ?? d.localShell,
     autoLog: bool(raw.autoLog, d.autoLog),
+    showLatency: bool(raw.showLatency, d.showLatency),
     logDirectory: typeof raw.logDirectory === "string" && raw.logDirectory.trim() ? raw.logDirectory : null,
     confirmMultilinePaste: bool(raw.confirmMultilinePaste, d.confirmMultilinePaste),
   };
