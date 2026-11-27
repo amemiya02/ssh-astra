@@ -125,6 +125,7 @@ fn host(sshd: &Sshd, auth: HostAuth) -> Host {
         terminal_scheme: None,
         identities_only: false,
         forward_agent: false,
+        proxy: Default::default(),
         keepalive_seconds: None,
         post_login_command: None,
         terminal_charset: None,

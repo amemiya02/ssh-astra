@@ -1,3 +1,4 @@
+import { parseProxyForm, proxyFormFrom, type ProxyField, type ProxyFormValues } from "@/features/connect/proxy-form";
 import type { Host, HostAuth, HostDraft, TerminalBackspace, TerminalCharset } from "@/lib/ipc/hosts";
 import { isTerminalColorScheme, type ImportedTerminalScheme, type TerminalColorScheme } from "@/theme/terminal-themes";
 
@@ -14,6 +15,7 @@ export interface HostFormValues {
   identityFile: string;
   identitiesOnly: boolean;
   forwardAgent: boolean;
+  proxy?: ProxyFormValues;
   /** Blank follows the global keepalive interval. */
   keepaliveSeconds?: string;
   /** Blank leaves the shell at its first prompt. */
@@ -27,17 +29,19 @@ export interface HostFormValues {
 }
 
 /** The free-text fields, validated here. */
-export type HostFormField = Exclude<
+type HostInputField = Exclude<
   keyof HostFormValues,
   "jumpHost" | "authType" | "identitiesOnly" | "forwardAgent" | "terminalScheme" | "defaultDirectory" |
-  "postLoginCommand" | "terminalCharset" | "terminalBackspace"
+  "postLoginCommand" | "terminalCharset" | "terminalBackspace" | "proxy"
 >;
 /** Error codes; the UI maps them to copy under `hosts.errors.*`. */
 export type HostFormError = "required" | "port" | "keepaliveSeconds";
+export type HostFormField = HostInputField | ProxyField;
+type HostFormErrors = Partial<Record<HostInputField, HostFormError> & Record<ProxyField, ProxyField>>;
 
 export type HostFormResult =
   | { ok: true; draft: HostDraft }
-  | { ok: false; errors: Partial<Record<HostFormField, HostFormError>> };
+  | { ok: false; errors: HostFormErrors };
 
 export const emptyHostForm: HostFormValues = {
   name: "",
@@ -67,6 +71,7 @@ export function hostFormFrom(host: Host, importedSchemes: readonly ImportedTermi
     terminalCharset: host.terminalCharset ?? emptyHostForm.terminalCharset,
     terminalBackspace: host.terminalBackspace ?? emptyHostForm.terminalBackspace,
   };
+  if (host.proxy) form.proxy = proxyFormFrom(host.proxy);
   if (isTerminalColorScheme(host.terminalScheme, importedSchemes)) form.terminalScheme = host.terminalScheme;
   if (host.defaultDirectory) form.defaultDirectory = host.defaultDirectory;
   if (host.keepaliveSeconds !== undefined) form.keepaliveSeconds = String(host.keepaliveSeconds);
@@ -76,7 +81,7 @@ export function hostFormFrom(host: Host, importedSchemes: readonly ImportedTermi
 
 /** Validates the form. The backend checks Jump host loops. */
 export function parseHostForm(values: HostFormValues, purpose: "save" | "test" = "save"): HostFormResult {
-  const errors: Partial<Record<HostFormField, HostFormError>> = {};
+  const errors: HostFormErrors = {};
   const name = values.name.trim();
   const address = values.address.trim();
   const user = values.user.trim();
@@ -95,6 +100,8 @@ export function parseHostForm(values: HostFormValues, purpose: "save" | "test" =
     errors.keepaliveSeconds = "keepaliveSeconds";
   }
 
+  const proxy = parseProxyForm(purpose === "test" && values.jumpHost ? undefined : values.proxy);
+  if (!proxy.ok) return { ok: false, errors: { ...errors, ...proxy.errors } };
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   const jumpHost = values.jumpHost || null;
   const auth: HostAuth = values.authType === "key" ? { type: "key", identityFile } : { type: values.authType };
@@ -103,6 +110,7 @@ export function parseHostForm(values: HostFormValues, purpose: "save" | "test" =
     identitiesOnly: values.identitiesOnly,
     forwardAgent: values.forwardAgent,
   };
+  if (proxy.proxy.mode !== "inherit") draft.proxy = proxy.proxy;
   if (values.terminalScheme) draft.terminalScheme = values.terminalScheme;
   if (keepaliveText) draft.keepaliveSeconds = keepaliveSeconds;
   if (values.postLoginCommand?.trim()) draft.postLoginCommand = values.postLoginCommand;

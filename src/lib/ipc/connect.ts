@@ -6,7 +6,7 @@ import { decodeTerminalMessage, type ConnectionState, type TerminalEvent, type T
 export type ConnectPrompt =
   | { type: "hostKey"; id: number; host: string; port: number; algorithm: string; fingerprint: string }
   /** `canSave`: offer "save" (the system keychain works). */
-  | { type: "password"; id: number; host: string; user: string; retry: boolean; canSave: boolean }
+  | { type: "password"; id: number; host: string; user: string; retry: boolean; canSave: boolean; proxy?: boolean }
   | { type: "passphrase"; id: number; keyPath: string; retry: boolean; canSave: boolean }
   | {
       type: "keyboardInteractive";

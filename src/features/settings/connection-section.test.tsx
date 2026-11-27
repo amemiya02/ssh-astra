@@ -39,3 +39,36 @@ it("saves and clears the custom agent path alongside the existing keepalive sett
     vi.unstubAllGlobals();
   }
 });
+
+it("saves the proxy endpoint and username with the other Connection settings", async () => {
+  startI18n();
+  const save = vi.fn().mockResolvedValue(undefined);
+  const proxy = { kind: "socks5", address: "proxy.example", port: 1080 };
+  await startSettings({ load: async () => ({ connection: { agentPath: "~/.ssh/agent", proxy } }), save });
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(container);
+
+  try {
+    act(() => root.render(<ConnectionSection />));
+    const username = container.querySelector<HTMLInputElement>("#settings-outbound-proxy-username")!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    act(() => {
+      setValue.call(username, "proxy-user");
+      username.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(save).not.toHaveBeenCalled();
+
+    act(() => username.form!.requestSubmit());
+    expect(save).toHaveBeenLastCalledWith("connection", {
+      keepaliveSeconds: 30,
+      agentPath: "~/.ssh/agent",
+      proxy: { ...proxy, username: "proxy-user" },
+    });
+    expect(username.form!.querySelector('input[type="password"]')).toBeNull();
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});

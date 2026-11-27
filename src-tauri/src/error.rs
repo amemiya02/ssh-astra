@@ -195,6 +195,7 @@ impl From<ConnectError> for CommandError {
         };
         match &err {
             Unreachable(_) => Self::new("unreachable", &err),
+            Proxy(error) => Self::new(error.kind(), error),
             TimedOut => Self::new("timedOut", &err),
             HostKeyMismatch {
                 host,

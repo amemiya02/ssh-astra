@@ -42,6 +42,7 @@ pub enum PromptRequest {
         host: String,
         user: String,
         retry: bool,
+        proxy: bool,
         /// Offer a "save" checkbox (the CredentialVault works).
         can_save: bool,
     },
@@ -138,6 +139,31 @@ impl ChannelPrompter {
         }
         rx.await.ok()
     }
+
+    fn password_question(
+        &self,
+        prompt: PasswordPrompt,
+        proxy: bool,
+    ) -> BoxFuture<'_, Option<Secret>> {
+        Box::pin(async move {
+            let answer = self
+                .ask(|id| PromptRequest::Password {
+                    id,
+                    host: prompt.host,
+                    user: prompt.user,
+                    retry: prompt.retry,
+                    proxy,
+                    can_save: prompt.can_save,
+                })
+                .await;
+            match answer {
+                Some(PromptAnswer::Password { password, save }) => {
+                    password.map(|value| Secret { value, save })
+                }
+                _ => None,
+            }
+        })
+    }
 }
 
 impl Prompter for ChannelPrompter {
@@ -164,23 +190,11 @@ impl Prompter for ChannelPrompter {
     }
 
     fn password(&self, prompt: PasswordPrompt) -> BoxFuture<'_, Option<Secret>> {
-        Box::pin(async move {
-            let answer = self
-                .ask(|id| PromptRequest::Password {
-                    id,
-                    host: prompt.host,
-                    user: prompt.user,
-                    retry: prompt.retry,
-                    can_save: prompt.can_save,
-                })
-                .await;
-            match answer {
-                Some(PromptAnswer::Password { password, save }) => {
-                    password.map(|value| Secret { value, save })
-                }
-                _ => None,
-            }
-        })
+        self.password_question(prompt, false)
+    }
+
+    fn proxy_password(&self, prompt: PasswordPrompt) -> BoxFuture<'_, Option<Secret>> {
+        self.password_question(prompt, true)
     }
 
     fn passphrase(&self, prompt: PassphrasePrompt) -> BoxFuture<'_, Option<Secret>> {

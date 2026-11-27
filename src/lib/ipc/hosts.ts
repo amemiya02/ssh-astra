@@ -17,6 +17,19 @@ export type HostAuth = { type: "auto" } | { type: "password" } | { type: "key"; 
 export type TerminalCharset = "utf8" | "gbk" | "big5" | "latin1";
 export type TerminalBackspace = "del" | "ctrlH";
 
+export type ProxyKind = "socks5" | "httpConnect";
+
+export interface ProxyConfig {
+  kind: ProxyKind;
+  address: string;
+  port: number;
+  username?: string;
+}
+
+export type HostProxy =
+  | { mode: "inherit" | "direct" }
+  | { mode: "override"; config: ProxyConfig };
+
 /** A Host's editable fields (`sshastra_core::hosts::HostDraft`). */
 export interface HostDraft {
   name: string;
@@ -28,6 +41,8 @@ export interface HostDraft {
   identitiesOnly?: boolean;
   /** Allow the remote host to use the local SSH agent during a Connection. */
   forwardAgent?: boolean;
+  /** Outbound proxy choice when this Host is the first hop. */
+  proxy?: HostProxy;
   /** Seconds between keepalives; absent follows the global setting, 0 turns them off. */
   keepaliveSeconds?: number;
   /** Command typed once into each new Terminal shell. */
