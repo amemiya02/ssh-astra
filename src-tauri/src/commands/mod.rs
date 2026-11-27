@@ -2,6 +2,7 @@
 //! translate IPC arguments into a `sshastra-core` call.
 
 pub mod clipboard;
+pub mod command_history;
 pub mod connections;
 pub mod credentials;
 pub mod diagnostics;

@@ -44,6 +44,8 @@ export interface TerminalPrefs {
    * Read by the core too (`TerminalSettings`); applies to Terminals opened afterwards.
    */
   shellIntegration: boolean;
+  /** Save Shell integration command lines on this device for each saved Host. */
+  commandHistory: boolean;
   /** The shell ID used by new Local terminals. Null selects the system default. */
   localShell: string | null;
   /** Log output from newly opened Terminals. Read by the core. */
@@ -87,6 +89,7 @@ export const defaultTerminalPrefs: TerminalPrefs = {
   rightClickPaste: false,
   pasteImages: false,
   shellIntegration: true,
+  commandHistory: false,
   localShell: null,
   autoLog: false,
   logDirectory: null,
@@ -142,6 +145,7 @@ export function normalizeTerminalPrefs(raw: Partial<Record<keyof TerminalPrefs, 
     rightClickPaste: bool(raw.rightClickPaste, d.rightClickPaste),
     pasteImages: bool(raw.pasteImages, d.pasteImages),
     shellIntegration: bool(raw.shellIntegration, d.shellIntegration),
+    commandHistory: bool(raw.commandHistory, d.commandHistory),
     localShell: parseLocalShellId(raw.localShell) ?? d.localShell,
     autoLog: bool(raw.autoLog, d.autoLog),
     logDirectory: typeof raw.logDirectory === "string" && raw.logDirectory.trim() ? raw.logDirectory : null,
