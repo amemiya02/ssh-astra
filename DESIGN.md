@@ -404,6 +404,10 @@ Settings lists every theme as a card (10px radius, 6px padding, auto-fill at min
 - **Tooltips:** inverted (foreground fill, ground text), `text-xs`, 8px radius.
 - **Dialogs:** `raised`, 1px border, 14px radius, 24px padding, max 512px, `shadow-overlay` over the overlay scrim; footer buttons right-aligned, primary last.
 
+### Host editor
+- **Basic information** is always visible and includes the name, address, port, user, authentication and its private key field, Group, and Jump host. Group shows the current location or the selected destination for a new Host. Use the Host list's move action to change a saved Host's Group.
+- **Advanced** is a full-width disclosure below Basic information. It starts collapsed and contains Terminal colours, the File panel folder, and the action to clear a saved Host's credentials. A save error attached to an advanced field opens the section, displays the message by the field, and moves focus to it.
+
 ### Security surfaces
 - **Fingerprint block:** `muted` fill, 1px border, 10px radius, 12px by 14px padding; a `text-xs` muted label above the fingerprint in mono, breaking anywhere, selectable.
 - **Connection error panel:** 10px radius, 12px by 14px padding, destructive at 8% (12% dark) fill and a 30% destructive border. A host key mismatch is red and blocks.

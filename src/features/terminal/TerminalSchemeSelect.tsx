@@ -9,6 +9,7 @@ interface TerminalSchemeSelectProps {
   id?: string;
   "aria-label"?: string;
   "aria-describedby"?: string;
+  "aria-invalid"?: boolean;
   /** `undefined` is "same as the global setting", offered only when `inheritLabel` is set. */
   value: TerminalColorScheme | undefined;
   onValueChange(value: TerminalColorScheme | undefined): void;
@@ -21,6 +22,7 @@ export function TerminalSchemeSelect({
   id,
   "aria-label": ariaLabel,
   "aria-describedby": describedBy,
+  "aria-invalid": invalid,
   value,
   onValueChange,
   inheritLabel,
@@ -31,7 +33,7 @@ export function TerminalSchemeSelect({
       value={value ?? (inheritLabel ? INHERIT : "app")}
       onValueChange={(next) => onValueChange(terminalColorSchemes.find((scheme) => scheme === next))}
     >
-      <SelectTrigger id={id} aria-label={ariaLabel} aria-describedby={describedBy} size="sm" className="w-full">
+      <SelectTrigger id={id} aria-label={ariaLabel} aria-describedby={describedBy} aria-invalid={invalid} size="sm" className="w-full">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
