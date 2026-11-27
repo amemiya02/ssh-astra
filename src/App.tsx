@@ -375,6 +375,10 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
     focusedPane?.kind === "remote-terminal"
       ? { id: focusedPane.id, host: focusedPane.host, status: focusedPane.status ?? "connecting" }
       : undefined;
+  const filePanelPeers = useMemo(() => tabs.flatMap(tabPanes).flatMap((pane) =>
+    pane.kind === "remote-terminal" && pane.status === "connected"
+      ? [{ id: pane.id, host: pane.host, status: pane.status }]
+      : []), [tabs]);
   useRetainRemoteFilePanels(remoteTerminalPaneIds(state));
 
   return (
@@ -442,7 +446,7 @@ export function App({ initialTabs }: { initialTabs: TabsState }) {
           />
         }
         fullWorkspace={!focusedPane || focusedPane.kind === "sftp" || focusedPane.kind === "home"}
-        filePanel={<FilePanelContent pane={filePanelPane} onOpenSftp={openSftp} />}
+        filePanel={<FilePanelContent pane={filePanelPane} peers={filePanelPeers} onOpenSftp={openSftp} />}
         status={{
           connected,
           reconnecting,

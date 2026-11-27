@@ -40,7 +40,7 @@ export interface KeyChord {
 
 type Modifier = "meta" | "ctrl" | "alt" | "shift";
 type FileHistoryShortcut = "fileBack" | "fileForward";
-type FileMoveShortcut = "fileCut" | "filePaste";
+type FileClipboardShortcut = "fileCopy" | "fileCut" | "filePaste";
 
 export const paneSwapShortcuts = [
   { name: "swapPaneLeft", code: "ArrowLeft", direction: "left" },
@@ -66,7 +66,7 @@ export type ShortcutName =
   | "terminalZoomIn"
   | "terminalZoomOut"
   | FileHistoryShortcut
-  | FileMoveShortcut
+  | FileClipboardShortcut
   | "find";
 
 type Binding = ({ code: string; key?: never } | { key: string; code?: never }) & {
@@ -173,9 +173,10 @@ const fileHistoryBindings: { code: string; mods: Modifier[]; name: FileHistorySh
   { name: "fileForward", code: "ArrowRight", mods: ["alt"] },
 ];
 
-function fileMoveBindings(platform: Platform): { code: string; mods: Modifier[]; name: FileMoveShortcut }[] {
+function fileClipboardBindings(platform: Platform): { code: string; mods: Modifier[]; name: FileClipboardShortcut }[] {
   const mod = platform === "mac" ? "meta" : "ctrl";
   return [
+    { name: "fileCopy", code: "KeyC", mods: [mod] },
     { name: "fileCut", code: "KeyX", mods: [mod] },
     { name: "filePaste", code: "KeyV", mods: [mod] },
   ];
@@ -213,9 +214,9 @@ export function matchFileHistoryShortcut(chord: KeyChord) {
   return fileHistoryBindings.find((b) => b.code === chord.code && exactly(chord, b.mods))?.name ?? null;
 }
 
-/** File movement uses native cut and paste chords, scoped to the File panel. */
-export function matchFileMoveShortcut(chord: KeyChord, platform: Platform) {
-  return fileMoveBindings(platform).find((b) => b.code === chord.code && exactly(chord, b.mods))?.name ?? null;
+/** File clipboard shortcuts are scoped to the File panel. */
+export function matchFileClipboardShortcut(chord: KeyChord, platform: Platform) {
+  return fileClipboardBindings(platform).find((b) => b.code === chord.code && exactly(chord, b.mods))?.name ?? null;
 }
 
 const macSymbols: Record<Modifier, string> = { ctrl: "⌃", alt: "⌥", shift: "⇧", meta: "⌘" };
@@ -232,7 +233,7 @@ function keyName(code: string): string {
 
 /** How a named shortcut is written on `platform`, for tooltips: `⇧⌘D`, `Ctrl+Shift+T`. */
 export function shortcutLabel(name: ShortcutName, platform: Platform): string {
-  const binding = [...bindings[platform], ...terminalBindings[platform], ...fileHistoryBindings, ...fileMoveBindings(platform)]
+  const binding = [...bindings[platform], ...terminalBindings[platform], ...fileHistoryBindings, ...fileClipboardBindings(platform)]
     .find((b) => b.name === name);
   if (!binding) return "";
   const key = binding.code === undefined ? binding.key : keyName(binding.code);

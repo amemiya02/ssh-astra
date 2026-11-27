@@ -1,9 +1,13 @@
 import type { StoreApi } from "zustand/vanilla";
+import { transfersStore } from "@/features/transfers/transfersStore";
 import type { ConnectionStatus } from "@/features/workspace/tabs";
 import * as editIpc from "@/lib/ipc/edit";
 import * as ipc from "@/lib/ipc/files";
+import type { Transfer } from "@/lib/ipc/transfers";
 import type { HostId } from "@/lib/ipc/hosts";
 import { createFileBrowserStore, followConnection, type FileBrowserState, type FilesApi } from "./fileBrowserStore";
+import { parentPath } from "./fileList";
+import { followTransferFinishes } from "./followUploads";
 import { createSharedRemoteEdits, sharedRemoteEdits } from "./sharedRemoteEdits";
 
 export type FileBrowserStore = StoreApi<FileBrowserState>;
@@ -22,9 +26,33 @@ export interface FileBrowsers {
   retain(paneIds: ReadonlySet<string>): void;
 }
 
-export function createFileBrowsers(api: FilesApi, editsForPanel = createSharedRemoteEdits(api)): FileBrowsers {
-  const panes = new Map<string, { hostId: HostId; store: FileBrowserStore; status?: ConnectionStatus }>();
-  let visible: string | null = null;
+export function createFileBrowsers(
+  api: FilesApi,
+  editsForPanel = createSharedRemoteEdits(api),
+  transfers?: StoreApi<{ transfers: Transfer[] }>,
+): FileBrowsers {
+  const panes = new Map<string, {
+    hostId: HostId;
+    store: FileBrowserStore;
+    status?: ConnectionStatus;
+  }>();
+  const visible = new Set<string>();
+  if (transfers) followTransferFinishes(transfers, (settled) => {
+    const directoriesByHost = new Map<HostId, string[]>();
+    for (const transfer of settled) {
+      const host = transfer.targetHost;
+      if (transfer.direction !== "copy" || !host) continue;
+      const directories = directoriesByHost.get(host.id) ?? [];
+      directories.push(parentPath(transfer.target));
+      directoriesByHost.set(host.id, directories);
+    }
+    if (!directoriesByHost.size) return;
+    // A panel keeps its listing when another Terminal is focused.
+    for (const pane of panes.values()) {
+      const directories = directoriesByHost.get(pane.hostId);
+      if (directories) void pane.store.getState().refreshAfterMove(directories);
+    }
+  });
   return {
     get(paneId, hostId, startPath) {
       let pane = panes.get(paneId);
@@ -34,7 +62,8 @@ export function createFileBrowsers(api: FilesApi, editsForPanel = createSharedRe
             .filter((other) => other.hostId === hostId)
             .map((other) => other.store.getState().refreshAfterMove(directories)));
         };
-        pane = { hostId, store: createFileBrowserStore(api, hostId, startPath, undefined, editsForPanel, refreshHostAfterMove) };
+        const store = createFileBrowserStore(api, hostId, startPath, undefined, editsForPanel, refreshHostAfterMove);
+        pane = { hostId, store };
         panes.set(paneId, pane);
       }
       return pane.store;
@@ -44,15 +73,15 @@ export function createFileBrowsers(api: FilesApi, editsForPanel = createSharedRe
       const pane = panes.get(paneId);
       if (!pane) return;
       pane.status = status;
-      followConnection(pane.store, status, visible === paneId);
+      followConnection(pane.store, status, visible.has(paneId));
     },
     show(paneId, initialStatus) {
       const pane = panes.get(paneId);
-      visible = paneId;
+      visible.add(paneId);
       if (pane) followConnection(pane.store, pane.status ?? initialStatus, true);
       return () => {
         pane?.store.getState().clearSearch();
-        if (visible === paneId) visible = null;
+        visible.delete(paneId);
       };
     },
     retain(paneIds) {
@@ -60,11 +89,11 @@ export function createFileBrowsers(api: FilesApi, editsForPanel = createSharedRe
         if (paneIds.has(paneId)) continue;
         pane.store.getState().dispose();
         panes.delete(paneId);
-        if (visible === paneId) visible = null;
+        visible.delete(paneId);
       }
     },
   };
 }
 
 /** The app's File panels, over the real SFTP and remote edit commands. */
-export const fileBrowsers = createFileBrowsers({ ...ipc, ...editIpc }, sharedRemoteEdits);
+export const fileBrowsers = createFileBrowsers({ ...ipc, ...editIpc }, sharedRemoteEdits, transfersStore);

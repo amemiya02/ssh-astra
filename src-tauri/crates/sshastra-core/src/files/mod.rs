@@ -18,8 +18,8 @@ pub use local::{DiskBrowser, DiskFs, LocalFs};
 pub use registry::{FsId, FsRegistry};
 pub use sftp::SftpFs;
 pub use transfer::{
-    ConflictAnswer, OpenRemote, Transfer, TransferDirection, TransferId, TransferQueue,
-    TransferSettings, TransferState,
+    ConflictAnswer, OpenRemote, RemoteTransfer, Transfer, TransferDirection, TransferHost,
+    TransferId, TransferQueue, TransferSettings, TransferState,
 };
 
 use std::future::Future;

@@ -17,14 +17,23 @@ export type TransferState =
   | { type: "failed"; message: string }
   | { type: "cancelled" };
 
+/** A transfer endpoint's saved Host identity and label. */
+export interface TransferHost {
+  id: HostId;
+  name: string;
+  temporary?: boolean;
+}
+
 /** Mirrors `sshastra_core::files::Transfer`: one dropped or picked file or folder. */
 export interface Transfer {
   id: TransferId;
-  direction: "upload" | "download";
+  direction: "upload" | "download" | "copy";
   name: string;
   /** Full paths of the copy's source and target. */
   source: string;
   target: string;
+  sourceHost?: TransferHost;
+  targetHost?: TransferHost;
   state: TransferState;
   unprotected: boolean;
   /** Totals are 0 until a folder has been walked. */
@@ -53,6 +62,13 @@ export function uploadFiles(hostId: HostId, paths: string[], remoteDir: string):
 /** Queues downloading remote files or folders (absolute paths) into the local folder `localDir`. */
 export function downloadFiles(hostId: HostId, paths: string[], localDir: string): Promise<TransferId[]> {
   return invoke<TransferId[]>("transfers_download", { hostId, paths, localDir });
+}
+
+/** Queues copying absolute paths from one Host into a directory on another. */
+export function copyRemoteFiles(
+  source: TransferHost, paths: string[], target: TransferHost, remoteDir: string,
+): Promise<TransferId[]> {
+  return invoke<TransferId[]>("transfers_copy_remote", { source, paths, target, remoteDir });
 }
 
 export function cancelTransfer(id: TransferId): Promise<void> {
