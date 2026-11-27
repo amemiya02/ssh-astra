@@ -18,18 +18,19 @@ const sources: ImportOption[] = [
     kind: "sshConfig",
     choose: async () => ({ kind: "sshConfig" }),
   },
-  fileSource("csv", "csv"),
-  fileSource("putty", "reg"),
+  fileSource("csv", ["csv"]),
+  fileSource("putty", ["reg"]),
+  fileSource("mobaxterm", ["mxtsessions", "moba"]),
 ];
 
-function fileSource(kind: "csv" | "putty", extension: string): ImportOption {
+function fileSource(kind: Exclude<HostImportSource["kind"], "sshConfig">, extensions: string[]): ImportOption {
   return {
     kind,
     description: (t) => t(`hosts.import.${kind}.help`),
     async choose(t) {
       const path = await pickOpenPath({
         title: t(`hosts.import.${kind}.chooseFile`),
-        filters: [{ name: t(`hosts.import.${kind}.fileType`), extensions: [extension] }],
+        filters: [{ name: t(`hosts.import.${kind}.fileType`), extensions }],
       });
       return path ? { kind, path } : null;
     },

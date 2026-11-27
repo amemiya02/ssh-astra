@@ -206,7 +206,7 @@
     "connectFailed": "无法连接到 {{name}}：{{message}}",
     "import": {
       "action": "导入 Host…",
-      "keywords": "ssh config openssh csv 导入 putty",
+      "keywords": "ssh config openssh csv 导入 putty mobaxterm mxtsessions",
       "pickerTitle": "导入 Host",
       "chooseSource": "选择要从哪里导入 Host。",
       "sshConfig": {
@@ -223,6 +223,15 @@
         "title": "CSV 导入结果",
         "nothing": "CSV 文件中没有可导入的 Host。",
         "error": "无法导入 CSV 文件：{{message}}"
+      },
+      "mobaxterm": {
+        "action": "MobaXterm 会话…",
+        "help": "选择会话文件夹导出文件（.mxtsessions）或单个会话导出文件（.moba）。",
+        "chooseFile": "选择 MobaXterm 会话导出文件",
+        "fileType": "MobaXterm 会话导出文件",
+        "title": "MobaXterm 导入结果",
+        "nothing": "MobaXterm 文件中没有可导入的 Host。",
+        "error": "无法导入 MobaXterm 文件：{{message}}"
       },
       "putty": {
         "action": "PuTTY 注册表导出文件…",
@@ -260,7 +269,16 @@
         "puttyUnsupportedProtocol": "此 PuTTY 会话使用的协议不是 SSH。",
         "puttyDefaultUser": "PuTTY 未保存用户名，已使用本机用户名。",
         "puttyInvalidOption": "PuTTY 选项 {{option}} 缺失或无效。",
-        "puttyUnsupportedOptions": "已略过 PuTTY 选项：{{options}}。"
+        "puttyUnsupportedOptions": "已略过 PuTTY 选项：{{options}}。",
+        "mobaxtermFile": "请选择 MobaXterm 会话导出文件。",
+        "mobaxtermSession": "此 MobaXterm 会话无效，或其名称、地址或用户名无效。",
+        "mobaxtermUnsupportedSession": "此 MobaXterm 会话使用的协议不是 SSH。",
+        "mobaxtermInvalidPort": "端口必须是 1 到 65535 之间的整数。",
+        "mobaxtermInvalidGroup": "MobaXterm 文件夹路径无效。",
+        "mobaxtermInvalidGateway": "MobaXterm SSH 跳板机设置无效。",
+        "mobaxtermDefaultUser": "MobaXterm 未为此 Host 或其跳板机保存用户名，已使用本机用户名。",
+        "mobaxtermKeyPath": "MobaXterm 的一个私钥路径无法导入。",
+        "mobaxtermUnsupportedSettings": "部分 MobaXterm 设置无法导入。"
       }
     },
     "transfer": {

@@ -1,0 +1,22 @@
+[Bookmarks]
+SubRep=
+ImgNum=42
+Direct=#109#0%direct.example.test%%ops
+
+[Bookmarks_1]
+ImgNum=41
+Build server=;  logout#109#0%build.example.test%2202%builder%MOBA_TEST_SECRET_INLINE%-1%0%MOBA_TEST_SECRET_COMMAND%outer.example.test__PIPE__2001:db8::16%2223__PIPE__22%gateway__PIPE__route%%%%_ProfileDir_\.ssh\build.key%D:\test-keys\gateway.ppk__PIPE__%%%%7%%%%%%%MOBA_TEST_SECRET_PROXY#MobaFont%10#0#MOBA_TEST_SECRET_COMMENT#-1
+SubRep=Work\Production
+Desktop=#91#4%desk.example.test%3389%operator%MOBA_TEST_SECRET_RDP
+Bad port=#109#0%broken.example.test%MOBA_TEST_SECRET_PORT%ops
+Bad gateway=#109#0%inside.example.test%22%ops%%%%%one.example.test__PIPE__two.example.test%2201
+Inline credentials=#109#0%ssh://test:MOBA_TEST_SECRET_USERINFO@bad.example.test%22%ops
+
+[Bookmarks_2]
+SubRep=Work\\Invalid
+Bad group=#109#0%unused.example.test%22%ops
+
+[Passwords]
+MOBA_TEST_SECRET_KEY=MOBA_TEST_SECRET_PASSWORD
+[Credentials]
+MOBA_TEST_SECRET_CREDENTIAL=MOBA_TEST_SECRET_BLOB

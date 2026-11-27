@@ -206,7 +206,7 @@
     "connectFailed": "無法連線到 {{name}}：{{message}}",
     "import": {
       "action": "匯入 Host…",
-      "keywords": "ssh config openssh csv 匯入 putty",
+      "keywords": "ssh config openssh csv 匯入 putty mobaxterm mxtsessions",
       "pickerTitle": "匯入 Host",
       "chooseSource": "選擇要從哪裡匯入 Host。",
       "sshConfig": {
@@ -223,6 +223,15 @@
         "title": "CSV 匯入結果",
         "nothing": "CSV 檔案中沒有可匯入的 Host。",
         "error": "無法匯入 CSV 檔案：{{message}}"
+      },
+      "mobaxterm": {
+        "action": "MobaXterm 工作階段…",
+        "help": "選擇工作階段資料夾匯出檔（.mxtsessions）或單一工作階段匯出檔（.moba）。",
+        "chooseFile": "選擇 MobaXterm 工作階段匯出檔",
+        "fileType": "MobaXterm 工作階段匯出檔",
+        "title": "MobaXterm 匯入結果",
+        "nothing": "MobaXterm 檔案中沒有可匯入的 Host。",
+        "error": "無法匯入 MobaXterm 檔案：{{message}}"
       },
       "putty": {
         "action": "PuTTY 登錄匯出檔…",
@@ -260,7 +269,16 @@
         "puttyUnsupportedProtocol": "此 PuTTY 工作階段使用的通訊協定並非 SSH。",
         "puttyDefaultUser": "PuTTY 未儲存使用者名稱，已使用本機使用者名稱。",
         "puttyInvalidOption": "PuTTY 選項 {{option}} 缺失或無效。",
-        "puttyUnsupportedOptions": "已略過 PuTTY 選項：{{options}}。"
+        "puttyUnsupportedOptions": "已略過 PuTTY 選項：{{options}}。",
+        "mobaxtermFile": "請選擇 MobaXterm 工作階段匯出檔。",
+        "mobaxtermSession": "此 MobaXterm 工作階段無效，或其名稱、位址或使用者名稱無效。",
+        "mobaxtermUnsupportedSession": "此 MobaXterm 工作階段使用的通訊協定並非 SSH。",
+        "mobaxtermInvalidPort": "連接埠必須是 1 到 65535 之間的整數。",
+        "mobaxtermInvalidGroup": "MobaXterm 資料夾路徑無效。",
+        "mobaxtermInvalidGateway": "MobaXterm SSH 跳板主機設定無效。",
+        "mobaxtermDefaultUser": "MobaXterm 未為此 Host 或其跳板主機儲存使用者名稱，已使用本機使用者名稱。",
+        "mobaxtermKeyPath": "MobaXterm 的一個私密金鑰路徑無法匯入。",
+        "mobaxtermUnsupportedSettings": "部分 MobaXterm 設定無法匯入。"
       }
     },
     "transfer": {
