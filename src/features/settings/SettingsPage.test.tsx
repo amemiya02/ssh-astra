@@ -113,3 +113,50 @@ it("searches across categories and languages, then returns to normal category na
     vi.unstubAllGlobals();
   }
 });
+
+it("switches the interface to Traditional Chinese and saves the selected language", async () => {
+  const preferred = vi.spyOn(navigator, "languages", "get").mockReturnValue(["en-US"]);
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  window.matchMedia ??= ((query: string) => ({
+    matches: false,
+    media: query,
+    addEventListener() {},
+    removeEventListener() {},
+  })) as unknown as typeof window.matchMedia;
+
+  const key = "language-test";
+  const backend = localStorageBackend(localStorage, key);
+  await startSettings(backend);
+  startI18n();
+  const container = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(container);
+
+  try {
+    act(() => root.render(<ThemeProvider><SettingsPage /></ThemeProvider>));
+    const group = container.querySelector<HTMLDivElement>('[aria-label="Interface language"]')!;
+    const traditional = [...group.querySelectorAll("button")].find((option) => option.textContent === "繁體中文")!;
+    expect(traditional).toBeDefined();
+    await act(() => traditional.click());
+
+    expect(traditional.getAttribute("aria-checked")).toBe("true");
+    expect(group.getAttribute("aria-label")).toBe("介面語言");
+    expect(container.querySelector('input[type="search"]')?.getAttribute("placeholder")).toBe("搜尋設定");
+    expect(document.documentElement.lang).toBe("zh-Hant");
+    expect((await backend.load()).general).toEqual({ language: "zh-Hant" });
+
+    preferred.mockReturnValue(["zh-TW"]);
+    const system = [...group.querySelectorAll("button")].find((option) => option.textContent === "依照系統")!;
+    await act(() => system.click());
+    expect(system.getAttribute("aria-checked")).toBe("true");
+    expect(document.documentElement.lang).toBe("zh-Hant");
+    expect((await backend.load()).general).toEqual({ language: "system" });
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    localStorage.removeItem(key);
+    preferred.mockRestore();
+    await startSettings(backend);
+    startI18n();
+    vi.unstubAllGlobals();
+  }
+});

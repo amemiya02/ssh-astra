@@ -289,7 +289,7 @@ Pickers list light themes first, then dark, Astra's own at the head of each (`ap
 
 ## Typography
 
-**Body Font:** the system UI stack (`-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Noto Sans", "PingFang SC", "Microsoft YaHei", sans-serif`)
+**Body Font:** the system UI stack (`-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Noto Sans", "PingFang SC", "Microsoft YaHei", sans-serif`). Traditional Chinese uses PingFang TC, Microsoft JhengHei, and Noto Sans CJK TC for its CJK fallbacks.
 **Mono Font:** `ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace`
 
 **Character:** native and unbranded, reading as part of the OS in English and Chinese alike. Hierarchy comes from weight (400 / 500 / 600) and from foreground against muted foreground, not size jumps. Tailwind's text scale is overridden in `src/index.css` (`text-xs` 11.5px, `text-sm` 13px, `text-base` 14px, `text-lg` 15px) so shadcn components inherit desktop density.
@@ -430,9 +430,9 @@ Settings → Notifications has independent controls for transfer batches, failed
 
 ### Settings navigation
 
-The top search field filters settings across all categories. Results keep their category headings and the original controls. Search matches titles, descriptions, and keywords in both English and Simplified Chinese. Clearing the field returns to the selected category. Choosing a category clears the search and scrolls its rows to the top.
+The top search field filters settings across all categories. Results keep their category headings and the original controls. Search matches titles, descriptions, and keywords in English, Simplified Chinese, and Traditional Chinese. Clearing the field returns to the selected category. Choosing a category clears the search and scrolls its rows to the top.
 
-The left navigation lists Appearance, Terminal, Files, Connection, Transfers, Shortcuts, Notifications, Updates, and Diagnostics in that order when available. Appearance includes workspace layout and interface language. Notifications, Updates, and Diagnostics use the installed app's native features. The current category uses the `selected` surface, and narrow workspaces place the categories in a horizontally scrolling row above the controls. Agent access can appear when it has settings available.
+The left navigation lists Appearance, Terminal, Files, Connection, Transfers, Shortcuts, Notifications, Updates, and Diagnostics in that order when available. Appearance includes workspace layout and interface language. Language can follow the system or be set to English, Simplified Chinese, or Traditional Chinese. Notifications, Updates, and Diagnostics use the installed app's native features. The current category uses the `selected` surface, and narrow workspaces place the categories in a horizontally scrolling row above the controls. Agent access can appear when it has settings available.
 
 Settings → Connection accepts a custom Unix agent socket or Windows named pipe in a text field. The field saves on Enter or blur. Clearing it returns new Connections to the system agent. A Connection uses the same source for authentication and agent forwarding when its Host enables forwarding.
 
@@ -521,7 +521,7 @@ If the Connection drops, a scrollable overlay covers the Terminal and shows the 
 - **Do** use the overridden Tailwind sizes (`text-xs` 11.5px, `text-sm` 13px, `text-base` 14px, `text-lg` 15px) and the radius scale (6 / 8 / 10 / 14px).
 - **Do** build icon-only controls with `IconButton` and a `label`; give every interactive element a visible `:focus-visible` ring (`ring`, 3px halo).
 - **Do** respect `prefers-reduced-motion`: the base layer reduces every animation and transition to near zero.
-- **Do** capitalise GLOSSARY.md terms in English copy (Host, Group, Tag, Jump host, Connection, Known host, Terminal, Local terminal, File panel, Port forward), write everything else in sentence case, and put all copy behind i18n keys in both locales.
+- **Do** capitalise GLOSSARY.md terms in English copy (Host, Group, Tag, Jump host, Connection, Known host, Terminal, Local terminal, File panel, Port forward), write everything else in sentence case, and put all copy behind i18n keys in all three locales.
 
 ### Don't:
 - **Don't** put literal colours, Tailwind palette colours or arbitrary colour values in components; literal hex belongs in the theme and Terminal palette definitions under `src/theme`.
