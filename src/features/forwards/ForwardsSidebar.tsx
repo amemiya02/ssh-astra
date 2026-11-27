@@ -19,7 +19,7 @@ export function ForwardsSidebar({ onOpenForwards }: { onOpenForwards(host: Host)
   return (
     <section aria-label={t("forwards.title")} className="flex h-full min-h-0 flex-col pr-1 pl-2.5">
       <SidebarHeader title={t("forwards.title")} />
-      <div className="min-h-0 flex-1 overflow-y-auto pb-2.5">
+      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto pb-2.5">
         {rows.length === 0 ? (
           <div className="flex flex-col items-start gap-2 px-1 py-4">
             <ArrowRightLeft className="text-muted-foreground size-5" aria-hidden />
@@ -27,7 +27,7 @@ export function ForwardsSidebar({ onOpenForwards }: { onOpenForwards(host: Host)
             <p className="text-muted-foreground text-pretty">{t("forwards.sidebar.emptyBody")}</p>
           </div>
         ) : (
-          <ul aria-label={t("forwards.title")} className="grid gap-0.5">
+          <ul aria-label={t("forwards.title")} className="grid grid-cols-[minmax(0,1fr)] gap-0.5">
             {rows.map(({ host, running, total }) => (
               <li key={host.id}>
                 <button

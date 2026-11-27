@@ -18,7 +18,7 @@ export function HostsSidebar({ actions, children, emptyAction }: HostsSidebarPro
   return (
     <section aria-label={t("hosts.title")} className="flex h-full min-h-0 flex-col pr-1 pl-2.5">
       <SidebarHeader title={t("hosts.title")}>{actions}</SidebarHeader>
-      <div className="min-h-0 flex-1 overflow-y-auto pb-2.5">{children ?? <HostListEmpty action={emptyAction} />}</div>
+      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto pb-2.5">{children ?? <HostListEmpty action={emptyAction} />}</div>
     </section>
   );
 }

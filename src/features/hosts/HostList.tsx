@@ -236,7 +236,7 @@ export function HostList({ tree, nodes, searching, selected, onSelect, renamingG
             )}
           </TreeRow>
           {open && (
-            <ul role="group" aria-label={group.name} className="grid gap-0.5 pt-0.5 pl-3">
+            <ul role="group" aria-label={group.name} className="grid grid-cols-[minmax(0,1fr)] gap-0.5 pt-0.5 pl-3">
               {node.children.length > 0 ? (
                 render(node.children)
               ) : (
@@ -259,7 +259,7 @@ export function HostList({ tree, nodes, searching, selected, onSelect, renamingG
       onDragCancel={() => endDrag(null)}
     >
       <div className="flex min-h-full flex-col">
-        <ul aria-label={t("hosts.title")} className="grid gap-0.5">
+        <ul aria-label={t("hosts.title")} className="grid grid-cols-[minmax(0,1fr)] gap-0.5">
           {render(nodes)}
         </ul>
         {!searching && <RootDropZone active={drop?.key === "root"} />}

@@ -103,11 +103,16 @@ async function setFilePanel(shown: boolean): Promise<void> {
   if (has) await domClick(`[aria-label="${want}"]`);
 }
 
-async function setTheme(theme: "Light" | "Dark"): Promise<void> {
+/** Opens Settings, stops following the system appearance, and picks the named theme's card. */
+async function setTheme(name: string): Promise<void> {
   await shortcut("Comma", ",");
-  const option = $(`//*[@role="radiogroup"][@aria-label="Theme"]//*[@role="radio"][normalize-space()="${theme}"]`);
-  await option.waitForDisplayed();
-  await option.click();
+  const off = $(`//*[@role="radiogroup"][@aria-label="Follow system appearance"]//*[@role="radio"][normalize-space()="Off"]`);
+  await off.waitForDisplayed();
+  if ((await off.getAttribute("aria-checked")) !== "true") await off.click();
+  const card = $(`[role="radio"][aria-label="${name}"]`);
+  await card.waitForDisplayed();
+  await card.click();
+  await parkPointer();
 }
 
 async function closeTab(title: string): Promise<void> {
@@ -242,15 +247,24 @@ describe("README screenshots", () => {
 
   it("Settings, then the main view in the light theme", async () => {
     await shortcut("Comma", ",");
-    await $('[role="radiogroup"][aria-label="Theme"]').waitForDisplayed();
+    await $('[role="radiogroup"][aria-label="Dark themes"]').waitForDisplayed();
     await setFilePanel(false);
     await shot("settings");
-    await setTheme("Light");
+    await setTheme("Astra Light");
     await setFilePanel(true);
     await closeTab("Settings");
     await focusTerminal();
     await shot("main-light");
-    await setTheme("Dark");
+    // Two of the other whole-window themes: chrome and Terminal recolour together.
+    await setTheme("Tokyo Night");
+    await closeTab("Settings");
+    await focusTerminal();
+    await shot("theme-tokyo-night");
+    await setTheme("Catppuccin Latte");
+    await closeTab("Settings");
+    await focusTerminal();
+    await shot("theme-catppuccin-latte");
+    await setTheme("Astra Dark");
     await closeTab("Settings");
   });
 
