@@ -158,7 +158,7 @@ describe("sshastra", () => {
 
   it("restores the tab and split layout after restarting and connects only on request", async () => {
     const name = "E2E restored sshd";
-    const firstHostConnected = await $(`[role="tab"][aria-label="${HOST_NAME} (Connected)"]`).isExisting();
+    const firstHostConnected = await $('[role="tab"][aria-selected="true"] [data-status="connected"]').isExisting();
     await $('[role="tab"][id]').click();
     await $("button=New Host").click();
     await $("#host-form-name").setValue(name);
