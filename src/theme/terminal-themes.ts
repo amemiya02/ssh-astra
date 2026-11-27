@@ -1,11 +1,12 @@
 import type { ITheme } from "@xterm/xterm";
+import { requiredPaletteKeys, type ItermPalette } from "./iterm-colors";
+import { iterm2ColorSchemes } from "./iterm2-color-schemes";
 import { appThemeList, type AppTheme, type AppThemeId } from "./themes";
 
 /**
  * Named Terminal colour schemes the user can pick globally or per Host (to tell, say,
  * production apart at a glance): every app theme's Terminal palette under the theme's
- * id, plus `ember`. `app` is not listed: it means the painted app theme's own palette.
- * xterm parses hex, not oklch, so palettes live in `themes.ts` and here as literals.
+ * id, Ember, and palettes from iTerm2-Color-Schemes.
  */
 const themeSchemes = Object.fromEntries(appThemeList.map((theme) => [theme.id, theme.terminal])) as Record<
   AppThemeId,
@@ -38,6 +39,7 @@ export const terminalSchemes = {
     brightCyan: "#9fe0e7",
     brightWhite: "#fff2f2",
   },
+  ...iterm2ColorSchemes,
 } satisfies Record<string, ITheme>;
 
 /** Search highlights in the Terminal: every match amber, the current one Astra Blue. Readable on every scheme. */
@@ -51,16 +53,62 @@ export const terminalSearchDecorations = {
 };
 
 export type TerminalSchemeId = keyof typeof terminalSchemes;
-/** A scheme choice: a named scheme, or `app` to follow the painted app theme. */
-export type TerminalColorScheme = "app" | TerminalSchemeId;
+type BuiltInTerminalScheme = "app" | TerminalSchemeId;
+export type ImportedTerminalSchemeId = `imported:${string}`;
+export type TerminalColorScheme = BuiltInTerminalScheme | ImportedTerminalSchemeId;
 
-export const terminalColorSchemes: readonly TerminalColorScheme[] = [
+export interface ImportedTerminalScheme {
+  id: ImportedTerminalSchemeId;
+  name: string;
+  palette: ItermPalette;
+}
+
+export const terminalColorSchemes: readonly BuiltInTerminalScheme[] = [
   "app",
   ...(Object.keys(terminalSchemes) as TerminalSchemeId[]),
 ];
 
-export function isTerminalColorScheme(value: unknown): value is TerminalColorScheme {
-  return typeof value === "string" && (terminalColorSchemes as readonly string[]).includes(value);
+export function isTerminalColorScheme(
+  value: unknown,
+  imported: readonly ImportedTerminalScheme[] = [],
+): value is TerminalColorScheme {
+  return typeof value === "string" && (
+    (terminalColorSchemes as readonly string[]).includes(value) || imported.some(({ id }) => id === value)
+  );
+}
+
+function colorHex(value: unknown, allowAlpha = false): value is string {
+  const hex = allowAlpha ? /^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/i : /^#[0-9a-f]{6}$/i;
+  return typeof value === "string" && hex.test(value);
+}
+
+export function terminalSchemeName(value: string): string {
+  return Array.from(value.replace(/[\p{Cc}\p{Bidi_Control}]/gu, "").trim()).slice(0, 128).join("");
+}
+
+/** Keep valid imported choices from the settings file, including only xterm colour properties. */
+export function normalizeImportedTerminalSchemes(value: unknown): ImportedTerminalScheme[] {
+  if (!Array.isArray(value)) return [];
+  const schemes = new Map<ImportedTerminalSchemeId, ImportedTerminalScheme>();
+  for (const entry of value as unknown[]) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const { id, name, palette } = entry as Record<string, unknown>;
+    if (
+      typeof id !== "string" || !/^imported:[a-z0-9-]{1,60}$/i.test(id) ||
+      typeof name !== "string" || typeof palette !== "object" || palette === null
+    ) continue;
+    const cleanName = terminalSchemeName(name);
+    const schemeId = id as ImportedTerminalSchemeId;
+    if (!cleanName || schemes.has(schemeId)) continue;
+    const colors = palette as Record<string, unknown>;
+    const required = requiredPaletteKeys.map((key) => [key, colors[key]] as const);
+    if (required.some(([, color]) => !colorHex(color))) continue;
+    const cleanPalette = Object.fromEntries(required) as ItermPalette;
+    if (colorHex(colors.selectionBackground, true)) cleanPalette.selectionBackground = colors.selectionBackground;
+    if (colorHex(colors.selectionForeground)) cleanPalette.selectionForeground = colors.selectionForeground;
+    schemes.set(schemeId, { id: schemeId, name: cleanName, palette: cleanPalette });
+  }
+  return [...schemes.values()];
 }
 
 /**
@@ -69,9 +117,14 @@ export function isTerminalColorScheme(value: unknown): value is TerminalColorSch
  */
 export function resolveTerminalTheme(
   global: TerminalColorScheme,
-  hostOverride: TerminalColorScheme | null | undefined,
+  hostOverride: string | null | undefined,
   appTheme: AppTheme,
+  imported: readonly ImportedTerminalScheme[] = [],
 ): ITheme {
-  const scheme = hostOverride ?? global;
-  return scheme === "app" ? appTheme.terminal : terminalSchemes[scheme];
+  const paletteFor = (scheme: string | null | undefined) => {
+    if (scheme === "app") return appTheme.terminal;
+    if (scheme && Object.hasOwn(terminalSchemes, scheme)) return terminalSchemes[scheme as TerminalSchemeId];
+    return imported.find(({ id }) => id === scheme)?.palette;
+  };
+  return paletteFor(hostOverride) ?? paletteFor(global) ?? appTheme.terminal;
 }

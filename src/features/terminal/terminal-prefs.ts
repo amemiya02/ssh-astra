@@ -1,5 +1,10 @@
 import { defineSection, getSetting, setSetting } from "@/lib/storage";
-import { isTerminalColorScheme, type TerminalColorScheme } from "@/theme/terminal-themes";
+import {
+  isTerminalColorScheme,
+  normalizeImportedTerminalSchemes,
+  type ImportedTerminalScheme,
+  type TerminalColorScheme,
+} from "@/theme/terminal-themes";
 import { defaultTerminalHighlighting, normalizeTerminalHighlighting, type TerminalHighlighting } from "./terminal-highlighting";
 
 /**
@@ -24,6 +29,7 @@ export interface TerminalPrefs {
   /** Draw programming ligatures (`->`, `!=`) when the font has them. */
   ligatures: boolean;
   colorScheme: TerminalColorScheme;
+  importedSchemes: readonly ImportedTerminalScheme[];
   highlighting: TerminalHighlighting;
   /** Selecting text copies it to the clipboard. */
   copyOnSelect: boolean;
@@ -64,6 +70,7 @@ export const defaultTerminalPrefs: TerminalPrefs = {
   bell: "none",
   ligatures: false,
   colorScheme: "app",
+  importedSchemes: [],
   highlighting: defaultTerminalHighlighting,
   copyOnSelect: true,
   rightClickPaste: true,
@@ -86,6 +93,7 @@ export function zoomTerminalFont(step: 1 | -1): void {
 /** Coerces untrusted input (a saved value, a settings field) into valid preferences. */
 export function normalizeTerminalPrefs(raw: Partial<Record<keyof TerminalPrefs, unknown>>): TerminalPrefs {
   const d = defaultTerminalPrefs;
+  const importedSchemes = normalizeImportedTerminalSchemes(raw.importedSchemes);
   const bool = (v: unknown, fallback: boolean) => (typeof v === "boolean" ? v : fallback);
   const fontFamily = typeof raw.fontFamily === "string" && raw.fontFamily.trim() ? raw.fontFamily.trim() : d.fontFamily;
   const bounded = (key: keyof typeof terminalNumberFields) => {
@@ -107,7 +115,8 @@ export function normalizeTerminalPrefs(raw: Partial<Record<keyof TerminalPrefs, 
     titleSource: raw.titleSource === "host" ? "host" : d.titleSource,
     bell: terminalBellModes.find((mode) => mode === raw.bell) ?? d.bell,
     ligatures: bool(raw.ligatures, d.ligatures),
-    colorScheme: isTerminalColorScheme(raw.colorScheme) ? raw.colorScheme : d.colorScheme,
+    colorScheme: isTerminalColorScheme(raw.colorScheme, importedSchemes) ? raw.colorScheme : d.colorScheme,
+    importedSchemes,
     highlighting: normalizeTerminalHighlighting(raw.highlighting),
     copyOnSelect: bool(raw.copyOnSelect, d.copyOnSelect),
     rightClickPaste: bool(raw.rightClickPaste, d.rightClickPaste),

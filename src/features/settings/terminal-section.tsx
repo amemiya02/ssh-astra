@@ -8,6 +8,7 @@ import { TerminalSchemeSelect } from "@/features/terminal/TerminalSchemeSelect";
 import { SettingRow } from "./SettingRow";
 import { settingRows } from "./setting-rows";
 import { TerminalHighlightingSettings } from "./terminal-highlighting-settings";
+import { TerminalSchemeSettings } from "./terminal-scheme-settings";
 
 type BooleanPref = "ligatures" | "cursorBlink" | "copyOnSelect" | "rightClickPaste" | "confirmMultilinePaste" | "shellIntegration";
 
@@ -129,10 +130,12 @@ export function TerminalSection() {
             id="settings-terminal-scheme"
             aria-label={schemeLabel}
             value={prefs.colorScheme}
+            importedSchemes={prefs.importedSchemes}
             onValueChange={(colorScheme) => updatePrefs({ colorScheme: colorScheme ?? "app" })}
           />
         </div>
       </SettingRow>
+      <TerminalSchemeSettings importedSchemes={prefs.importedSchemes} updatePrefs={updatePrefs} />
       <SettingRow setting={settingRows.cursorStyle}>
         <SegmentedControl
           label={cursorLabel}
