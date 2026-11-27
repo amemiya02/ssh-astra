@@ -65,8 +65,8 @@ export interface FileBrowserState {
 
   /** Opens an SFTP session on the Host's live Connection, then lists where it was (first time: home). */
   connect(): Promise<void>;
-  /** Shows `path`: absolute, `~`, `~/x`, or relative to home. Following the Terminal's `cd` calls this. */
-  navigate(path: string): Promise<void>;
+  /** Shows `path`: absolute, `~`, `~/x`, or relative to home. */
+  navigate(path: string, source?: "user" | "terminal"): Promise<void>;
   canGoBack: boolean;
   canGoForward: boolean;
   goBack(): Promise<void>;
@@ -149,6 +149,7 @@ export function createFileBrowserStore(
   local?: { openPath(path: string): Promise<void>; windows: boolean },
   editsForPanel = createSharedRemoteEdits(api),
   refreshHostAfterMove?: (directories: readonly string[]) => Promise<void>,
+  onNavigate?: (path: string) => void,
 ): StoreApi<FileBrowserState> {
   let fsId: FsId | null = null;
   let opening: Promise<void> | null = null;
@@ -197,10 +198,11 @@ export function createFileBrowserStore(
     const list = async (
       path: string,
       keepSelection: boolean,
-      { targetIndex, preserveError = false, selectName }: {
+      { targetIndex, preserveError = false, selectName, userNavigation = false }: {
         targetIndex?: number;
         preserveError?: boolean;
         selectName?: string;
+        userNavigation?: boolean;
       } = {},
     ) => {
       if (fsId === null) return;
@@ -242,6 +244,7 @@ export function createFileBrowserStore(
           canGoBack: historyIndex > 0,
           canGoForward: historyIndex < history.length - 1,
         });
+        if (userNavigation && !samePath && !missingMatch) onNavigate?.(listing.path);
       } catch (e) {
         if (mine !== request) return;
         set({ loading: false, ...(preserveError ? {} : { error: readCommandError(e) }) });
@@ -258,7 +261,7 @@ export function createFileBrowserStore(
     const traverse = async (step: -1 | 1) => {
       const targetIndex = historyIndex + step;
       const target = history[targetIndex];
-      if (target !== undefined) await list(target, false, { targetIndex });
+      if (target !== undefined) await list(target, false, { targetIndex, userNavigation: true });
     };
 
     const remoteEdits = editsForPanel(hostId, (item) => {
@@ -390,19 +393,19 @@ export function createFileBrowserStore(
         return opening;
       },
 
-      navigate: (path) => list(path, false),
+      navigate: (path, source = "user") => list(path, false, { userNavigation: source === "user" }),
       goBack: () => traverse(-1),
       goForward: () => traverse(1),
       up: () => {
         const path = get().path ?? "/";
-        return list(local ? childPath(path, "..") : parentPath(path), false);
+        return list(local ? childPath(path, "..") : parentPath(path), false, { userNavigation: true });
       },
       refresh: () => list(get().path ?? "", true),
       async open(entry) {
         const dir = get().path;
         if (dir === null) return;
         const path = childPath(dir, entry.name);
-        if (isDirLike(entry)) await list(path, false);
+        if (isDirLike(entry)) await list(path, false, { userNavigation: true });
         else if (local && isFileLike(entry)) {
           try {
             await local.openPath(path);
@@ -554,7 +557,7 @@ export function createFileBrowserStore(
         stopSearch();
         if (get().search !== null) set({ search: null });
       },
-      revealSearchMatch: ({ parent, name }) => list(parent, false, { selectName: name }),
+      revealSearchMatch: ({ parent, name }) => list(parent, false, { selectName: name, userNavigation: true }),
 
       disconnect() {
         openGeneration += 1;

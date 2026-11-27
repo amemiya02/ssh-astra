@@ -90,6 +90,12 @@ impl TerminalRegistry {
         self.with(id, |t| t.write(data))
     }
 
+    pub fn follow_file_directory(&self, id: TerminalId, prompt_id: u64, path: &str) -> Result<()> {
+        self.with(id, |terminal| {
+            terminal.follow_file_directory(prompt_id, path)
+        })
+    }
+
     pub fn resize(&self, id: TerminalId, size: TerminalSize) -> Result<()> {
         let output = self
             .lock()

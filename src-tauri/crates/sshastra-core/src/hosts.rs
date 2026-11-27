@@ -22,7 +22,7 @@ pub use transfer::{ImportSummary, EXPORT_FORMAT};
 /// The file format version this build writes, to the store and to export
 /// files. Bump it together with a migration step in [`migrate`], which reads
 /// both.
-const CURRENT_VERSION: u32 = 17;
+const CURRENT_VERSION: u32 = 18;
 
 const MAX_HOST_TAGS: usize = 10;
 const MAX_TAG_LENGTH: usize = 32;
@@ -177,6 +177,9 @@ pub struct Host {
     /// Allow shells on this Host to forward the local SSH agent.
     #[serde(default)]
     pub forward_agent: bool,
+    /// Offer older SSH algorithms as fallbacks for this Host.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub allow_legacy_algorithms: bool,
     /// Outbound proxy choice for this Host when it is the first TCP hop.
     #[serde(default, skip_serializing_if = "HostProxy::is_inherit")]
     pub proxy: HostProxy,
@@ -236,6 +239,9 @@ pub struct HostDraft {
     /// Allow shells on this Host to forward the local SSH agent.
     #[serde(default)]
     pub forward_agent: bool,
+    /// Offer older SSH algorithms as fallbacks for this Host.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub allow_legacy_algorithms: bool,
     /// Outbound proxy choice for this Host when it is the first TCP hop.
     #[serde(default, skip_serializing_if = "HostProxy::is_inherit")]
     pub proxy: HostProxy,
@@ -298,6 +304,7 @@ impl HostDraft {
             auth,
             identities_only: self.identities_only,
             forward_agent: self.forward_agent,
+            allow_legacy_algorithms: self.allow_legacy_algorithms,
             proxy: self.proxy.normalize().map_err(HostStoreError::Invalid)?,
             keepalive_seconds: self.keepalive_seconds,
             post_login_command: self.post_login_command.filter(|s| !s.trim().is_empty()),
@@ -752,6 +759,7 @@ impl HostStore {
                 auth,
                 identities_only: entry.identities_only,
                 forward_agent: entry.forward_agent,
+                allow_legacy_algorithms: false,
                 proxy: entry
                     .proxy_command
                     .map(HostProxy::ProxyCommand)
@@ -1003,7 +1011,8 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
         // adds Tags; older Hosts default to an empty list. v15 adds an
         // optional icon; older Hosts use the automatic icon via serde default.
         // v16 adds an optional ANSI hue with the same automatic default.
-        2 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | CURRENT_VERSION => {
+        // v17 stores the detected OS and v18 adds legacy algorithm opt-in.
+        2 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | CURRENT_VERSION => {
             let FileV2 { groups, hosts } = serde_json::from_str(text).map_err(corrupt)?;
             Ok(Library { groups, hosts })
         }
@@ -1030,6 +1039,10 @@ fn migrate(text: &str) -> Result<Library, HostStoreError> {
         }
     }
     for host in &mut library.hosts {
+        // A field unknown to the original schema could not record consent.
+        if version < 18 {
+            host.allow_legacy_algorithms = false;
+        }
         host.tags = normalize_tags(&host.tags);
     }
     Ok(library)

@@ -1,6 +1,6 @@
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
-import type { ShellIntegrationEvent, ShellIntegrationStatus } from "@/lib/ipc/terminal";
+import { followFileDirectory, type ShellIntegrationEvent, type ShellIntegrationStatus, type TerminalId } from "@/lib/ipc/terminal";
 import { getSetting } from "@/lib/storage";
 import { useTerminalPrefs } from "./terminal-prefs-context";
 import { terminalSetting } from "./terminal-prefs";
@@ -21,9 +21,11 @@ export interface FinishedShellCommand {
 
 interface TrackedShell {
   prompt: PromptState;
+  terminalId?: TerminalId;
+  promptId?: number;
   /** Waiting for the first prompt or for a command to finish. */
   awaitingPrompt: boolean;
-  /** Input reached the PTY in the meantime and may still be queued. */
+  /** Input may still be queued behind a prompt. */
   queuedInput: boolean;
   command?: { commandLine: string | null; startedAt: number };
 }
@@ -41,12 +43,23 @@ export function createShellIntegrationState(enabled: () => boolean = () => true)
     get(paneId: string): PromptState {
       return enabled() ? store.getState().get(paneId)?.prompt ?? disconnected : disabled;
     },
-    open(paneId: string) {
+    open(paneId: string, terminalId?: TerminalId) {
       save(paneId, {
         prompt: { status: "starting", atEmptyPrompt: false },
         awaitingPrompt: true,
         queuedInput: false,
+        terminalId,
       });
+    },
+    attach(paneId: string, terminalId: TerminalId) {
+      const current = store.getState().get(paneId);
+      if (current) save(paneId, { ...current, terminalId });
+    },
+    takeEmptyPrompt(paneId: string) {
+      const current = store.getState().get(paneId);
+      if (!enabled() || !current?.prompt.atEmptyPrompt || current.terminalId === undefined || current.promptId === undefined) return;
+      save(paneId, { ...current, prompt: { ...current.prompt, atEmptyPrompt: false }, awaitingPrompt: true });
+      return { terminalId: current.terminalId, promptId: current.promptId };
     },
     close(paneId: string) {
       store.setState((panes) => {
@@ -76,8 +89,10 @@ export function createShellIntegrationState(enabled: () => boolean = () => true)
       } : undefined;
       save(paneId, {
         prompt: { status: "available", atEmptyPrompt },
+        terminalId: current.terminalId,
+        promptId: atEmptyPrompt ? event.promptId : undefined,
         awaitingPrompt: !atPrompt,
-        queuedInput: !atPrompt && current.queuedInput,
+        queuedInput: current.queuedInput,
         command: tracking && event.type === "commandStart"
           ? { commandLine: event.commandLine, startedAt: performance.now() }
           : undefined,
@@ -86,12 +101,16 @@ export function createShellIntegrationState(enabled: () => boolean = () => true)
     },
     input(paneId: string, data: string) {
       const current = store.getState().get(paneId);
-      if (!current) return;
-      // Readline/ZLE may reinterpret editing keys. Wait for another prompt marker
-      // after input, and skip that marker if the shell may still have typeahead.
-      const queuedInput = current.queuedInput || current.awaitingPrompt || /[\r\n][^\r\n]/.test(data);
-      if (current.prompt.atEmptyPrompt || queuedInput !== current.queuedInput) {
-        save(paneId, { ...current, prompt: { ...current.prompt, atEmptyPrompt: false }, queuedInput });
+      if (!current || data.length === 0) return;
+      // The next marker can precede queued input reaching the editor. Trust a
+      // later fresh prompt once Ctrl+C at the prompt has cleared the line.
+      const interruptAt = data.indexOf("\x03");
+      const canceledLine = !current.awaitingPrompt && data === "\x03";
+      const queuedInput = !canceledLine && (current.queuedInput || current.awaitingPrompt
+        || /[\r\n][\s\S]/.test(data) || (interruptAt !== -1 && interruptAt < data.length - 1));
+      const awaitingPrompt = current.awaitingPrompt || interruptAt !== -1 || /[\r\n]/.test(data);
+      if (current.prompt.atEmptyPrompt || awaitingPrompt !== current.awaitingPrompt || queuedInput !== current.queuedInput) {
+        save(paneId, { ...current, prompt: { ...current.prompt, atEmptyPrompt: false }, awaitingPrompt, queuedInput });
       }
     },
     invalidatePrompt(paneId: string) {
@@ -105,6 +124,16 @@ export function createShellIntegrationState(enabled: () => boolean = () => true)
 
 /** Query a pane's current shell capabilities by its stable workspace ID. */
 export const shellIntegration = createShellIntegrationState(() => getSetting(terminalSetting).shellIntegration);
+
+/** File panel navigation is scoped to one pane and never routes through Broadcast. */
+export function followTerminalDirectory(paneId: string, path: string) {
+  const prompt = shellIntegration.takeEmptyPrompt(paneId);
+  if (prompt) {
+    void followFileDirectory(prompt.terminalId, prompt.promptId, path).catch(() => {
+      // The Terminal can disappear between navigation and delivery. Do not replay a skipped cd.
+    });
+  }
+}
 
 export function useShellIntegration(paneId: string): PromptState {
   const { prefs } = useTerminalPrefs();

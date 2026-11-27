@@ -3,13 +3,18 @@ import { invoke } from "@tauri-apps/api/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeAll, beforeEach, expect, it, vi } from "vitest";
+import { filesSetting } from "@/features/files/file-prefs";
+import { fileBrowsers } from "@/features/files/fileBrowsers";
+import { terminalCwds } from "@/features/files/terminalCwds";
+import { BroadcastPaneContext, createBroadcast } from "@/features/workspace/broadcast";
 import { startI18n } from "@/i18n";
 import type { ConnectProgress } from "@/lib/ipc/connect";
 import type { Host } from "@/lib/ipc/hosts";
 import type { ConnectionState, ShellIntegrationEvent, TerminalMessage } from "@/lib/ipc/terminal";
-import { startSettings } from "@/lib/storage";
+import { setSetting, startSettings } from "@/lib/storage";
 import { RemoteTerminalView } from "./RemoteTerminalView";
 import { XtermView } from "./XtermView";
+import { terminalSetting } from "./terminal-prefs";
 
 vi.mock("./XtermView", () => ({ XtermView: vi.fn(() => null) }));
 vi.mock("@tauri-apps/api/core", () => ({
@@ -38,6 +43,96 @@ beforeAll(() => {
 });
 
 beforeEach(() => vi.clearAllMocks());
+
+it("follows the File panel only on its own ready Terminal, even with Broadcast enabled", async () => {
+  await startSettings({ load: async () => ({}), save: async () => undefined });
+  const paneId = "files-pane";
+  const root = createRoot(document.createElement("div"));
+  const terminal = new Terminal();
+  const peerWrite = vi.fn();
+  const broadcast = createBroadcast();
+  broadcast.register("peer-tab", "peer-pane", peerWrite);
+  broadcast.updateWorkspace(paneId, ["tab", "peer-tab"], [paneId, "peer-pane"]);
+  broadcast.toggle("window", "tab");
+  const ipc = vi.mocked(invoke);
+  ipc.mockImplementation(async (command, args) => {
+    if (command === "remote_terminal_open") return 7;
+    if (command === "files_open") return 8;
+    if (command === "files_list") {
+      const { path } = args as { path: string };
+      return { path: path === "" ? "/home/me" : path === "~/docs" ? "/home/me/docs" : path, entries: [] };
+    }
+  });
+  const panel = fileBrowsers.get(paneId, host.id);
+  const otherPanel = fileBrowsers.get("peer-pane", host.id);
+  const hide = fileBrowsers.show(paneId, "connected");
+  const hidePeer = fileBrowsers.show("peer-pane", "connected");
+  let detach: (() => void) | undefined;
+
+  try {
+    act(() => root.render(
+      <BroadcastPaneContext.Provider value={{ broadcast, tabId: "tab", paneId }}>
+        <RemoteTerminalView paneId={paneId} host={host} onEditHost={() => {}} onClose={() => {}}
+          onCwd={(path) => terminalCwds.report(paneId, path)} />
+      </BroadcastPaneContext.Provider>,
+    ));
+    await act(async () => { detach = vi.mocked(XtermView).mock.calls[0]![0].attach(terminal); });
+    const { onEvent } = ipc.mock.calls.find(([command]) => command === "remote_terminal_open")![1] as {
+      onEvent: { onmessage: (message: TerminalMessage) => void };
+    };
+    const shell = (shellIntegration: ShellIntegrationEvent) => act(() => onEvent.onmessage({ shellIntegration }));
+    const followCalls = () => ipc.mock.calls.filter(([command]) => command === "terminal_follow_file_directory");
+    const navigate = (path: string) => act(async () => panel.getState().navigate(path));
+
+    shell({ type: "availability", status: "available" });
+    shell({ type: "promptStart", promptId: 1 });
+    await navigate("/srv");
+    expect(followCalls()).toEqual([]);
+
+    act(() => setSetting(filesSetting, { ...filesSetting.defaults, terminalFollowsFilePanel: true }));
+    await act(async () => otherPanel.getState().navigate("/other"));
+    await navigate("~/docs");
+    expect(followCalls()).toEqual([["terminal_follow_file_directory", { id: 7, promptId: 1, path: "/home/me/docs" }]]);
+    expect(peerWrite).not.toHaveBeenCalled();
+    await navigate("/soon-after");
+    expect(followCalls()).toHaveLength(1);
+
+    shell({ type: "commandStart", commandLine: null });
+    await navigate("/busy");
+    shell({ type: "commandEnd", exitCode: 0 });
+    act(() => onEvent.onmessage({ cwd: "/home/me/docs" }));
+    shell({ type: "promptStart", promptId: 2 });
+    await act(async () => {});
+    expect(panel.getState().path).toBe("/home/me/docs");
+    expect(followCalls()).toHaveLength(1);
+
+    act(() => terminal.input("unfinished draft", true));
+    await navigate("/draft");
+    expect(followCalls()).toHaveLength(1);
+
+    act(() => onEvent.onmessage({ connection: { state: "reconnecting", attempt: 1, attempts: 3 } }));
+    await navigate("/disconnected");
+    act(() => onEvent.onmessage({ connection: { state: "connected" } }));
+    shell({ type: "availability", status: "unsupported" });
+    await navigate("/unsupported");
+    shell({ type: "availability", status: "available" });
+    shell({ type: "promptStart", promptId: 3 });
+    act(() => setSetting(terminalSetting, { ...terminalSetting.defaults, shellIntegration: false }));
+    await navigate("/disabled");
+    expect(followCalls()).toHaveLength(1);
+  } finally {
+    act(() => {
+      detach?.();
+      terminal.dispose();
+      root.unmount();
+    });
+    hide();
+    hidePeer();
+    fileBrowsers.retain(new Set());
+    terminalCwds.retain(new Set());
+    ipc.mockImplementation(async (command) => command === "remote_terminal_open" ? 7 : undefined);
+  }
+});
 
 it("shows progress for each hop and keeps the failed attempt visible until Reconnect", async () => {
   const focus = vi.spyOn(document, "hasFocus").mockReturnValue(false);

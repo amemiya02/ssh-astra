@@ -7,7 +7,7 @@ describe("Shell integration state", () => {
     terminals.open("pane-a");
     terminals.open("pane-b");
     terminals.event("pane-a", { type: "availability", status: "available" });
-    terminals.event("pane-a", { type: "promptStart" });
+    terminals.event("pane-a", { type: "promptStart", promptId: 1 });
     expect(terminals.get("pane-a")).toEqual({ status: "available", atEmptyPrompt: true });
     expect(terminals.get("pane-b").atEmptyPrompt).toBe(false);
 
@@ -16,7 +16,7 @@ describe("Shell integration state", () => {
     terminals.event("pane-a", { type: "commandStart", commandLine: "false" });
     terminals.event("pane-a", { type: "commandEnd", exitCode: 1 });
     expect(terminals.get("pane-a").atEmptyPrompt).toBe(false);
-    terminals.event("pane-a", { type: "promptStart" });
+    terminals.event("pane-a", { type: "promptStart", promptId: 1 });
     expect(terminals.get("pane-a").atEmptyPrompt).toBe(true);
   });
 
@@ -24,14 +24,31 @@ describe("Shell integration state", () => {
     const terminals = createShellIntegrationState();
     terminals.open("pane-a");
     terminals.event("pane-a", { type: "availability", status: "available" });
-    terminals.event("pane-a", { type: "promptStart" });
+    terminals.event("pane-a", { type: "promptStart", promptId: 1 });
     terminals.event("pane-a", { type: "commandStart", commandLine: "sleep 1" });
     terminals.input("pane-a", "a");
     terminals.event("pane-a", { type: "commandEnd", exitCode: 0 });
-    terminals.event("pane-a", { type: "promptStart" });
+    terminals.event("pane-a", { type: "promptStart", promptId: 1 });
     expect(terminals.get("pane-a").atEmptyPrompt).toBe(false);
-    terminals.event("pane-a", { type: "promptStart" });
+    terminals.event("pane-a", { type: "promptStart", promptId: 1 });
+    expect(terminals.get("pane-a").atEmptyPrompt).toBe(false);
+    terminals.input("pane-a", "\x03");
+    terminals.event("pane-a", { type: "promptStart", promptId: 1 });
     expect(terminals.get("pane-a").atEmptyPrompt).toBe(true);
+  });
+
+  it("keeps a prompt unverified when input follows Enter before the command marker arrives", () => {
+    const terminals = createShellIntegrationState();
+    terminals.open("pane-a");
+    terminals.event("pane-a", { type: "availability", status: "available" });
+    terminals.event("pane-a", { type: "promptStart", promptId: 1 });
+    terminals.input("pane-a", "sleep 1");
+    terminals.input("pane-a", "\r");
+    terminals.input("pane-a", "s");
+    terminals.event("pane-a", { type: "commandStart", commandLine: "sleep 1" });
+    terminals.event("pane-a", { type: "commandEnd", exitCode: 0 });
+    terminals.event("pane-a", { type: "promptStart", promptId: 1 });
+    expect(terminals.get("pane-a").atEmptyPrompt).toBe(false);
   });
 
   it("reports why integration is unavailable and clears readiness when the shell is replaced", () => {
@@ -39,7 +56,7 @@ describe("Shell integration state", () => {
     const terminals = createShellIntegrationState(() => enabled);
     terminals.open("pane-a");
     terminals.event("pane-a", { type: "availability", status: "available" });
-    terminals.event("pane-a", { type: "promptStart" });
+    terminals.event("pane-a", { type: "promptStart", promptId: 1 });
     enabled = false;
     expect(terminals.get("pane-a")).toEqual({ status: "disabled", atEmptyPrompt: false });
 
@@ -48,7 +65,7 @@ describe("Shell integration state", () => {
     expect(terminals.get("pane-a")).toEqual({ status: "disconnected", atEmptyPrompt: false });
     terminals.open("pane-a");
     terminals.event("pane-a", { type: "availability", status: "unsupported" });
-    terminals.event("pane-a", { type: "promptStart" });
+    terminals.event("pane-a", { type: "promptStart", promptId: 1 });
     expect(terminals.get("pane-a")).toEqual({ status: "unsupported", atEmptyPrompt: false });
   });
 });

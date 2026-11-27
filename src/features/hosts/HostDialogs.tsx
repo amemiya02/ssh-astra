@@ -474,6 +474,22 @@ export function HostFormDialogContent({
                   </p>
                 </div>
               </div>
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id="host-form-allow-legacy-algorithms"
+                  checked={values.allowLegacyAlgorithms}
+                  aria-describedby="host-form-allow-legacy-algorithms-hint"
+                  onCheckedChange={(checked) => setValues((v) => ({ ...v, allowLegacyAlgorithms: checked === true }))}
+                />
+                <div className="grid gap-1.5">
+                  <Label htmlFor="host-form-allow-legacy-algorithms" className="text-xs">
+                    {t("hosts.fields.allowLegacyAlgorithms")}
+                  </Label>
+                  <p id="host-form-allow-legacy-algorithms-hint" className="text-muted-foreground text-xs">
+                    {t("hosts.allowLegacyAlgorithmsHint")}
+                  </p>
+                </div>
+              </div>
               <div className="grid gap-1.5">
                 <ProxyFields
                   id="host-form-proxy"

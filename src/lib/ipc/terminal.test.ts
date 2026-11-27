@@ -50,7 +50,7 @@ describe("decodeTerminalMessage for Shell integration", () => {
   it("receives availability and command markers over the Terminal Channel", () => {
     const markers = [
       { type: "availability", status: "available" },
-      { type: "promptStart" },
+      { type: "promptStart", promptId: 1 },
       { type: "commandStart", commandLine: "false" },
       { type: "commandEnd", exitCode: 1 },
     ] as const;

@@ -180,6 +180,7 @@ fn host_at(address: &str, port: u16, user: &str) -> Host {
         terminal_scheme: None,
         identities_only: false,
         forward_agent: false,
+        allow_legacy_algorithms: false,
         proxy: Default::default(),
         keepalive_seconds: None,
         post_login_command: None,
@@ -210,15 +211,97 @@ impl KnownHostsFile {
 
 fn host_key_question(sshd: &Sshd) -> String {
     format!(
-        "host key {}:{} ssh-ed25519 {}",
+        "host key {}:{} {} {}",
         sshd.host,
         sshd.port,
+        sshd.host_key.algorithm(),
         sshd.host_key.fingerprint()
     )
 }
 
 fn password_question(sshd: &Sshd, retry: bool) -> String {
     format!("password {}@{} retry={retry}", sshd.user, sshd.host)
+}
+
+#[tokio::test]
+async fn legacy_algorithms_require_opt_in_before_host_key_verification_and_login() {
+    let Some(sshd) = support::sshd(Service::Legacy) else {
+        return;
+    };
+    let kh = KnownHostsFile::empty();
+    let manager = kh.manager();
+    let target = host(&sshd);
+    let prompter = ScriptedPrompter::trusting(&sshd);
+
+    let error = manager
+        .connect(&target, prompter.clone())
+        .await
+        .err()
+        .expect("default settings must reject the legacy-only sshd");
+    assert!(
+        error.to_string().contains("No common Kex algorithm"),
+        "{error}"
+    );
+    assert!(prompter.asked().is_empty());
+
+    let enabled = Host {
+        allow_legacy_algorithms: true,
+        ..target
+    };
+
+    let declining = ScriptedPrompter::new(HostKeyDecision::Reject, &[]);
+    let error = manager
+        .connect(&enabled, declining.clone())
+        .await
+        .err()
+        .expect("the legacy host key still needs to be trusted");
+    assert!(matches!(&error, ConnectError::HostKeyDeclined), "{error}");
+    assert_eq!(declining.asked(), [host_key_question(&sshd)]);
+
+    let connection = manager.connect(&enabled, prompter.clone()).await.unwrap();
+    assert_eq!(
+        prompter.asked(),
+        [host_key_question(&sshd), password_question(&sshd, false)]
+    );
+    let output = connection.exec("hostname").await.unwrap();
+    assert_eq!(output.status, 0);
+    assert_eq!(output.stdout, b"legacy\n");
+}
+
+#[tokio::test]
+async fn modern_algorithms_win_when_legacy_algorithms_are_also_offered() {
+    let Some(sshd) = support::sshd(Service::Mixed) else {
+        return;
+    };
+    let kh = KnownHostsFile::empty();
+    let before = sshd.logs();
+    let enabled = Host {
+        allow_legacy_algorithms: true,
+        ..host(&sshd)
+    };
+    let connection = kh
+        .manager()
+        .connect(&enabled, ScriptedPrompter::trusting(&sshd))
+        .await
+        .unwrap();
+    assert_eq!(
+        connection.exec("hostname").await.unwrap().stdout,
+        b"mixed\n"
+    );
+
+    let logs = sshd.logs();
+    let negotiation = logs.strip_prefix(&before).expect("appended sshd logs");
+    for expected in [
+        "kex: algorithm: curve25519-sha256",
+        "kex: host key algorithm: ssh-ed25519",
+        "kex: client->server cipher: aes128-ctr",
+        "kex: server->client cipher: aes128-ctr",
+    ] {
+        assert!(
+            negotiation.contains(expected),
+            "missing {expected:?} in {negotiation}"
+        );
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -501,6 +584,7 @@ async fn an_unreachable_address_is_reported() {
         terminal_scheme: None,
         identities_only: false,
         forward_agent: false,
+        allow_legacy_algorithms: false,
         proxy: Default::default(),
         keepalive_seconds: None,
         post_login_command: None,
@@ -1067,6 +1151,7 @@ fn behind(name: &str, jump: &Host) -> Host {
         terminal_scheme: None,
         identities_only: false,
         forward_agent: false,
+        allow_legacy_algorithms: false,
         proxy: Default::default(),
         keepalive_seconds: None,
         post_login_command: None,
