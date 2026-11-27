@@ -8,6 +8,7 @@
 //!   local process on macOS/Linux or reported by the remote shell,
 //! - Shell integration markers and availability are JSON
 //!   `{ "shellIntegration": { "type": "promptStart" } }` (or the matching event),
+//! - Terminal log status is JSON `{ "terminalLog": { "state": "active" } }`,
 //! - the final message is JSON `{ "exitCode": number | null }`.
 //!
 //! Local terminals and remote Terminals share every command after `open`.
@@ -19,7 +20,7 @@ use sshastra_core::hosts::HostId;
 use sshastra_core::ssh::{RemoteTerminal, RemoteTerminalOptions};
 use sshastra_core::terminal::{
     ConnectionState, LocalPty, ShellCommand, ShellIntegrationEvent, TerminalEvent, TerminalId,
-    TerminalRegistry, TerminalSettings, TerminalSize, REPORT_CWD,
+    TerminalLog, TerminalLogStatus, TerminalRegistry, TerminalSettings, TerminalSize, REPORT_CWD,
 };
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, State};
@@ -44,6 +45,43 @@ struct CwdMessage {
 #[serde(rename_all = "camelCase")]
 struct ShellIntegrationMessage {
     shell_integration: ShellIntegrationEvent,
+}
+
+pub struct TerminalLogDirectory(pub PathBuf);
+
+impl TerminalLogDirectory {
+    fn resolve(&self, settings: &TerminalSettings) -> PathBuf {
+        settings
+            .log_directory
+            .clone()
+            .unwrap_or_else(|| self.0.clone())
+    }
+}
+
+fn terminal_settings(settings: &SettingsState) -> TerminalSettings {
+    settings
+        .with(|store| Ok(store.section(TerminalSettings::SECTION)))
+        .unwrap_or_default()
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TerminalLogMessage {
+    terminal_log: TerminalLogStatus,
+}
+
+fn terminal_log(
+    host: &str,
+    settings: &TerminalSettings,
+    directory: &TerminalLogDirectory,
+    on_event: &Channel<InvokeResponseBody>,
+) -> Arc<TerminalLog> {
+    let on_event = on_event.clone();
+    Arc::new(TerminalLog::new(
+        host,
+        settings.auto_log.then(|| directory.resolve(settings)),
+        move |terminal_log| send_json(&on_event, &TerminalLogMessage { terminal_log }),
+    ))
 }
 
 #[derive(Serialize)]
@@ -91,6 +129,8 @@ fn channel_sink(
 #[tauri::command]
 pub async fn local_terminal_open(
     registry: State<'_, TerminalRegistry>,
+    settings: State<'_, SettingsState>,
+    log_directory: State<'_, TerminalLogDirectory>,
     size: TerminalSize,
     on_event: Channel<InvokeResponseBody>,
     cwd: Option<PathBuf>,
@@ -104,8 +144,14 @@ pub async fn local_terminal_open(
     };
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     let _ = cwd;
-    let pty = LocalPty::spawn(command, size, channel_sink(on_event, None))?;
-    Ok(registry.insert(Box::new(pty)))
+    let log = terminal_log(
+        "Local",
+        &terminal_settings(&settings),
+        &log_directory,
+        &on_event,
+    );
+    let pty = LocalPty::spawn(command, size, log.wrap(channel_sink(on_event, None)))?;
+    Ok(registry.insert_logged(Box::new(pty), log))
 }
 
 /// Opens a Terminal on a Host, connecting first (through its Jump
@@ -121,6 +167,7 @@ pub async fn remote_terminal_open(
     registry: State<'_, TerminalRegistry>,
     settings: State<'_, SettingsState>,
     pending: State<'_, Arc<PendingPrompts>>,
+    log_directory: State<'_, TerminalLogDirectory>,
     host_id: HostId,
     size: TerminalSize,
     on_event: Channel<InvokeResponseBody>,
@@ -138,22 +185,20 @@ pub async fn remote_terminal_open(
         let (app, route, prompter) = (app.clone(), Arc::clone(&route), prompts.clone());
         async move { route.connect(&app, prompter).await }
     };
-    let shell_integration = settings
-        .with(|store| Ok(store.section::<TerminalSettings>(TerminalSettings::SECTION)))
-        .unwrap_or_default()
-        .shell_integration;
-    let mut options = RemoteTerminalOptions::for_host(&host, shell_integration);
+    let settings = terminal_settings(&settings);
+    let log = terminal_log(&host.name, &settings, &log_directory, &on_event);
+    let mut options = RemoteTerminalOptions::for_host(&host, settings.shell_integration);
     options.initial_cwd = cwd;
     let terminal = RemoteTerminal::open_with_progress(
         connect,
         options,
         size,
-        channel_sink(on_event, Some(on_prompt)),
+        log.wrap(channel_sink(on_event, Some(on_prompt))),
         host,
         prompter,
     )
     .await?;
-    Ok(registry.insert(Box::new(terminal)))
+    Ok(registry.insert_logged(Box::new(terminal), log))
 }
 
 /// Tries a remote Terminal's dropped Connection again now (the overlay's
@@ -206,4 +251,25 @@ pub async fn terminal_close(
     id: TerminalId,
 ) -> CommandResult<()> {
     Ok(registry.close(id)?)
+}
+
+/// Starts writing Terminal output to a plain-text file.
+#[tauri::command]
+pub async fn terminal_log_start(
+    registry: State<'_, TerminalRegistry>,
+    settings: State<'_, SettingsState>,
+    log_directory: State<'_, TerminalLogDirectory>,
+    id: TerminalId,
+) -> CommandResult<()> {
+    registry.start_log(id, &log_directory.resolve(&terminal_settings(&settings)))?;
+    Ok(())
+}
+
+/// Finishes writing this Terminal's log and closes the file.
+#[tauri::command]
+pub async fn terminal_log_stop(
+    registry: State<'_, TerminalRegistry>,
+    id: TerminalId,
+) -> CommandResult<()> {
+    Ok(registry.stop_log(id)?)
 }

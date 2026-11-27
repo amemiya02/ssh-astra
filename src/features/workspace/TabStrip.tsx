@@ -1,4 +1,4 @@
-import { ArrowDownUp, ChevronRight, Columns2, House, Lock, PanelLeftClose, PanelLeftOpen, Plus, Rows2, Settings, SquareTerminal, Waypoints, X } from "lucide-react";
+import { ArrowDownUp, ChevronRight, Columns2, FileText, House, Lock, PanelLeftClose, PanelLeftOpen, Plus, Rows2, Settings, SquareTerminal, Waypoints, X } from "lucide-react";
 import {
   DndContext,
   PointerSensor,
@@ -18,6 +18,7 @@ import { IconButton } from "@/components/IconButton";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { HostMonogram } from "@/features/hosts/HostMonogram";
 import { hueClasses } from "@/features/hosts/hostHue";
+import { terminalLogs } from "@/features/terminal/terminal-logs";
 import type { TerminalTitleSource } from "@/features/terminal/terminal-prefs";
 import type { TemporaryHost } from "@/lib/ipc/hosts";
 import { getSetting, setSetting, useSetting } from "@/lib/storage";
@@ -35,6 +36,7 @@ import {
   tabHue,
   tabId,
   tabPanelId,
+  tabPanes,
   tabStatus,
   tabTitle,
   type ConnectionStatus,
@@ -102,6 +104,7 @@ export function TabStrip({
   const { t } = useTranslation();
   const shortcuts = useResolvedShortcuts(platform);
   const { unread, flashing } = useStore(activity.store);
+  const logs = useStore(terminalLogs.store);
   const [privacyMode] = useSetting(privacyModeSetting);
   const [{ tabOrientation, verticalTabsCompact, groupTabsByHost: grouping }] = useSetting(workspaceSetting);
   const vertical = tabOrientation === "vertical";
@@ -201,11 +204,13 @@ export function TabStrip({
     const status = tabStatus(tab);
     const hasUnreadOutput = !active && unread.has(tab.id);
     const bellRang = flashing.has(tab.id);
+    const logging = tabPanes(tab).some(({ id }) => logs.get(id)?.active);
     const details = [
       status && t(`tabs.status.${status}`),
       tab.locked && t("tabs.locked"),
       hasUnreadOutput && t("tabs.unreadOutput"),
       bellRang && t("tabs.terminalBell"),
+      logging && t("terminal.log.active"),
     ].filter(Boolean).join(", ");
     const label = details ? `${title} (${details})` : title;
     const TabIcon = tab.layout.type === "split"
@@ -281,6 +286,10 @@ export function TabStrip({
           {hasUnreadOutput && <span aria-hidden data-unread-output className={cn(
             "bg-primary size-1.5 shrink-0 rounded-full",
             compact && "absolute top-1 right-1",
+          )} />}
+          {logging && <FileText aria-hidden className={cn(
+            "text-warning size-3 shrink-0",
+            compact && "absolute right-1 bottom-0.5 size-2.5",
           )} />}
           {bellRang && <span aria-hidden data-terminal-bell className="pointer-events-none absolute inset-0 rounded-lg" />}
         </button>
