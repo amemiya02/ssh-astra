@@ -13,7 +13,7 @@ import { startI18n } from "@/i18n";
 import type { ConnectProgress } from "@/lib/ipc/connect";
 import type { Host } from "@/lib/ipc/hosts";
 import type { ConnectionState, ShellIntegrationEvent, TerminalMessage } from "@/lib/ipc/terminal";
-import { setSetting, startSettings } from "@/lib/storage";
+import { getSetting, setSetting, startSettings } from "@/lib/storage";
 import { RemoteTerminalView } from "./RemoteTerminalView";
 import { XtermView } from "./XtermView";
 import { terminalSetting } from "./terminal-prefs";
@@ -158,6 +158,62 @@ it("reviews the exact pending command with a separate clipboard choice", async (
     focus.mockRestore();
     container.remove();
     setSetting(agentAccessSetting, { enabled: false });
+  }
+});
+
+it("shows the exact remote path and byte count and requires approval for each write", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const terminal = new Terminal();
+  const ipc = vi.mocked(invoke);
+  const terminalPrefs = getSetting(terminalSetting);
+  ipc.mockImplementation(async (command, args) => {
+    if (command === "remote_terminal_open") return { id: 7, savedHost: true };
+    if (command === "terminal_agent_review_answer" && (args as { choice: string }).choice === "approve") return "written";
+  });
+  setSetting(agentAccessSetting, { enabled: true });
+  setSetting(terminalSetting, { ...terminalPrefs, shellIntegration: false });
+  const pane = <RemoteTerminalView paneId="file-review-pane" host={{ ...host, agentAccess: "approval" }} onEditHost={() => {}} onClose={() => {}} />;
+  act(() => root.render(<><AgentReviewDialog />{pane}</>));
+  let detach: (() => void) | undefined;
+  try {
+    await act(async () => { detach = vi.mocked(XtermView).mock.lastCall![0].attach(terminal); });
+    const { onEvent } = ipc.mock.calls.find(([command]) => command === "remote_terminal_open")![1] as {
+      onEvent: { onmessage: (message: TerminalMessage) => void };
+    };
+    const request = { kind: "fileWrite" as const, id: 41, terminalId: 7, host: "Production", path: "/الملفات/ 空格 .txt", byteLength: 6 };
+    act(() => onEvent.onmessage({ agentReview: request }));
+    const dialog = document.body.querySelector('[role="dialog"]');
+    expect(dialog?.textContent).toContain("Production");
+    expect(dialog?.textContent).toContain("6 bytes");
+    expect(dialog?.querySelector("code")?.textContent).toBe(request.path);
+    expect(Array.from(dialog?.querySelectorAll("code bdi") ?? []).map((segment) => segment.textContent))
+      .toEqual(["الملفات", " 空格 .txt"]);
+    expect(ipc).not.toHaveBeenCalledWith("terminal_agent_review_answer", expect.anything());
+    const button = (name: string) => Array.from(document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
+      .find((candidate) => candidate.textContent === name);
+    expect(button("Approve once")).toBeDefined();
+    await act(async () => button("Approve once")?.click());
+    expect(ipc).toHaveBeenCalledWith("terminal_agent_review_answer", { id: 41, choice: "approve" });
+
+    act(() => onEvent.onmessage({ agentReview: { ...request, id: 42 } }));
+    act(() => button("Reject")?.click());
+    expect(ipc).toHaveBeenCalledWith("terminal_agent_review_answer", { id: 42, choice: "reject" });
+
+    act(() => onEvent.onmessage({ agentReview: { ...request, id: 43 } }));
+    act(() => onEvent.onmessage({ connection: { state: "reconnecting", attempt: 1, attempts: 3 } }));
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+    expect(ipc).toHaveBeenCalledWith("terminal_agent_review_answer", { id: 43, choice: "unavailable" });
+  } finally {
+    act(() => {
+      detach?.();
+      terminal.dispose();
+      root.unmount();
+    });
+    container.remove();
+    setSetting(agentAccessSetting, { enabled: false });
+    setSetting(terminalSetting, terminalPrefs);
   }
 });
 

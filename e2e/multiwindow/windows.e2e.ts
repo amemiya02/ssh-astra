@@ -4,10 +4,10 @@ import * as sshd from "../support/sshd.ts";
 import { measureWindowRss } from "../support/window-rss.ts";
 
 const name = "Shared smoke Host";
-const homeCard = () => $(`//*[@role='tabpanel' and not(@hidden)]//button[contains(., '${name}')]`);
-const activeTab = () => $('[role="tab"][aria-selected="true"]');
-const activeTerminal = () => $('[role="tabpanel"]:not([hidden]) .xterm');
-const tabIds = () => $$('[role="tab"]').map((tab) => tab.getAttribute("id"));
+const homeCard = () => $(`//*[@role='tabpanel' and starts-with(@id,'tabpanel-') and not(@hidden)]//button[contains(., '${name}')]`);
+const activeTab = () => $('[role="tab"][id^="tab-"][aria-selected="true"]');
+const activeTerminal = () => $('[role="tabpanel"][id^="tabpanel-"]:not([hidden]) .xterm');
+const tabIds = () => $$('[role="tab"][id^="tab-"]').map((tab) => tab.getAttribute("id"));
 
 async function shortcut(code: string, altKey = false): Promise<void> {
   await browser.execute((key, alt) => {
@@ -39,7 +39,7 @@ async function liveConnections(): Promise<number> {
 
 async function typeCommand(command: string, pane = 0): Promise<void> {
   await browser.execute((text, index) => {
-    const input = document.querySelectorAll<HTMLTextAreaElement>('[role="tabpanel"]:not([hidden]) .xterm-helper-textarea')[index];
+    const input = document.querySelectorAll<HTMLTextAreaElement>('[role="tabpanel"][id^="tabpanel-"]:not([hidden]) .xterm-helper-textarea')[index];
     if (!input) throw new Error("The active Terminal has no input");
     input.focus();
     const data = new DataTransfer();
@@ -102,7 +102,7 @@ describe("SSH Astra Windows", function () {
     await selectWindow(second);
     await expect(activeTab()).toHaveText("Home");
     await measureWindowRss(2);
-    await expect($$('[role="tab"]')).toBeElementsArrayOfSize(1);
+    await expect($$('[role="tab"][id^="tab-"]')).toBeElementsArrayOfSize(1);
 
     await selectWindow(main);
     const theme = async () => browser.execute(() => document.documentElement.dataset.theme);
@@ -145,7 +145,7 @@ describe("SSH Astra Windows", function () {
 
     // Capture both shell identities and their output before moving the whole split.
     await shortcut("KeyE");
-    const shownPanes = () => $$('[role="tabpanel"]:not([hidden]) .xterm');
+    const shownPanes = () => $$('[role="tabpanel"][id^="tabpanel-"]:not([hidden]) .xterm');
     await expect(shownPanes()).toBeElementsArrayOfSize(2);
     await browser.waitUntil(async () => {
       return (await shownPanes().map((pane) => pane.isDisplayed())).every(Boolean)
@@ -162,7 +162,7 @@ describe("SSH Astra Windows", function () {
     if (!movedTab) throw new Error("The split has no tab ID.");
     await browser.execute(() => {
       // Open the DOM context menu independently of native pointer synthesis.
-      const tab = document.querySelector('[role="tab"][aria-selected="true"]');
+      const tab = document.querySelector('[role="tab"][id^="tab-"][aria-selected="true"]');
       if (!tab) throw new Error("The active tab is missing before opening its menu.");
       const bounds = tab.getBoundingClientRect();
       tab.dispatchEvent(new MouseEvent("contextmenu", {
@@ -180,7 +180,7 @@ describe("SSH Astra Windows", function () {
     await expect(shownPanes()).toBeElementsArrayOfSize(2);
     await browser.waitUntil(async () => (await identities()).join(",") === shells.join(","));
     await browser.waitUntil(() => browser.execute(() =>
-      !document.querySelector('[role="tabpanel"]:not([hidden])')?.closest("[inert]")));
+      !document.querySelector('[role="tabpanel"][id^="tabpanel-"]:not([hidden])')?.closest("[inert]")));
     expect(await liveConnections()).toBe(1);
     for (const pane of [0, 1]) {
       await typeCommand(`printf 'after-%s:%s\\n' "$ASTRA_PANE" "$$"`, pane);
@@ -232,7 +232,7 @@ describe("SSH Astra Windows", function () {
     await expect(activeTab()).toHaveAttribute("id", secondFocused);
     expect(await browser.getWindowRect()).toEqual(secondRect);
     await expect($('button[aria-label="Port forwards"]')).toHaveAttribute("aria-pressed", "true");
-    await expect($('[role="tabpanel"]:not([hidden])').$("button=Connect")).toBeDisplayed();
+    await expect($('[role="tabpanel"][id^="tabpanel-"]:not([hidden])').$("button=Connect")).toBeDisplayed();
     await browser.closeWindow();
     await browser.waitUntil(async () => (await browser.getWindowHandles()).length === 1);
     await selectWindow(main);

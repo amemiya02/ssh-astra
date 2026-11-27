@@ -1,10 +1,11 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::time::{Duration, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 use sshastra_core::agent::{
-    dispatch, AgentBackend, AgentPermission, DirectoryRead, OpenTerminal, ReadError, ReadTarget,
-    ReviewOutcome, TerminalOrigin, TerminalScreen, TerminalStatus,
+    dispatch, AgentBackend, AgentPermission, ApprovedFileWrite, DirectoryRead, OpenTerminal,
+    ReadError, ReadTarget, ReviewOutcome, TerminalOrigin, TerminalScreen, TerminalStatus,
 };
 use sshastra_core::agent::{dispatch_recording, AgentActivityLog};
 use sshastra_core::files::{FileEntry, FileKind};
@@ -18,6 +19,10 @@ struct TestBackend<F> {
     generation: AtomicU64,
     permission: AgentPermission,
     review: Option<ReviewOutcome>,
+    file_approval: Option<ReviewOutcome>,
+    reconnect_during_approval: bool,
+    lose_publication_reply: bool,
+    written: Mutex<Option<Vec<u8>>>,
 }
 
 impl<F> TestBackend<F> {
@@ -29,6 +34,10 @@ impl<F> TestBackend<F> {
             generation: AtomicU64::new(0),
             permission: AgentPermission::Read,
             review: Some(ReviewOutcome::Unavailable),
+            file_approval: Some(ReviewOutcome::Unavailable),
+            reconnect_during_approval: false,
+            lose_publication_reply: false,
+            written: Mutex::new(None),
         }
     }
 }
@@ -87,6 +96,42 @@ impl<F: Fn() -> Vec<OpenTerminal> + Send + Sync> AgentBackend for TestBackend<F>
                 scrollback,
                 truncated: false,
             })
+        })
+    }
+
+    fn request_file_write_approval<'a>(
+        &'a self,
+        target: &'a ReadTarget,
+        path: String,
+        byte_length: usize,
+        _enabled: &'a (dyn Fn() -> bool + Sync),
+        _deadline: tokio::time::Instant,
+    ) -> BoxFuture<'a, Result<ApprovedFileWrite<'a>, ReviewOutcome>> {
+        assert_eq!(target.host_name, "Build");
+        assert_eq!(self.permission, AgentPermission::Approval);
+        assert_eq!(path, "/sample/ log.bin");
+        assert_eq!(byte_length, 3);
+        Box::pin(async move {
+            match self.file_approval {
+                Some(ReviewOutcome::Written) => {
+                    if self.reconnect_during_approval {
+                        self.generation.fetch_add(1, Ordering::Relaxed);
+                    }
+                    let write: ApprovedFileWrite<'_> = Box::new(move |bytes, _, publication| {
+                        Box::pin(async move {
+                            publication.start();
+                            *self.written.lock().unwrap() = Some(bytes);
+                            if self.lose_publication_reply {
+                                return std::future::pending().await;
+                            }
+                            ReviewOutcome::Written
+                        })
+                    });
+                    Ok(write)
+                }
+                Some(outcome) => Err(outcome),
+                None => std::future::pending().await,
+            }
         })
     }
 
@@ -216,7 +261,7 @@ async fn lists_only_terminals_on_opted_in_saved_hosts() {
 }
 
 #[tokio::test]
-async fn advertises_read_tools_and_command_review() {
+async fn advertises_read_tools_and_individually_reviewed_operations() {
     let request = br#"{"jsonrpc":"2.0","id":"mcp","method":"tools/list"}"#;
     let backend = TestBackend::new(Vec::new);
     let response = dispatch(request, || true, &backend).await.unwrap();
@@ -233,12 +278,14 @@ async fn advertises_read_tools_and_command_review() {
             "list_directory",
             "read_file",
             "request_command_review",
+            "write_file",
         ]
     );
     assert!(tools[..4]
         .iter()
         .all(|tool| tool["annotations"]["readOnlyHint"] == true));
     assert_eq!(tools[4]["annotations"]["readOnlyHint"], false);
+    assert_eq!(tools[5]["annotations"]["readOnlyHint"], false);
 
     let request =
         br#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"write_file"}}"#;
@@ -246,6 +293,145 @@ async fn advertises_read_tools_and_command_review() {
         dispatch(request, || true, &backend).await.unwrap()["error"]["code"],
         -32602
     );
+}
+
+#[tokio::test]
+async fn writes_exact_bytes_only_after_the_host_and_user_allow_this_call() {
+    let mut backend = TestBackend::new(Vec::new);
+    let args = json!({"terminalId":4,"path":"/sample/ log.bin","data":"//5h"});
+    let request = json!({"jsonrpc":"2.0","id":9,"method":"tools/call","params":{
+        "name":"write_file","arguments":args
+    }});
+    let frame = request.to_string();
+
+    backend.file_approval = Some(ReviewOutcome::Written);
+    let refused = dispatch(frame.as_bytes(), || true, &backend).await.unwrap();
+    assert_eq!(response_data(&refused), json!({"outcome":"unavailable"}));
+    assert_eq!(*backend.written.lock().unwrap(), None);
+
+    backend.permission = AgentPermission::Approval;
+    backend.file_approval = Some(ReviewOutcome::Rejected);
+    let refused = dispatch(frame.as_bytes(), || true, &backend).await.unwrap();
+    assert_eq!(response_data(&refused), json!({"outcome":"rejected"}));
+    assert_eq!(*backend.written.lock().unwrap(), None);
+
+    backend.file_approval = Some(ReviewOutcome::Written);
+    let mut activity = None;
+    let reply = dispatch_recording(frame.as_bytes(), || true, &backend, &mut activity)
+        .await
+        .unwrap();
+    assert_eq!(response_data(&reply), json!({"outcome":"written"}));
+    assert_eq!(
+        *backend.written.lock().unwrap(),
+        Some(vec![0xff, 0xfe, b'a'])
+    );
+
+    let directory = tempfile::tempdir().unwrap();
+    let log = AgentActivityLog::new(directory.path().join("agent-activity"));
+    let now = UNIX_EPOCH + Duration::from_secs(1_790_000_000);
+    log.record(activity.unwrap(), now).unwrap();
+    assert_eq!(
+        serde_json::to_value(log.list(now, None).unwrap().records).unwrap(),
+        json!([{"timestamp":1_790_000_000_000_u64,"tool":"write_file","host":"Build",
+                "path":"/sample/ log.bin","outcome":"allowed"}])
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_expired_file_write_proposal_never_writes() {
+    let mut backend = TestBackend::new(Vec::new);
+    backend.permission = AgentPermission::Approval;
+    backend.file_approval = None;
+    let reply = call(
+        &backend,
+        "write_file",
+        json!({"terminalId":4,"path":"/sample/ log.bin","data":"//5h"}),
+    )
+    .await;
+    assert_eq!(response_data(&reply), json!({"outcome":"timedOut"}));
+    assert_eq!(*backend.written.lock().unwrap(), None);
+}
+
+#[tokio::test]
+async fn approval_cannot_write_to_a_reconnected_terminal() {
+    let mut backend = TestBackend::new(Vec::new);
+    backend.permission = AgentPermission::Approval;
+    backend.file_approval = Some(ReviewOutcome::Written);
+    backend.reconnect_during_approval = true;
+    let reply = call(
+        &backend,
+        "write_file",
+        json!({"terminalId":4,"path":"/sample/ log.bin","data":"//5h"}),
+    )
+    .await;
+    assert_eq!(response_data(&reply), json!({"outcome":"unavailable"}));
+    assert_eq!(*backend.written.lock().unwrap(), None);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_missing_publication_reply_is_reported_and_audited_as_unconfirmed() {
+    let directory = tempfile::tempdir().unwrap();
+    let log = AgentActivityLog::new(directory.path().join("agent-activity"));
+    let now = UNIX_EPOCH + Duration::from_secs(1_790_000_000);
+    let mut backend = TestBackend::new(Vec::new);
+    backend.permission = AgentPermission::Approval;
+    backend.file_approval = Some(ReviewOutcome::Written);
+    backend.lose_publication_reply = true;
+    let frame = json!({"jsonrpc":"2.0","id":9,"method":"tools/call","params":{
+        "name":"write_file","arguments":{"terminalId":4,"path":"/sample/ log.bin","data":"//5h"}
+    }})
+    .to_string();
+    let mut activity = None;
+    let reply = dispatch_recording(frame.as_bytes(), || true, &backend, &mut activity)
+        .await
+        .unwrap();
+    assert_eq!(
+        *backend.written.lock().unwrap(),
+        Some(vec![0xff, 0xfe, b'a'])
+    );
+    assert_eq!(response_data(&reply), json!({"outcome":"writeUnconfirmed"}));
+    log.record(activity.unwrap(), now).unwrap();
+    let records = serde_json::to_value(log.list(now, None).unwrap().records).unwrap();
+    assert_eq!(records[0]["outcome"], "unconfirmed");
+
+    let mut interrupted = None;
+    {
+        let pending = dispatch_recording(frame.as_bytes(), || true, &backend, &mut interrupted);
+        tokio::select! {
+            biased;
+            _ = pending => panic!("the rename reply is still pending"),
+            _ = tokio::task::yield_now() => {}
+        }
+    }
+    log.record(interrupted.unwrap(), now + Duration::from_secs(1))
+        .unwrap();
+    let records = serde_json::to_value(
+        log.list(now + Duration::from_secs(1), None)
+            .unwrap()
+            .records,
+    )
+    .unwrap();
+    assert_eq!(records[0]["outcome"], "unconfirmed");
+}
+
+#[tokio::test]
+async fn invalid_file_writes_fail_before_requesting_approval() {
+    let backend = TestBackend::new(Vec::new);
+    for (path, data) in [
+        ("/sample/ log.bin", "bad-base64".into()),
+        ("/sample/ log.bin", "A".repeat(62_000)),
+        ("/sample/visible\u{202e}.txt", "//5h".into()),
+        ("/sample/../ambiguous.txt", "//5h".into()),
+        ("/sample/dir/", "//5h".into()),
+    ] {
+        let reply = call(
+            &backend,
+            "write_file",
+            json!({"terminalId":4,"path":path,"data":data}),
+        )
+        .await;
+        assert_eq!(reply["error"]["code"], -32602);
+    }
 }
 
 async fn call(backend: &dyn AgentBackend, tool: &str, arguments: Value) -> Value {

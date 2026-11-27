@@ -17,6 +17,7 @@ pub use live::LiveHostFs;
 pub use local::{DiskBrowser, DiskFs, LocalFs};
 pub use registry::{FsId, FsRegistry};
 pub use sftp::SftpFs;
+pub use staged_write::StagedRemoteWrite;
 pub use transfer::{
     ConflictAnswer, OpenRemote, RemoteTransfer, Transfer, TransferDirection, TransferHost,
     TransferId, TransferQueue, TransferSettings, TransferState,
@@ -144,6 +145,8 @@ pub enum FsError {
     AlreadyExists(String),
     #[error("invalid file name")]
     InvalidName,
+    #[error("atomic replacement is unavailable")]
+    AtomicReplacementUnavailable,
     #[error("archive operations require an SSH Connection")]
     ArchiveUnavailable,
     #[error("unsupported archive name: {0}")]
@@ -181,6 +184,7 @@ impl FsError {
             Self::NotADirectory(_) => "notADirectory",
             Self::AlreadyExists(_) => "alreadyExists",
             Self::InvalidName => "invalidName",
+            Self::AtomicReplacementUnavailable => "atomicReplacementUnavailable",
             Self::ArchiveUnavailable => "archiveUnavailable",
             Self::ArchiveUnsupported(_) => "archiveUnsupported",
             Self::ArchiveNotAFile => "archiveNotAFile",
@@ -355,6 +359,26 @@ pub trait RemoteFs: Send + Sync {
         overwrite: bool,
     ) -> BoxFuture<'a, FsResult<()>> {
         Box::pin(publish_by_plain_rename(self, from, to, overwrite))
+    }
+
+    /// Publishes a fresh stage in one operation. An overwrite requires an
+    /// explicit atomic implementation. Validate just before sending the rename.
+    fn publish_atomic<'a>(
+        &'a self,
+        from: &'a str,
+        to: &'a str,
+        overwrite: bool,
+        authorized: &'a (dyn Fn() -> bool + Sync),
+    ) -> BoxFuture<'a, FsResult<bool>> {
+        Box::pin(async move {
+            if overwrite {
+                return Err(FsError::AtomicReplacementUnavailable);
+            }
+            if !authorized() {
+                return Ok(false);
+            }
+            self.rename(from, to).await.map(|()| true)
+        })
     }
 
     /// The whole contents of the file `path`, in memory (small files, e.g.

@@ -3,7 +3,8 @@
 
 mod activity;
 
-use std::sync::LazyLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use regex::Regex;
@@ -61,10 +62,13 @@ impl AgentSettings {
 #[serde(rename_all = "camelCase")]
 pub enum ReviewOutcome {
     Copied,
+    Written,
     Rejected,
     Unavailable,
     TimedOut,
     ClipboardUnavailable,
+    WriteFailed,
+    WriteUnconfirmed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -190,6 +194,18 @@ pub trait AgentBackend: Send + Sync {
     ) -> BoxFuture<'a, ReviewOutcome> {
         Box::pin(async { ReviewOutcome::Unavailable })
     }
+    /// The renderer receives only the path and size. Approval binds one write
+    /// to this exact Terminal and Connection before the bytes are handed over.
+    fn request_file_write_approval<'a>(
+        &'a self,
+        _target: &'a ReadTarget,
+        _path: String,
+        _byte_length: usize,
+        _enabled: &'a (dyn Fn() -> bool + Sync),
+        _deadline: Instant,
+    ) -> BoxFuture<'a, Result<ApprovedFileWrite<'a>, ReviewOutcome>> {
+        Box::pin(async { Err(ReviewOutcome::Unavailable) })
+    }
     fn read_screen(
         &self,
         target: &ReadTarget,
@@ -208,11 +224,43 @@ pub trait AgentBackend: Send + Sync {
     ) -> BoxFuture<'a, Result<Vec<u8>, ReadError>>;
 }
 
+pub type ApprovedFileWrite<'a> = Box<
+    dyn FnOnce(Vec<u8>, Instant, FileWritePublication) -> BoxFuture<'a, ReviewOutcome> + Send + 'a,
+>;
+
+/// Tracks when a rename can have reached the server even if its reply is lost.
+#[derive(Clone, Default)]
+pub struct FileWritePublication(Arc<AtomicBool>);
+
+impl FileWritePublication {
+    pub fn start(&self) {
+        self.0.store(true, Ordering::Release);
+    }
+
+    pub fn interrupted(&self, before_publication: ReviewOutcome) -> ReviewOutcome {
+        if self.has_started() {
+            ReviewOutcome::WriteUnconfirmed
+        } else {
+            before_publication
+        }
+    }
+
+    fn has_started(&self) -> bool {
+        self.0.load(Ordering::Acquire)
+    }
+}
+
 pub const COMMAND_REVIEW_TOOL: &str = "request_command_review";
-pub const COMMAND_REVIEW_TIMEOUT: Duration = Duration::from_secs(120);
+pub const WRITE_FILE_TOOL: &str = "write_file";
+pub const REVIEW_TIMEOUT: Duration = Duration::from_secs(120);
+pub const FILE_WRITE_TIMEOUT: Duration = Duration::from_secs(10);
+pub const REQUEST_FRAME_BYTE_LIMIT: usize = 64 * 1024;
+// Leave room in a 64 KiB request for base64 JSON, the path, and the envelope.
+const WRITE_FILE_BYTE_LIMIT: usize = 44 * 1024;
+const WRITE_FILE_BASE64_LIMIT: usize = WRITE_FILE_BYTE_LIMIT.div_ceil(3) * 4;
 const COMMAND_BYTE_LIMIT: usize = 4096;
 
-static PRINTABLE_COMMAND: LazyLock<Regex> = LazyLock::new(|| {
+static PRINTABLE_LINE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\A[\p{L}\p{M}\p{N}\p{P}\p{S} --\p{Default_Ignorable_Code_Point}]+\z")
         .expect("valid Unicode printable-text expression")
 });
@@ -298,6 +346,14 @@ struct CommandReviewArguments {
     command: String,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct FileWriteArguments {
+    terminal_id: TerminalId,
+    path: String,
+    data: String,
+}
+
 enum ReadOperation {
     Screen(usize),
     Directory(String),
@@ -322,6 +378,9 @@ pub async fn dispatch_recording(
     activity: &mut Option<ActivityCall>,
 ) -> Option<Value> {
     *activity = None;
+    if frame.len() > REQUEST_FRAME_BYTE_LIMIT {
+        return Some(rpc_error(Value::Null, -32600, "Request frame is too large"));
+    }
     let request = match serde_json::from_slice::<Value>(frame) {
         Ok(request) => request,
         Err(_) => return Some(rpc_error(Value::Null, -32700, "Parse error")),
@@ -426,11 +485,16 @@ async fn call(
                 .map_err(|_| "Invalid command review arguments")?;
             if arguments.command.len() > COMMAND_BYTE_LIMIT
                 || arguments.command.trim().is_empty()
-                || !PRINTABLE_COMMAND.is_match(&arguments.command)
+                || !PRINTABLE_LINE.is_match(&arguments.command)
             {
                 return Err("Command must be one printable line of at most 4096 UTF-8 bytes");
             }
             return Ok(review(backend, &enabled, arguments, activity).await);
+        }
+        Tool::WriteFile => {
+            let arguments = serde_json::from_value::<FileWriteArguments>(arguments)
+                .map_err(|_| "Invalid write_file arguments")?;
+            return write_file(backend, &enabled, arguments, activity).await;
         }
         Tool::Unknown => return Err("Unknown tool"),
     };
@@ -458,6 +522,16 @@ fn tools() -> Vec<Value> {
                 "command":{"type":"string","minLength":1,"maxLength":COMMAND_BYTE_LIMIT,"description":"One printable line, at most 4096 UTF-8 bytes"}
             },"required":["terminalId","command"],"additionalProperties":false},
             "annotations": {"readOnlyHint":false,"destructiveHint":false,"openWorldHint":false},
+        }),
+        json!({
+            "name": WRITE_FILE_TOOL,
+            "description": "Create or atomically replace one remote file over the selected Terminal's live Connection. Each call requires explicit approval in its SSH Astra Window. Returns only the outcome.",
+            "inputSchema": {"type":"object","properties":{
+                "terminalId":terminal_id,
+                "path":path,
+                "data":{"type":"string","maxLength":WRITE_FILE_BASE64_LIMIT,"description":"Standard padded base64 for up to 44 KiB of file bytes. The whole MCP request must fit within 64 KiB."}
+            },"required":["terminalId","path","data"],"additionalProperties":false},
+            "annotations": {"readOnlyHint":false,"destructiveHint":true,"openWorldHint":true},
         }),
     ]
 }
@@ -510,23 +584,12 @@ async fn review(
     arguments: CommandReviewArguments,
     activity: &mut ActivityCall,
 ) -> (Value, Outcome) {
-    let id = arguments.terminal_id;
-    let target = || {
-        enabled()
-            .then(|| backend.target(id))
-            .flatten()
-            .filter(|target| {
-                target.permission == AgentPermission::Approval && target.terminal == id
-            })
-    };
+    let target = || approval_target(backend, enabled, arguments.terminal_id);
     let Some(authorized) = target() else {
         return review_result(ReviewOutcome::Unavailable);
     };
     activity.set_target(&authorized, None);
-    if authorized.status != TerminalStatus::Connected || authorized.generation.is_none() {
-        return review_result(ReviewOutcome::Unavailable);
-    }
-    let deadline = Instant::now() + COMMAND_REVIEW_TIMEOUT;
+    let deadline = Instant::now() + REVIEW_TIMEOUT;
     let outcome = timeout_at(
         deadline,
         backend.request_command_review(&authorized, arguments.command, enabled, deadline),
@@ -539,12 +602,87 @@ async fn review(
     review_result(outcome)
 }
 
+fn approval_target(
+    backend: &dyn AgentBackend,
+    enabled: &(dyn Fn() -> bool + Sync),
+    id: TerminalId,
+) -> Option<ReadTarget> {
+    enabled()
+        .then(|| backend.target(id))
+        .flatten()
+        .filter(|target| {
+            target.permission == AgentPermission::Approval
+                && target.terminal == id
+                && target.status == TerminalStatus::Connected
+                && target.generation.is_some()
+        })
+}
+
+async fn write_file(
+    backend: &dyn AgentBackend,
+    enabled: &(dyn Fn() -> bool + Sync),
+    arguments: FileWriteArguments,
+    activity: &mut ActivityCall,
+) -> Result<(Value, Outcome), &'static str> {
+    let FileWriteArguments {
+        terminal_id,
+        path,
+        data,
+    } = arguments;
+    if path.len() > PATH_BYTE_LIMIT
+        || !PRINTABLE_LINE.is_match(&path)
+        || path
+            .strip_prefix('/')
+            .is_none_or(|parts| parts.split('/').any(|part| matches!(part, "" | "." | "..")))
+    {
+        return Err("Use a printable absolute file path of up to 4096 UTF-8 bytes without empty, dot or dot-dot segments");
+    }
+    if data.len() > WRITE_FILE_BASE64_LIMIT {
+        return Err("File data exceeds 44 KiB");
+    }
+    let bytes = STANDARD
+        .decode(data)
+        .map_err(|_| "Invalid base64 file data")?;
+    if bytes.len() > WRITE_FILE_BYTE_LIMIT {
+        return Err("File data exceeds 44 KiB");
+    }
+    let target = || approval_target(backend, enabled, terminal_id);
+    let Some(authorized) = target() else {
+        return Ok(review_result(ReviewOutcome::Unavailable));
+    };
+    activity.set_target(&authorized, Some(&path));
+    let deadline = Instant::now() + REVIEW_TIMEOUT;
+    let approved = timeout_at(
+        deadline,
+        backend.request_file_write_approval(&authorized, path, bytes.len(), enabled, deadline),
+    )
+    .await
+    .unwrap_or(Err(ReviewOutcome::TimedOut));
+    let outcome = match approved {
+        Err(outcome) => outcome,
+        Ok(_) if Instant::now() >= deadline => ReviewOutcome::TimedOut,
+        Ok(_) if !target().is_some_and(|current| current.same_authorization(&authorized)) => {
+            ReviewOutcome::Unavailable
+        }
+        Ok(write) => {
+            let deadline = Instant::now() + FILE_WRITE_TIMEOUT;
+            let publication = FileWritePublication::default();
+            activity.track_publication(publication.clone());
+            timeout_at(deadline, write(bytes, deadline, publication.clone()))
+                .await
+                .unwrap_or_else(|_| publication.interrupted(ReviewOutcome::TimedOut))
+        }
+    };
+    Ok(review_result(outcome))
+}
+
 fn review_result(outcome: ReviewOutcome) -> (Value, Outcome) {
     let activity = match outcome {
-        ReviewOutcome::Copied => Outcome::Allowed,
+        ReviewOutcome::Copied | ReviewOutcome::Written => Outcome::Allowed,
         ReviewOutcome::Rejected | ReviewOutcome::Unavailable => Outcome::Denied,
         ReviewOutcome::TimedOut => Outcome::TimedOut,
-        ReviewOutcome::ClipboardUnavailable => Outcome::Failed,
+        ReviewOutcome::ClipboardUnavailable | ReviewOutcome::WriteFailed => Outcome::Failed,
+        ReviewOutcome::WriteUnconfirmed => Outcome::Unconfirmed,
     };
     (tool_data(json!({"outcome":outcome})), activity)
 }
