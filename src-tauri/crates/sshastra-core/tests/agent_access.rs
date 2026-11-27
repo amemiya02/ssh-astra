@@ -117,7 +117,7 @@ impl<F: Fn() -> Vec<OpenTerminal> + Send + Sync> AgentBackend for TestBackend<F>
                     if self.reconnect_during_approval {
                         self.generation.fetch_add(1, Ordering::Relaxed);
                     }
-                    let write: ApprovedFileWrite<'_> = Box::new(|bytes, _, publication| {
+                    let write: ApprovedFileWrite<'_> = Box::new(move |bytes, _, publication| {
                         Box::pin(async move {
                             publication.start();
                             *self.written.lock().unwrap() = Some(bytes);
