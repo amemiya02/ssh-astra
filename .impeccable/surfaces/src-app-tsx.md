@@ -21,6 +21,6 @@ STORY: The user lands on Home, a Host vault of cards with recent Hosts first, ty
 
 FIRST VIEWPORT: 48px nav rail far left (app mark; Hosts, SFTP, Port forwards; then Local terminal and Settings at the bottom), Host list column 248px, compact 34px tab strip (pill tabs, status dot, Host colour), Terminal filling the workspace with the File panel docked right, a 24px dense status bar with per-Host Connection segments, forwards, transfers, the active theme and Settings.
 
-FORM: pinned canon (category standard played straight, at Termius/Warp/WindTerm craft level), position 1. seed: none (unavailable). Signature move: Host monograms and tab marks take their colour from the active theme's ANSI palette, and hovering a theme in the gallery previews it live across the whole window, Terminals included, before click commits.
+FORM: pinned canon (category standard played straight, at Termius/Warp/WindTerm craft level), position 1. No concept-seed roll ran: the owner pinned the canon in words, so there is no seed reference. Signature move: Host monograms and tab marks take their colour from the active theme's ANSI palette, and hovering a theme in the gallery previews it live across the whole window, Terminals included, before click commits.
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
