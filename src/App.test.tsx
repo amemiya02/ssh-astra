@@ -29,12 +29,15 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
 });
 
 // Exercise the real app and Terminal lifecycle without a renderer or native backend.
+const testTerminals = new Set<Terminal>();
 vi.mock("@/features/terminal/XtermView", () => ({
   XtermView: ({ attach }: { attach(terminal: Terminal): () => void }) => {
     useEffect(() => {
       const terminal = new Terminal();
+      testTerminals.add(terminal);
       const detach = attach(terminal);
       return () => {
+        testTerminals.delete(terminal);
         detach();
         terminal.dispose();
       };
@@ -95,6 +98,7 @@ async function unmount() {
 afterEach(async () => {
   await unmount();
   vi.mocked(invoke).mockClear();
+  vi.unstubAllGlobals();
 });
 
 async function render(initialTabs: TabsState) {
@@ -114,11 +118,50 @@ const dialog = () => document.querySelector('[role="dialog"]');
 const terminalCloses = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === "terminal_close");
 const tabIds = () => [...document.querySelectorAll('[role="tab"]')].map((tab) => tab.id);
 
-async function sendTerminalMessage(message: TerminalMessage) {
-  const openCall = vi.mocked(invoke).mock.calls.find(([command]) => command === "remote_terminal_open");
+async function sendTerminalMessage(message: TerminalMessage, openCommand = "remote_terminal_open", index = 0) {
+  const openCall = vi.mocked(invoke).mock.calls.filter(([command]) => command === openCommand)[index];
   const { onEvent } = openCall?.[1] as { onEvent: { onmessage(message: TerminalMessage): void } };
   await act(async () => onEvent.onmessage(message));
 }
+
+async function flushTerminalOutput() {
+  await act(async () => {
+    await Promise.all([...testTerminals].map((terminal) => new Promise<void>((resolve) => terminal.write("", resolve))));
+  });
+}
+
+async function ringTerminal(openCommand = "remote_terminal_open") {
+  await sendTerminalMessage([7], openCommand);
+  await flushTerminalOutput();
+}
+
+it("marks background Terminal output until the tab is visited, including when the active tab is split", async () => {
+  await render(workspace(
+    { type: "open", tabId: "background", pane: remote("background") },
+    { type: "open", tabId: "work", pane: remote("visible") },
+    { type: "split", pane: local("focused"), orientation: "horizontal" },
+  ));
+  const background = document.querySelector<HTMLButtonElement>("#tab-background")!;
+  const work = document.querySelector<HTMLButtonElement>("#tab-work")!;
+  expect(background.querySelector("[data-unread-output]")).toBeNull();
+
+  await sendTerminalMessage([65], "remote_terminal_open", 1);
+  expect(work.querySelector("[data-unread-output]")).toBeNull();
+  await sendTerminalMessage([65]);
+  const dot = background.querySelector("[data-unread-output]");
+  expect(dot).not.toBeNull();
+  expect(background.getAttribute("aria-label")).toContain("Unread Terminal output");
+  await sendTerminalMessage([66]);
+  expect(background.querySelector("[data-unread-output]")).toBe(dot);
+
+  await act(async () => background.click());
+  expect(background.querySelector("[data-unread-output]")).toBeNull();
+  expect(background.getAttribute("aria-label")).not.toContain("Unread Terminal output");
+  await sendTerminalMessage([67]);
+  expect(background.querySelector("[data-unread-output]")).toBeNull();
+  await sendTerminalMessage([68], "local_terminal_open");
+  expect(work.querySelector("[data-unread-output]")).not.toBeNull();
+});
 
 it("restores each Local terminal in its own last reported directory", async () => {
   const localOpens = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === "local_terminal_open");
@@ -164,6 +207,57 @@ async function clickButton(label: string, scope: ParentNode = document) {
   expect(button, label).toBeDefined();
   await act(async () => button!.click());
 }
+
+it("applies the live bell choice to running Terminals and limits repeated sound", async () => {
+  const play = vi.fn();
+  vi.stubGlobal("AudioContext", class {
+    state = "running";
+    currentTime = 0;
+    createOscillator() {
+      return { frequency: { value: 0 }, connect() {}, start: play, stop() {} };
+    }
+    createGain() {
+      return {
+        connect() {},
+        gain: { setValueAtTime() {}, linearRampToValueAtTime() {} },
+      };
+    }
+    async close() {}
+  });
+  await render(workspace(
+    { type: "open", tabId: "remote", pane: remote("remote") },
+    { type: "open", tabId: "local", pane: local("local") },
+  ));
+  const remoteTab = document.getElementById("tab-remote")!;
+  const localTab = document.getElementById("tab-local")!;
+
+  await ringTerminal();
+  expect(remoteTab.querySelector("[data-terminal-bell]")).toBeNull();
+  expect(play).not.toHaveBeenCalled();
+
+  await clickButton("Settings");
+  const setting = document.querySelector('[role="radiogroup"][aria-label="Terminal bell"]')!;
+  expect(setting.querySelector('[aria-checked="true"]')?.textContent).toBe("None");
+  await clickButton("Flash tab", setting);
+  expect(settingsFile.terminal).toMatchObject({ bell: "flash" });
+  await act(async () => localTab.click());
+  await sendTerminalMessage([...new TextEncoder().encode("\x1b]2;title\x07")], "local_terminal_open");
+  await flushTerminalOutput();
+  expect(localTab.querySelector("[data-terminal-bell]")).toBeNull();
+  await ringTerminal("local_terminal_open");
+  expect(localTab.querySelector("[data-terminal-bell]")).not.toBeNull();
+  expect(remoteTab.querySelector("[data-terminal-bell]")).toBeNull();
+  expect(play).not.toHaveBeenCalled();
+
+  await clickButton("Settings");
+  await clickButton("Sound", setting);
+  expect(localTab.querySelector("[data-terminal-bell]")).toBeNull();
+  expect(play).not.toHaveBeenCalled();
+  await ringTerminal();
+  await ringTerminal("local_terminal_open");
+  expect(remoteTab.querySelector("[data-terminal-bell]")).toBeNull();
+  expect(play).toHaveBeenCalledTimes(1);
+});
 
 it("asks before a tab closes its connected remote Terminal and Cancel keeps it running", async () => {
   await render(workspace({ type: "open", tabId: "work", pane: remote("a") }));

@@ -167,3 +167,18 @@
     scrollbar-color: color-mix(in oklch, var(--foreground) 20%, transparent) transparent;
   }
 }
+
+[data-terminal-bell] {
+  box-shadow: inset 0 0 0 2px var(--primary);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-terminal-bell] {
+    animation: terminal-bell 600ms ease-out both;
+  }
+
+  @keyframes terminal-bell {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
+}

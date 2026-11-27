@@ -150,6 +150,8 @@ impl MemoryFs {
                         size: s.size,
                         modified: None,
                         permissions: s.permissions,
+                        uid: None,
+                        gid: None,
                         link_target: None,
                     }
                 })

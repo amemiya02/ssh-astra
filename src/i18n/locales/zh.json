@@ -163,6 +163,8 @@
     "cancel": "取消",
     "lock": "锁定标签",
     "locked": "已锁定",
+    "unreadOutput": "终端有未读输出",
+    "terminalBell": "终端响铃",
     "color": {
       "label": "标签颜色",
       "automatic": "自动",
@@ -327,11 +329,18 @@
       "write": "写",
       "execute": "执行",
       "octal": "八进制",
+      "uid": "属主 ID（UID）",
+      "gid": "属组 ID（GID）",
+      "ownershipHelp": "属主和属组的修改只应用到所选条目。留空则保留原 ID。",
+      "invalidId": "请输入 0 到 4294967294 之间的整数。",
+      "recursive": "应用到目录内容",
+      "directoriesOnly": "仅给目录加执行位",
       "apply": "应用"
     },
     "operationErrors": {
       "notFound": "文件或文件夹不存在：{{path}}",
       "permissionDenied": "权限不足：{{path}}",
+      "ownershipUnavailable": "无法获取 {{path}} 的当前属主或属组 ID。请同时输入两个 ID。",
       "alreadyExists": "已存在：{{path}}",
       "moveIntoSelf": "不能将文件夹移入自身。",
       "notOpen": "File panel 未连接。",
@@ -750,6 +759,15 @@
         "options": {
           "shell": "Shell 标题",
           "host": "Host 名称"
+        }
+      },
+      "bell": {
+        "label": "终端响铃",
+        "description": "选择程序触发终端响铃时的提醒方式。",
+        "options": {
+          "none": "无",
+          "flash": "标签闪烁",
+          "sound": "声音"
         }
       },
       "copyOnSelect": {

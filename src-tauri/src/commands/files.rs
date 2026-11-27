@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use sshastra_core::edit::Opener;
 use sshastra_core::files::{
-    self, DiskBrowser, FsError, FsId, FsRegistry, Listing, OpenRemote, RemoteFs,
+    self, DiskBrowser, FsError, FsId, FsRegistry, Listing, OpenRemote, PermissionChange, RemoteFs,
 };
 use sshastra_core::hosts::HostId;
 use sshastra_core::ssh::ConnectionManager;
@@ -173,16 +173,16 @@ pub async fn files_delete(
     Ok(())
 }
 
-/// Sets the permission bits (`0o755`) of `path`.
+/// Changes ownership and permission bits, optionally applying the mode to a folder tree.
 #[tauri::command]
 pub async fn files_chmod(
     registry: State<'_, FsRegistry>,
     id: FsId,
     path: String,
-    mode: u32,
+    change: PermissionChange,
 ) -> CommandResult<()> {
     let fs = registry.get(id).ok_or_else(CommandError::not_open)?;
-    Ok(fs.set_permissions(&path, mode).await?)
+    Ok(files::change_permissions(fs.as_ref(), &path, change).await?)
 }
 
 /// Closes the SFTP session; closing one that is already gone is fine.
