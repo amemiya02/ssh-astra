@@ -184,6 +184,13 @@ impl Shell {
         self.terminal.write(format!("{line}\r").as_bytes()).unwrap();
     }
 
+    fn last_prompt_id(&self) -> u64 {
+        match self.integration.last() {
+            Some(ShellIntegrationEvent::PromptStart { prompt_id }) => *prompt_id,
+            found => panic!("expected a prompt marker, got {found:?}"),
+        }
+    }
+
     fn text(&self) -> String {
         String::from_utf8_lossy(&self.output).into_owned()
     }
@@ -297,10 +304,7 @@ async fn reports_command_markers(user: &str) {
     let mut shell = Shell::open(&sshd, user, true).await;
     shell.next_cwd().await;
     shell.settle().await;
-    assert_eq!(
-        shell.integration.last(),
-        Some(&ShellIntegrationEvent::PromptStart)
-    );
+    let initial_prompt = shell.last_prompt_id();
     assert_eq!(
         shell.integration.first(),
         Some(&ShellIntegrationEvent::Availability {
@@ -319,7 +323,9 @@ async fn reports_command_markers(user: &str) {
                 command_line: Some(command.into())
             },
             ShellIntegrationEvent::CommandEnd { exit_code: 0 },
-            ShellIntegrationEvent::PromptStart,
+            ShellIntegrationEvent::PromptStart {
+                prompt_id: initial_prompt + 1
+            },
         ]
     );
     assert!(shell.rows().iter().any(|line| line == "hello; 100%"));
@@ -342,14 +348,21 @@ async fn reports_command_markers(user: &str) {
                 command_line: Some("false".into())
             },
             ShellIntegrationEvent::CommandEnd { exit_code: 1 },
-            ShellIntegrationEvent::PromptStart,
+            ShellIntegrationEvent::PromptStart {
+                prompt_id: initial_prompt + 2
+            },
         ]
     );
 
     shell.integration.clear();
     shell.type_line("");
     shell.settle().await;
-    assert_eq!(shell.integration, [ShellIntegrationEvent::PromptStart]);
+    assert_eq!(
+        shell.integration,
+        [ShellIntegrationEvent::PromptStart {
+            prompt_id: initial_prompt + 3
+        }]
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -360,6 +373,68 @@ async fn bash_reports_command_markers_without_changing_the_screen() {
 #[tokio::test(flavor = "multi_thread")]
 async fn zsh_reports_command_markers_without_changing_the_screen() {
     reports_command_markers(support::ZSH_USER).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn file_panel_changes_directory_only_at_the_observed_idle_prompt() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    for user in [support::USER, support::ZSH_USER] {
+        let mut shell = Shell::open(&sshd, user, true).await;
+        let home = shell.next_cwd().await;
+        shell.settle().await;
+        let directory = format!("/tmp/{user}-follow '日本$(echo test);!\n");
+        shell.type_line(&format!(
+            r#"d=$(printf '/tmp/{user}-follow \047\346\227\245\346\234\254$(echo test);!\n.'); mkdir -p -- "${{d%.}}"; unset d"#
+        ));
+        assert_eq!(shell.next_cwd().await, home);
+        shell.settle().await;
+
+        let prompt_id = shell.last_prompt_id();
+        shell.terminal.write(b"printf '%s' 'draft").unwrap();
+        shell
+            .terminal
+            .follow_file_directory(prompt_id, &directory)
+            .unwrap();
+        shell.type_line(" text'");
+        assert_eq!(shell.next_cwd().await, home);
+        shell.settle().await;
+        assert!(!shell.text().contains(r"\builtin cd"));
+
+        let prompt_id = shell.last_prompt_id();
+        shell.type_line("sleep 1");
+        shell
+            .run(Duration::from_secs(2), |s, _| {
+                matches!(
+                    s.integration.last(),
+                    Some(ShellIntegrationEvent::CommandStart { .. })
+                )
+            })
+            .await;
+        assert!(matches!(
+            shell.integration.last(),
+            Some(ShellIntegrationEvent::CommandStart { .. })
+        ));
+        shell
+            .terminal
+            .follow_file_directory(prompt_id, &directory)
+            .unwrap();
+        assert_eq!(shell.next_cwd().await, home);
+        shell.settle().await;
+        assert!(!shell.text().contains(r"\builtin cd"));
+
+        let prompt_id = shell.last_prompt_id();
+        shell
+            .terminal
+            .follow_file_directory(prompt_id, "relative")
+            .unwrap();
+        shell
+            .terminal
+            .follow_file_directory(prompt_id, &directory)
+            .unwrap();
+        assert_eq!(shell.next_cwd().await, directory);
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]

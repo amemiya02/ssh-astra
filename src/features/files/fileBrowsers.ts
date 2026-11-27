@@ -1,11 +1,14 @@
 import type { StoreApi } from "zustand/vanilla";
+import { followTerminalDirectory } from "@/features/terminal/shellIntegration";
 import { transfersStore } from "@/features/transfers/transfersStore";
 import type { ConnectionStatus } from "@/features/workspace/tabs";
 import * as editIpc from "@/lib/ipc/edit";
 import * as ipc from "@/lib/ipc/files";
 import type { Transfer } from "@/lib/ipc/transfers";
 import type { HostId } from "@/lib/ipc/hosts";
+import { getSetting } from "@/lib/storage";
 import { createFileBrowserStore, followConnection, type FileBrowserState, type FilesApi } from "./fileBrowserStore";
+import { filesSetting } from "./file-prefs";
 import { parentPath } from "./fileList";
 import { followTransferFinishes } from "./followUploads";
 import { createSharedRemoteEdits, sharedRemoteEdits } from "./sharedRemoteEdits";
@@ -30,13 +33,14 @@ export function createFileBrowsers(
   api: FilesApi,
   editsForPanel = createSharedRemoteEdits(api),
   transfers?: StoreApi<{ transfers: Transfer[] }>,
+  followDirectory?: (paneId: string, path: string) => void,
 ): FileBrowsers {
   const panes = new Map<string, {
     hostId: HostId;
     store: FileBrowserStore;
     status?: ConnectionStatus;
   }>();
-  const visible = new Set<string>();
+  const visible = new Map<string, ConnectionStatus>();
   if (transfers) followTransferFinishes(transfers, (settled) => {
     const directoriesByHost = new Map<HostId, string[]>();
     for (const transfer of settled) {
@@ -62,7 +66,10 @@ export function createFileBrowsers(
             .filter((other) => other.hostId === hostId)
             .map((other) => other.store.getState().refreshAfterMove(directories)));
         };
-        const store = createFileBrowserStore(api, hostId, startPath, undefined, editsForPanel, refreshHostAfterMove);
+        const store = createFileBrowserStore(api, hostId, startPath, undefined, editsForPanel, refreshHostAfterMove, (path) => {
+          const shown = visible.get(paneId);
+          if (shown && (panes.get(paneId)?.status ?? shown) === "connected") followDirectory?.(paneId, path);
+        });
         pane = { hostId, store };
         panes.set(paneId, pane);
       }
@@ -77,7 +84,7 @@ export function createFileBrowsers(
     },
     show(paneId, initialStatus) {
       const pane = panes.get(paneId);
-      visible.add(paneId);
+      visible.set(paneId, initialStatus);
       if (pane) followConnection(pane.store, pane.status ?? initialStatus, true);
       return () => {
         pane?.store.getState().clearSearch();
@@ -96,4 +103,6 @@ export function createFileBrowsers(
 }
 
 /** The app's File panels, over the real SFTP and remote edit commands. */
-export const fileBrowsers = createFileBrowsers({ ...ipc, ...editIpc }, sharedRemoteEdits, transfersStore);
+export const fileBrowsers = createFileBrowsers({ ...ipc, ...editIpc }, sharedRemoteEdits, transfersStore, (paneId, path) => {
+  if (getSetting(filesSetting).terminalFollowsFilePanel) followTerminalDirectory(paneId, path);
+});

@@ -191,7 +191,7 @@ fn private_markers_preserve_order_even_when_every_byte_arrives_separately() {
                 command_line: Some("printf '%;'".into())
             },
             ShellIntegrationEvent::CommandEnd { exit_code: 17 },
-            ShellIntegrationEvent::PromptStart,
+            ShellIntegrationEvent::PromptStart { prompt_id: 1 },
         ]
         .map(TerminalEvent::ShellIntegration)
     );

@@ -43,6 +43,31 @@ async function setup(following: () => boolean = () => true) {
 }
 
 describe("a File panel following its Terminal's directory", () => {
+  it("sends only successful user navigation back to the pane's Terminal", async () => {
+    const follow = vi.fn();
+    const browsers = createFileBrowsers(api, undefined, undefined, follow);
+    const panel = browsers.get("pane-1", "host-1");
+    const cwds = createTerminalCwds(browsers, async () => undefined);
+    const hide = browsers.show("pane-1", "connected");
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+    await settle();
+    expect(follow).not.toHaveBeenCalled();
+
+    await panel.getState().navigate("/srv/www");
+    expect(follow.mock.calls).toEqual([["pane-1", "/srv/www"]]);
+
+    cwds.report("pane-1", "/tmp/my dir/日本");
+    await settle();
+    await panel.getState().navigate("/missing");
+    await panel.getState().refresh();
+    expect(panel.getState().path).toBe("/tmp/my dir/日本");
+    expect(follow).toHaveBeenCalledTimes(1);
+
+    await panel.getState().goBack();
+    expect(follow.mock.calls).toEqual([["pane-1", "/srv/www"], ["pane-1", "/srv/www"]]);
+    hide();
+  });
+
   it("goes where the shell cd's", async () => {
     const { cwds, shown, settle } = await setup();
     expect(shown()).toBe("/home/me");

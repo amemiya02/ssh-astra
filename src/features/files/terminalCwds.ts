@@ -49,7 +49,7 @@ export function createTerminalCwds(
     }
     return state;
   };
-  const show = (paneId: string, path: string) => void browsers.find(paneId)?.getState().navigate(path);
+  const show = (paneId: string, path: string) => void browsers.find(paneId)?.getState().navigate(path, "terminal");
 
   return {
     attach(paneId, terminal) {

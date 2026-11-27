@@ -7,7 +7,7 @@
 //! - the shell's directory is JSON `{ "cwd": "/abs/path" }`, read from the
 //!   local process on macOS/Linux or reported by the remote shell,
 //! - Shell integration markers and availability are JSON
-//!   `{ "shellIntegration": { "type": "promptStart" } }` (or the matching event),
+//!   `{ "shellIntegration": { "type": "promptStart", "promptId": 1 } }` (or the matching event),
 //! - Terminal log status is JSON `{ "terminalLog": { "state": "active" } }`,
 //! - Recording status is JSON `{ "recording": { "state": "active" } }`,
 //! - the final message is JSON `{ "exitCode": number | null }`.
@@ -243,6 +243,17 @@ pub async fn terminal_report_cwd(
     id: TerminalId,
 ) -> CommandResult<()> {
     Ok(registry.write(id, REPORT_CWD.as_bytes())?)
+}
+
+/// Follows a File panel only if the remote shell is still at the observed prompt.
+#[tauri::command]
+pub async fn terminal_follow_file_directory(
+    registry: State<'_, TerminalRegistry>,
+    id: TerminalId,
+    prompt_id: u64,
+    path: String,
+) -> CommandResult<()> {
+    Ok(registry.follow_file_directory(id, prompt_id, &path)?)
 }
 
 /// Answers a question sent on a `remote_terminal_open` prompt channel.

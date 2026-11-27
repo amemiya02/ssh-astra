@@ -558,7 +558,22 @@ describe("FileBrowser", () => {
       sort: { key: "permissions", direction: "desc" },
       showModified: false,
       showPermissions: true,
+      terminalFollowsFilePanel: false,
     });
+  });
+
+  it("starts with Terminal following off and explains when Shell integration is disabled", async () => {
+    const backend = localStorageBackend(window.localStorage, "test.files.follow");
+    await backend.save("terminal", { shellIntegration: false });
+    await startSettings(backend);
+    await render({ showSettings: true });
+
+    const group = container.querySelector('[role="radiogroup"][aria-label="Terminal follows File panel"]')!;
+    expect(group.querySelector('[aria-checked="true"]')?.textContent).toBe("Off");
+    expect(group.parentElement?.parentElement?.textContent).toContain("Shell integration is off.");
+
+    await act(async () => group.querySelector<HTMLButtonElement>('[data-value="on"]')!.click());
+    expect((await openSettings(backend)).get(filesSetting).terminalFollowsFilePanel).toBe(true);
   });
 
   it("counts the displayed entries and visible selection through filtering", async () => {

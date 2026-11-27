@@ -78,6 +78,7 @@ pub struct ShellOutput {
     parser: CwdParser,
     charset: TerminalCharset,
     integrated: bool,
+    prompt_id: u64,
     /// Output held back since [`Self::hide_until_ready`]; `None` when shown.
     held: Option<Vec<u8>>,
 }
@@ -90,9 +91,10 @@ pub struct Shown {
 }
 
 impl ShellOutput {
-    pub(crate) fn new(charset: TerminalCharset) -> Self {
+    pub(crate) fn new(charset: TerminalCharset, prompt_id: u64) -> Self {
         Self {
             charset,
+            prompt_id,
             ..Self::default()
         }
     }
@@ -134,7 +136,8 @@ impl ShellOutput {
                 events.push(TerminalEvent::Cwd(cwd));
             } else if self.integrated {
                 events.extend(
-                    marker_from_osc(payload, self.charset).map(TerminalEvent::ShellIntegration),
+                    marker_from_osc(payload, self.charset, &mut self.prompt_id)
+                        .map(TerminalEvent::ShellIntegration),
                 );
             }
         });
@@ -226,10 +229,17 @@ impl CwdParser {
     }
 }
 
-fn marker_from_osc(payload: &[u8], charset: TerminalCharset) -> Option<ShellIntegrationEvent> {
+fn marker_from_osc(
+    payload: &[u8],
+    charset: TerminalCharset,
+    prompt_id: &mut u64,
+) -> Option<ShellIntegrationEvent> {
     let marker = payload.strip_prefix(b"6973;")?;
     if marker == b"prompt" {
-        return Some(ShellIntegrationEvent::PromptStart);
+        *prompt_id += 1;
+        return Some(ShellIntegrationEvent::PromptStart {
+            prompt_id: *prompt_id,
+        });
     }
     if let Some(command) = marker.strip_prefix(b"start;1;") {
         let command_line =

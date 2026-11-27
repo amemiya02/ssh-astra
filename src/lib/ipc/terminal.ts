@@ -23,7 +23,7 @@ export type ShellIntegrationStatus = "available" | "disabled" | "unsupported" | 
 
 export type ShellIntegrationEvent =
   | { type: "availability"; status: ShellIntegrationStatus }
-  | { type: "promptStart" }
+  | { type: "promptStart"; promptId: number }
   | { type: "commandStart"; commandLine: string | null }
   | { type: "commandEnd"; exitCode: number };
 
@@ -81,6 +81,11 @@ export async function openLocalTerminal(
 
 export function writeTerminal(id: TerminalId, data: string): Promise<void> {
   return invoke("terminal_write", { id, data });
+}
+
+/** Changes directories on the same prompt the File panel observed, if it is still idle. */
+export function followFileDirectory(id: TerminalId, promptId: number, path: string): Promise<void> {
+  return invoke("terminal_follow_file_directory", { id, promptId, path });
 }
 
 export function resizeTerminal(id: TerminalId, size: TerminalSize): Promise<void> {

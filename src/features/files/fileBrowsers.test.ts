@@ -172,11 +172,13 @@ describe("filesSetting", () => {
   it("repairs a damaged section", () => {
     expect(filesSetting.parse({
       showHidden: "yes", sort: { key: "colour", direction: "up" }, showModified: 0, showPermissions: "no",
+      terminalFollowsFilePanel: "on",
     })).toEqual({
       showHidden: false,
       sort: { key: "name", direction: "asc" },
       showModified: true,
       showPermissions: false,
+      terminalFollowsFilePanel: false,
     });
     expect(filesSetting.parse(null)).toEqual(filesSetting.defaults);
   });
@@ -187,6 +189,7 @@ describe("filesSetting", () => {
       sort: { key: "size", direction: "desc" },
       showModified: true,
       showPermissions: false,
+      terminalFollowsFilePanel: false,
     });
   });
 });

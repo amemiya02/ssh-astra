@@ -84,6 +84,7 @@ impl RemoteTerminalOptions {
 
 enum Command {
     Data(Vec<u8>),
+    FollowDirectory { prompt_id: u64, input: Vec<u8> },
     Resize(TerminalSize),
     Reconnect,
     Close,
@@ -194,6 +195,7 @@ impl RemoteTerminal {
             charset: options.charset,
             post_login_input,
             split_startup_input,
+            prompt_id: 0,
             size,
             sink: Box::new(sink),
             commands: command_rx,
@@ -215,12 +217,12 @@ impl RemoteTerminal {
     }
 }
 
-fn split_startup_command(cwd: &str, post_login: Option<&str>) -> Option<String> {
+fn encode_shell_directory(cwd: &str) -> Option<(&'static str, String)> {
     if !cwd.starts_with('/') || cwd.contains('\0') {
         return None;
     }
 
-    // OSC 7 paths are UTF-8. Keep special bytes out of both PTY input and shell syntax.
+    // Keep special bytes out of both PTY input and shell syntax.
     let mut encoded = String::with_capacity(cwd.len());
     for byte in cwd.bytes() {
         if byte.is_ascii_alphanumeric() || b"/._-".contains(&byte) {
@@ -231,8 +233,13 @@ fn split_startup_command(cwd: &str, post_login: Option<&str>) -> Option<String> 
     }
     // Command substitution trims trailing newlines. A directory can be addressed via its ".".
     let format = if cwd.ends_with('\n') { "%b/." } else { "%b" };
+    Some((format, shell_quote(&encoded)))
+}
+
+fn split_startup_command(cwd: &str, post_login: Option<&str>) -> Option<String> {
+    let (format, directory) = encode_shell_directory(cwd)?;
     // Escaping the command names bypasses aliases and lets zsh use its built-ins.
-    let cd = format!(r#"\cd -- "$(\printf '{format}' '{encoded}')""#);
+    let cd = format!(r#"\cd -- "$(\printf '{format}' {directory})""#);
     Some(match post_login {
         None => format!(" {cd}"),
         Some(login) => {
@@ -242,6 +249,22 @@ fn split_startup_command(cwd: &str, post_login: Option<&str>) -> Option<String> 
             format!("eval {}; eval {after_login}\"$?\"')'", shell_quote(login))
         }
     })
+}
+
+fn follow_directory_input(path: &str) -> Option<Vec<u8>> {
+    const MAX_PTY_LINE: usize = 4096;
+    if path.len() >= MAX_PTY_LINE {
+        return None;
+    }
+    let (format, directory) = encode_shell_directory(path)?;
+    // Use the shell's built-ins in case an alias or function overrides cd or printf.
+    let mut input =
+        format!(r#" \builtin cd -- "$(\builtin printf '{format}' {directory})""#).into_bytes();
+    if input.len() >= MAX_PTY_LINE {
+        return None;
+    }
+    input.push(b'\r');
+    Some(input)
 }
 
 impl Terminal for RemoteTerminal {
@@ -255,6 +278,13 @@ impl Terminal for RemoteTerminal {
             _ => data,
         };
         self.send(Command::Data(self.charset.encode_input(data)))
+    }
+
+    fn follow_file_directory(&mut self, prompt_id: u64, path: &str) -> Result<()> {
+        if let Some(input) = follow_directory_input(path) {
+            self.send(Command::FollowDirectory { prompt_id, input })?;
+        }
+        Ok(())
     }
 
     fn resize(&mut self, size: TerminalSize) -> Result<()> {
@@ -371,6 +401,52 @@ enum ReconnectError {
     Shell(ConnectError),
 }
 
+/// Checks that input from the webview still targets the idle prompt it observed.
+#[derive(Default)]
+struct FollowPrompt {
+    idle: Option<u64>,
+    at_prompt: bool,
+    queued_input: bool,
+}
+
+impl FollowPrompt {
+    fn marker(&mut self, event: &ShellIntegrationEvent, startup_complete: bool) {
+        if let ShellIntegrationEvent::PromptStart { prompt_id } = event {
+            self.at_prompt = true;
+            self.idle = (startup_complete && !self.queued_input).then_some(*prompt_id);
+        } else {
+            self.at_prompt = false;
+            self.idle = None;
+        }
+    }
+
+    fn input(&mut self, bytes: &[u8]) {
+        if bytes.is_empty() {
+            return;
+        }
+        self.idle = None;
+        if !self.at_prompt {
+            self.queued_input = true;
+            return;
+        }
+        let submission = bytes
+            .iter()
+            .position(|&b| matches!(b, b'\r' | b'\n' | b'\x03'));
+        self.queued_input = bytes != b"\x03"
+            && (self.queued_input || submission.is_some_and(|index| index < bytes.len() - 1));
+        self.at_prompt = submission.is_none();
+    }
+
+    fn take(&mut self, prompt_id: u64) -> bool {
+        if self.idle != Some(prompt_id) {
+            return false;
+        }
+        self.at_prompt = false;
+        self.idle = None;
+        true
+    }
+}
+
 /// The task behind a [`RemoteTerminal`]: forwards its shell's events and
 /// replaces the shell when the Connection drops.
 struct Runner {
@@ -382,6 +458,7 @@ struct Runner {
     charset: TerminalCharset,
     post_login_input: Option<Vec<u8>>,
     split_startup_input: Option<Vec<u8>>,
+    prompt_id: u64,
     size: TerminalSize,
     sink: Box<dyn FnMut(TerminalEvent) + Send>,
     commands: mpsc::UnboundedReceiver<Command>,
@@ -411,7 +488,7 @@ impl Runner {
     /// Runs `shell` until its Connection drops (`Ok`) or it ends (`Err`,
     /// after sending `Exit`).
     async fn serve(&mut self, shell: &mut RemoteShell) -> std::result::Result<(), ()> {
-        let mut output = ShellOutput::new(self.charset);
+        let mut output = ShellOutput::new(self.charset, self.prompt_id);
         let mut decoder = OutputDecoder::new(self.charset);
         if !self.integration {
             self.report_integration(ShellIntegrationStatus::Disabled);
@@ -426,6 +503,8 @@ impl Runner {
         };
         // User input waits until startup input has been sent.
         let mut typed = Vec::new();
+        let mut startup_command_pending = false;
+        let mut follow_prompt = FollowPrompt::default();
         loop {
             let deadline = startup.deadline();
             tokio::select! {
@@ -441,10 +520,25 @@ impl Runner {
                         if !shown.output.is_empty() {
                             self.show(decoder.decode(shown.output, false));
                         }
+                        let installing = matches!(startup, Startup::InstallingHook(_));
+                        if installing {
+                            startup_command_pending = self.split_startup_input.is_some()
+                                || self.post_login_input.is_some()
+                                || !typed.is_empty();
+                        }
                         for event in shown.events {
+                            if let TerminalEvent::ShellIntegration(marker) = &event {
+                                if let ShellIntegrationEvent::PromptStart { prompt_id } = marker {
+                                    self.prompt_id = *prompt_id;
+                                }
+                                if matches!(marker, ShellIntegrationEvent::CommandStart { .. }) {
+                                    startup_command_pending = false;
+                                }
+                                follow_prompt.marker(marker, !startup_command_pending);
+                            }
                             (self.sink)(event);
                         }
-                        if matches!(startup, Startup::InstallingHook(_)) && !output.is_hiding() {
+                        if installing && !output.is_hiding() {
                             self.finish_startup(shell, std::mem::take(&mut typed));
                             startup = Startup::Ready;
                         }
@@ -478,8 +572,20 @@ impl Runner {
                 },
                 command = self.commands.recv() => match command.unwrap_or(Command::Close) {
                     // Failures mean the shell is ending; its last event follows.
-                    Command::Data(bytes) if matches!(startup, Startup::Ready) => { let _ = shell.write(&bytes); }
-                    Command::Data(bytes) => typed.extend_from_slice(&bytes),
+                    Command::Data(bytes) => {
+                        follow_prompt.input(&bytes);
+                        if matches!(startup, Startup::Ready) {
+                            let _ = shell.write(&bytes);
+                        } else {
+                            typed.extend_from_slice(&bytes);
+                        }
+                    }
+                    Command::FollowDirectory { prompt_id, input } => {
+                        // Bind the request to this exact prompt and never buffer it during startup or recovery.
+                        if matches!(startup, Startup::Ready) && follow_prompt.take(prompt_id) {
+                            let _ = shell.write(&input);
+                        }
+                    }
                     Command::Resize(size) => {
                         self.size = size;
                         let _ = shell.resize(size);
@@ -578,7 +684,7 @@ impl Runner {
                 self.size = size;
                 Ok(false)
             }
-            Command::Data(_) => Ok(false),
+            Command::Data(_) | Command::FollowDirectory { .. } => Ok(false),
         }
     }
 

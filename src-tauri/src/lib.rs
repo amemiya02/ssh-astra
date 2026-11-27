@@ -221,6 +221,7 @@ pub fn run() {
             commands::terminal::terminal_recording_stop,
             commands::terminal::terminal_reconnect,
             commands::terminal::terminal_report_cwd,
+            commands::terminal::terminal_follow_file_directory,
             commands::files::files_open,
             commands::files::files_connect,
             commands::files::files_local_open,
