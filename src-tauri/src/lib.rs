@@ -5,6 +5,8 @@
 mod commands;
 mod diagnostics;
 mod error;
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+mod launch;
 #[cfg(target_os = "macos")]
 mod macos_menu;
 mod prompts;
@@ -51,7 +53,18 @@ compile_error!("the `e2e` feature is for debug builds only");
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let start = Instant::now();
+    let context = tauri::generate_context!();
+    #[cfg(all(
+        feature = "e2e",
+        any(windows, target_os = "macos", target_os = "linux")
+    ))]
+    let context = launch::e2e_context(context);
     let builder = tauri::Builder::default();
+    // Secondary launches hand off their arguments before other plugins start.
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    let builder = builder
+        .manage(launch::PendingLaunches::default())
+        .plugin(tauri_plugin_single_instance::init(launch::forward));
     let builder = if std::env::var_os("SSHASTRA_MEASURE_STARTUP").is_some() {
         builder
             .manage(StartupMeasurement::new(start))
@@ -152,6 +165,8 @@ pub fn run() {
                     }),
             );
             app.manage(Vault(vault));
+            // Each primary instance owns one scratch directory for remote edits.
+            app.manage(remote_editor());
             Ok(())
         })
         .manage(TerminalRegistry::default())
@@ -160,10 +175,6 @@ pub fn run() {
         .manage(ConnectionsState::default())
         .manage(TemporaryHosts::default())
         .manage(FsRegistry::default())
-        // Temp files of remote edits: a folder per run under
-        // $TMPDIR/sshastra-edit (one directory per Host), deleted on exit;
-        // the next run deletes what a crashed one left.
-        .manage(remote_editor())
         .manage(TransfersState::default())
         .manage(Arc::new(PendingPrompts::default()))
         .on_window_event(|window, event| {
@@ -276,12 +287,17 @@ pub fn run() {
             commands::transfers::transfers_remove,
             commands::transfers::transfer_reveal_download,
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building sshastra")
         .run(move |app, event| {
             match event {
                 #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-                tauri::RunEvent::Ready => wake_listener = wake::Listener::start(app.clone()),
+                tauri::RunEvent::Ready => {
+                    launch::ready(app);
+                    wake_listener = wake::Listener::start(app.clone());
+                }
+                #[cfg(target_os = "macos")]
+                tauri::RunEvent::Reopen { .. } => launch::reopen(app),
                 tauri::RunEvent::Exit => {
                     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
                     drop(wake_listener.take());
