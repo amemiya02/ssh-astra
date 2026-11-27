@@ -165,14 +165,23 @@ describe("fileBrowsers", () => {
 
 describe("filesSetting", () => {
   it("repairs a damaged section", () => {
-    expect(filesSetting.parse({ showHidden: "yes", sort: { key: "colour", direction: "up" } })).toEqual({
+    expect(filesSetting.parse({
+      showHidden: "yes", sort: { key: "colour", direction: "up" }, showModified: 0, showPermissions: "no",
+    })).toEqual({
       showHidden: false,
       sort: { key: "name", direction: "asc" },
+      showModified: true,
+      showPermissions: false,
     });
+    expect(filesSetting.parse(null)).toEqual(filesSetting.defaults);
+  });
+
+  it("restores earlier files preferences with the default columns", () => {
     expect(filesSetting.parse({ showHidden: true, sort: { key: "size", direction: "desc" } })).toEqual({
       showHidden: true,
       sort: { key: "size", direction: "desc" },
+      showModified: true,
+      showPermissions: false,
     });
-    expect(filesSetting.parse(null)).toEqual(filesSetting.defaults);
   });
 });

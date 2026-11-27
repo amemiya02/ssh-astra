@@ -9,8 +9,13 @@ import {
   Copy,
   Download,
   File,
+  FileArchive,
+  FileCode,
+  FileImage,
   FilePen,
+  FilePlay,
   FileSymlink,
+  FileText,
   Folder,
   FolderPlus,
   FolderSymlink,
@@ -20,7 +25,7 @@ import {
   Upload,
   Search,
 } from "lucide-react";
-import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { Input } from "@/components/ui/input";
@@ -45,6 +50,7 @@ import { FileOperationDialog, type FileOperation } from "./FileOperationDialogs"
 import { filesSetting } from "./file-prefs";
 import {
   childPath,
+  fileIconKind,
   formatPermissions,
   formatSize,
   isDirLike,
@@ -57,9 +63,21 @@ import {
 /** Every row is this tall, so only the rows in view are rendered (directories may hold 10,000+ entries). */
 const rowHeight = 26;
 const overscan = 8;
-/** Name | size | modified | permissions; modified and permissions appear as the panel widens. */
-const columns =
-  "grid grid-cols-[minmax(0,1fr)_4.5rem] @sm:grid-cols-[minmax(0,1fr)_4.5rem_8.5rem] @md:grid-cols-[minmax(0,1fr)_4.5rem_8.5rem_6rem]";
+/** Minimum widths in rem. The name column takes any extra space. */
+const columnWidths: Record<SortKey, number> = { name: 6.5, size: 4.5, modified: 8, permissions: 6 };
+const columnGrid = "grid grid-cols-(--file-columns)";
+
+const entryIcons = {
+  folder: { Icon: Folder, color: "text-ansi-blue-ink" },
+  folderLink: { Icon: FolderSymlink, color: "text-ansi-cyan-ink" },
+  fileLink: { Icon: FileSymlink, color: "text-ansi-cyan-ink" },
+  archive: { Icon: FileArchive, color: "text-ansi-yellow-ink" },
+  image: { Icon: FileImage, color: "text-ansi-magenta-ink" },
+  code: { Icon: FileCode, color: "text-ansi-green-ink" },
+  media: { Icon: FilePlay, color: "text-ansi-red-ink" },
+  document: { Icon: FileText, color: "text-muted-foreground" },
+  file: { Icon: File, color: "text-muted-foreground" },
+};
 
 export interface FileExchange {
   side: "local" | "remote";
@@ -102,7 +120,7 @@ export function FileBrowser({
   };
   return (
     <div ref={panel} tabIndex={-1} onKeyDown={onKeyDown}
-      className="@container focus-visible:ring-ring/50 flex h-full flex-col outline-none focus-visible:ring-[3px] focus-visible:ring-inset">
+      className="focus-visible:ring-ring/50 flex h-full flex-col outline-none focus-visible:ring-[3px] focus-visible:ring-inset">
       {/* Sibling keys must differ: PathBar and FileTable sharing the path as key made React keep the old path bar. */}
       <PathBar key={`path:${path ?? ""}`} store={store} focusPanel={focusPanel} onOperation={setOperation} />
       {error && path !== null && (
@@ -294,11 +312,19 @@ function FileTable({
   const loading = useStore(store, (s) => s.loading);
   const [prefs, setPrefs] = useSetting(filesSetting);
   const [filter, setFilter] = useState("");
+  const columns: SortKey[] = ["name", "size"];
+  if (prefs.showModified) columns.push("modified");
+  if (prefs.showPermissions) columns.push("permissions");
+  const sort = columns.includes(prefs.sort.key) ? prefs.sort : filesSetting.defaults.sort;
+  const minWidth = columns.reduce((total, key) => total + columnWidths[key], 1.5);
+  const gridTemplate = columns.map((key) => key === "name"
+    ? `minmax(${columnWidths.name}rem, 1fr)`
+    : `${columnWidths[key]}rem`).join(" ");
   const rows = useMemo(() => {
     const query = filter.trim().toLocaleLowerCase();
-    const shown = shownEntries(entries, prefs.sort, prefs.showHidden);
+    const shown = shownEntries(entries, sort, prefs.showHidden);
     return query ? shown.filter((entry) => entry.name.toLocaleLowerCase().includes(query)) : shown;
-  }, [entries, prefs, filter]);
+  }, [entries, sort, prefs.showHidden, filter]);
   const order = useMemo(() => rows.map((r) => r.name), [rows]);
   const dateFormat = useMemo(
     () => new Intl.DateTimeFormat(i18n.language, { dateStyle: "short", timeStyle: "short" }),
@@ -306,14 +332,16 @@ function FileTable({
   );
 
   const scroller = useRef<HTMLDivElement>(null);
+  const header = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewport, setViewport] = useState(0);
   useLayoutEffect(() => {
     const element = scroller.current;
     if (!element) return;
-    const observer = new ResizeObserver(() => setViewport(element.clientHeight));
+    const measure = () => setViewport(Math.max(0, element.clientHeight - (header.current?.offsetHeight ?? 0)));
+    const observer = new ResizeObserver(measure);
     observer.observe(element);
-    setViewport(element.clientHeight);
+    measure();
     return () => observer.disconnect();
   }, []);
   const [focused, setFocused] = useState<string | null>(null);
@@ -331,22 +359,24 @@ function FileTable({
     if (!element) return;
     const top = index * rowHeight;
     if (top < element.scrollTop) element.scrollTop = top;
-    else if (top + rowHeight > element.scrollTop + element.clientHeight)
-      element.scrollTop = top + rowHeight - element.clientHeight;
+    else if (top + rowHeight > element.scrollTop + viewport)
+      element.scrollTop = top + rowHeight - viewport;
   };
   const sortBy = (key: SortKey) => {
-    const direction = prefs.sort.key === key && prefs.sort.direction === "asc" ? "desc" : "asc";
+    const direction = sort.key === key && sort.direction === "asc" ? "desc" : "asc";
     setPrefs({ ...prefs, sort: { key, direction } });
   };
 
-  /** The selection in display order, for a delete. */
+  /** The visible selection in display order, for row actions and the footer. */
   const selected = useMemo(() => order.filter((name) => selection.has(name)), [order, selection]);
+  const hiddenSelected = selection.size - selected.length;
   const askDelete = () => {
     const names = selected;
     if (names.length > 0) onOperation({ kind: "delete", names });
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
+    if (event.target !== event.currentTarget) return;
     const move = (to: number) => {
       const index = Math.max(0, Math.min(rows.length - 1, to));
       const row = rows[index];
@@ -420,70 +450,70 @@ function FileTable({
         aria-activedescendant={focusIndex >= 0 ? rowId(focusIndex) : undefined}
         tabIndex={0}
         onKeyDown={onKeyDown}
-        className="focus-visible:ring-ring/50 flex min-h-0 flex-1 flex-col text-[12.5px] outline-none focus-visible:ring-[3px] focus-visible:ring-inset"
+        className="focus-visible:ring-ring/50 isolate flex min-h-0 flex-1 flex-col text-[12.5px] outline-none focus-visible:ring-[3px] focus-visible:ring-inset"
       >
-        <div role="row" aria-rowindex={1} className={cn(columns, "shrink-0 px-2 pb-1")}>
-          <HeaderCell label={t("files.columns.name")} sortKey="name" sort={prefs.sort} onSort={sortBy} />
-          <HeaderCell label={t("files.columns.size")} sortKey="size" sort={prefs.sort} onSort={sortBy} end />
-          <HeaderCell
-            label={t("files.columns.modified")}
-            sortKey="modified"
-            sort={prefs.sort}
-            onSort={sortBy}
-            className="hidden @sm:flex"
-          />
-          <HeaderCell
-            label={t("files.columns.permissions")}
-            sortKey="permissions"
-            sort={prefs.sort}
-            onSort={sortBy}
-            className="hidden @md:flex"
-          />
-        </div>
         <div
           ref={scroller}
-          className={cn("min-h-0 flex-1 overflow-auto px-2 pb-2", loading && "opacity-70")}
+          className="min-h-0 flex-1 overflow-auto"
           onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
         >
-          {rows.length === 0 ? (
-            <p className="text-muted-foreground p-6 text-center">{filter.trim() ? t("sftp.noMatches") : t("files.emptyFolder")}</p>
-          ) : (
-            <div role="rowgroup" className="relative" style={{ height: rows.length * rowHeight }}>
-              {rows.slice(start, end).map((entry, offset) => {
-                const index = start + offset;
-                const names = selection.has(entry.name) ? selected : [entry.name];
-                const paths = exchange?.copy ? names.map((name) => childPath(path, name)) : undefined;
-                return (
-                  <FileRow
-                    key={entry.name}
-                    id={rowId(index)}
-                    index={index}
-                    entry={entry}
-                    path={path}
-                    exchange={exchange}
-                    dragPaths={paths}
-                    onCopy={paths && (() => exchange?.copy?.(paths))}
-                    selected={selection.has(entry.name)}
-                    focused={index === focusIndex}
-                    modified={entry.modified === null ? "" : dateFormat.format(entry.modified * 1000)}
-                    onClick={(event) => select(entry.name, clickMode(event))}
-                    onOpen={() => void store.getState().open(entry)}
-                    onContextMenu={() => {
-                      if (!selection.has(entry.name)) select(entry.name, "only");
-                    }}
-                    onOperation={(kind) => {
-                      if (kind === "rename") onOperation({ kind, name: entry.name });
-                      else if (kind === "permissions") onOperation({ kind, entry });
-                      else if (kind === "newFolder") onOperation({ kind });
-                      else onOperation({ kind, names });
-                    }}
-                    onDownload={onDownload && (() => onDownload(names))}
-                  />
-                );
-              })}
+          <div style={{ minWidth: `${minWidth}rem`, "--file-columns": gridTemplate } as CSSProperties}>
+            <div ref={header} role="row" aria-rowindex={1}
+              className={cn(columnGrid, "bg-surface sticky top-0 z-10 h-6 items-center px-3 pb-1")}
+            >
+              {columns.map((key) => (
+                <HeaderCell key={key} label={t(`files.columns.${key}`)} sortKey={key}
+                  sort={sort} onSort={sortBy} end={key === "size"} />
+              ))}
             </div>
-          )}
+            <div className={cn("px-2 pb-2", loading && "opacity-70")}>
+              {rows.length === 0 ? (
+                <p className="text-muted-foreground p-6 text-center">{filter.trim() ? t("sftp.noMatches") : t("files.emptyFolder")}</p>
+              ) : (
+                <div role="rowgroup" className="relative" style={{ height: rows.length * rowHeight }}>
+                  {rows.slice(start, end).map((entry, offset) => {
+                    const index = start + offset;
+                    const names = selection.has(entry.name) ? selected : [entry.name];
+                    const paths = exchange?.copy ? names.map((name) => childPath(path, name)) : undefined;
+                    return (
+                      <FileRow
+                        key={entry.name}
+                        id={rowId(index)}
+                        index={index}
+                        entry={entry}
+                        path={path}
+                        exchange={exchange}
+                        dragPaths={paths}
+                        onCopy={paths && (() => exchange?.copy?.(paths))}
+                        selected={selection.has(entry.name)}
+                        focused={index === focusIndex}
+                        modified={prefs.showModified ? (entry.modified === null ? "" : dateFormat.format(entry.modified * 1000)) : undefined}
+                        showPermissions={prefs.showPermissions}
+                        onClick={(event) => select(entry.name, clickMode(event))}
+                        onOpen={() => void store.getState().open(entry)}
+                        onContextMenu={() => {
+                          if (!selection.has(entry.name)) select(entry.name, "only");
+                        }}
+                        onOperation={(kind) => {
+                          if (kind === "rename") onOperation({ kind, name: entry.name });
+                          else if (kind === "permissions") onOperation({ kind, entry });
+                          else if (kind === "newFolder") onOperation({ kind });
+                          else onOperation({ kind, names });
+                        }}
+                        onDownload={onDownload && (() => onDownload(names))}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
+      </div>
+      <div role="status" className="text-muted-foreground flex shrink-0 flex-wrap gap-x-3 gap-y-0.5 border-t px-3 py-1 text-xs tabular-nums">
+        <span>{t("files.entryCount", { count: rows.length })}</span>
+        <span>{t("files.selectedCount", { count: selected.length })}</span>
+        {hiddenSelected > 0 && <span>{t("files.hiddenSelectedCount", { count: hiddenSelected })}</span>}
       </div>
     </>
   );
@@ -501,14 +531,12 @@ function HeaderCell({
   sort,
   onSort,
   end = false,
-  className,
 }: {
   label: string;
   sortKey: SortKey;
   sort: { key: SortKey; direction: "asc" | "desc" };
   onSort(key: SortKey): void;
   end?: boolean;
-  className?: string;
 }) {
   const active = sort.key === sortKey;
   const Arrow = sort.direction === "asc" ? ChevronUp : ChevronDown;
@@ -516,7 +544,7 @@ function HeaderCell({
     <div
       role="columnheader"
       aria-sort={active ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}
-      className={cn("flex min-w-0", end && "justify-end", className)}
+      className={cn("flex min-w-0", end && "justify-end")}
     >
       <button
         type="button"
@@ -541,6 +569,7 @@ function FileRow({
   selected,
   focused,
   modified,
+  showPermissions,
   onClick,
   onOpen,
   onContextMenu,
@@ -556,7 +585,8 @@ function FileRow({
   path: string;
   selected: boolean;
   focused: boolean;
-  modified: string;
+  modified?: string;
+  showPermissions: boolean;
   onClick(event: MouseEvent): void;
   onOpen(): void;
   onContextMenu(): void;
@@ -569,7 +599,7 @@ function FileRow({
   const { t } = useTranslation();
   const { setNodeRef, listeners, isDragging } = useDraggable({ id, disabled: !dragPaths, data: { side: exchange?.side, paths: dragPaths } });
   const dir = isDirLike(entry);
-  const Icon = entry.kind === "symlink" ? (dir ? FolderSymlink : FileSymlink) : dir ? Folder : File;
+  const { Icon, color } = entryIcons[fileIconKind(entry)];
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -581,7 +611,7 @@ function FileRow({
           aria-rowindex={index + 2}
           aria-selected={selected}
           className={cn(
-            columns,
+            columnGrid,
             "absolute inset-x-0 items-center rounded-sm px-1 select-none",
             selected ? "bg-selected" : "hover:bg-accent/60",
             isDragging && "opacity-50",
@@ -594,7 +624,7 @@ function FileRow({
         >
           <div role="gridcell" className="flex min-w-0 items-center gap-1.5 px-1">
             <Icon
-              className={cn("size-3.5 shrink-0", dir ? "text-primary" : "text-muted-foreground")}
+              className={cn("size-3.5 shrink-0", color)}
               aria-hidden
             />
             <span className="truncate">{entry.name}</span>
@@ -602,12 +632,16 @@ function FileRow({
           <div role="gridcell" className="text-muted-foreground truncate px-1 text-right tabular-nums">
             {entry.kind === "file" ? formatSize(entry.size) : ""}
           </div>
-          <div role="gridcell" className="text-muted-foreground hidden truncate px-1 tabular-nums @sm:block">
-            {modified}
-          </div>
-          <div role="gridcell" className="text-muted-foreground hidden truncate px-1 font-mono text-xs @md:block">
-            {formatPermissions(entry)}
-          </div>
+          {modified !== undefined && (
+            <div role="gridcell" title={modified} className="text-muted-foreground truncate px-1 tabular-nums">
+              {modified}
+            </div>
+          )}
+          {showPermissions && (
+            <div role="gridcell" className="text-muted-foreground truncate px-1 font-mono text-xs">
+              {formatPermissions(entry)}
+            </div>
+          )}
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent className="min-w-40">
