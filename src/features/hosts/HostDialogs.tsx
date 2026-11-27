@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { readCommandError } from "@/lib/ipc/connect";
-import type { Group, Host, HostDraft, HostId } from "@/lib/ipc/hosts";
+import type { Group, Host, HostDraft, HostId, TerminalBackspace, TerminalCharset } from "@/lib/ipc/hosts";
 import { cn } from "@/lib/utils";
 import { TerminalSchemeSelect } from "@/features/terminal/TerminalSchemeSelect";
 import { ClearCredentialsButton } from "./ClearCredentialsButton";
@@ -366,6 +366,44 @@ export function HostFormDialogContent({
                 <p id="host-form-post-login-command-hint" className="text-muted-foreground text-xs">
                   {t("hosts.postLoginCommandHint")}
                 </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3.5">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="host-form-terminal-charset" className="text-xs">
+                    {t("hosts.fields.terminalCharset")}
+                  </Label>
+                  <Select
+                    value={values.terminalCharset}
+                    onValueChange={(value) => setValues((v) => ({ ...v, terminalCharset: value as TerminalCharset }))}
+                  >
+                    <SelectTrigger id="host-form-terminal-charset" size="sm" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="utf8">UTF-8</SelectItem>
+                      <SelectItem value="gbk">GBK</SelectItem>
+                      <SelectItem value="big5">Big5</SelectItem>
+                      <SelectItem value="latin1">Latin-1</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="host-form-terminal-backspace" className="text-xs">
+                    {t("hosts.fields.terminalBackspace")}
+                  </Label>
+                  <Select
+                    value={values.terminalBackspace}
+                    onValueChange={(value) => setValues((v) => ({ ...v, terminalBackspace: value as TerminalBackspace }))}
+                  >
+                    <SelectTrigger id="host-form-terminal-backspace" size="sm" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="del">DEL</SelectItem>
+                      <SelectItem value="ctrlH">Ctrl-H</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               {host && <ClearCredentialsButton hostId={host.id} />}
             </div>

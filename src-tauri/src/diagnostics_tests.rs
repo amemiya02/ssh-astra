@@ -51,6 +51,8 @@ async fn log_files_record_an_ssh_connection_without_password_or_terminal_data() 
         forward_agent: false,
         keepalive_seconds: None,
         post_login_command: None,
+        terminal_charset: None,
+        terminal_backspace: None,
         default_directory: None,
         group_id: None,
         forwards: Vec::new(),

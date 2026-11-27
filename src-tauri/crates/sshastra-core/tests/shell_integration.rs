@@ -14,8 +14,8 @@ use sshastra_core::ssh::{
     RemoteTerminalOptions, Secret,
 };
 use sshastra_core::terminal::{
-    ConnectionState, ShellIntegrationEvent, ShellIntegrationStatus, Terminal, TerminalEvent,
-    TerminalSize, REPORT_CWD,
+    ConnectionState, ShellIntegrationEvent, ShellIntegrationStatus, Terminal, TerminalBackspace,
+    TerminalCharset, TerminalEvent, TerminalSize, REPORT_CWD,
 };
 use support::{Service, Sshd};
 use tokio::sync::mpsc;
@@ -59,6 +59,25 @@ impl Shell {
         shell_integration: bool,
         post_login_command: Option<&str>,
     ) -> Self {
+        Self::open_with_terminal_settings(
+            sshd,
+            user,
+            shell_integration,
+            post_login_command,
+            None,
+            None,
+        )
+        .await
+    }
+
+    async fn open_with_terminal_settings(
+        sshd: &Sshd,
+        user: &str,
+        shell_integration: bool,
+        post_login_command: Option<&str>,
+        terminal_charset: Option<TerminalCharset>,
+        terminal_backspace: Option<TerminalBackspace>,
+    ) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let manager = Arc::new(ConnectionManager::new(KnownHosts::new(
             dir.path().join("known_hosts"),
@@ -77,14 +96,12 @@ impl Shell {
             forward_agent: false,
             keepalive_seconds: None,
             post_login_command: post_login_command.map(str::to_owned),
+            terminal_charset,
+            terminal_backspace,
             default_directory: None,
             forwards: Vec::new(),
         };
-        let options = RemoteTerminalOptions {
-            shell_integration,
-            post_login_command: host.post_login_command.clone(),
-            ..RemoteTerminalOptions::default()
-        };
+        let options = RemoteTerminalOptions::for_host(&host, shell_integration);
         let connect = move || {
             let (manager, host) = (manager.clone(), host.clone());
             async move { manager.connect(&host, Arc::new(TrustingPrompter)).await }
@@ -417,10 +434,26 @@ async fn runs_post_login_command_again_in_the_reconnected_shell() {
     let Some(sshd) = support::sshd(Service::Flaky) else {
         return;
     };
-    let mut shell =
-        Shell::open_with_command(&sshd, support::USER, true, Some(POST_LOGIN_COMMAND)).await;
+    let mut shell = Shell::open_with_terminal_settings(
+        &sshd,
+        support::USER,
+        true,
+        Some(POST_LOGIN_COMMAND),
+        Some(TerminalCharset::Gbk),
+        None,
+    )
+    .await;
     shell.settle().await;
     assert_post_login_runs(&shell, 1);
+
+    // Leave the old shell's GBK decoder waiting for a trail byte.
+    shell.type_line(r#"printf 'before-disconnect:\326'; read -r line"#);
+    shell
+        .run(Duration::from_secs(10), |shell, _| {
+            shell.rows().iter().any(|row| row == "before-disconnect:")
+        })
+        .await;
+    assert!(shell.rows().iter().any(|row| row == "before-disconnect:"));
 
     sshd.drop_connections();
     shell
@@ -431,5 +464,107 @@ async fn runs_post_login_command_again_in_the_reconnected_shell() {
     assert_eq!(shell.connection, Some(ConnectionState::Connected));
     shell.settle().await;
 
+    assert!(shell.text().contains("before-disconnect:\u{fffd}"));
     assert_post_login_runs(&shell, 2);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn gbk_terminal_shows_split_output_and_sends_gbk_input_and_ctrl_h() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    let mut shell = Shell::open_with_terminal_settings(
+        &sshd,
+        support::USER,
+        true,
+        Some("printf '%s\\n' 登录 | od -An -tx1"),
+        Some(TerminalCharset::Gbk),
+        Some(TerminalBackspace::CtrlH),
+    )
+    .await;
+    shell.settle().await;
+    assert!(shell.rows().iter().any(|row| row == " b5 c7 c2 bc 0a"));
+
+    // The server sends the first GBK lead byte and waits for one client byte
+    // before sending its trail byte. The two must cross SSH separately.
+    shell.type_line(
+        r#"stty raw -echo; printf 'split:begin\326'; key=$(dd bs=1 count=1 2>/dev/null | od -An -tx1); printf '\320\316\304 key:%s\r\ninput:' "$key"; dd bs=1 count=4 2>/dev/null | od -An -tx1; stty sane"#,
+    );
+    shell
+        .run(Duration::from_secs(10), |shell, _| {
+            shell.rows().iter().any(|row| row == "split:begin")
+        })
+        .await;
+    assert!(shell.rows().iter().any(|row| row == "split:begin"));
+    shell.terminal.write(b"\x7f").unwrap();
+    shell
+        .run(Duration::from_secs(10), |shell, _| {
+            shell
+                .rows()
+                .iter()
+                .any(|row| row == "split:begin中文 key: 08")
+        })
+        .await;
+    assert!(shell
+        .rows()
+        .iter()
+        .any(|row| row == "split:begin中文 key: 08"));
+    shell.terminal.write("中文".as_bytes()).unwrap();
+    shell.settle().await;
+
+    assert!(shell.rows().iter().any(|row| row == "input: d6 d0 ce c4"));
+    assert!(shell.integration.iter().any(|event| matches!(
+        event,
+        ShellIntegrationEvent::CommandStart { command_line: Some(line) }
+        if line == "printf '%s\\n' 登录 | od -An -tx1"
+    )));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn big5_and_latin1_terminals_round_trip_their_bytes() {
+    let Some(sshd) = support::sshd(Service::Ssh) else {
+        return;
+    };
+    for (charset, command, shown, input, expected) in [
+        (
+            TerminalCharset::Big5,
+            r#"stty raw -echo; printf 'legacy:\244\244\244\345\r\nhex:'; dd bs=1 count=5 2>/dev/null | od -An -tx1; stty sane"#,
+            "legacy:中文",
+            "中文",
+            "hex: 7f a4 a4 a4 e5",
+        ),
+        (
+            TerminalCharset::Latin1,
+            r#"stty raw -echo; printf 'legacy:\200\351\r\nhex:'; dd bs=1 count=4 2>/dev/null | od -An -tx1; stty sane"#,
+            "legacy:\u{80}é",
+            "\u{80}é€",
+            "hex: 7f 80 e9 3f",
+        ),
+    ] {
+        let mut shell = Shell::open_with_terminal_settings(
+            &sshd,
+            support::USER,
+            false,
+            None,
+            Some(charset),
+            None,
+        )
+        .await;
+        shell.settle().await;
+        shell.type_line(command);
+        shell
+            .run(Duration::from_secs(10), |shell, _| {
+                shell.text().contains(shown)
+            })
+            .await;
+        assert!(shell.text().contains(shown), "{}", shell.text());
+        shell.terminal.write(b"\x7f").unwrap();
+        shell.terminal.write(input.as_bytes()).unwrap();
+        shell.settle().await;
+        assert!(
+            shell.rows().iter().any(|row| row == expected),
+            "{}",
+            shell.text(),
+        );
+    }
 }
